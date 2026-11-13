@@ -617,3 +617,76 @@ fn a_map_package_that_unpacks_too_large_is_refused() {
     assert_eq!(saved, 0, "the map is not kept");
     assert!(h.log_text().contains("refused the map received"));
 }
+
+/// Andrew hosts Bob and Carol; Bob leaves just after Andrew confirms the
+/// item chosen with `letters`. What Andrew's client sends.
+fn bob_leaves_as_andrew_confirms(letters: &[&str]) -> Vec<ClientMsg> {
+    let mut script = Script::new();
+    let mut t = 20.0;
+    for l in letters {
+        script = script.at(t).type_text(l);
+        t += 1.0;
+    }
+    let confirm_at = t;
+    script = script
+        .at(confirm_at)
+        .tap(Key::Return)
+        .at(40.0)
+        .tap(Key::LShift);
+    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = jl1(h);
+        let three = room_state(
+            &map,
+            vec![
+                slot(human("andrew"), 1, true),
+                slot(human("bob"), 2, false),
+                slot(human("carol"), 3, false),
+            ],
+        );
+        let mut two = three.clone();
+        two.slots.remove(1);
+        s.at(10.0, room(RoomChange::Entered, &three));
+        // While the confirmation is said, before the item runs.
+        s.at(
+            confirm_at + 0.05,
+            room(
+                RoomChange::Left {
+                    player: human("bob"),
+                },
+                &two,
+            ),
+        );
+    });
+    server.sent()
+}
+
+#[test]
+fn removing_a_player_who_has_just_left_does_nothing() {
+    let sent = bob_leaves_as_andrew_confirms(&["r"]);
+    assert!(
+        !sent
+            .iter()
+            .any(|m| matches!(m, ClientMsg::RemoveSlot { .. })),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn removing_a_player_whose_slot_moved_removes_that_player() {
+    // Carol was in slot 2; with Bob gone she is in slot 1.
+    let sent = bob_leaves_as_andrew_confirms(&["r", "r"]);
+    assert_eq!(sent, [ClientMsg::RemoveSlot { slot: 1 }]);
+}
+
+#[test]
+fn moving_a_player_whose_slot_moved_moves_that_player() {
+    // andrew to 2 and 3, bob to 1 and 3, then "move carol to alliance 1".
+    let sent = bob_leaves_as_andrew_confirms(&["m"; 5]);
+    assert_eq!(
+        sent,
+        [ClientMsg::SetAlliance {
+            slot: 1,
+            alliance: 1
+        }]
+    );
+}

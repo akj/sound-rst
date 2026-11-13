@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soundrts_protocol::{
-    AiLevel, ClientMsg, Faction, Login, PROTOCOL_VERSION, Rejection, SlotPlayer, Speed,
+    AiLevel, ClientMsg, Faction, Login, PROTOCOL_VERSION, Rejection, SlotIndex, SlotPlayer, Speed,
 };
 use soundrts_server::{ServerConfig, ServerHandle, UpnpOutcome};
 use soundrts_world::Rules;
@@ -574,13 +574,41 @@ fn send_action(m: ClientMsg) -> Action {
     })
 }
 
+/// The slot of the player an item was built for, now: the room may have
+/// changed between the menu and the choice. A human is found wherever
+/// they are; a computer only where it was, if it is the same kind.
+fn slot_now(cx: &Client, index: SlotIndex, player: &SlotPlayer) -> Option<SlotIndex> {
+    let slots = &net_ref(cx).room.as_ref()?.state.slots;
+    match player {
+        SlotPlayer::Human(_) => slots.iter().position(|s| s.player == *player),
+        SlotPlayer::Computer(_) => (slots.get(index)?.player == *player).then_some(index),
+    }
+}
+
+/// An item acting on the slot of `player` (at `index` when the menu was
+/// built); nothing happens if that player is no longer there.
+fn slot_action(
+    index: SlotIndex,
+    player: &SlotPlayer,
+    make: impl Fn(SlotIndex) -> ClientMsg + 'static,
+) -> Action {
+    let player = player.clone();
+    Action::run(move |cx| {
+        if let Some(slot) = slot_now(cx, index, &player) {
+            net::send(cx, make(slot));
+        }
+        Ok(Flow::Stay)
+    })
+}
+
 fn faction_choices(
     cx: &Client,
     slot: usize,
-    name: &Msg,
+    player: &SlotPlayer,
     current: &str,
     factions: &[String],
 ) -> Vec<Choice> {
+    let name = player_name(player);
     if factions.len() <= 1 {
         return Vec::new();
     }
@@ -592,7 +620,10 @@ fn faction_choices(
             let label = [name.clone(), style_msg(cx.res.style(), &f, "title")].concat();
             Some(Choice::new(
                 label,
-                send_action(ClientMsg::SetFaction { slot, faction }),
+                slot_action(slot, player, move |slot| ClientMsg::SetFaction {
+                    slot,
+                    faction: faction.clone(),
+                }),
             ))
         })
         .collect()
@@ -644,8 +675,8 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                     .concat();
                     choices.push(Choice::new(
                         label,
-                        send_action(ClientMsg::SetAlliance {
-                            slot: i,
+                        slot_action(i, &slot.player, move |slot| ClientMsg::SetAlliance {
+                            slot,
                             alliance: a,
                         }),
                     ));
@@ -656,7 +687,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                 choices.extend(faction_choices(
                     cx,
                     i,
-                    &name,
+                    &slot.player,
                     slot.faction.as_str(),
                     factions,
                 ));
@@ -667,18 +698,17 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                 let label = [text(words::REMOVE), player_name(&slot.player)].concat();
                 choices.push(Choice::new(
                     label,
-                    send_action(ClientMsg::RemoveSlot { slot: i }),
+                    slot_action(i, &slot.player, |slot| ClientMsg::RemoveSlot { slot }),
                 ));
             }
         }
     } else {
         if let Some(i) = room.slot_of(&you) {
             let slot = &slots[i];
-            let name = player_name(&slot.player);
             choices.extend(faction_choices(
                 cx,
                 i,
-                &name,
+                &slot.player,
                 slot.faction.as_str(),
                 factions,
             ));
