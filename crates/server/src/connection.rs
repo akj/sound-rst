@@ -196,8 +196,15 @@ pub(crate) async fn serve(
             }
             out = rx.recv() => match out {
                 Some(Outbound::Text(text)) => {
-                    if ws.send(Message::Text(text)).await.is_err() {
-                        break;
+                    // A peer that stops reading blocks the write; a kick or a
+                    // shutdown must still end the connection.
+                    tokio::select! {
+                        sent = ws.send(Message::Text(text)) => if sent.is_err() { break },
+                        _ = kick.notified() => {
+                            warn!(conn, "client too slow to read its messages; disconnecting");
+                            break;
+                        }
+                        _ = stop.changed() => break,
                     }
                 }
                 Some(Outbound::Close) | None => {
@@ -263,11 +270,10 @@ fn read_hello(text: &str) -> Result<(Login, ContentHash), Rejection> {
 /// Sends a close and waits a little for the peer's, so that what was sent
 /// before reaches it rather than being cut by a reset.
 async fn close(ws: &mut Ws) {
-    if ws.close(None).await.is_err() {
-        return;
-    }
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
-        while let Some(Ok(_)) = ws.next().await {}
+        if ws.close(None).await.is_ok() {
+            while let Some(Ok(_)) = ws.next().await {}
+        }
     })
     .await;
 }

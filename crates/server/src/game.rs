@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use soundrts_protocol::{
-    Digest, Login, MAX_ORDERS_PER_MESSAGE, Order, Orders, Refusal, RoomId, ServerMsg, SlotIndex,
-    SlotOrders, Turn,
+    Digest, Login, MAX_ORDERS_PER_MESSAGE, MAX_TURN_ORDER_BYTES, Order, Orders, Refusal, RoomId,
+    ServerMsg, SlotIndex, SlotOrders, Turn,
 };
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
@@ -161,12 +161,18 @@ impl Game {
     fn on_input(&mut self, input: GameInput) {
         match input {
             GameInput::Orders { slot, orders } => {
-                if self.humans.contains_key(&slot) {
-                    self.pending
-                        .entry(slot)
-                        .or_default()
-                        .extend(Vec::from(orders));
+                let Some(human) = self.humans.get(&slot) else {
+                    return;
+                };
+                let pending = self.pending.entry(slot).or_default();
+                let bytes = |list: &[Order]| list.iter().map(|o| o.as_str().len()).sum::<usize>();
+                if bytes(pending) + bytes(orders.as_slice()) > MAX_TURN_ORDER_BYTES {
+                    human.outbox.send(&ServerMsg::Refused {
+                        reason: Refusal::SlowDown,
+                    });
+                    return;
                 }
+                pending.extend(Vec::from(orders));
             }
             GameInput::Loaded { slot } => self.loaded(slot),
             GameInput::TurnDone { slot, turn, digest } => self.turn_done(slot, turn, digest),

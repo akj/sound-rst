@@ -203,6 +203,48 @@ async fn more_orders_than_fit_in_a_message_are_split_in_order() {
 }
 
 #[tokio::test]
+async fn orders_beyond_the_limit_for_a_turn_are_refused() {
+    let (_server, mut all, _) = two_player_game(|c| c.max_lead = 0, &[]).await;
+    // max_lead 0: no turn comes until both report the last one, so the
+    // refusal is the next message.
+    for c in &mut all {
+        wait_for_turn(c, 0).await;
+    }
+    let big = "x".repeat(MAX_ORDER_BYTES);
+    let fill: Vec<&str> = vec![big.as_str(); MAX_TURN_ORDER_BYTES / MAX_ORDER_BYTES];
+    all[0]
+        .send(ClientMsg::Orders {
+            orders: orders(&fill),
+        })
+        .await;
+    all[0]
+        .send(ClientMsg::Orders {
+            orders: orders(&["one too many"]),
+        })
+        .await;
+    all[0].expect(refused(Refusal::SlowDown)).await;
+    for c in &mut all {
+        c.send(ClientMsg::TurnDone { turn: 0, digest: 0 }).await;
+    }
+    for c in &mut all {
+        wait_for_turn(c, 1).await;
+        assert_eq!(c.turns[1], (1, vec![slot_orders(0, &fill)]));
+    }
+}
+
+/// Reads `n` more turns and checks that `slot` has no orders in any.
+async fn no_orders_from(c: &mut Client, slot: SlotIndex, n: usize) {
+    let from = c.turns.len();
+    for i in from..from + n {
+        let (turn, orders) = turn_at(c, i).await;
+        assert!(
+            orders.iter().all(|o| o.slot != slot),
+            "slot {slot} has orders in turn {turn}: {orders:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_slow_player_makes_the_game_wait_until_they_catch_up() {
     let (_server, mut all, _) = two_player_game(|c| c.max_lead = LEAD, &[]).await;
     let bob = vec![login("bob")];
@@ -264,6 +306,8 @@ async fn a_player_who_keeps_the_game_waiting_too_long_is_taken_out() {
         turn_at(&mut all[0], left_at).await.1,
         vec![slot_orders(1, &["quit"])]
     );
+    // The quit comes once.
+    no_orders_from(&mut all[0], 1, 3).await;
 
     all[1]
         .expect_event(
@@ -365,6 +409,8 @@ async fn leaving_a_game_sends_quit_and_the_last_one_out_closes_the_room() {
         turn_at(&mut all[0], left_at).await.1,
         vec![slot_orders(1, &["quit"])]
     );
+    // The quit comes once.
+    no_orders_from(&mut all[0], 1, 3).await;
     all[1].expect_event(false, ServerMsg::GameEnded).await;
     all[1].expect(moved(&bob, Whereabouts::Lobby)).await;
     all[2].expect(moved(&bob, Whereabouts::Lobby)).await;
@@ -411,6 +457,8 @@ async fn disconnecting_from_a_game_sends_quit_and_the_last_one_out_closes_the_ro
         turn_at(&mut all[0], left_at).await.1,
         vec![slot_orders(1, &["quit"])]
     );
+    // The quit comes once.
+    no_orders_from(&mut all[0], 1, 3).await;
 
     let andrew = all.remove(0);
     andrew.close().await;

@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use soundrts_protocol::{
     AiLevel, CHAT_HISTORY_LINES, Channel, ChatLine, ChatText, ClientMsg, ContentHash, Faction,
-    LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_LOGIN_CHARS, MapData, MapHash, MapInfo,
-    Refusal, Rejection, RoomChange, RoomExit, RoomId, ServerMsg, SlotIndex, Speed, Whereabouts,
+    LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_LOGIN_CHARS, MAX_TITLE_SOUNDS, MapData,
+    MapHash, MapInfo, Refusal, Rejection, RoomChange, RoomExit, RoomId, ServerMsg, SlotIndex,
+    Speed, Whereabouts,
 };
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
@@ -246,6 +247,11 @@ impl Lobby {
         self.broadcast(LobbyChange::PlayerLeft {
             login: player.login,
         });
+        for room in self.rooms.values_mut() {
+            if let Phase::Gathering { invited } = &mut room.phase {
+                invited.remove(&conn);
+            }
+        }
         match player.place {
             Place::Lobby { .. } => {}
             Place::InRoom(id) => self.take_out_of_room(id, conn),
@@ -359,7 +365,10 @@ impl Lobby {
         if !matches!(player.place, Place::Lobby { .. }) {
             return Err(Refusal::NotNow);
         }
-        if new.map.nb_players_min == 0 || new.map.nb_players_min > new.map.nb_players_max {
+        if new.map.nb_players_min == 0
+            || new.map.nb_players_min > new.map.nb_players_max
+            || new.map.title_sounds.len() > MAX_TITLE_SOUNDS
+        {
             return Err(Refusal::Invalid);
         }
         if self.rooms.len() >= self.max_rooms {

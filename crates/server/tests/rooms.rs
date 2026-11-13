@@ -125,6 +125,30 @@ async fn a_map_that_does_not_suit_any_number_of_players_is_refused() {
 }
 
 #[tokio::test]
+async fn a_map_title_with_too_many_sounds_is_refused() {
+    let server = server(|_| {});
+    let (mut c, _) = Client::hello(server.local_addr(), "andrew").await;
+    let (mut info, _) = map(2, 4);
+    info.title_sounds = vec![1; MAX_TITLE_SOUNDS + 1];
+    c.send(ClientMsg::CreateRoom {
+        map: info.clone(),
+        speed: Speed::Normal,
+        open: true,
+    })
+    .await;
+    c.expect(refused(Refusal::Invalid)).await;
+
+    info.title_sounds = vec![1; MAX_TITLE_SOUNDS];
+    c.send(ClientMsg::CreateRoom {
+        map: info.clone(),
+        speed: Speed::Normal,
+        open: true,
+    })
+    .await;
+    c.expect(ServerMsg::SendMap { hash: info.hash }).await;
+}
+
+#[tokio::test]
 async fn a_client_gets_a_rooms_map_while_the_room_lasts() {
     let server = server(|_| {});
     let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;

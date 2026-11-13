@@ -42,6 +42,14 @@ pub const MAX_ORDER_BYTES: usize = 4096;
 /// The most orders in one [`ClientMsg::Orders`].
 pub const MAX_ORDERS_PER_MESSAGE: usize = 64;
 
+/// The most bytes of orders one player can have waiting for one turn. The
+/// server refuses orders beyond it with [`Refusal::SlowDown`], which keeps
+/// every [`ServerMsg::Turn`] far below [`MAX_MESSAGE_BYTES`].
+pub const MAX_TURN_ORDER_BYTES: usize = 32 * 1024;
+
+/// The most sounds in [`MapInfo::title_sounds`].
+pub const MAX_TITLE_SOUNDS: usize = 16;
+
 /// The largest map file.
 pub const MAX_MAP_BYTES: usize = 16 * 1024 * 1024;
 
@@ -425,6 +433,7 @@ pub struct MapInfo {
     pub file_name: MapFileName,
     pub hash: MapHash,
     /// The sound numbers of the map's `title` line, said after its name.
+    /// At most [`MAX_TITLE_SOUNDS`]; a server refuses a room with more.
     pub title_sounds: Vec<i64>,
     pub nb_players_min: u8,
     pub nb_players_max: u8,
