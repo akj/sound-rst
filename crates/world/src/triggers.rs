@@ -286,19 +286,7 @@ impl World {
         self.plm(p).kind = PlayerKind::Computer {
             ai_type: ai_type.to_owned(),
         };
-        if ai_type != "timers"
-            && self
-                .ai_scripts
-                .get(&self.faction_ai_type(p, ai_type))
-                .is_none()
-        {
-            return Err(Abort::new(format!("KeyError: '{ai_type}'")));
-        }
-        if let Some(mut ai) = self.plm(p).ai.take() {
-            ai.set_ai(self, p, ai_type);
-            self.plm(p).ai = Some(ai);
-        }
-        Ok(())
+        self.computer_set_ai(p, ai_type)
     }
 
     fn lang_order(&mut self, p: PlayerId, args: &[Expr]) -> Res {

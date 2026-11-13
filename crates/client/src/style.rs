@@ -42,17 +42,6 @@ pub enum StyleValue {
     Noise(Noise),
 }
 
-impl StyleValue {
-    /// Whether the value says anything (upstream's truth value).
-    pub fn is_set(&self) -> bool {
-        match self {
-            StyleValue::Words(w) => !w.is_empty(),
-            StyleValue::IfMe(..) => true,
-            StyleValue::Noise(n) => *n != Noise::Silent,
-        }
-    }
-}
-
 /// Reads a noise definition.
 pub fn parse_noise(words: &[String]) -> Result<Noise, String> {
     let Some(first) = words.first() else {

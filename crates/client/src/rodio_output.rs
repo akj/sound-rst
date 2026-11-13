@@ -5,7 +5,7 @@
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rodio::Source;
 
@@ -25,10 +25,32 @@ impl Gains {
     }
 }
 
-#[derive(Default)]
+/// How long after its length a sound may still count as playing: the
+/// device plays what it has buffered a little after the last sample is taken.
+const LATE: Duration = Duration::from_millis(500);
+
 struct Playback {
     stop: AtomicBool,
     done: AtomicBool,
+    /// When a sound that plays once has ended for certain. A device that
+    /// went away stops taking samples, so `done` alone would never be set
+    /// and whoever waits for the sound would wait forever.
+    deadline: Option<Instant>,
+}
+
+impl Playback {
+    fn starting(sound: &Sound, looping: bool, now: Instant) -> Playback {
+        let length = Duration::try_from_secs_f64(sound.duration()).unwrap_or_default();
+        Playback {
+            stop: AtomicBool::new(false),
+            done: AtomicBool::new(false),
+            deadline: (!looping).then(|| now + length + LATE),
+        }
+    }
+
+    fn is_busy(&self, now: Instant) -> bool {
+        !self.done.load(Ordering::Relaxed) && self.deadline.is_none_or(|end| now < end)
+    }
 }
 
 struct ChannelSource {
@@ -98,9 +120,17 @@ pub struct RodioOutput {
 }
 
 impl RodioOutput {
-    /// Opens the default output device (playing nothing yet).
-    pub fn open(num_channels: usize) -> Result<RodioOutput, String> {
-        let mut sink = rodio::DeviceSinkBuilder::open_default_sink().map_err(|e| e.to_string())?;
+    /// Opens the default output device (playing nothing yet). `on_error`
+    /// receives the errors of the running device, such as its removal.
+    pub fn open(
+        num_channels: usize,
+        on_error: impl Fn(String) + Send + Clone + 'static,
+    ) -> Result<RodioOutput, String> {
+        let report = move |e: rodio::cpal::Error| on_error(e.to_string());
+        let mut sink = rodio::DeviceSinkBuilder::from_default_device()
+            .and_then(|builder| builder.with_error_callback(report).open_sink_or_fallback())
+            .or_else(|_| rodio::DeviceSinkBuilder::open_default_sink())
+            .map_err(|e| e.to_string())?;
         sink.log_on_drop(false);
         let channels = (0..num_channels.max(1))
             .map(|_| ChannelState {
@@ -125,7 +155,7 @@ impl AudioOutput for RodioOutput {
         let Some(state) = self.channels.get_mut(channel.index()) else {
             return;
         };
-        let playback = Arc::new(Playback::default());
+        let playback = Arc::new(Playback::starting(sound, looping, Instant::now()));
         state.playback = Some(playback.clone());
         let source = ChannelSource {
             sound: sound.clone(),
@@ -156,7 +186,7 @@ impl AudioOutput for RodioOutput {
         self.channels
             .get(channel.index())
             .and_then(|s| s.playback.as_ref())
-            .is_some_and(|p| !p.done.load(Ordering::Relaxed))
+            .is_some_and(|p| p.is_busy(Instant::now()))
     }
 }
 
@@ -178,4 +208,31 @@ pub fn describe_default_device() -> Result<String, String> {
         config.channels(),
         config.sample_format()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::SoundBuffer;
+
+    #[test]
+    fn a_sound_the_device_never_finishes_stops_being_busy_after_its_length() {
+        // One second of stereo silence that no device ever takes.
+        let sound: Sound = Arc::new(SoundBuffer::new(
+            "s",
+            "default",
+            vec![0.0; 88_200],
+            44_100,
+            1.0,
+        ));
+        let start = Instant::now();
+        let once = Playback::starting(&sound, false, start);
+        assert!(once.is_busy(start + Duration::from_millis(1_400)));
+        assert!(!once.is_busy(start + Duration::from_millis(1_600)));
+        // A loop plays until it is stopped.
+        let looped = Playback::starting(&sound, true, start);
+        assert!(looped.is_busy(start + Duration::from_secs(3_600)));
+        looped.done.store(true, Ordering::Relaxed);
+        assert!(!looped.is_busy(start));
+    }
 }

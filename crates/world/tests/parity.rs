@@ -261,7 +261,11 @@ fn resolve(w: &World, players: &[PlayerId], pi: usize, cmd: &str) -> Option<Stri
                     .collect();
                 objs.get(idx(3)?)?.to_string()
             }
-            "mead" => {
+            "mead" | "loc" => {
+                let (t, i) = match parts[0] {
+                    "mead" => ("meadow", idx(1)?),
+                    _ => (*parts.get(1)?, idx(2)?),
+                };
                 let first = *w.player(me).units.first()?;
                 let Some(Place::Square(s)) = w.entity(first)?.place else {
                     return None;
@@ -271,9 +275,9 @@ fn resolve(w: &World, players: &[PlayerId], pi: usize, cmd: &str) -> Option<Stri
                     .objects
                     .iter()
                     .copied()
-                    .filter(|&o| &*w.entity(o).unwrap().type_name == "meadow")
+                    .filter(|&o| &*w.entity(o).unwrap().type_name == t)
                     .collect();
-                objs.get(idx(1)?)?.to_string()
+                objs.get(i)?.to_string()
             }
             "ids" => {
                 let ids: Vec<i64> = units(me, parts[1]).iter().map(|u| i64::from(u.0)).collect();
@@ -289,11 +293,22 @@ fn resolve(w: &World, players: &[PlayerId], pi: usize, cmd: &str) -> Option<Stri
     Some(out)
 }
 
+/// `login` or `ai_<type>`, then optionally `:<alliance>`.
 fn controllers(spec: &str) -> Vec<Controller> {
     spec.split(',')
-        .map(|s| match s.strip_prefix("ai_") {
-            Some(ai) => Controller::computer(ai),
-            None => Controller::human(s, false),
+        .map(|s| {
+            let (s, alliance) = match s.split_once(':') {
+                Some((s, a)) => (s, Some(a)),
+                None => (s, None),
+            };
+            let mut c = match s.strip_prefix("ai_") {
+                Some(ai) => Controller::computer(ai),
+                None => Controller::human(s, false),
+            };
+            if let Some(a) = alliance {
+                c.alliance = Some(a.to_owned());
+            }
+            c
         })
         .collect()
 }
@@ -394,15 +409,53 @@ fn actual_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/parity-actual")
 }
 
+/// The hash of each built map's dump, by case.
+fn static_hashes() -> BTreeMap<String, String> {
+    let path = parity_dir().join("expected/static_hashes.txt");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| {
+            panic!(
+                "{}: {e} (run tests/parity/dump_reference.py)",
+                path.display()
+            )
+        })
+        .lines()
+        .filter_map(|l| l.split_once(' '))
+        .map(|(n, h)| (n.to_owned(), h.to_owned()))
+        .collect()
+}
+
+fn check_static(case: &Case, hashes: &BTreeMap<String, String>) {
+    let dump = dump_static(&make_world(case));
+    let actual = fnv64(&dump.join("\n"));
+    let expected = hashes
+        .get(&case.name)
+        .unwrap_or_else(|| panic!("{}: no hash in static_hashes.txt", case.name));
+    if actual != *expected {
+        let dir = actual_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{}.txt", case.name));
+        std::fs::write(&path, dump.join("\n") + "\n").unwrap();
+        panic!(
+            "{}: the built map differs from the original's (hash {actual}, expected {expected}).\n\
+             The dump is in {}. To get the original's, run from vendor/soundrts-upstream:\n    \
+             ..\\.venv-ref\\Scripts\\python.exe ..\\..\\crates\\world\\tests\\parity\\dump_reference.py \
+             --only {} --full ..\\..\\target\\parity-reference\n\
+             then compare it with target/parity-reference/{}.txt",
+            case.name,
+            path.display(),
+            case.name,
+            case.name
+        );
+    }
+}
+
 fn check(prefix: &str) {
     let mut n = 0;
+    let hashes = static_hashes();
     for case in cases().into_iter().filter(|c| c.name.starts_with(prefix)) {
         match case.kind.as_str() {
-            "static" => compare(
-                &case.name,
-                &expected(&case.name),
-                &dump_static(&make_world(&case)),
-            ),
+            "static" => check_static(&case, &hashes),
             _ => {
                 let (summary, full) = run_trace(&case);
                 let expected = expected(&case.name);
@@ -412,8 +465,11 @@ fn check(prefix: &str) {
                     let path = dir.join(format!("{}.txt", case.name));
                     std::fs::write(&path, full.join("\n") + "\n").unwrap();
                     eprintln!(
-                        "full trace written to {}; get the original's with dump_reference.py --full <dir>",
-                        path.display()
+                        "full trace written to {}; get the original's with \
+                         dump_reference.py --only {} --full ..\\..\\target\\parity-reference \
+                         (see tests/parity/README.md)",
+                        path.display(),
+                        case.name
                     );
                 }
                 compare(&case.name, &expected, &summary);
@@ -472,4 +528,15 @@ fn boats_walls_spells_and_computer_orders_on_jl5_match_the_original_tick_by_tick
 #[test]
 fn campaign_mission_2_triggers_match_the_original_tick_by_tick() {
     check("trace_campaign2");
+}
+
+/// `PARITY_ONLY=<prefix>` narrows the AI games to the cases starting with
+/// it, to debug one of them.
+#[test]
+fn games_with_computer_players_match_the_original_tick_by_tick() {
+    let only = std::env::var("PARITY_ONLY").unwrap_or_default();
+    check(&format!(
+        "trace_ai_{}",
+        only.trim_start_matches("trace_ai_")
+    ));
 }

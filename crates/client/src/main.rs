@@ -1,7 +1,10 @@
 //! SoundRTS: starts the client and runs the main menu.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use soundrts::audio::{AudioOutput, NullOutput};
 use soundrts::client::{Client, Devices, app_title, open_resources};
@@ -15,24 +18,24 @@ use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
 use soundrts::tts::ScreenReaderSpeech;
 use soundrts::window::{self, WindowCommand, WindowLink};
-use soundrts::{mainmenu, probe};
+use soundrts::{mainmenu, notice, probe};
 
 fn main() -> ExitCode {
     let options = match Options::parse(std::env::args_os().skip(1)) {
         Ok(o) => o,
         Err(e) => {
-            eprintln!("{e}");
+            notice::fatal(&e.to_string());
             return ExitCode::from(2);
         }
     };
     if options.probe {
         return match probe::report(&options) {
             Ok(report) => {
-                print!("{report}");
+                notice::print(&report);
                 ExitCode::SUCCESS
             }
             Err(e) => {
-                eprintln!("{e}");
+                notice::fatal(&e.to_string());
                 ExitCode::FAILURE
             }
         };
@@ -40,7 +43,7 @@ fn main() -> ExitCode {
     let paths = match Paths::from_environment(options.root.as_deref()) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{e}");
+            notice::fatal(&e.to_string());
             return ExitCode::FAILURE;
         }
     };
@@ -55,10 +58,9 @@ fn main() -> ExitCode {
     let params = match Parameters::load(&paths.parameters_file(), &log) {
         Ok(p) => p,
         Err(e) => {
-            log.error(format!(
-                "cannot read {}: {e}",
-                paths.parameters_file().display()
-            ));
+            let reason = format!("cannot read {}: {e}", paths.parameters_file().display());
+            log.error(&reason);
+            notice::fatal(&reason);
             return ExitCode::FAILURE;
         }
     };
@@ -71,6 +73,9 @@ fn main() -> ExitCode {
     let title = app_title(&mods, &soundpacks);
 
     let game_log = log.clone();
+    let log_file = paths.client_log();
+    let crashed = Arc::new(AtomicBool::new(false));
+    let game_crashed = crashed.clone();
     let result = window::run(title, log.clone(), move |link| {
         let WindowLink {
             input,
@@ -89,7 +94,9 @@ fn main() -> ExitCode {
                 &game_log,
             );
             let channels = usize::try_from(config.num_channels).unwrap_or(1).max(1);
-            let audio: Box<dyn AudioOutput> = match RodioOutput::open(channels) {
+            let sound_log = game_log.clone();
+            let on_sound_error = move |e| sound_log.warning(format!("sound stopped: {e}"));
+            let audio: Box<dyn AudioOutput> = match RodioOutput::open(channels, on_sound_error) {
                 Ok(o) => Box::new(o),
                 Err(e) => {
                     game_log.warning(format!("no sound: {e}"));
@@ -102,6 +109,10 @@ fn main() -> ExitCode {
                 input: Box::new(input),
                 clock,
                 desktop: Rc::new(desktop),
+                random_seed: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos() as u64),
+                utterances: None,
             };
             let mut client = Client::new(paths, config, res, game_log.clone(), devices);
             // An exit request ends the menus the same way as quitting.
@@ -110,13 +121,23 @@ fn main() -> ExitCode {
         }));
         if outcome.is_err() {
             game_log.error("the game stopped after an error");
+            game_crashed.store(true, Ordering::Relaxed);
         }
         let _ = proxy.send_event(WindowCommand::Exit);
     });
+    if crashed.load(Ordering::Relaxed) {
+        notice::fatal(&format!(
+            "SoundRTS stopped after an error. The details are in {}",
+            log_file.display()
+        ));
+        return ExitCode::FAILURE;
+    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            log.error(format!("window: {e}"));
+            let reason = format!("cannot open the game window: {e}");
+            log.error(&reason);
+            notice::fatal(&reason);
             ExitCode::FAILURE
         }
     }

@@ -53,18 +53,24 @@ impl SoundBuffer {
     }
 
     /// Decodes an Ogg Vorbis file. Mono becomes two equal channels; beyond
-    /// two channels, the first two are kept.
+    /// two channels, the first two are kept. The sound ends where the
+    /// stream says it ends (its last granule position), not at the end of
+    /// the last decoded block.
     pub fn decode(bytes: Vec<u8>, key: &str, mod_name: &str, volume: f64) -> Result<Self, String> {
+        let end = last_granule_position(&bytes);
         let decoder =
             rodio::Decoder::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
         let channels = usize::from(rodio::Source::channels(&decoder).get());
         let rate = rodio::Source::sample_rate(&decoder).get();
         let raw: Vec<f32> = decoder.collect();
-        let samples = match channels {
+        let mut samples: Vec<f32> = match channels {
             1 => raw.iter().flat_map(|&s| [s, s]).collect(),
             2 => raw,
             n => raw.chunks(n).flat_map(|f| [f[0], f[1]]).collect(),
         };
+        if let Some(frames) = end.and_then(|e| usize::try_from(e).ok()) {
+            samples.truncate(frames.saturating_mul(2));
+        }
         Ok(SoundBuffer::new(key, mod_name, samples, rate, volume))
     }
 
@@ -82,6 +88,19 @@ impl SoundBuffer {
     pub fn duration(&self) -> f64 {
         (self.samples.len() / 2) as f64 / f64::from(self.sample_rate)
     }
+}
+
+/// The granule position of the last page of an Ogg stream: for Vorbis, the
+/// number of samples per channel in the whole stream. `None` if the bytes
+/// end without a valid page.
+fn last_granule_position(bytes: &[u8]) -> Option<u64> {
+    let start = bytes.windows(4).rposition(|w| w == b"OggS")?;
+    let header = bytes.get(start..start + 14)?;
+    if header[4] != 0 {
+        return None; // unknown version
+    }
+    let granule = i64::from_le_bytes(header[6..14].try_into().ok()?);
+    u64::try_from(granule).ok().filter(|&g| g > 0)
 }
 
 /// An effects channel: any mixer channel except the voice channel. Only
@@ -328,5 +347,15 @@ mod tests {
         assert!(s.duration() > 0.0);
         assert_eq!(s.samples.len() % 2, 0);
         assert_eq!(s.volume(), 0.5);
+    }
+
+    #[test]
+    fn a_sound_ends_at_the_last_granule_position_of_its_stream() {
+        // 1003.ogg: mono, 44100 Hz, last granule position 804, as pygame
+        // reads it (18231 microseconds).
+        let path = crate::testkit::upstream_root().join("res/ui/effects/1003.ogg");
+        let s = SoundBuffer::decode(std::fs::read(path).unwrap(), "1003", "default", 1.0).unwrap();
+        assert_eq!(s.samples.len(), 2 * 804);
+        assert_eq!((s.duration() * 1e6).round(), 18231.0);
     }
 }

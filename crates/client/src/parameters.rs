@@ -40,10 +40,15 @@ impl Parameters {
 
     /// A flag written as a number or a boolean.
     pub fn flag(&self, key: &str) -> bool {
+        self.flag_or(key, false)
+    }
+
+    /// A flag, or `default` when the file does not set it.
+    pub fn flag_or(&self, key: &str, default: bool) -> bool {
         match self.table.get(key) {
             Some(toml::Value::Boolean(b)) => *b,
             Some(v) => as_number(v).is_some_and(|n| n != 0.0),
-            None => false,
+            None => default,
         }
     }
 

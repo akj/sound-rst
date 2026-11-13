@@ -258,12 +258,20 @@ impl Config {
     }
 
     /// Reads `path`. A missing file is created with the defaults. A file
-    /// with errors is copied to `<path>.old`, then rewritten.
+    /// with errors is copied to `<path>.old`, then rewritten. A file that
+    /// exists but cannot be read is left alone, and the defaults are used.
     pub fn load(path: &Path, log: &Log) -> Config {
-        let Ok(bytes) = std::fs::read(path) else {
-            let c = Config::default();
-            c.save(path, log);
-            return c;
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                let c = Config::default();
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    c.save(path, log);
+                } else {
+                    log.warning(format!("cannot read {}: {e}", path.display()));
+                }
+                return c;
+            }
         };
         let (c, error) = Config::from_ini(&String::from_utf8_lossy(&bytes), log);
         if error {

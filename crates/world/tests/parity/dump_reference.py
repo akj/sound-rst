@@ -6,11 +6,14 @@ Run from vendor/soundrts-upstream with the Python 3.11 venv:
     cd vendor/soundrts-upstream
     ..\\.venv-ref\\Scripts\\python.exe ..\\..\\crates\\world\\tests\\parity\\dump_reference.py
 
-It rewrites crates/world/tests/parity/expected/*.txt from the cases in
+It rewrites crates/world/tests/parity/expected/ from the cases in
 crates/world/tests/parity/cases.txt. A trace is stored as one line per
-update: the turn, a hash of its full dump, and the dump's first line. With
-`--full DIR`, the full traces are also written to DIR, to compare with the
-dumps the Rust test writes when it fails.
+update: the turn, a hash of its full dump, and the dump's first line. A
+built map is stored as the hash of its dump, in static_hashes.txt: the
+dump reproduces the map's content. With `--full DIR`, the full dumps are
+also written to DIR, to compare with the dumps the Rust test writes when it
+fails. With `--only PREFIX`, only the cases whose name starts with PREFIX
+are run.
 """
 import os
 import re
@@ -203,6 +206,9 @@ def resolve(w, players, pi, cmd):
         if k == "mead":
             objs = [o for o in me.units[0].place.objects if o.type_name == "meadow"]
             return objs[int(parts[1])].id
+        if k == "loc":
+            objs = [o for o in me.units[0].place.objects if o.type_name == parts[1]]
+            return objs[int(parts[2])].id
         if k == "ids":
             return group.encode([u.id for u in units(me, parts[1])])
         if k == "sq":
@@ -216,12 +222,17 @@ def resolve(w, players, pi, cmd):
 
 
 def controllers(spec):
+    # login or ai_<type>, then optionally :<alliance>
     result = []
     for s in spec.split(","):
+        s, _, alliance = s.partition(":")
         if s.startswith("ai_"):
-            result.append(DummyClient(s[3:]))
+            c = DummyClient(s[3:])
         else:
-            result.append(RemoteClient(s))
+            c = RemoteClient(s)
+        if alliance:
+            c.alliance = alliance
+        result.append(c)
     return result
 
 
@@ -291,8 +302,19 @@ def parse_cases():
 def main():
     upstream = os.getcwd()
     full_dir = ARGS[ARGS.index("--full") + 1] if "--full" in ARGS else None
+    only = ARGS[ARGS.index("--only") + 1] if "--only" in ARGS else ""
     os.makedirs(os.path.join(HERE, "expected"), exist_ok=True)
-    for case in parse_cases():
+    hashes_path = os.path.join(HERE, "expected", "static_hashes.txt")
+    static_hashes = {}
+    if os.path.exists(hashes_path):
+        for line in read(hashes_path).splitlines():
+            if line.strip():
+                name, h = line.split()
+                static_hashes[name] = h
+    cases = parse_cases()
+    for case in cases:
+        if not case["name"].startswith(only):
+            continue
         if case["kind"] == "static":
             w = make_world(
                 os.path.join(upstream, case["map"]),
@@ -301,16 +323,22 @@ def main():
                 case["seed"],
                 [],
             )
-            lines = dump_static(w)
+            full = dump_static(w)
+            # The dump reproduces the map, so only its hash is kept.
+            static_hashes[case["name"]] = fnv64("\n".join(full))
         else:
             lines, full = run_trace(case, upstream)
-            if full_dir:
-                os.makedirs(full_dir, exist_ok=True)
-                with open(os.path.join(full_dir, case["name"] + ".txt"), "w", newline="\n") as f:
-                    f.write("\n".join(full) + "\n")
-        with open(os.path.join(HERE, "expected", case["name"] + ".txt"), "w", newline="\n") as f:
-            f.write("\n".join(lines) + "\n")
-        print(case["name"], len(lines))
+            with open(os.path.join(HERE, "expected", case["name"] + ".txt"), "w", newline="\n") as f:
+                f.write("\n".join(lines) + "\n")
+        if full_dir:
+            os.makedirs(full_dir, exist_ok=True)
+            with open(os.path.join(full_dir, case["name"] + ".txt"), "w", newline="\n") as f:
+                f.write("\n".join(full) + "\n")
+        print(case["name"], len(full))
+    with open(hashes_path, "w", newline="\n") as f:
+        for case in cases:
+            if case["name"] in static_hashes:
+                f.write("%s %s\n" % (case["name"], static_hashes[case["name"]]))
 
 
 if __name__ == "__main__":

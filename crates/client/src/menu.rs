@@ -7,7 +7,7 @@ use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 
 use crate::client::Client;
-use crate::input::{Event, Key, KeyDown};
+use crate::input::{Event, InputPoint, Key, KeyDown};
 use crate::sound::StereoVolume;
 use crate::sound_cache::Spoken;
 
@@ -337,10 +337,15 @@ impl Menu {
         Ok(())
     }
 
+    fn poll(cx: &Client) -> Option<Event> {
+        cx.input.input_point(InputPoint::Menu, cx.voice.is_idle());
+        cx.input.poll()
+    }
+
     fn get_choice_from_static_menu(&mut self, cx: &mut Client) -> Result<(), Exit> {
         self.choice_done = false;
         while !self.choice_done {
-            let e = cx.input.poll();
+            let e = Self::poll(cx);
             self.try_to_get_choice(cx, e)?;
             cx.clock.sleep(0.01);
         }
@@ -351,7 +356,7 @@ impl Menu {
     /// For menus that must not block.
     pub fn step(&mut self, cx: &mut Client) -> Result<(), Exit> {
         self.choice_done = false;
-        let e = cx.input.poll();
+        let e = Self::poll(cx);
         self.try_to_get_choice(cx, e)?;
         if self.choice_done {
             self.execute_choice(cx)?;
@@ -433,6 +438,9 @@ pub fn input_string(
     cx.voice.menu(prompt);
     let mut s = default.to_owned();
     loop {
+        // A millisecond per read rather than spinning.
+        cx.clock.sleep(0.001);
+        cx.input.input_point(InputPoint::Text, cx.voice.is_idle());
         match cx.input.poll() {
             Some(Event::Quit) => return Err(Exit),
             Some(Event::KeyDown(e)) => {
@@ -468,9 +476,7 @@ pub fn input_string(
                     }
                 }
             }
-            Some(_) => {}
-            // Nothing to read: wait a little rather than spin.
-            None => cx.clock.sleep(0.01),
+            Some(_) | None => {}
         }
         cx.voice.update();
     }

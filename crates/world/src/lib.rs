@@ -52,11 +52,11 @@
 //!
 //! # Computer players
 //!
-//! A computer player is a [`Player`] of kind `Computer` (scripted, with an
-//! `ai.txt` type) or `Computer2` (random). Its behavior is a
-//! [`ComputerAi`], created by the factory given to
-//! [`World::set_ai_factory`]; without one, computers do nothing, like the
-//! original's `timers` AI.
+//! A computer player is a [`Player`] of kind `Computer` (scripted by the
+//! `ai.txt` script of its AI type: `easy`, `aggressive`...; `timers` does
+//! nothing) or `Computer2` (the `ai2` type, which gives random orders and
+//! has unlimited resources). The kind selects the AI: a world plays its
+//! computers without anything to install.
 #![forbid(unsafe_code)]
 
 pub mod msg;
@@ -64,7 +64,7 @@ pub mod msgparts;
 
 pub mod defs;
 
-pub mod ai;
+mod ai;
 pub mod collision;
 pub mod entity;
 pub mod events;
@@ -85,9 +85,8 @@ mod unit;
 mod upstream_tests;
 pub mod world;
 
-pub use ai::{ComputerAi, IdleAi};
 pub use entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
-pub use events::{EntityEvent, Event, Reason};
+pub use events::{EntityEvent, Event, Reason, Voila};
 pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};

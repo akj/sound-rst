@@ -25,3 +25,14 @@ name=trace_campaign3 kind=trace map=single/campaign/3.txt seed=2 players=a scena
 name=trace_cyclic kind=trace map=soundrts/tests/jl1_cyclic.txt seed=6 triggers=multiplayer players=a,b scenario=scenarios/cyclic.txt ticks=250
 name=trace_jl5 kind=trace map=res/multi/jl5.txt seed=8 triggers=multiplayer players=a,b,ai_timers scenario=scenarios/jl5.txt ticks=300
 name=trace_campaign2 kind=trace map=single/campaign/2.txt seed=9 players=a scenario=scenarios/none.txt ticks=1100
+
+# Computer players. A player is a login or ai_<type>, then :<alliance>
+# (computers are allied by default).
+name=trace_ai_jl1 kind=trace map=res/multi/jl1.txt seed=11 triggers=multiplayer players=ai_easy:1,ai_aggressive:2 scenario=scenarios/none.txt ticks=1500
+name=trace_ai_jl5 kind=trace map=res/multi/jl5.txt seed=12 triggers=multiplayer players=a,ai_aggressive:2,ai_ai2:3 scenario=scenarios/human.txt ticks=1500
+name=trace_ai_jl7 kind=trace map=res/multi/jl7.txt seed=13 triggers=multiplayer players=ai_ai2:1,ai_easy:2 scenario=scenarios/none.txt ticks=1500
+name=trace_ai_mb3 kind=trace map=res/multi/mb3.txt seed=14 triggers=multiplayer players=a,ai_easy:2,ai_aggressive:3 scenario=scenarios/human.txt ticks=1500
+name=trace_ai_cw1 kind=trace map=res/multi/cw1.txt seed=15 triggers=multiplayer players=ai_aggressive:1,ai_aggressive:2,ai_ai2:3 scenario=scenarios/none.txt ticks=1500
+name=trace_ai_js1 kind=trace map=res/multi/js1.txt seed=16 triggers=multiplayer players=a,ai_ai2:2 scenario=scenarios/human.txt ticks=1500
+name=trace_ai_kel6 kind=trace map=res/multi/kel6.txt seed=17 triggers=multiplayer players=ai_aggressive:1,ai_aggressive:2 scenario=scenarios/none.txt ticks=1500
+name=trace_ai_campaign5 kind=trace map=single/campaign/5.txt seed=18 players=a scenario=scenarios/campaign5.txt ticks=1500

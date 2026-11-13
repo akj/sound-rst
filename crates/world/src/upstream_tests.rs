@@ -696,9 +696,8 @@ starting_resources 10 10
     }
 
     #[test]
-    fn computer_test_init_and_get_a_peasant_makers() {
-        // The part of testInitAndGetAPeasant that does not need the AI.
-        let s = default_set_up();
+    fn computer_test_init_and_get_a_peasant() {
+        let mut s = default_set_up();
         let sorted = |mut v: Vec<String>| {
             v.sort();
             v
@@ -709,6 +708,66 @@ starting_resources 10 10
         );
         assert_eq!(sorted(s.w.rules.get_makers("footman")), ["barracks"]);
         assert_eq!(sorted(s.w.rules.get_makers("barracks")), ["peasant"]);
+        let th = find(&s.w, s.cp, "townhall", 0).unwrap();
+        assert!(keywords(&s.w, th).is_empty());
+        assert!(!s.w.ai_get(s.cp, 1000, "peasant").unwrap());
+        assert_eq!(keywords(&s.w, th), ["train"]);
+    }
+
+    #[test]
+    fn computer_test_init_and_get_a_footman() {
+        let mut s = default_set_up();
+        let p = find(&s.w, s.cp, "peasant", 0).unwrap();
+        assert!(keywords(&s.w, p).is_empty());
+        assert!(!s.w.ai_get(s.cp, 1000, "footman").unwrap());
+        s.w.update();
+        assert!(!keywords(&s.w, p).is_empty());
+    }
+
+    #[test]
+    fn computer_test_init_and_upgrade_to_a_keep() {
+        let mut s = set_up(("1", "2"), false, "jl1", ("easy", "easy"));
+        let w = &mut s.w;
+        w.plm(s.cp).resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        let th = find(w, s.cp, "townhall", 0).unwrap();
+        assert!(keywords(w, th).is_empty());
+        assert!(!w.ai_get(s.cp, 1, "keep").unwrap());
+        // the keep requires barracks
+        assert!(keywords(w, th).is_empty());
+        add(w, s.cp, "a1 barracks");
+        assert!(find(w, s.cp, "barracks", 0).is_some());
+        assert!(!w.ai_get(s.cp, 1, "knight").unwrap()); // => get keep
+        assert_eq!(keywords(w, th), ["upgrade_to"]);
+    }
+
+    fn archer_with_upgrade_buildings() -> (Setup, EntityId) {
+        let mut s = set_up(("1", "2"), false, "jl1", ("easy", "easy"));
+        let w = &mut s.w;
+        w.plm(s.cp).resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        add(w, s.cp, "a1 archer");
+        add(w, s.cp, "a1 lumbermill");
+        add(w, s.cp, "a1 magestower");
+        let archer = find(w, s.cp, "archer", 0).unwrap();
+        (s, archer)
+    }
+
+    #[test]
+    fn computer_test_upgrade_to_if_autoexploring() {
+        let (mut s, archer) = archer_with_upgrade_buildings();
+        let w = &mut s.w;
+        take(w, archer, "auto_explore");
+        assert_eq!(keywords(w, archer), ["auto_explore"]);
+        assert!(!w.ai_get(s.cp, 1, "darkarcher").unwrap());
+        assert_eq!(keywords(w, archer)[0], "upgrade_to");
+    }
+
+    #[test]
+    fn computer_test_no_autoexploring_if_upgrade_to() {
+        let (mut s, archer) = archer_with_upgrade_buildings();
+        let w = &mut s.w;
+        assert!(!w.ai_get(s.cp, 1, "darkarcher").unwrap());
+        assert_eq!(keywords(w, archer)[0], "upgrade_to");
+        assert!(!w.best_explorers(s.cp).contains(&archer));
     }
 
     #[test]
@@ -718,11 +777,34 @@ starting_resources 10 10
         w.plm(s.cp).resources = vec![1000 * PRECISION, 1000 * PRECISION];
         let first = w.player(s.cp).units[0];
         w.die(first, None).unwrap();
-        assert_eq!(nb(w, s.cp, "townhall"), 0);
+        assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
         assert!(!w.has(s.cp, "townhall"));
-        add(w, s.cp, "a1 keep");
-        assert_eq!(nb(w, s.cp, "townhall"), 0);
+        add(w, s.cp, "a1 keep"); // is a townhall
+        assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
         assert!(w.has(s.cp, "townhall"));
+    }
+
+    #[test]
+    fn computer_test_is_a_fills_the_requirement() {
+        let mut s = set_up(("1", "2"), false, "jl1", ("easy", "easy"));
+        let w = &mut s.w;
+        w.plm(s.cp).resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        let first = w.player(s.cp).units[0];
+        w.die(first, None).unwrap();
+        assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
+        assert!(!w.has(s.cp, "townhall"));
+        add(w, s.cp, "a1 keep"); // is a townhall
+        assert_eq!(w.computer_nb(s.cp, "peasant"), 1);
+        let p = find(w, s.cp, "peasant", 0).unwrap();
+        assert!(keywords(w, p).is_empty());
+        assert_eq!(w.computer_nb(s.cp, "blacksmith"), 0);
+        assert!(w.has(s.cp, "townhall"));
+        w.update_effect_users_and_workers(s.cp).unwrap();
+        w.update_buckets();
+        w.update_perception(s.cp).unwrap();
+        assert!(!w.ai_get(s.cp, 1, "blacksmith").unwrap()); // requires a townhall
+        assert_eq!(w.e(p).orders[0].keyword, Keyword::Build);
+        assert_eq!(w.e(p).orders[0].type_name.as_deref(), Some("blacksmith"));
     }
 
     #[test]
@@ -1317,6 +1399,30 @@ starting_resources 10 10
         let last = *w.square(pl).objects.last().unwrap();
         assert!(!w.e(last).is_corpse());
         assert_eq!(w.e(p).place, Some(Place::Square(pl)));
+    }
+}
+
+mod test_worldplayercomputer {
+    use super::*;
+
+    #[test]
+    fn test_is_ok_for_warehouse() {
+        let mut w = world_text(
+            "square_width 12\nnb_columns 1\nnb_lines 1\nnb_meadows_by_square 0\n\
+             nb_players_min 1\nnb_players_max 1\nstarting_squares a1\n",
+        );
+        let a1 = sq(&w, "a1");
+        assert_eq!(w.square(a1).name, "a1");
+        assert!(w.square(a1).objects.is_empty());
+        let owner = human(&mut w);
+        assert!(!w.is_ok_for_warehouse(a1, 0));
+        let gold = w.rules.type_id("goldmine").unwrap();
+        w.create_deposit(gold, a1, "75").unwrap();
+        assert!(w.is_ok_for_warehouse(a1, 0));
+        create(&mut w, "lumbermill", owner, a1); // stores resource 1
+        assert!(w.is_ok_for_warehouse(a1, 0));
+        create(&mut w, "townhall", owner, a1); // stores resource 0
+        assert!(!w.is_ok_for_warehouse(a1, 0));
     }
 }
 

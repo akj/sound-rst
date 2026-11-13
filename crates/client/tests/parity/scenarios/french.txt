@@ -1,0 +1,57 @@
+# French (cfg/language.txt = fr): the main menu, its help, a short game on
+# jl1 against a quiet computer (status keys, a unit, its orders, a target,
+# the time, the game menu), then quit.
+language fr
+login joueur
+seed 5
+limit 1200
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key F1
+key o
+key o
+key SHIFT u
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key j
+key j
+key j
+key j
+key j
+key RETURN
+key DOWN
+key RETURN
+key DOWN
+key RETURN
+key z
+key x
+key c
+key e
+key SPACE
+key a
+key a
+key a
+key ESCAPE
+key TAB
+key TAB
+key UP
+key CTRL UP
+key F3
+key F9
+key F1
+wait_turns 200
+key F3
+key F10
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

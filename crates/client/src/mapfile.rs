@@ -3,7 +3,6 @@
 
 use std::path::Path;
 
-use sha2::{Digest, Sha256};
 use soundrts_world::msg::{Msg, MsgPart};
 
 use crate::package::{Package, decode_text};
@@ -13,10 +12,6 @@ use crate::package::{Package, decode_text};
 pub struct Map {
     /// The file name without extension, restricted to `A-Za-z0-9._-`.
     pub name: String,
-    /// The raw file (a zip file for a map package).
-    pub buffer: Vec<u8>,
-    /// The file name with its extension.
-    pub buffer_name: String,
     /// The text of the map, with `\n` line ends.
     pub definition: String,
     /// The map's own resources, for a map package.
@@ -61,11 +56,7 @@ impl Map {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         if path.is_dir() {
-            let package = Package::from_path(path)?;
-            let mut map = Self::from_package(package, name_from_path(&name), Vec::new(), name)?;
-            map.buffer = Package::from_path(path.parent().unwrap_or(Path::new(".")))?
-                .open_binary(&map.buffer_name)?;
-            Ok(map)
+            Self::from_package(Package::from_path(path)?, name_from_path(&name))
         } else {
             Self::from_bytes(std::fs::read(path)?, &name)
         }
@@ -77,45 +68,22 @@ impl Map {
         let name = name_from_path(name_with_ext);
         if name_with_ext.ends_with(".txt") {
             let definition = decode_text(&buffer, name_with_ext);
-            Ok(Self::from_definition(
-                definition,
-                name,
-                buffer,
-                name_with_ext.to_owned(),
-                None,
-            ))
+            Ok(Self::from_definition(definition, name, None))
         } else {
-            let package = Package::from_zip_bytes(name_with_ext.to_owned(), buffer.clone())?;
-            Self::from_package(package, name, buffer, name_with_ext.to_owned())
+            let package = Package::from_zip_bytes(name_with_ext.to_owned(), buffer)?;
+            Self::from_package(package, name)
         }
     }
 
-    fn from_package(
-        package: Package,
-        name: String,
-        buffer: Vec<u8>,
-        buffer_name: String,
-    ) -> std::io::Result<Map> {
+    fn from_package(package: Package, name: String) -> std::io::Result<Map> {
         let resources = package.with_name(&name);
         let definition = resources.read_text("map.txt").ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, format!("{name}: map.txt"))
         })?;
-        Ok(Self::from_definition(
-            definition,
-            name,
-            buffer,
-            buffer_name,
-            Some(resources),
-        ))
+        Ok(Self::from_definition(definition, name, Some(resources)))
     }
 
-    fn from_definition(
-        definition: String,
-        name: String,
-        buffer: Vec<u8>,
-        buffer_name: String,
-        resources: Option<Package>,
-    ) -> Map {
+    fn from_definition(definition: String, name: String, resources: Option<Package>) -> Map {
         let mut title: Msg = vec![MsgPart::Text(name.clone())];
         if let Some(line) = find_a_line_with(&definition, "title") {
             title.extend(
@@ -133,21 +101,11 @@ impl Map {
             nb_players_min: int("nb_players_min"),
             nb_players_max: int("nb_players_max"),
             name,
-            buffer,
-            buffer_name,
             definition,
             resources,
             title,
             official: false,
         }
-    }
-
-    /// The SHA-256 of the raw file, in hexadecimal.
-    pub fn digest(&self) -> String {
-        Sha256::digest(&self.buffer)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect()
     }
 }
 
@@ -162,7 +120,6 @@ mod tests {
         assert_eq!(m.name, "jl1");
         assert_eq!(m.title, vec![MsgPart::from("jl1"), MsgPart::Num(3001)]);
         assert_eq!((m.nb_players_min, m.nb_players_max), (2, 2));
-        assert_eq!(m.digest().len(), 64);
     }
 
     #[test]

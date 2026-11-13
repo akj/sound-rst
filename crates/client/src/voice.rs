@@ -5,13 +5,15 @@
 //! "sooner or later" (game information) wait in the queue and may expire.
 //! Every message is kept in a history the player can walk back through.
 
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use soundrts_world::msg::Msg;
 
 use crate::audio::DEFAULT_VOLUME;
 use crate::clock::ClockRef;
-use crate::input::Input;
+use crate::input::{Input, InputPoint};
 use crate::log::Log;
 use crate::message::{InfoOptions, Message};
 use crate::sound::Audio;
@@ -22,6 +24,123 @@ use crate::tts::Tts;
 const HISTORY_LIMIT: usize = 200;
 /// ...dropping this many of the oldest when it is full.
 const HISTORY_DROP: usize = 100;
+
+/// One part of an utterance as it started: words, or a recorded sound by
+/// its name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UtterancePart {
+    Text(String),
+    Sound(String),
+}
+
+/// What one message became when the voice started saying it.
+pub type Utterance = Vec<UtterancePart>;
+
+/// How a message came to be said.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoiceKind {
+    /// Said now, not kept in the history.
+    Item,
+    /// Said now; keys pressed meanwhile are dropped.
+    Alert,
+    /// Said now until a key press, which is used up.
+    Important,
+    /// Said now until a key press, which stays queued.
+    Confirmation,
+    /// A menu title: as a confirmation.
+    Menu,
+    /// A queued message, said when its turn came.
+    Info,
+    /// A message of the history, said again.
+    History,
+}
+
+impl VoiceKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            VoiceKind::Item => "item",
+            VoiceKind::Alert => "alert",
+            VoiceKind::Important => "important",
+            VoiceKind::Confirmation => "confirmation",
+            VoiceKind::Menu => "menu",
+            VoiceKind::Info => "info",
+            VoiceKind::History => "history",
+        }
+    }
+}
+
+/// Something the voice channel did.
+#[derive(Clone, Debug, PartialEq)]
+pub enum VoiceEvent {
+    /// A message started, at `time`, with its speaker volumes.
+    Started {
+        time: f64,
+        kind: VoiceKind,
+        parts: Utterance,
+        lv: f64,
+        rv: f64,
+    },
+    /// Speech in progress was stopped other than by a new message, with
+    /// `queued` parts of the message still to come.
+    Cut { time: f64, queued: usize },
+}
+
+#[derive(Default)]
+struct VoiceRecord {
+    events: Vec<VoiceEvent>,
+    last_cut: Option<f64>,
+}
+
+/// A record of what the voice channel did, in order. Clones share the
+/// same record.
+#[derive(Clone, Default)]
+pub struct UtteranceLog(Rc<RefCell<VoiceRecord>>);
+
+impl UtteranceLog {
+    /// The utterances started, in order.
+    pub fn utterances(&self) -> Vec<Utterance> {
+        self.0
+            .borrow()
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                VoiceEvent::Started { parts, .. } => Some(parts.clone()),
+                VoiceEvent::Cut { .. } => None,
+            })
+            .collect()
+    }
+
+    /// Every event from the `from`th on.
+    pub fn events_from(&self, from: usize) -> Vec<VoiceEvent> {
+        self.0.borrow().events[from.min(self.len())..].to_vec()
+    }
+
+    /// The number of events recorded.
+    pub fn len(&self) -> usize {
+        self.0.borrow().events.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn clear(&self) {
+        self.0.borrow_mut().events.clear();
+    }
+
+    fn push(&self, e: VoiceEvent) {
+        self.0.borrow_mut().events.push(e);
+    }
+
+    /// Records a cut, once per instant.
+    fn cut(&self, time: f64, queued: usize) {
+        let mut r = self.0.borrow_mut();
+        if r.last_cut != Some(time) {
+            r.last_cut = Some(time);
+            r.events.push(VoiceEvent::Cut { time, queued });
+        }
+    }
+}
 
 /// Says one message at a time: its texts through speech, its sounds on the
 /// voice channel, in order.
@@ -34,6 +153,7 @@ pub struct VoiceChannel {
     clock: ClockRef,
     log: Log,
     debug_mode: bool,
+    record: Option<UtteranceLog>,
 }
 
 impl VoiceChannel {
@@ -44,6 +164,7 @@ impl VoiceChannel {
         clock: ClockRef,
         log: Log,
         debug_mode: bool,
+        record: Option<UtteranceLog>,
     ) -> Self {
         VoiceChannel {
             tts,
@@ -54,10 +175,11 @@ impl VoiceChannel {
             clock,
             log,
             debug_mode,
+            record,
         }
     }
 
-    pub fn play(&mut self, msg: &Message) {
+    pub fn play(&mut self, msg: &Message, kind: VoiceKind) {
         if self.debug_mode {
             let texts: Vec<String> = msg
                 .translate_and_collapse(&self.sounds, true)
@@ -69,8 +191,25 @@ impl VoiceChannel {
                 .collect();
             self.log.said(&texts.join(" "));
         }
-        self.stop();
-        for part in msg.translate_and_collapse(&self.sounds, false) {
+        let parts = msg.translate_and_collapse(&self.sounds, false);
+        if let Some(record) = &self.record {
+            record.push(VoiceEvent::Started {
+                time: self.clock.now(),
+                kind,
+                parts: parts
+                    .iter()
+                    .map(|p| match p {
+                        Spoken::Text(t) => UtterancePart::Text(t.clone()),
+                        Spoken::Sound(s) => UtterancePart::Sound(s.key.clone()),
+                    })
+                    .collect(),
+                lv: msg.lv,
+                rv: msg.rv,
+            });
+        }
+        self.silence();
+        self.queue.clear();
+        for part in parts {
             self.queue.push_back((part, msg.lv, msg.rv));
         }
         self.update();
@@ -82,10 +221,31 @@ impl VoiceChannel {
         self.clock.now() - self.starting_time > 1.0
     }
 
+    /// Stops the current message and forgets the rest of it.
     pub fn stop(&mut self) {
+        self.note_cut();
+        self.silence();
+        self.queue.clear();
+    }
+
+    /// Stops the part being said; the rest of the message comes at the
+    /// next update.
+    pub fn stop_part(&mut self) {
+        self.note_cut();
+        self.silence();
+    }
+
+    fn silence(&mut self) {
         self.audio.voice_stop();
         self.tts.stop();
-        self.queue.clear();
+    }
+
+    fn note_cut(&self) {
+        if let Some(record) = &self.record
+            && (self.tts.is_speaking() || self.audio.voice_busy())
+        {
+            record.cut(self.clock.now(), self.queue.len());
+        }
     }
 
     /// Starts the next part when the previous one is over.
@@ -209,23 +369,23 @@ impl Voice {
     /// Says now, and waits until the end; a key press does not interrupt.
     /// Key presses made meanwhile are dropped.
     pub fn alert(&mut self, msg: &Msg) {
-        self.say_now(msg, DEFAULT_VOLUME, DEFAULT_VOLUME, false, false);
+        self.say_now(msg, VoiceKind::Alert);
     }
 
     /// Says now, and waits until the end or a key press, which is used up.
     pub fn important(&mut self, msg: &Msg) {
-        self.say_now(msg, DEFAULT_VOLUME, DEFAULT_VOLUME, true, false);
+        self.say_now(msg, VoiceKind::Important);
     }
 
     /// Says now, and waits until the end or a key press, which stays in the
     /// queue for the caller.
     pub fn confirmation(&mut self, msg: &Msg) {
-        self.say_now(msg, DEFAULT_VOLUME, DEFAULT_VOLUME, true, true);
+        self.say_now(msg, VoiceKind::Confirmation);
     }
 
     /// Says a menu title: as [`Voice::confirmation`].
     pub fn menu(&mut self, msg: &Msg) {
-        self.say_now(msg, DEFAULT_VOLUME, DEFAULT_VOLUME, true, true);
+        self.say_now(msg, VoiceKind::Menu);
     }
 
     /// Queues a message to say sooner or later.
@@ -243,20 +403,21 @@ impl Voice {
     }
 
     /// Says now (giving up the unsaid queue) until the end, or until a key
-    /// press if `interruptible`. The key press stays queued if `keep_key`.
-    pub fn say_now(&mut self, msg: &Msg, lv: f64, rv: f64, interruptible: bool, keep_key: bool) {
+    /// press unless it is an alert. The key press stays queued after a
+    /// confirmation or a menu title.
+    fn say_now(&mut self, msg: &Msg, kind: VoiceKind) {
         if msg.is_empty() {
             return;
         }
-        let options = InfoOptions {
-            lv,
-            rv,
-            ..InfoOptions::default()
-        };
+        let interruptible = kind != VoiceKind::Alert;
+        let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
+        let options = InfoOptions::default();
         self.give_up_current_if_partially_said();
         let now = self.now();
-        self.channel
-            .play(&Message::new(msg.clone(), options.clone(), false, now));
+        self.channel.play(
+            &Message::new(msg.clone(), options.clone(), false, now),
+            kind,
+        );
         while self.channel.get_busy() {
             if interruptible && self.key_hit(keep_key) {
                 break;
@@ -290,8 +451,10 @@ impl Voice {
                 rv,
                 ..InfoOptions::default()
             };
-            self.channel
-                .play(&Message::new(msg.clone(), options, false, now));
+            self.channel.play(
+                &Message::new(msg.clone(), options, false, now),
+                VoiceKind::Item,
+            );
             self.active = false;
             self.history = false;
         }
@@ -339,7 +502,12 @@ impl Voice {
         }
         if self.exists(self.current) {
             let msg = self.msgs[self.current].clone();
-            self.channel.play(&msg);
+            let kind = if self.history {
+                VoiceKind::History
+            } else {
+                VoiceKind::Info
+            };
+            self.channel.play(&msg, kind);
             self.active = true;
         } else {
             self.active = false;
@@ -382,6 +550,7 @@ impl Voice {
     /// Whether a key was pressed; the presses are put back at the end of
     /// the queue if `keep_key`.
     fn key_hit(&mut self, keep_key: bool) -> bool {
+        self.input.input_point(InputPoint::Voice, self.is_idle());
         let keys = self.input.get_keydowns();
         let hit = !keys.is_empty();
         if keep_key {
@@ -392,14 +561,19 @@ impl Voice {
         hit
     }
 
-    /// Silences speech only; the rest of the current message goes on.
+    /// Stops the part being said; the rest of the current message goes on.
     pub fn stop_speech(&mut self) {
-        self.channel.tts.stop();
+        self.channel.stop_part();
     }
 
     /// Whether the voice is saying something.
     pub fn is_busy(&self) -> bool {
         self.channel.get_busy()
+    }
+
+    /// Whether the voice says nothing and has nothing left to say.
+    pub fn is_idle(&self) -> bool {
+        !self.channel.get_busy() && !self.unsaid_exists()
     }
 
     /// The history, oldest first, with whether each message has been said.

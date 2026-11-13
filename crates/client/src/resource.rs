@@ -177,6 +177,11 @@ impl Resources {
         self.params.clone()
     }
 
+    /// Replaces the parameters used for the sounds loaded from now on.
+    pub fn set_params(&mut self, params: Rc<Parameters>) {
+        self.params = params;
+    }
+
     /// Calls `f` now and after each change of the layers.
     pub fn register(&mut self, mut f: ChangeListener) {
         f(&self.mods, &self.soundpacks);
@@ -454,12 +459,6 @@ impl Resources {
         maps
     }
 
-    pub fn find_multiplayer_map(&mut self, digest: &str) -> Option<Arc<Map>> {
-        self.multiplayer_maps()
-            .into_iter()
-            .find(|m| m.digest() == digest)
-    }
-
     /// The campaigns: the folders of every package's `single` folder.
     pub fn campaigns(&self) -> Vec<Campaign> {
         let mut result = Vec::new();
@@ -473,10 +472,6 @@ impl Resources {
             }
         }
         result
-    }
-
-    pub fn find_campaign(&self, name: &str) -> Option<Campaign> {
-        self.campaigns().into_iter().find(|c| c.name == name)
     }
 }
 

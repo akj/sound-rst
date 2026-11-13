@@ -17,6 +17,8 @@ struct Inner {
     records: usize,
     stopped: bool,
     to_stderr: bool,
+    /// The error messages not yet taken, if they are kept.
+    errors: Option<Vec<String>>,
 }
 
 /// A cheap handle to the client log. Clones write to the same file.
@@ -66,7 +68,25 @@ impl Log {
     }
 
     pub fn error(&self, message: impl Display) {
-        self.record("ERROR", &message.to_string());
+        let message = message.to_string();
+        if let Some(errors) = self.lock().errors.as_mut() {
+            errors.push(message.clone());
+        }
+        self.record("ERROR", &message);
+    }
+
+    /// From now on, also keeps the error messages for [`Log::take_errors`].
+    pub fn keep_errors(&self) {
+        self.lock().errors.get_or_insert_with(Vec::new);
+    }
+
+    /// The error messages kept since the last call, oldest first.
+    pub fn take_errors(&self) -> Vec<String> {
+        self.lock()
+            .errors
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Information for a developer at the console; not written to the file.

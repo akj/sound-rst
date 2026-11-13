@@ -19,6 +19,11 @@ pub fn main_menu(cx: &mut Client) -> Result<(), Exit> {
         title,
         vec![
             Choice::explained(
+                msg(mp::SINGLE_PLAYER),
+                Action::run(|cx| crate::singleplayer::single_player_menu(cx).map(|()| Flow::Stay)),
+                msg(mp::SINGLE_PLAYER_EXPLANATION),
+            ),
+            Choice::explained(
                 msg(mp::OPTIONS),
                 Action::run(|cx| options_menu(cx).map(|()| Flow::Stay)),
                 msg(mp::OPTIONS_EXPLANATION),

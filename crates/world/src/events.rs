@@ -1,7 +1,10 @@
 //! What the simulation tells a player's interface: the typed form of the
 //! original's `player.push(...)` and `send_event(...)`.
 
-use crate::entity::{Entity, EntityId};
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
+use crate::entity::{Entity, EntityId, SquareId};
 use crate::msg::Msg;
 
 /// Why an order cannot be carried out.
@@ -128,4 +131,21 @@ pub enum Event {
     Speed(f64),
     /// The player left the game.
     Quit,
+    /// The turn is over: what the player knows at its end, before the game
+    /// may end.
+    Voila(Box<Voila>),
+}
+
+/// What a player knows at the end of a turn: copies of what it remembers
+/// and perceives, and the squares it observes.
+#[derive(Clone, Debug)]
+pub struct Voila {
+    /// The world's time after the turn, in milliseconds.
+    pub time: i64,
+    /// The remembered entities, with when each one was last seen.
+    pub memory: Vec<(Arc<Entity>, i64)>,
+    pub perception: Vec<Arc<Entity>>,
+    pub observed_squares: BTreeSet<SquareId>,
+    /// Every square in cheat mode.
+    pub observed_before_squares: BTreeSet<SquareId>,
 }

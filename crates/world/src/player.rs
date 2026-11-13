@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::ai::ComputerAi;
+use crate::ai::Computer;
 use crate::entity::{Entity, EntityId, SquareId, StatType};
 use crate::events::Event;
 use crate::msg::{Msg, MsgPart, msg};
@@ -268,7 +268,8 @@ pub struct Player {
     /// The random computer player has everything it requires.
     pub cheat_has_all: bool,
     pub(crate) events: Vec<Event>,
-    pub(crate) ai: Option<Box<dyn ComputerAi>>,
+    /// The state of a scripted computer player.
+    pub(crate) ai: Option<Box<Computer>>,
 }
 
 impl std::fmt::Debug for Player {

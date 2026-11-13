@@ -249,7 +249,7 @@ impl World {
         self.update_perception_and_memory(p)?;
         self.update_menace(p);
         self.update_enemy_menace_and_presence_and_corpses(p);
-        self.play(p);
+        self.ai_play(p)?;
         self.update_drowning(p)?;
         self.update_counterattacks(p)
     }
@@ -257,16 +257,6 @@ impl World {
     pub(crate) fn player_slow_update(&mut self, p: PlayerId) -> Res {
         self.free_project_resources_if_no_worker_on_project(p)?;
         self.run_triggers(p)
-    }
-
-    fn play(&mut self, p: PlayerId) {
-        if matches!(self.pl(p).kind, PlayerKind::Human) {
-            return;
-        }
-        if let Some(mut ai) = self.plm(p).ai.take() {
-            ai.play(self, p);
-            self.plm(p).ai = Some(ai);
-        }
     }
 
     pub(crate) fn update_actual_speed(&mut self, p: PlayerId) {
@@ -655,10 +645,7 @@ impl World {
     /// counterattacks; scripted computers let their AI react.
     pub(crate) fn on_unit_attacked(&mut self, p: PlayerId, unit: EntityId, attacker: EntityId) {
         if matches!(self.pl(p).kind, PlayerKind::Computer { .. }) {
-            if let Some(mut ai) = self.plm(p).ai.take() {
-                ai.on_unit_attacked(self, p, unit, attacker);
-                self.plm(p).ai = Some(ai);
-            }
+            self.computer_on_unit_attacked(p, unit, attacker);
             return;
         }
         if self.pl(p).perception.contains(&attacker)
@@ -688,10 +675,7 @@ impl World {
         if self.pl(p).cataclysmic_places.contains(s) {
             return Ok(false);
         }
-        let ai = self.plm(p).ai.take();
-        let r = ai.as_ref().is_some_and(|ai| ai.time_has_come(self, p, *s));
-        self.plm(p).ai = ai;
-        Ok(r)
+        Ok(self.computer_time_has_come(p, *s))
     }
 
     // lookups

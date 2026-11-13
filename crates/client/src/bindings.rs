@@ -74,13 +74,6 @@ impl Chord {
     }
 }
 
-/// A bound command: its name (without the `cmd_` prefix) and arguments.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Command {
-    pub name: String,
-    pub args: Vec<String>,
-}
-
 /// Why a line of `bindings.txt` was ignored.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BindingError(pub String);
@@ -119,15 +112,29 @@ fn replace_word(line: &str, name: &str, value: &str) -> String {
     out
 }
 
-/// The bindings, from chord to command.
-#[derive(Clone, Debug, Default)]
-pub struct Bindings {
-    bindings: HashMap<Chord, Command>,
+/// The bindings, from chord to command. A command is parsed once, when its
+/// line is read; `C` is the parsed form.
+#[derive(Clone, Debug)]
+pub struct Bindings<C> {
+    bindings: HashMap<Chord, C>,
     definitions: Vec<(String, String)>,
 }
 
-impl Bindings {
-    pub fn new() -> Bindings {
+impl<C> Default for Bindings<C> {
+    fn default() -> Self {
+        Bindings {
+            bindings: HashMap::new(),
+            definitions: Vec::new(),
+        }
+    }
+}
+
+/// Reads a command name and its arguments into a command, or says why the
+/// name is not a command.
+pub type CommandParser<'a, C> = &'a dyn Fn(&str, Vec<String>) -> Result<C, BindingError>;
+
+impl<C> Bindings<C> {
+    pub fn new() -> Bindings<C> {
         Bindings::default()
     }
 
@@ -152,32 +159,26 @@ impl Bindings {
         Ok(())
     }
 
-    fn add_binding(
-        &mut self,
-        line: &str,
-        is_command: &dyn Fn(&str) -> bool,
-    ) -> Result<(), BindingError> {
+    fn add_binding(&mut self, line: &str, parse: CommandParser<C>) -> Result<(), BindingError> {
         let (key, command) = line.trim().split_once(':').expect("checked by the caller");
         let chord = Chord::parse(key)?;
         let mut words = command.split_whitespace();
         let name = words.next().unwrap_or("").to_owned();
-        if !is_command(&name) {
-            return Err(BindingError(format!("'{name}' is not a command")));
-        }
         let args = words.map(str::to_owned).collect();
-        self.bindings.insert(chord, Command { name, args });
+        let command = parse(&name, args)?;
+        self.bindings.insert(chord, command);
         Ok(())
     }
 
-    /// Adds the bindings of `text`. A line with an error is reported and
-    /// ignored. `is_command` says which command names exist.
-    pub fn load(&mut self, text: &str, is_command: &dyn Fn(&str) -> bool, log: &Log) {
+    /// Adds the bindings of `text`, each command read by `parse`. A line
+    /// with an error is reported and ignored.
+    pub fn load(&mut self, text: &str, parse: CommandParser<C>, log: &Log) {
         for line in preprocess(text).split('\n') {
             let line = self.apply_definitions(line);
             let result = if line.starts_with("#define ") {
                 self.add_definition(&line)
             } else if line.contains(':') {
-                self.add_binding(&line, is_command)
+                self.add_binding(&line, parse)
             } else if !line.is_empty() {
                 Err(BindingError(
                     "the line must be a binding or a definition".into(),
@@ -193,13 +194,18 @@ impl Bindings {
         }
     }
 
-    pub fn get(&self, chord: &Chord) -> Option<&Command> {
+    pub fn get(&self, chord: &Chord) -> Option<&C> {
         self.bindings.get(chord)
     }
 
     /// The command a key press triggers, if any.
-    pub fn command_for(&self, e: &KeyDown) -> Option<&Command> {
+    pub fn command_for(&self, e: &KeyDown) -> Option<&C> {
         self.get(&Chord::of(e))
+    }
+
+    /// Every binding, in no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = (&Chord, &C)> {
+        self.bindings.iter()
     }
 
     pub fn len(&self) -> usize {
@@ -216,11 +222,19 @@ mod tests {
     use super::*;
     use crate::testkit::upstream_root;
 
+    /// A command kept as its name and arguments.
+    type Command = (String, Vec<String>);
+
     fn command(name: &str, args: &str) -> Command {
-        Command {
-            name: name.into(),
-            args: args.split_whitespace().map(str::to_owned).collect(),
-        }
+        (
+            name.into(),
+            args.split_whitespace().map(str::to_owned).collect(),
+        )
+    }
+
+    /// Reads any name as a command.
+    fn any(name: &str, args: Vec<String>) -> Result<Command, BindingError> {
+        Ok((name.to_owned(), args))
     }
 
     fn chord(s: &str) -> Chord {
@@ -232,7 +246,7 @@ mod tests {
         let text = std::fs::read_to_string(upstream_root().join("res/ui/bindings.txt")).unwrap();
         let log = Log::silent();
         let mut b = Bindings::new();
-        b.load(&text, &|_| true, &log);
+        b.load(&text, &any, &log);
         // Every line with a colon is a binding; each distinct chord is bound.
         let keys: Vec<String> = preprocess(&text)
             .split('\n')
@@ -277,7 +291,7 @@ mod tests {
         let mut b = Bindings::new();
         b.load(
             "SHIFT a: select_order -1\nLSHIFT: history_stop\n",
-            &|_| true,
+            &any,
             &Log::silent(),
         );
         let press = |key, physical, mods| KeyDown {
@@ -304,7 +318,10 @@ mod tests {
         let mut b = Bindings::new();
         b.load(
             "WIN a: x\nb: unknown\nnonsense\nc: known\n",
-            &|n| n == "known",
+            &|name, args| match name {
+                "known" => any(name, args),
+                _ => Err(BindingError(format!("'{name}' is not a command"))),
+            },
             &Log::silent(),
         );
         assert_eq!(b.len(), 1);

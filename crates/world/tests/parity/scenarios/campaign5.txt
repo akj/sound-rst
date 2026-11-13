@@ -1,0 +1,19 @@
+# the priest converts the peasants of the computer switched to the easy AI
+# by the map, then sends them to work and footmen to its buildings
+0 0 control {u:priest:0}
+0 0 order 0 0 go {sq:b1}
+80 0 control {u:priest:0}
+80 0 order 0 0 use a_conversion {at:b1:peasant:0}
+160 0 control {u:priest:0}
+160 0 order 0 0 use a_conversion {at:b1:peasant:0}
+240 0 control {u:priest:0}
+240 0 order 0 0 go {sq:c1}
+300 0 control {u:priest:0}
+300 0 order 0 0 use a_conversion {at:c1:peasant:0}
+400 0 cmd add_units a1 4 footman 2 archer
+401 0 control {ids:footman}
+401 0 order 0 0 go {sq:c1}
+402 0 control {ids:archer}
+402 0 order 0 0 go {sq:d1}
+600 0 control {ids:peasant}
+600 0 order 0 0 default {at:b1:wood:0}

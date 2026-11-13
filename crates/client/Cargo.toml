@@ -9,13 +9,17 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The test kit: recording devices, a scripted keyboard and a harness on
+# the upstream data. The crate's own tests enable it.
+testkit = ["dep:tempfile"]
+
 [dependencies]
 soundrts-world = { path = "../world" }
 indexmap = "2"
 rodio = { version = "0.23", default-features = false, features = ["playback", "vorbis"] }
-sha2 = "0.11"
 sys-locale = "0.3"
-tempfile = "3"
+tempfile = { version = "3", optional = true }
 toml = "1"
 winit = "0.30"
 zip = { version = "9", default-features = false, features = ["deflate"] }
@@ -26,6 +30,7 @@ tolk-sys = "0.2"
 # The same version winit uses, so it is built once.
 windows-sys = { version = "0.52", features = [
     "Win32_Foundation",
+    "Win32_System_Console",
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
@@ -34,3 +39,7 @@ windows-sys = { version = "0.52", features = [
 
 [target.'cfg(not(windows))'.dependencies]
 tts = "0.26"
+
+[dev-dependencies]
+soundrts = { path = ".", features = ["testkit"] }
+tempfile = "3"

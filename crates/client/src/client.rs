@@ -15,10 +15,11 @@ use crate::log::Log;
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::resource::Resources;
+use crate::rng::ClientRng;
 use crate::sound::Audio;
 use crate::sound_cache::Sounds;
 use crate::tts::{SpeechBackend, Tts};
-use crate::voice::{Voice, VoiceChannel};
+use crate::voice::{UtteranceLog, Voice, VoiceChannel};
 
 /// The version of the game this client ports, said in the window title.
 pub const VERSION: &str = "1.3.8.1";
@@ -42,6 +43,22 @@ pub struct Devices {
     pub input: Box<dyn InputSource>,
     pub clock: ClockRef,
     pub desktop: Rc<dyn Desktop>,
+    /// The seed of the client's own randomness (see [`ClientRng`]).
+    pub random_seed: u64,
+    /// Where to record each utterance the voice starts, if anywhere.
+    pub utterances: Option<UtteranceLog>,
+}
+
+/// Called once per pass of the game loop with the running game: a test
+/// reads the world there, or acts as a scripted player would.
+pub type GameHook = Rc<dyn Fn(&mut crate::game::GameInterface, &mut Client)>;
+
+/// How the next games are set up, beyond what the menus choose.
+#[derive(Clone, Default)]
+pub struct GameSettings {
+    /// The world's seed; `None` draws one at random, as upstream does.
+    pub seed: Option<i64>,
+    pub hook: Option<GameHook>,
 }
 
 /// The help messages of `ui/menu_help.txt` and `ui/game_help.txt`, said one
@@ -75,6 +92,9 @@ pub struct Client {
     pub voice: Voice,
     pub input: Input,
     pub desktop: Rc<dyn Desktop>,
+    /// The client's randomness, apart from the simulation's.
+    pub rng: ClientRng,
+    pub game: GameSettings,
     fullscreen: bool,
     help: Help,
 }
@@ -113,6 +133,7 @@ impl Client {
         devices: Devices,
     ) -> Client {
         let clock = devices.clock;
+        let rng = ClientRng::new(devices.random_seed);
         let params = res.params();
         let channels = usize::try_from(config.num_channels).unwrap_or(1).max(1);
         let audio = Audio::new(
@@ -120,6 +141,7 @@ impl Client {
             channels,
             clock.clone(),
             params.flattening_factor(),
+            rng.clone(),
         );
         let input = Input::new(devices.input, clock.clone());
         let sounds = res.sounds();
@@ -137,6 +159,7 @@ impl Client {
             clock.clone(),
             log.clone(),
             config.debug_mode != 0,
+            devices.utterances,
         );
         let voice = Voice::new(channel, input.clone(), clock.clone());
         let desktop = devices.desktop;
@@ -162,6 +185,8 @@ impl Client {
             voice,
             input,
             desktop,
+            rng,
+            game: GameSettings::default(),
             fullscreen: false,
             help,
         }
@@ -178,10 +203,10 @@ impl Client {
 
     /// Stops every sound, and speech too if `voice_too`.
     pub fn stop_sound(&mut self, voice_too: bool) {
-        self.audio.stop(voice_too);
         if voice_too {
             self.voice.stop_speech();
         }
+        self.audio.stop(voice_too);
     }
 
     /// Raises (1) or lowers (-1) the main volume by a tenth, and says it.
@@ -239,6 +264,23 @@ impl Client {
             h.index = len - 1;
         }
         table[h.index as usize].clone()
+    }
+
+    /// Reads `cfg/parameters.toml` again and applies the sound volumes. A
+    /// file that cannot be read keeps the current parameters.
+    pub fn reload_parameters(&mut self) {
+        match Parameters::load(&self.paths.parameters_file(), &self.log) {
+            Ok(p) => {
+                let p = Rc::new(p);
+                self.params = p.clone();
+                self.res.set_params(p.clone());
+                self.sounds.update_volumes(p);
+            }
+            Err(e) => self.log.warning(format!(
+                "cannot read {}: {e}",
+                self.paths.parameters_file().display()
+            )),
+        }
     }
 
     /// Stops sounds before the program ends.

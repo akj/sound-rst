@@ -13,7 +13,7 @@ use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger};
 use crate::rules::AirGround;
 use crate::square::Square;
 use crate::triggers::{Expr, list_to_tree};
-use crate::world::World;
+use crate::world::{Abort, World};
 
 /// The map cannot be loaded. The message says why, and where.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -822,18 +822,10 @@ impl World {
         let pid = self.add_player(player);
         self.plm(pid).allied = vec![pid];
         self.plm(pid).allied_control = vec![pid];
-        if let PlayerKind::Computer { ai_type } = &kind
-            && ai_type != "timers"
-            && self
-                .ai_scripts
-                .get(&self.faction_ai_type(pid, ai_type))
-                .is_none()
+        if matches!(kind, PlayerKind::Computer { .. })
+            && let Err(Abort(m)) = self.new_computer(pid)
         {
-            self.warn(format!("KeyError: no AI called {ai_type}"));
-        }
-        if kind != PlayerKind::Human {
-            let ai = self.make_ai(&kind);
-            self.plm(pid).ai = Some(ai);
+            self.warn(m);
         }
         Ok(pid)
     }

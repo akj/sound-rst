@@ -206,10 +206,6 @@ impl Sounds {
         self.0.borrow_mut().get_sound(name, true)
     }
 
-    pub fn has_sound(&self, name: &str) -> bool {
-        self.0.borrow_mut().get_sound(name, false).is_some()
-    }
-
     pub fn text(&self, key: &str) -> Option<String> {
         self.0.borrow().text(key).map(str::to_owned)
     }

@@ -57,6 +57,9 @@ pub fn find_root(
         } else {
             cwd.join(dir)
         };
+        // The path is handed to other programs (the file manager), which
+        // need the platform's own separators.
+        let dir = std::path::absolute(&dir).unwrap_or(dir);
         return if is_root(&dir) {
             Ok(dir)
         } else {
@@ -123,9 +126,6 @@ impl Paths {
     }
     pub fn campaigns_config(&self) -> PathBuf {
         self.user.join("campaigns.ini")
-    }
-    pub fn savegame(&self) -> PathBuf {
-        self.user.join("savegame")
     }
     pub fn custom_bindings(&self) -> PathBuf {
         self.user.join("bindings.txt")
@@ -210,6 +210,17 @@ mod tests {
             find_root(None, Some(dir.path().into()), None, other.path()),
             Ok(dir.path().to_path_buf())
         );
+    }
+
+    #[test]
+    fn a_relative_root_becomes_absolute_with_the_platforms_separators() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b/res")).unwrap();
+        std::fs::write(dir.path().join("a/b/res/rules.txt"), "").unwrap();
+        let root = find_root(Some(Path::new("a/b")), None, None, dir.path()).unwrap();
+        assert_eq!(root, dir.path().join("a").join("b"));
+        #[cfg(windows)]
+        assert!(!root.to_string_lossy().contains('/'), "{}", root.display());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::audio::{AudioOutput, Channel, EffectChannel, Mixer, Sound, stereo};
 use crate::clock::ClockRef;
+use crate::rng::ClientRng;
 
 /// Where the player listens from. `o` is the facing in degrees (90 is
 /// north). Out of immersion mode, the listener always faces north and
@@ -69,6 +70,51 @@ pub enum StereoVolume {
     Split(f64, f64),
 }
 
+/// A positional or stereo sound the game asked to play.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SoundEvent {
+    Positional {
+        time: f64,
+        sound: String,
+        placement: Placement,
+        looping: bool,
+        /// The gains it started at, before the main volume; `None` if it
+        /// did not start (a loop keeps trying).
+        started: Option<(f64, f64)>,
+    },
+    Stereo {
+        time: f64,
+        sound: String,
+        volume: StereoVolume,
+        limit: f64,
+        started: bool,
+    },
+}
+
+impl SoundEvent {
+    pub fn time(&self) -> f64 {
+        match self {
+            SoundEvent::Positional { time, .. } | SoundEvent::Stereo { time, .. } => *time,
+        }
+    }
+}
+
+/// A record of the sounds asked for, in order. Clones share the record.
+#[derive(Clone, Default)]
+pub struct SoundLog(Rc<RefCell<Vec<SoundEvent>>>);
+
+impl SoundLog {
+    /// Every event from the `from`th on.
+    pub fn events_from(&self, from: usize) -> Vec<SoundEvent> {
+        let events = self.0.borrow();
+        events[from.min(events.len())..].to_vec()
+    }
+
+    fn push(&self, e: SoundEvent) {
+        self.0.borrow_mut().push(e);
+    }
+}
+
 struct Source {
     id: SourceId,
     sound: Sound,
@@ -92,7 +138,8 @@ pub struct AudioState {
     sources: Vec<Source>,
     next_id: u64,
     start_times: HashMap<(String, String), f64>,
-    rng: u64,
+    rng: ClientRng,
+    record: Option<SoundLog>,
     /// The volume of everything, between 0 and 1.
     pub main_volume: f64,
     /// The volume of sounds on the voice channel (not of speech).
@@ -124,11 +171,7 @@ impl AudioState {
     }
 
     fn random(&mut self) -> f64 {
-        // xorshift64*: enough for the crackle of ambient sounds.
-        self.rng ^= self.rng >> 12;
-        self.rng ^= self.rng << 25;
-        self.rng ^= self.rng >> 27;
-        (self.rng.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+        self.rng.random()
     }
 
     fn stereo_volume(&mut self, x: f64, y: f64, v: f64) -> (f64, f64) {
@@ -277,14 +320,14 @@ impl AudioState {
 
 impl Audio {
     /// The engine, with `num_channels` mixer channels (the first for the
-    /// voice).
+    /// voice). Ambient volumes are drawn from `rng`.
     pub fn new(
         output: Box<dyn AudioOutput>,
         num_channels: usize,
         clock: ClockRef,
         flattening_factor: f64,
+        rng: ClientRng,
     ) -> Audio {
-        let seed = (clock.now().to_bits() ^ 0x9E37_79B9_7F4A_7C15) | 1;
         Audio(Rc::new(RefCell::new(AudioState {
             mixer: Mixer::new(output, num_channels),
             clock,
@@ -293,10 +336,29 @@ impl Audio {
             sources: Vec::new(),
             next_id: 0,
             start_times: HashMap::new(),
-            rng: seed,
+            rng,
+            record: None,
             main_volume: 0.5,
             voice_volume: 1.0,
         })))
+    }
+
+    /// Records every positional and stereo sound asked for in `log`.
+    pub fn record_to(&self, log: SoundLog) {
+        self.0.borrow_mut().record = Some(log);
+    }
+
+    fn note_positional(a: &AudioState, i: usize, placement: Placement, looping: bool) {
+        if let Some(record) = &a.record {
+            let s = &a.sources[i];
+            record.push(SoundEvent::Positional {
+                time: a.now(),
+                sound: s.sound.key.clone(),
+                placement,
+                looping,
+                started: a.is_playing(i).then_some(s.previous_vol),
+            });
+        }
     }
 
     pub fn main_volume(&self) -> f64 {
@@ -309,10 +371,6 @@ impl Audio {
 
     pub fn voice_volume(&self) -> f64 {
         self.0.borrow().voice_volume
-    }
-
-    pub fn set_voice_volume(&self, v: f64) {
-        self.0.borrow_mut().voice_volume = v;
     }
 
     pub fn listener(&self) -> Listener {
@@ -333,6 +391,7 @@ impl Audio {
         let sound = sound?;
         let mut a = self.0.borrow_mut();
         let i = a.new_source(sound, placement, false);
+        Self::note_positional(&a, i, placement, false);
         if a.is_playing(i) {
             Some(a.sources[i].id)
         } else {
@@ -347,6 +406,7 @@ impl Audio {
         let sound = sound?;
         let mut a = self.0.borrow_mut();
         let i = a.new_source(sound, placement, true);
+        Self::note_positional(&a, i, placement, true);
         Some(a.sources[i].id)
     }
 
@@ -356,10 +416,10 @@ impl Audio {
             return;
         };
         let mut a = self.0.borrow_mut();
-        if !a.should_be_played(&sound, limit) {
-            return;
-        }
-        if let Some(c) = a.find_a_channel(10) {
+        let mut started = false;
+        if a.should_be_played(&sound, limit)
+            && let Some(c) = a.find_a_channel(10)
+        {
             let m = a.main_volume;
             a.mixer.play(Channel::Effect(c), &sound, false);
             let (l, r) = match volume {
@@ -368,6 +428,16 @@ impl Audio {
             };
             a.mixer.set_gains(Channel::Effect(c), l * m, r * m);
             a.remember_start_time(&sound);
+            started = true;
+        }
+        if let Some(record) = &a.record {
+            record.push(SoundEvent::Stereo {
+                time: a.now(),
+                sound: sound.key.clone(),
+                volume,
+                limit,
+                started,
+            });
         }
     }
 

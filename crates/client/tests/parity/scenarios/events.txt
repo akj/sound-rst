@@ -1,0 +1,84 @@
+# What a player hears in a normal game, on jl1 against a quiet computer,
+# with the console's help: a research completing, an impossible order and
+# its reason (a peasant without food), every peasant on a small gold mine
+# until it is exhausted, the priest's holy vision on another square (an
+# ability with a target), then footmen against the computer's base: the
+# fights, the units lost and neutralized, until the game ends (victory).
+language en
+login player
+seed 21
+limit 2400
+# main menu > single player > start a game on > jl1 > invite quiet > start
+key DOWN
+key RETURN
+key s
+key RETURN
+key j
+key j
+key j
+key j
+key j
+key RETURN
+key DOWN
+key RETURN
+key DOWN
+key RETURN
+# cheat mode, resources, a blacksmith, peasants, a priest
+key CTRL SHIFT F2
+key BACKQUOTE
+type r
+key RETURN
+key BACKQUOTE
+type a blacksmith
+key RETURN
+key BACKQUOTE
+type a 8 peasant
+key RETURN
+key BACKQUOTE
+type a priest
+key RETURN
+wait_turns 3
+# research at the blacksmith
+key w
+key w
+key a
+key RETURN
+# a peasant without food
+key w
+key a
+key RETURN
+# every peasant to the gold mine of a1
+key CTRL e
+key LEFT
+key TAB
+key BACKSPACE
+# the priest's holy vision on b2
+key RIGHT
+key s
+key a
+key a
+key a
+key UP
+key RETURN
+wait_turns 100
+key z
+wait_turns 100
+key z
+wait_turns 100
+key z
+wait_turns 100
+key z
+# footmen (added on b2, the square selected) against b4
+key BACKQUOTE
+type a 10 footman
+key RETURN
+wait_turns 3
+key f
+key CTRL UP
+key CTRL UP
+key BACKSPACE
+wait_turns 150
+key c
+wait_game_end
+key ESCAPE
+key ESCAPE

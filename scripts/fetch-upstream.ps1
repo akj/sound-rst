@@ -23,6 +23,11 @@ if (-not (Test-Path (Join-Path $Target '.git'))) {
     Invoke-Git -C $Target remote add origin $Url
 }
 
+# The files must be the same bytes on every machine, whatever Git's line-end
+# setting is there: tests compare against hashes of what the original computes
+# from them.
+Invoke-Git -C $Target config core.autocrlf false
+
 $head = git -C $Target rev-parse --verify --quiet HEAD
 if ($head -ne $Commit) {
     Invoke-Git -C $Target fetch --quiet --depth 1 origin $Commit

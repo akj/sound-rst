@@ -1,0 +1,79 @@
+soundrts-ui-transcript 1
+scenario menus_main
+settings language=en login=player mods= soundpacks= seed=1 limit=300
+length 6115 6871
+length 6116 3719
+@0 title SoundRTS 1.3.8.1  
+@0 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@5100 step 1 key DOWN
+@5100 voice item "single player, , play on your computer"
+@8900 sounds 1 42507bad93becb42
+@8900 step 2 key DOWN
+@8900 voice item "options, , modify your parameters"
+@12200 sounds 1 b17559326a7fdf63
+@12200 step 3 key DOWN
+@12200 voice item "quit, , quit this program"
+@14700 sounds 1 fec24ce6939bc1fd
+@14700 step 4 key DOWN
+@14700 voice item "single player, , play on your computer"
+@18500 sounds 1 a40403d00693b6d4
+@18500 step 5 key DOWN
+@18500 voice item "options, , modify your parameters"
+@21800 sounds 1 f2554006273e385e
+@21800 step 6 key DOWN
+@21800 voice item "quit, , quit this program"
+@24300 sounds 1 eec6b67eff95e08d
+@24300 step 7 key DOWN
+@24300 voice item "single player, , play on your computer"
+@28100 sounds 1 8a6d15df211a33ed
+@28100 step 8 key DOWN
+@28100 voice item "options, , modify your parameters"
+@31400 sounds 1 d6b92ad4631da333
+@31400 step 9 key UP
+@31400 voice item "single player, , play on your computer"
+@35200 sounds 1 fcdfdcaea61e84f6
+@35200 step 10 key UP
+@35200 voice item "quit, , quit this program"
+@37700 sounds 1 20cacf56c63a5bd0
+@37700 step 11 key TAB
+@37700 voice item "single player, , play on your computer"
+@41500 sounds 1 af531783ef9a9809
+@41500 step 12 key SHIFT TAB
+@41500 voice item "quit, , quit this program"
+@44000 sounds 1 71804bf60396db5c
+@44000 step 13 key s
+@44000 voice item "single player, , play on your computer"
+@47800 sounds 1 1d7e1b70b4a52bc2
+@47800 step 14 key s
+@47800 voice item "single player, , play on your computer"
+@51600 sounds 1 e3ec9cc53ed624ad
+@51600 step 15 key o
+@51600 voice item "options, , modify your parameters"
+@54900 sounds 1 bf2ee8d1e6fc3766
+@54900 step 16 key SHIFT s
+@54900 voice item "single player, , play on your computer"
+@58700 sounds 1 2c795c33225d79ba
+@58700 step 17 key x
+@58710 step 18 key F1
+@58710 voice item "Tab to select"
+@60010 step 19 key F1
+@60010 voice item "Enter to confirm"
+@61610 step 20 key SHIFT F1
+@61610 voice item "Tab to select"
+@62910 step 21 key F2
+@62910 voice item "shift Tab to select backward"
+@65710 step 22 key F5
+@65710 voice history "SoundRTS 1.3.8.1  , please make a selection"
+@70810 step 23 key F6
+@70820 step 24 key LALT
+@70830 step 25 key HOME
+@70830 voice item "60 percent of the volume"
+@73630 step 26 key END
+@73630 voice item "50 percent of the volume"
+@76430 step 27 key BACKSPACE
+@76440 step 28 key F3
+@76440 voice item "press Tab to select. press Enter to confirm."
+@80840 step 29 key ESCAPE
+@80840 voice confirmation "quit,"
+@81350 sounds 1 4dab051854caf12b
+@81350 end

@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::ai::{AiFactory, ComputerAi, IdleAi};
 use crate::collision::CollisionMatrix;
 use crate::entity::{
     Action, ActionKind, COLLISION_RADIUS, Entity, EntityId, MemoryRef, Place, PlayerId, SquareId,
@@ -13,7 +12,7 @@ use crate::entity::{
 use crate::events::{EntityEvent, Event};
 use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
-use crate::player::{Player, PlayerKind};
+use crate::player::Player;
 use crate::pyrandom::PyRandom;
 use crate::rules::{AiScripts, AirGround, EntityClass, Rules, VIRTUAL_TIME_INTERVAL};
 use crate::square::Square;
@@ -120,7 +119,6 @@ pub struct World {
     pub groups: Vec<(String, Vec<EntityId>)>,
     pending_commands: Vec<(PlayerId, String)>,
     warnings: Vec<String>,
-    ai_factory: Option<Box<AiFactory>>,
 }
 
 impl std::fmt::Debug for World {
@@ -170,26 +168,9 @@ impl World {
             groups: Vec::new(),
             pending_commands: Vec::new(),
             warnings: Vec::new(),
-            ai_factory: None,
         };
         w.id = w.get_next_id();
         w
-    }
-
-    /// Installs the AI created for computer players added from now on.
-    pub fn set_ai_factory(&mut self, factory: Box<AiFactory>) {
-        self.ai_factory = Some(factory);
-    }
-
-    pub(crate) fn make_ai(&self, kind: &PlayerKind) -> Box<dyn ComputerAi> {
-        let script = match kind {
-            PlayerKind::Computer { ai_type } => self.ai_scripts.get(ai_type),
-            _ => None,
-        };
-        match &self.ai_factory {
-            Some(f) => f(kind, script),
-            None => Box::new(IdleAi),
-        }
     }
 
     // ids
@@ -727,6 +708,31 @@ impl World {
         }
     }
 
+    /// What `p` knows now, as the end of a turn tells it.
+    fn voila(&self, p: PlayerId) -> crate::events::Voila {
+        let pl = self.pl(p);
+        crate::events::Voila {
+            time: self.time,
+            memory: pl
+                .memory
+                .values()
+                .map(|r| (r.snapshot.clone(), r.time_stamp))
+                .collect(),
+            perception: pl
+                .perception
+                .iter()
+                .filter_map(|&id| self.entity(id))
+                .map(|e| Arc::new(e.clone()))
+                .collect(),
+            observed_squares: pl.observed_squares.clone(),
+            observed_before_squares: if pl.cheatmode {
+                (0..self.squares.len() as u32).map(SquareId).collect()
+            } else {
+                pl.observed_before_squares.clone()
+            },
+        }
+    }
+
     /// `player.push(...)`: only a local human records events.
     pub(crate) fn push(&mut self, p: PlayerId, event: Event) {
         if self.pl(p).is_local_human() {
@@ -850,6 +856,12 @@ impl World {
             }
         }
         self.time += VIRTUAL_TIME_INTERVAL;
+        for p in self.players.clone() {
+            if self.pl(p).is_local_human() {
+                let voila = self.voila(p);
+                self.plm(p).events.push(Event::Voila(Box::new(voila)));
+            }
+        }
         if self.true_playing_players().is_empty() {
             // The list shrinks while it is walked, so every other player
             // quits, as in the original.

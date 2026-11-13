@@ -33,12 +33,12 @@ fn the_main_menu_says_its_title_and_the_arrows_walk_its_items() {
         h.spoken(),
         [
             TITLE,
+            "single player, , play on your computer",
             "options, , modify your parameters",
             "quit, , quit this program",
             "options, , modify your parameters",
             "quit, , quit this program",
             "options, , modify your parameters",
-            "quit, , quit this program",
             "quit,",
         ]
     );
@@ -90,6 +90,8 @@ fn closing_the_window_ends_the_menus() {
 #[test]
 fn options_then_modify_login_with_typed_characters() {
     let script = Script::new()
+        .at(5.0)
+        .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
         .at(20.0)
@@ -123,6 +125,7 @@ fn options_then_modify_login_with_typed_characters() {
         h.spoken(),
         [
             TITLE,
+            "single player, , play on your computer",
             "options, , modify your parameters",
             "options,",
             "options menu",
@@ -156,6 +159,8 @@ fn options_then_modify_login_with_typed_characters() {
 #[test]
 fn escape_while_typing_keeps_the_login() {
     let script = Script::new()
+        .at(5.0)
+        .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
         .at(20.0)
@@ -175,7 +180,7 @@ fn escape_while_typing_keeps_the_login() {
     let mut h = Harness::new("en", script);
     assert_eq!(main_menu(&mut h.client), Ok(()));
     assert_eq!(
-        h.spoken()[7..],
+        h.spoken()[8..],
         [
             "x . x",
             "the current login was kept",
@@ -191,6 +196,8 @@ fn escape_while_typing_keeps_the_login() {
 #[test]
 fn the_same_menu_speaks_french() {
     let script = Script::new()
+        .at(5.0)
+        .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
         .at(20.0)
@@ -208,6 +215,7 @@ fn the_same_menu_speaks_french() {
         h.spoken(),
         [
             "SoundRTS 1.3.8.1  , Que souhaitez-vous ?",
+            "Un seul joueur, , jouer seul sur votre ordinateur",
             "Options, , modifier vos paramètres",
             "Options,",
             "menu options",
@@ -323,7 +331,10 @@ fn in_debug_mode_the_log_has_what_the_voice_said() {
         .lines()
         .filter_map(|l| l.split_once(" SAID: ").map(|(_, t)| t.to_owned()))
         .collect();
-    assert_eq!(said, [TITLE, "options, , modify your parameters", "quit,"]);
+    assert_eq!(
+        said,
+        [TITLE, "single player, , play on your computer", "quit,"]
+    );
 
     let mut h = Harness::new("en", Script::new().at(10.0).tap(Key::Escape));
     assert_eq!(main_menu(&mut h.client), Ok(()));

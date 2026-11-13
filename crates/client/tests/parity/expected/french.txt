@@ -1,0 +1,186 @@
+soundrts-ui-transcript 1
+scenario french
+settings language=fr login=joueur mods= soundpacks= seed=5 limit=1200
+length 1000 8091043
+length 1003 18231
+length 1027 193515
+length 1050 913107
+length 1053 133515
+length 1054 167528
+length 1055 2995556
+length 1056 1681996
+length 1057 1773787
+length 1058 1975873
+length 1059 510068
+length 1060 536803
+length 1061 730839
+length 1062 578571
+length 1063 578571
+length 1064 1551043
+length 1065 3132608
+length 1350 188322
+length 6115 6871
+length 6116 3719
+length 9999 208980
+@0 title SoundRTS 1.3.8.1  
+@0 voice menu "SoundRTS 1.3.8.1  , Que souhaitez-vous ?"
+@4800 step 1 key DOWN
+@4800 voice item "Un seul joueur, , jouer seul sur votre ordinateur"
+@9700 sounds 1 b6e678c371ec7588
+@9700 step 2 key DOWN
+@9700 voice item "Options, , modifier vos paramètres"
+@13100 sounds 1 7be24cf68b8a85ec
+@13100 step 3 key DOWN
+@13100 voice item "Quitter, , quitter ce programme"
+@16200 sounds 1 0c1a046150a68d0d
+@16200 step 4 key DOWN
+@16200 voice item "Un seul joueur, , jouer seul sur votre ordinateur"
+@21100 sounds 1 278aee1712188671
+@21100 step 5 key DOWN
+@21100 voice item "Options, , modifier vos paramètres"
+@24500 sounds 1 d87d5e09a7d3313e
+@24500 step 6 key DOWN
+@24500 voice item "Quitter, , quitter ce programme"
+@27600 sounds 1 6945da73cf45dad3
+@27600 step 7 key DOWN
+@27600 voice item "Un seul joueur, , jouer seul sur votre ordinateur"
+@32500 sounds 1 5a581e32fb695e01
+@32500 step 8 key DOWN
+@32500 voice item "Options, , modifier vos paramètres"
+@35900 sounds 1 c313fe8ed1a2454a
+@35900 step 9 key F1
+@35900 voice item "Tab pour sélectionner"
+@38000 step 10 key o
+@38000 voice item "Options, , modifier vos paramètres"
+@41400 sounds 1 dbfe1c63bc47b0cb
+@41400 step 11 key o
+@41400 voice item "Options, , modifier vos paramètres"
+@44800 sounds 1 5c90b2718467db1b
+@44800 step 12 key SHIFT u
+@44800 voice item "Un seul joueur, , jouer seul sur votre ordinateur"
+@49700 sounds 1 5d38771ace5e1f7a
+@49700 step 13 key RETURN
+@49700 voice confirmation "Un seul joueur,"
+@51210 voice menu "Que souhaitez-vous ?"
+@53210 sounds 1 4588e28faaaa9847
+@53210 step 14 key DOWN
+@53210 voice item "campaign"
+@54010 sounds 1 0408224e7d519a4d
+@54010 step 15 key DOWN
+@54010 voice item "orc"
+@54310 sounds 1 0fd00b81c1b87f08
+@54310 step 16 key DOWN
+@54310 voice item "lancer"
+@54910 sounds 1 c302d47d27a52995
+@54910 step 17 key RETURN
+@54910 voice confirmation "lancer"
+@55520 voice menu "lancer"
+@56120 sounds 1 bbec36010062d12e
+@56120 step 18 key j
+@56120 voice item "jl8 8 ,"
+@57220 sounds 1 e7154f167f4cd18e
+@57220 step 19 key j
+@57220 voice item "jl7 7 ,"
+@58320 sounds 1 504692691195941e
+@58320 step 20 key j
+@58320 voice item "jl6 6 ,"
+@59420 sounds 1 8c6bcb83f3c23926
+@59420 step 21 key j
+@59420 voice item "jl5 5 ,"
+@60520 sounds 1 6b8fa9a2007c67b6
+@60520 step 22 key j
+@60520 voice item "jl1 1 ,"
+@61620 sounds 1 4935a696de10040d
+@61620 step 23 key RETURN
+@61620 voice confirmation "jl1 1"
+@62530 voice menu "Que souhaitez-vous ?"
+@64530 sounds 1 ef8ff2ecf7441080
+@64530 step 24 key DOWN
+@64530 voice item "inviter ordinateur calme ,"
+@67130 sounds 1 b031ec7a8079ad28
+@67130 step 25 key RETURN
+@67130 voice confirmation "inviter ordinateur calme"
+@69540 voice menu "Que souhaitez-vous ?"
+@71540 sounds 1 f3f548c98ac06b16
+@71540 step 26 key DOWN
+@71540 voice item "commencer ,"
+@72640 sounds 1 cc6af64b91de0fad
+@72640 step 27 key RETURN
+@72640 voice confirmation "commencer"
+@73550 voice confirmation "objectif : neutralisé ennemi"
+@76351 sounds 1 9bbcd7ab24188d56
+@76351 step 28 key z
+@76351 voice item "10 or"
+@76450 voice item "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
+@82750 voice info ", 1 mine d'or et 2 bois en a 3"
+@86350 voice info ", 1 bois en a 4"
+@88250 voice info ", 1 mine d'or en c 4"
+@90651 sounds 101 52593820de8778e4
+@90651 step 29 key x
+@90651 voice item "10 bois"
+@91751 sounds 7 4a299c21c6389994
+@91751 step 30 key c
+@91751 voice item "9 rations pour 1"
+@93751 sounds 12 6f0dc3c96fca2f02
+@93751 step 31 key e
+@93751 voice item "paysan 1 en b 4 , à vos ordres"
+@97151 sounds 24 9a7f5702ec7511e8
+@97151 step 32 key SPACE
+@97151 voice item "b 4 Vous dirigez paysan 1 en b 4 ,"
+@101151 sounds 27 637155e642f3d876
+@101151 step 33 key a
+@101151 voice item "aller vers , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@110951 voice info "1 paysan ennemi en a 3"
+@113552 sounds 99 a22be168439552ea
+@113552 step 34 key a
+@113552 voice item "exploiter , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@123252 sounds 69 b3807dbfaabc08fb
+@123252 step 35 key a
+@123252 voice item "construire ferme sur , nécessite 5 or et 5 bois , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@136952 sounds 99 f5da27eb898ca797
+@136952 step 36 key ESCAPE
+@136952 voice item "annuler"
+@137652 sounds 4 5461016425f6bd1f
+@137652 step 37 key TAB
+@137652 voice item [1003] "une prairie au sud-èst" vol=0.129,0.992
+@139871 sounds 14 625b918773d65346
+@139871 step 38 key TAB
+@139871 voice item [1003] "un passage a l'est" vol=0.156,0.988
+@141690 sounds 14 baa00abf0d608ebe
+@141690 step 39 key UP
+@141690 voice item [1027] "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
+@148184 sounds 44 90e6fb5d4038f811
+@148184 step 40 key CTRL UP
+@148184 voice item "b 1 , inconnue"
+@149784 step 41 key F3
+@149784 voice item "1 minutes 13 secondes , vitesse 1.0"
+@154284 step 42 key F9
+@154284 voice item "objectif : neutralisé ennemi ."
+@157284 step 43 key F1
+@157284 voice item "f 10 pour accéder au menu"
+@217050 step 44 wait_turns 200
+@217051 step 45 key F3
+@217051 voice item "2 minutes 21 secondes , vitesse 1.0"
+@221551 step 46 key F10
+@221551 voice menu "Menu"
+@221951 step 47 key DOWN
+@221951 voice item "abandonner la partie ,"
+@224151 sounds 1 5bdabfb2d1fb18c4
+@224151 step 48 key RETURN
+@224151 voice confirmation "abandonner la partie"
+@226163 voice info "Défaite en 2 minutes 25 secondes"
+@229963 voice info "1 unités produite , 0 perdu , 0 neutralisé"
+@234763 voice info "2 bâtiment produit , 0 perdu , 0 neutralisé"
+@239663 voice info "10 or récolté , 0 consommé"
+@242863 voice info "10 bois récolté , 0 consommé"
+@246263 voice info "score 23 Appuyez sur F5 pour réécouter tout ceci"
+@251663 voice menu "Que souhaitez-vous ?"
+@253663 sounds 1 93eb4ccd417a99c0
+@253663 step 49 key ESCAPE
+@253663 voice confirmation "retour"
+@254273 voice menu "SoundRTS 1.3.8.1  , Que souhaitez-vous ?"
+@259073 sounds 1 d95d52e399ea2ec6
+@259073 step 50 key ESCAPE
+@259073 voice confirmation "Quitter,"
+@259883 sounds 1 27ed1cb52bee6ccb
+@259883 end

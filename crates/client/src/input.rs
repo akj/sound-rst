@@ -216,11 +216,53 @@ pub enum RawInput {
     FocusLost,
 }
 
+/// The reads at which the client takes a key press as the player's next
+/// action. Other reads (dropping the keys pressed during an alert,
+/// clearing the queue) are not input points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputPoint {
+    /// A menu waits for a choice.
+    Menu,
+    /// A line of text is being typed.
+    Text,
+    /// The game loop reads the keys.
+    Game,
+    /// A message being said looks for a key that interrupts it.
+    Voice,
+}
+
+/// How far the game being played has got.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GameProgress {
+    /// The world's turn.
+    pub turn: i64,
+    /// What the world said at its last turns still waits to be handled.
+    pub events_waiting: bool,
+    /// The number of turns whose results the interface has handled.
+    pub turns_handled: u64,
+}
+
+/// What the client is doing when it reads at an input point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReadContext {
+    pub point: InputPoint,
+    /// A key press waits in the queue.
+    pub keydown_waiting: bool,
+    /// The voice says nothing and has nothing left to say.
+    pub voice_idle: bool,
+    /// The game being played, if any.
+    pub game: Option<GameProgress>,
+}
+
 /// Where key presses come from.
 pub trait InputSource {
     /// The next input that has happened by `now`, with the time it
     /// happened, if any. Never blocks.
     fn next(&mut self, now: f64) -> Option<(f64, RawInput)>;
+
+    /// The client is about to read at an input point. A scripted keyboard
+    /// can time its next key on this.
+    fn before_read(&mut self, _now: f64, _context: &ReadContext) {}
 }
 
 /// The first repeat comes this long after a key goes down...
@@ -240,6 +282,7 @@ pub struct EventQueue {
     clock: ClockRef,
     pending: VecDeque<Event>,
     repeat: Option<Repeat>,
+    game: Option<GameProgress>,
 }
 
 impl EventQueue {
@@ -249,6 +292,7 @@ impl EventQueue {
             clock,
             pending: VecDeque::new(),
             repeat: None,
+            game: None,
         }
     }
 
@@ -345,6 +389,24 @@ impl Input {
     /// Drops the waiting key presses.
     pub fn clear_keydowns(&self) {
         self.get_keydowns();
+    }
+
+    /// Tells the source that the client reads at `point` next.
+    pub fn input_point(&self, point: InputPoint, voice_idle: bool) {
+        let mut q = self.0.borrow_mut();
+        let context = ReadContext {
+            point,
+            keydown_waiting: q.pending.iter().any(|e| matches!(e, Event::KeyDown(_))),
+            voice_idle,
+            game: q.game,
+        };
+        let now = q.clock.now();
+        q.source.before_read(now, &context);
+    }
+
+    /// Notes the progress of the game being played (`None`: no game).
+    pub fn set_game(&self, game: Option<GameProgress>) {
+        self.0.borrow_mut().game = game;
     }
 }
 

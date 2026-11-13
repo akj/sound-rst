@@ -16,14 +16,18 @@ pub trait SpeechBackend {
 
 /// Speech with an estimated end: each character takes
 /// `wait_delay_per_character` seconds, a digit `tts_digit_coefficient`
-/// times as long.
+/// times as long. The end is kept in whole microseconds.
 pub struct Tts {
     backend: Box<dyn SpeechBackend>,
     clock: ClockRef,
     log: Log,
     wait_delay_per_character: f64,
     digit_coefficient: f64,
-    end_time: Option<f64>,
+    end_us: Option<i64>,
+}
+
+fn microseconds(seconds: f64) -> i64 {
+    (seconds * 1e6).round() as i64
 }
 
 impl Tts {
@@ -40,23 +44,29 @@ impl Tts {
             log,
             wait_delay_per_character,
             digit_coefficient,
-            end_time: None,
+            end_us: None,
         }
+    }
+
+    /// How long `text` is expected to take, in microseconds: the
+    /// characters, then the extra time of the digits, each rounded.
+    pub fn estimate_us(&self, text: &str) -> i64 {
+        let chars = text.chars().count() as f64;
+        let digits = text.chars().filter(|c| c.is_numeric()).count() as f64;
+        let delay = self.wait_delay_per_character;
+        microseconds(chars * delay) + microseconds(digits * (self.digit_coefficient - 1.0) * delay)
     }
 
     /// How long `text` is expected to take, in seconds.
     pub fn estimate(&self, text: &str) -> f64 {
-        let chars = text.chars().count() as f64;
-        let digits = text.chars().filter(|c| c.is_numeric()).count() as f64;
-        let delay = self.wait_delay_per_character;
-        chars * delay + digits * (self.digit_coefficient - 1.0) * delay
+        self.estimate_us(text) as f64 / 1e6
     }
 
     pub fn speak(&mut self, text: &str) {
         if let Err(e) = self.backend.speak(text) {
             self.log.error(format!("error during speak({text:?}): {e}"));
         }
-        self.end_time = Some(self.clock.now() + self.estimate(text));
+        self.end_us = Some(microseconds(self.clock.now()) + self.estimate_us(text));
     }
 
     /// Silences speech, unless the estimate says it has already ended.
@@ -64,12 +74,13 @@ impl Tts {
         if self.is_speaking() {
             // An error here shows again at the next speak.
             let _ = self.backend.stop();
-            self.end_time = None;
         }
+        self.end_us = None;
     }
 
     pub fn is_speaking(&self) -> bool {
-        self.end_time.is_some_and(|end| end > self.clock.now())
+        self.end_us
+            .is_some_and(|end| end > microseconds(self.clock.now()))
     }
 }
 

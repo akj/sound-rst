@@ -14,11 +14,14 @@ use crate::audio::{AudioOutput, Channel, Sound};
 use crate::client::{Client, Desktop, Devices, open_resources};
 use crate::clock::{Clock, ManualClock};
 use crate::config::Config;
+use crate::game::GameInterface;
 use crate::input::{InputSource, Key, KeyDown, KeyUp, Mods, RawInput};
 use crate::log::Log;
 use crate::parameters::Parameters;
 use crate::paths::Paths;
+use crate::session::Session;
 use crate::tts::SpeechBackend;
+use crate::voice::{Utterance, UtteranceLog, UtterancePart};
 
 /// The upstream checkout the tests read the game data from. Panics with
 /// instructions if it is missing.
@@ -276,16 +279,87 @@ fn us_char(key: Key) -> Option<char> {
         .find(|&c| Key::from_char(c) == key)
 }
 
+/// Key presses scheduled while the client runs, by a game hook for
+/// example. Clones share the same queue, kept in time order.
+#[derive(Clone, Default)]
+pub struct LiveKeys(Rc<RefCell<VecDeque<(f64, RawInput)>>>);
+
+impl LiveKeys {
+    fn insert(&self, time: f64, e: RawInput) {
+        let mut q = self.0.borrow_mut();
+        let i = q.iter().position(|(t, _)| *t > time).unwrap_or(q.len());
+        q.insert(i, (time, e));
+    }
+
+    /// A press and release at `time`.
+    pub fn tap_at(&self, time: f64, key: Key, mods: Mods) {
+        self.insert(time, RawInput::KeyDown(press(key, mods)));
+        self.insert(time, RawInput::KeyUp(KeyUp { key, physical: key }));
+    }
+
+    /// Types each character as a press of its key, `interval` seconds
+    /// apart from `time` on.
+    pub fn type_at(&self, time: f64, interval: f64, text: &str) {
+        for (i, c) in text.chars().enumerate() {
+            let t = time + i as f64 * interval;
+            let key = Key::from_char(c);
+            let mods = if c.is_ascii_uppercase() {
+                Mods::SHIFT
+            } else {
+                Mods::NONE
+            };
+            let mut e = press(key, mods);
+            e.unicode = c.to_string();
+            self.insert(t, RawInput::KeyDown(e));
+            self.insert(t, RawInput::KeyUp(KeyUp { key, physical: key }));
+        }
+    }
+
+    /// When the next scheduled key comes, if any.
+    pub fn next_time(&self) -> Option<f64> {
+        self.0.borrow().front().map(|(t, _)| *t)
+    }
+
+    /// Whether every scheduled key has been delivered.
+    pub fn is_empty(&self) -> bool {
+        self.0.borrow().is_empty()
+    }
+}
+
 /// A timed list of key presses and releases.
 #[derive(Clone, Default)]
 pub struct Script {
     events: VecDeque<(f64, RawInput)>,
     time: f64,
+    keep_open: bool,
+    live: Option<LiveKeys>,
+    deadline: Option<f64>,
 }
 
 impl Script {
     pub fn new() -> Script {
         Script::default()
+    }
+
+    /// The window stays open after the last event, for a test that posts
+    /// its own key presses or steps a game itself.
+    pub fn keep_open(mut self) -> Script {
+        self.keep_open = true;
+        self
+    }
+
+    /// Closes the window at `time` whatever happens, so that a stuck test
+    /// ends instead of waiting forever.
+    pub fn deadline(mut self, time: f64) -> Script {
+        self.deadline = Some(time);
+        self
+    }
+
+    /// Also delivers the keys scheduled on `live`, in time order with the
+    /// script's.
+    pub fn with_live(mut self, live: LiveKeys) -> Script {
+        self.live = Some(live);
+        self
     }
 
     /// The following events happen at `time` seconds (on the test clock).
@@ -348,8 +422,10 @@ impl Script {
     pub fn source(self) -> ScriptedInput {
         ScriptedInput {
             events: self.events,
+            live: self.live,
+            deadline: self.deadline,
             last_time: 0.0,
-            quit_sent: false,
+            quit_sent: self.keep_open,
         }
     }
 }
@@ -358,12 +434,38 @@ impl Script {
 /// last event, the window "closes" so that every blocking loop ends.
 pub struct ScriptedInput {
     events: VecDeque<(f64, RawInput)>,
+    live: Option<LiveKeys>,
+    deadline: Option<f64>,
     last_time: f64,
     quit_sent: bool,
 }
 
 impl InputSource for ScriptedInput {
     fn next(&mut self, now: f64) -> Option<(f64, RawInput)> {
+        if self.deadline.is_some_and(|d| now > d) {
+            self.deadline = None;
+            self.events.clear();
+            if let Some(live) = &self.live {
+                live.0.borrow_mut().clear();
+            }
+            self.quit_sent = true;
+            return Some((now, RawInput::Quit));
+        }
+        if let Some(live) = &self.live {
+            let mut q = live.0.borrow_mut();
+            let live_first = q.front().map(|(t, _)| *t);
+            let script_first = self.events.front().map(|(t, _)| *t);
+            if let Some(t) = live_first
+                && t <= now
+                && script_first.is_none_or(|s| t < s)
+            {
+                self.last_time = self.last_time.max(t);
+                return q.pop_front();
+            }
+            if live_first.is_some() && script_first.is_none() {
+                return None;
+            }
+        }
         match self.events.front() {
             Some((t, _)) if *t <= now => {
                 self.last_time = *t;
@@ -404,6 +506,8 @@ pub struct Harness {
     pub audio: AudioLog,
     pub clock: Rc<ManualClock>,
     pub desktop: Rc<RecordingDesktop>,
+    /// Every utterance the voice started.
+    pub utterance_log: UtteranceLog,
     /// The player's folder; deleted with the harness.
     pub user_dir: tempfile::TempDir,
 }
@@ -436,12 +540,15 @@ impl Harness {
         let (speech_backend, speech) = RecordingSpeech::new();
         let (audio_output, audio) = RecordingAudio::new(clock.clone());
         let desktop = Rc::new(RecordingDesktop::default());
+        let utterance_log = UtteranceLog::default();
         let devices = Devices {
             speech: Box::new(speech_backend),
             audio: Box::new(audio_output),
             input: Box::new(script.source()),
             clock: clock.clone(),
             desktop: desktop.clone(),
+            random_seed: 1,
+            utterances: Some(utterance_log.clone()),
         };
         let client = Client::new(paths, config, res, log, devices);
         Harness {
@@ -450,6 +557,7 @@ impl Harness {
             audio,
             clock,
             desktop,
+            utterance_log,
             user_dir,
         }
     }
@@ -457,6 +565,19 @@ impl Harness {
     /// The texts spoken so far, in order.
     pub fn spoken(&self) -> Vec<String> {
         self.speech.spoken()
+    }
+
+    /// The utterances started on the voice channel so far, in order: each
+    /// one as its texts and the names of its recorded sounds.
+    pub fn utterances(&self) -> Vec<Utterance> {
+        self.utterance_log.utterances()
+    }
+
+    /// Presses a key now, as the window would deliver it (without repeats).
+    pub fn press(&self, key: Key, mods: Mods) {
+        self.client
+            .input
+            .post(crate::input::Event::KeyDown(press(key, mods)));
     }
 
     /// The client log so far (`<user>/tmp/client.log`).
@@ -471,4 +592,104 @@ impl Harness {
             .text(&key.to_string())
             .unwrap_or_else(|| panic!("no text for {key}"))
     }
+
+    /// The utterances started since the `from`th, each written as by
+    /// [`render`].
+    pub fn said_since(&self, from: usize) -> Vec<String> {
+        self.utterances().iter().skip(from).map(render).collect()
+    }
+
+    /// Starts a training game on the multiplayer map `map` against
+    /// computers of these types, with the world's seed fixed. The objective
+    /// is said and the bindings are loaded; no turn has run yet.
+    pub fn start_training(&mut self, map: &str, computers: &[&str], seed: i64) -> TestGame {
+        self.client.game.seed = Some(seed);
+        let m = self
+            .client
+            .res
+            .multiplayer_maps()
+            .into_iter()
+            .find(|m| m.name == map)
+            .unwrap_or_else(|| panic!("no multiplayer map {map}"));
+        self.client.res.set_map(Some(&m));
+        let mut players = vec![self.client.config.login.as_str().to_owned()];
+        players.extend(computers.iter().map(|c| (*c).to_owned()));
+        let factions = vec!["random_faction".to_owned(); players.len()];
+        let mut alliances = vec!["1".to_owned()];
+        alliances.extend(std::iter::repeat_n("2".to_owned(), players.len() - 1));
+        let mut session = Session::training(&self.client, m, &players, &factions, &alliances);
+        let mut game = session.start(&mut self.client).expect("a valid map");
+        self.client.input.clear();
+        game.next_update = self.client.clock.now();
+        TestGame { session, game }
+    }
+
+    /// One pass of the game loop (one millisecond of game time).
+    pub fn step(&mut self, g: &mut TestGame) {
+        g.game
+            .step(&mut self.client)
+            .expect("the window stays open");
+    }
+
+    /// Runs the game loop until the world has played `turn` turns and their
+    /// events are handled.
+    pub fn run_until_turn(&mut self, g: &mut TestGame, turn: i64) {
+        while g.game.world.turn() < turn || g.game.has_pending_server_events() {
+            assert!(!g.game.end_loop, "the game ended before turn {turn}");
+            self.step(g);
+        }
+    }
+
+    /// Runs the game loop until the voice has nothing to say (at most 60 s
+    /// of game time).
+    pub fn run_until_voice_idle(&mut self, g: &mut TestGame) {
+        let end = self.clock.now() + 60.0;
+        while !self.client.voice.is_idle() && self.clock.now() < end && !g.game.end_loop {
+            self.step(g);
+        }
+    }
+
+    /// Runs the game loop for `seconds` of game time.
+    pub fn run_for(&mut self, g: &mut TestGame, seconds: f64) {
+        let end = self.clock.now() + seconds;
+        while self.clock.now() < end && !g.game.end_loop {
+            self.step(g);
+        }
+    }
+
+    /// Presses a key, lets the game handle it, and waits until the voice is
+    /// idle. Returns what was said meanwhile.
+    pub fn key(&mut self, g: &mut TestGame, key: Key, mods: Mods) -> Vec<String> {
+        let from = self.utterances().len();
+        self.press(key, mods);
+        self.step(g);
+        self.run_until_voice_idle(g);
+        self.said_since(from)
+    }
+
+    /// Runs the game loop until the game ends, then says the score.
+    pub fn finish(&mut self, g: &mut TestGame) {
+        while !g.game.end_loop {
+            self.step(g);
+        }
+        g.session.finish(&mut self.client, &mut g.game);
+    }
+}
+
+/// A game started by [`Harness::start_training`].
+pub struct TestGame {
+    pub session: Session,
+    pub game: GameInterface,
+}
+
+/// An utterance as one line: texts as they are, recorded sounds as
+/// `<name>`, separated by spaces.
+pub fn render(u: &Utterance) -> String {
+    u.iter()
+        .map(|p| match p {
+            UtterancePart::Text(t) => t.clone(),
+            UtterancePart::Sound(s) => format!("<{s}>"),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
