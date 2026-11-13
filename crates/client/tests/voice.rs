@@ -132,3 +132,41 @@ fn the_history_drops_the_oldest_hundred_past_two_hundred_messages() {
     assert_eq!(history.len(), 101);
     assert_eq!(history[0], t("m100"));
 }
+
+#[test]
+fn chat_comes_after_the_message_being_said_and_before_the_unsaid_ones() {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    let v = &mut h.client.voice;
+    v.info(&t("aaaaaaaaaa"));
+    v.info(&t("bbbbb"));
+    v.info(&t("ccccc"));
+    v.chat(&t("chat one"));
+    v.chat(&t("chat two"));
+    // The message being said is not cut.
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    for _ in 0..60 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(
+        h.spoken(),
+        ["aaaaaaaaaa", "chat one", "chat two", "bbbbb", "ccccc"]
+    );
+}
+
+#[test]
+fn identical_chat_lines_are_all_said_and_an_idle_voice_says_chat_at_once() {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    h.client.voice.chat(&t("hello"));
+    assert_eq!(h.spoken(), ["hello"]);
+    h.client.voice.chat(&t("hello"));
+    h.client.voice.chat(&t("hello"));
+    h.client.voice.info(&t("info"));
+    for _ in 0..60 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(h.spoken(), ["hello", "hello", "hello", "info"]);
+}
