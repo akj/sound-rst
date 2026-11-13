@@ -1,0 +1,13 @@
+[package]
+name = "soundrts"
+description = "SoundRTS, a real-time strategy audio game: speech, positional sound, keyboard control and menus."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+soundrts-world = { path = "../world" }
