@@ -1,0 +1,90 @@
+map title=4271,3001 objective= players=1-1 starts=1 computers=1 food=80
+square a1 id=2 x=6000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 29 path 11999 6000 180 other=30 portal=0
+  object 11 goldmine 2980 3085 qty=250000
+  object 15 wood 10036 4845 qty=750000
+  object 21 meadow 4987 10074 qty=0
+  object 29 path 11999 6000 qty=0
+square a2 id=3 x=6000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 33 path 11999 18000 180 other=34 portal=0
+  exit 41 path 6000 23999 -90 other=42 portal=0
+  object 22 meadow 6000 18000 qty=0
+  object 33 path 11999 18000 qty=0
+  object 41 path 6000 23999 qty=0
+square a3 id=4 x=6000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 37 path 11999 30000 180 other=38 portal=0
+  exit 42 path 6000 24000 90 other=41 portal=0
+  object 37 path 11999 30000 qty=0
+  object 42 path 6000 24000 qty=0
+square b1 id=5 x=18000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 30 path 12000 6000 0 other=29 portal=0
+  exit 31 path 23999 6000 180 other=32 portal=0
+  exit 43 bridge 18000 11999 -90 other=44 portal=0
+  object 23 meadow 18000 6000 qty=0
+  object 30 path 12000 6000 qty=0
+  object 31 path 23999 6000 qty=0
+  object 43 bridge 18000 11999 qty=0
+square b2 id=6 x=18000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 34 path 12000 18000 0 other=33 portal=0
+  exit 35 path 23999 18000 180 other=36 portal=0
+  exit 44 bridge 18000 12000 90 other=43 portal=0
+  object 34 path 12000 18000 qty=0
+  object 35 path 23999 18000 qty=0
+  object 44 bridge 18000 12000 qty=0
+square b3 id=7 x=18000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 38 path 12000 30000 0 other=37 portal=0
+  exit 39 path 23999 30000 180 other=40 portal=0
+  object 24 meadow 18000 30000 qty=0
+  object 38 path 12000 30000 qty=0
+  object 39 path 23999 30000 qty=0
+square c1 id=8 x=30000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 32 path 24000 6000 0 other=31 portal=0
+  object 17 wood 33019 3085 qty=750000
+  object 25 meadow 26980 8914 qty=0
+  object 32 path 24000 6000 qty=0
+square c2 id=9 x=30000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 36 path 24000 18000 0 other=35 portal=0
+  object 26 meadow 34200 18000 qty=0
+  object 28 meadow 25800 18000 qty=0
+  object 36 path 24000 18000 qty=0
+square c3 id=10 x=30000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 40 path 24000 30000 0 other=39 portal=0
+  object 13 goldmine 33019 32914 qty=500000
+  object 19 wood 25963 31155 qty=750000
+  object 27 meadow 31012 25926 qty=0
+  object 40 path 24000 30000 qty=0
+save 
+save 
+save 
+save 
+save 
+save 
+save ; 1 meadow
+save ; 2 meadows
+save additional_meadows a1 a2 b1 b3 c1 c3
+save additional_meadows c2
+save additional_meadows c2
+save computer_only 20 20 c3 3 peon pig_farm grunt
+save global_food_limit 80
+save goldmine 250 a1
+save goldmine 500 c3
+save ground 
+save high_grounds 
+save nb_columns 3
+save nb_lines 3
+save nb_meadows_by_square 0
+save nb_players_max 1
+save nb_players_min 1
+save no_air 
+save objective 
+save player 5 10 -townhall -lumbermill -blacksmith a1 townhall peasant c1 farm footman
+save south_north bridge b1
+save south_north path a2
+save square_width 12
+save starting_resources []
+save starting_squares 
+save starting_units 
+save title 4271 3001
+save water 
+save west_east path a1 a2 a3 b1 b2 b3
+save wood 750 a1 c1 c3

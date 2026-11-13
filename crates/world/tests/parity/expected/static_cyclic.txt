@@ -1,0 +1,148 @@
+map title=3001 objective=145,88 players=2-2 starts=2 computers=0 food=80
+square a1 id=2 x=6000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 60 path 11999 6000 180 other=61 portal=0
+  exit 84 bridge 6000 11999 -90 other=85 portal=0
+  object 14 goldmine 3652 2518 qty=75000
+  object 34 meadow 10187 5710 qty=0
+  object 35 meadow 4160 9771 qty=0
+  object 60 path 11999 6000 qty=0
+  object 84 bridge 6000 11999 qty=0
+square a2 id=3 x=6000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 64 path 11999 18000 180 other=65 portal=0
+  exit 77 path 0 18000 0 other=76 portal=1
+  exit 85 bridge 6000 12000 90 other=84 portal=0
+  object 36 meadow 2194 16227 qty=0
+  object 37 meadow 9805 19772 qty=0
+  object 64 path 11999 18000 qty=0
+  object 77 path 0 18000 qty=0
+  object 85 bridge 6000 12000 qty=0
+square a3 id=4 x=6000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 68 path 11999 30000 180 other=69 portal=0
+  exit 79 path 0 30000 0 other=78 portal=1
+  exit 88 bridge 6000 35999 -90 other=89 portal=0
+  object 20 goldmine 2194 31772 qty=150000
+  object 30 wood 3139 26929 qty=75000
+  object 32 wood 8032 26329 qty=75000
+  object 38 meadow 10120 30798 qty=0
+  object 39 meadow 6508 34166 qty=0
+  object 68 path 11999 30000 qty=0
+  object 79 path 0 30000 qty=0
+  object 88 bridge 6000 35999 qty=0
+square a4 id=5 x=6000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 72 path 11999 42000 180 other=73 portal=0
+  exit 89 bridge 6000 36000 90 other=88 portal=0
+  object 24 wood 3652 45481 qty=75000
+  object 40 meadow 4160 38228 qty=0
+  object 41 meadow 10187 42289 qty=0
+  object 72 path 11999 42000 qty=0
+  object 89 bridge 6000 36000 qty=0
+square b1 id=6 x=18000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 61 path 12000 6000 0 other=60 portal=0
+  exit 62 path 23999 6000 180 other=63 portal=0
+  exit 83 path 18000 0 90 other=82 portal=1
+  object 42 meadow 18000 1800 qty=0
+  object 43 meadow 21637 8095 qty=0
+  object 58 meadow 14362 8095 qty=0
+  object 61 path 12000 6000 qty=0
+  object 62 path 23999 6000 qty=0
+  object 83 path 18000 0 qty=0
+square b2 id=7 x=18000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 65 path 12000 18000 0 other=64 portal=0
+  exit 66 path 23999 18000 180 other=67 portal=0
+  exit 80 path 18000 23999 -90 other=81 portal=0
+  object 44 meadow 18000 13800 qty=0
+  object 45 meadow 18000 22200 qty=0
+  object 65 path 12000 18000 qty=0
+  object 66 path 23999 18000 qty=0
+  object 80 path 18000 23999 qty=0
+square b3 id=8 x=18000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 69 path 12000 30000 0 other=68 portal=0
+  exit 70 path 23999 30000 180 other=71 portal=0
+  exit 81 path 18000 24000 90 other=80 portal=0
+  object 46 meadow 18000 34200 qty=0
+  object 47 meadow 18000 25800 qty=0
+  object 69 path 12000 30000 qty=0
+  object 70 path 23999 30000 qty=0
+  object 81 path 18000 24000 qty=0
+square b4 id=9 x=18000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 73 path 12000 42000 0 other=72 portal=0
+  exit 74 path 23999 42000 180 other=75 portal=0
+  exit 82 path 18000 47999 -90 other=83 portal=1
+  object 48 meadow 18000 46200 qty=0
+  object 49 meadow 14362 39900 qty=0
+  object 59 meadow 21637 39900 qty=0
+  object 73 path 12000 42000 qty=0
+  object 74 path 23999 42000 qty=0
+  object 82 path 18000 47999 qty=0
+square c1 id=10 x=30000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 63 path 24000 6000 0 other=62 portal=0
+  exit 86 bridge 30000 11999 -90 other=87 portal=0
+  object 22 wood 32347 2518 qty=75000
+  object 50 meadow 31839 9771 qty=0
+  object 51 meadow 25812 5710 qty=0
+  object 63 path 24000 6000 qty=0
+  object 86 bridge 30000 11999 qty=0
+square c2 id=11 x=30000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 67 path 24000 18000 0 other=66 portal=0
+  exit 76 path 35999 18000 180 other=77 portal=1
+  exit 87 bridge 30000 12000 90 other=86 portal=0
+  object 18 goldmine 33805 16227 qty=150000
+  object 26 wood 32860 21070 qty=75000
+  object 28 wood 27967 21670 qty=75000
+  object 52 meadow 25879 17202 qty=0
+  object 53 meadow 29491 13833 qty=0
+  object 67 path 24000 18000 qty=0
+  object 76 path 35999 18000 qty=0
+  object 87 bridge 30000 12000 qty=0
+square c3 id=12 x=30000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 71 path 24000 30000 0 other=70 portal=0
+  exit 78 path 35999 30000 180 other=79 portal=1
+  exit 90 bridge 30000 35999 -90 other=91 portal=0
+  object 54 meadow 33805 31772 qty=0
+  object 55 meadow 26194 28227 qty=0
+  object 71 path 24000 30000 qty=0
+  object 78 path 35999 30000 qty=0
+  object 90 bridge 30000 35999 qty=0
+square c4 id=13 x=30000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 75 path 24000 42000 0 other=74 portal=0
+  exit 91 bridge 30000 36000 90 other=90 portal=0
+  object 16 goldmine 32347 45481 qty=75000
+  object 56 meadow 25812 42289 qty=0
+  object 57 meadow 31839 38228 qty=0
+  object 75 path 24000 42000 qty=0
+  object 91 bridge 30000 36000 qty=0
+save 
+save 
+save 
+save 
+save 
+save 
+save ; 2 meadows
+save ; 3 meadows
+save additional_meadows a1 a2 a3 a4 b2 b3 c1 c2 c3 c4
+save additional_meadows a1 a2 a3 a4 b2 b3 c1 c2 c3 c4
+save additional_meadows b1 b4
+save additional_meadows b1 b4
+save additional_meadows b1 b4
+save global_food_limit 80
+save goldmine 150 a3 c2
+save goldmine 75 a1 c4
+save ground 
+save high_grounds 
+save nb_columns 3
+save nb_lines 4
+save nb_meadows_by_square 0
+save nb_players_max 2
+save nb_players_min 2
+save no_air 
+save objective 145 88
+save south_north bridge a1 a3 c1 c3
+save south_north path b2
+save square_width 12
+save starting_resources 10 10
+save starting_squares b1 b4
+save starting_units townhall farm peasant
+save title 3001
+save water 
+save west_east path a1 a2 a3 a4 b1 b2 b3 b4
+save wood 75 a3 a3 a4 c1 c2 c2

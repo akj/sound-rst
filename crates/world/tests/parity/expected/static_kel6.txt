@@ -1,0 +1,339 @@
+map title=5010,5004,5011,3006 objective=4250,4251,5002,3003,4251,102,81 players=2-4 starts=4 computers=4 food=150
+square a1 id=2 x=6000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 229 path 11999 6000 180 other=230 portal=0
+  exit 253 path 6000 11999 -90 other=254 portal=0
+  object 37 goldmine 2980 3085 qty=75000
+  object 79 meadow 6365 1816 qty=0
+  object 80 meadow 9481 3652 qty=0
+  object 81 meadow 9994 7297 qty=0
+  object 82 meadow 7503 9918 qty=0
+  object 83 meadow 3837 9599 qty=0
+  object 84 meadow 1842 6583 qty=0
+  object 229 path 11999 6000 qty=0
+  object 253 path 6000 11999 qty=0
+square a2 id=3 x=6000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 237 path 11999 18000 180 other=238 portal=0
+  exit 254 path 6000 12000 90 other=253 portal=0
+  exit 255 path 6000 23999 -90 other=256 portal=0
+  object 57 wood 2194 16227 qty=50000
+  object 85 meadow 4987 13926 qty=0
+  object 86 meadow 8524 14648 qty=0
+  object 87 meadow 10195 17928 qty=0
+  object 88 meadow 8696 21217 qty=0
+  object 89 meadow 5130 22107 qty=0
+  object 90 meadow 2257 19902 qty=0
+  object 237 path 11999 18000 qty=0
+  object 254 path 6000 12000 qty=0
+  object 255 path 6000 23999 qty=0
+square a3 id=4 x=6000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 256 path 6000 24000 90 other=255 portal=0
+  exit 257 path 6000 35999 -90 other=258 portal=0
+  object 29 goldmine 1800 30000 qty=500000
+  object 71 wood 3030 27030 qty=250000
+  object 91 meadow 6000 25800 qty=0
+  object 92 meadow 8969 27030 qty=0
+  object 93 meadow 10200 30000 qty=0
+  object 94 meadow 8969 32969 qty=0
+  object 95 meadow 6000 34200 qty=0
+  object 96 meadow 3030 32969 qty=0
+  object 256 path 6000 24000 qty=0
+  object 257 path 6000 35999 qty=0
+square a4 id=5 x=6000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 241 path 11999 42000 180 other=242 portal=0
+  exit 258 path 6000 36000 90 other=257 portal=0
+  exit 259 path 6000 47999 -90 other=260 portal=0
+  object 59 wood 2194 43772 qty=50000
+  object 97 meadow 2228 40160 qty=0
+  object 98 meadow 5059 37909 qty=0
+  object 99 meadow 8641 38736 qty=0
+  object 100 meadow 10200 42000 qty=0
+  object 101 meadow 8583 45309 qty=0
+  object 102 meadow 5059 46090 qty=0
+  object 241 path 11999 42000 qty=0
+  object 258 path 6000 36000 qty=0
+  object 259 path 6000 47999 qty=0
+square a5 id=6 x=6000 y=54000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 245 path 11999 54000 180 other=246 portal=0
+  exit 260 path 6000 48000 90 other=259 portal=0
+  object 41 goldmine 2980 56914 qty=75000
+  object 103 meadow 1833 53491 qty=0
+  object 104 meadow 3778 50438 qty=0
+  object 105 meadow 7436 50056 qty=0
+  object 106 meadow 9969 52635 qty=0
+  object 107 meadow 9519 56284 qty=0
+  object 108 meadow 6436 58174 qty=0
+  object 245 path 11999 54000 qty=0
+  object 260 path 6000 48000 qty=0
+square b1 id=7 x=18000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 230 path 12000 6000 0 other=229 portal=0
+  exit 231 path 23999 6000 180 other=232 portal=0
+  exit 261 path 18000 11999 -90 other=262 portal=0
+  object 55 wood 16097 2257 qty=50000
+  object 109 meadow 19705 2165 qty=0
+  object 110 meadow 22053 4916 qty=0
+  object 111 meadow 21351 8524 qty=0
+  object 112 meadow 18142 10195 qty=0
+  object 113 meadow 14782 8696 qty=0
+  object 114 meadow 13879 5202 qty=0
+  object 230 path 12000 6000 qty=0
+  object 231 path 23999 6000 qty=0
+  object 261 path 18000 11999 qty=0
+square b2 id=8 x=18000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 238 path 12000 18000 0 other=237 portal=0
+  exit 262 path 18000 12000 90 other=261 portal=0
+  object 39 goldmine 14980 15085 qty=75000
+  object 115 meadow 18365 13816 qty=0
+  object 116 meadow 21481 15652 qty=0
+  object 117 meadow 21994 19297 qty=0
+  object 118 meadow 19503 21918 qty=0
+  object 119 meadow 15837 21599 qty=0
+  object 120 meadow 13842 18583 qty=0
+  object 238 path 12000 18000 qty=0
+  object 262 path 18000 12000 qty=0
+square b3 id=9 x=18000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  object 121 meadow 13800 30000 qty=0
+  object 122 meadow 15900 26362 qty=0
+  object 123 meadow 20100 26362 qty=0
+  object 124 meadow 22200 30000 qty=0
+  object 125 meadow 20100 33637 qty=0
+  object 126 meadow 15904 33637 qty=0
+square b4 id=10 x=18000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 242 path 12000 42000 0 other=241 portal=0
+  exit 263 path 18000 47999 -90 other=264 portal=0
+  object 43 goldmine 14980 44914 qty=75000
+  object 127 meadow 13833 41491 qty=0
+  object 128 meadow 15778 38438 qty=0
+  object 129 meadow 19436 38056 qty=0
+  object 130 meadow 21969 40635 qty=0
+  object 131 meadow 21519 44284 qty=0
+  object 132 meadow 18436 46174 qty=0
+  object 242 path 12000 42000 qty=0
+  object 263 path 18000 47999 qty=0
+square b5 id=11 x=18000 y=54000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 246 path 12000 54000 0 other=245 portal=0
+  exit 247 path 23999 54000 180 other=248 portal=0
+  exit 264 path 18000 48000 90 other=263 portal=0
+  object 61 wood 16097 57742 qty=50000
+  object 133 meadow 13892 54869 qty=0
+  object 134 meadow 14736 51358 qty=0
+  object 135 meadow 18071 49804 qty=0
+  object 136 meadow 21309 51417 qty=0
+  object 137 meadow 22074 55012 qty=0
+  object 138 meadow 19772 57805 qty=0
+  object 246 path 12000 54000 qty=0
+  object 247 path 23999 54000 qty=0
+  object 264 path 18000 48000 qty=0
+square c1 id=12 x=30000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 232 path 24000 6000 0 other=231 portal=0
+  exit 233 path 35999 6000 180 other=234 portal=0
+  object 31 goldmine 30000 1800 qty=500000
+  object 73 wood 32969 3030 qty=250000
+  object 139 meadow 34200 6000 qty=0
+  object 140 meadow 32969 8969 qty=0
+  object 141 meadow 30000 10200 qty=0
+  object 142 meadow 27030 8969 qty=0
+  object 143 meadow 25800 6000 qty=0
+  object 144 meadow 27030 3030 qty=0
+  object 232 path 24000 6000 qty=0
+  object 233 path 35999 6000 qty=0
+square c2 id=13 x=30000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  object 145 meadow 30000 13800 qty=0
+  object 146 meadow 33637 15900 qty=0
+  object 147 meadow 33637 20095 qty=0
+  object 148 meadow 30000 22200 qty=0
+  object 149 meadow 26362 20095 qty=0
+  object 150 meadow 26362 15900 qty=0
+square c3 id=14 x=30000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  object 27 goldmine 34200 30000 qty=1000000
+  object 53 wood 32969 32969 qty=500000
+  object 151 meadow 30000 34200 qty=0
+  object 152 meadow 27030 32969 qty=0
+  object 153 meadow 25800 30000 qty=0
+  object 154 meadow 27030 27030 qty=0
+  object 155 meadow 30000 25800 qty=0
+  object 156 meadow 32969 27030 qty=0
+square c4 id=15 x=30000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  object 157 meadow 30000 46200 qty=0
+  object 158 meadow 26362 44095 qty=0
+  object 159 meadow 26362 39900 qty=0
+  object 160 meadow 30000 37800 qty=0
+  object 161 meadow 33637 39900 qty=0
+  object 162 meadow 33637 44095 qty=0
+square c5 id=16 x=30000 y=54000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 248 path 24000 54000 0 other=247 portal=0
+  exit 249 path 35999 54000 180 other=250 portal=0
+  object 33 goldmine 30000 58200 qty=500000
+  object 75 wood 27030 56969 qty=250000
+  object 163 meadow 25800 54000 qty=0
+  object 164 meadow 27030 51030 qty=0
+  object 165 meadow 30000 49800 qty=0
+  object 166 meadow 32969 51030 qty=0
+  object 167 meadow 34200 54000 qty=0
+  object 168 meadow 32969 56969 qty=0
+  object 248 path 24000 54000 qty=0
+  object 249 path 35999 54000 qty=0
+square d1 id=17 x=42000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 234 path 36000 6000 0 other=233 portal=0
+  exit 235 path 47999 6000 180 other=236 portal=0
+  exit 265 path 42000 11999 -90 other=266 portal=0
+  object 63 wood 43902 2257 qty=50000
+  object 169 meadow 46107 5130 qty=0
+  object 170 meadow 45263 8641 qty=0
+  object 171 meadow 41928 10195 qty=0
+  object 172 meadow 38690 8583 qty=0
+  object 173 meadow 37926 4987 qty=0
+  object 174 meadow 40227 2194 qty=0
+  object 234 path 36000 6000 qty=0
+  object 235 path 47999 6000 qty=0
+  object 265 path 42000 11999 qty=0
+square d2 id=18 x=42000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 239 path 47999 18000 180 other=240 portal=0
+  exit 266 path 42000 12000 90 other=265 portal=0
+  object 47 goldmine 45019 15085 qty=75000
+  object 175 meadow 46166 18508 qty=0
+  object 176 meadow 44221 21561 qty=0
+  object 177 meadow 40563 21943 qty=0
+  object 178 meadow 38031 19365 qty=0
+  object 179 meadow 38480 15715 qty=0
+  object 180 meadow 41563 13825 qty=0
+  object 239 path 47999 18000 qty=0
+  object 266 path 42000 12000 qty=0
+square d3 id=19 x=42000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  object 181 meadow 46200 30000 qty=0
+  object 182 meadow 44100 33637 qty=0
+  object 183 meadow 39904 33637 qty=0
+  object 184 meadow 37800 30000 qty=0
+  object 185 meadow 39900 26362 qty=0
+  object 186 meadow 44100 26362 qty=0
+square d4 id=20 x=42000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 243 path 47999 42000 180 other=244 portal=0
+  exit 267 path 42000 47999 -90 other=268 portal=0
+  object 51 goldmine 45019 44914 qty=75000
+  object 187 meadow 41634 46183 qty=0
+  object 188 meadow 38518 44347 qty=0
+  object 189 meadow 38005 40702 qty=0
+  object 190 meadow 40496 38081 qty=0
+  object 191 meadow 44163 38400 qty=0
+  object 192 meadow 46158 41416 qty=0
+  object 243 path 47999 42000 qty=0
+  object 267 path 42000 47999 qty=0
+square d5 id=21 x=42000 y=54000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 250 path 36000 54000 0 other=249 portal=0
+  exit 251 path 47999 54000 180 other=252 portal=0
+  exit 268 path 42000 48000 90 other=267 portal=0
+  object 67 wood 43902 57742 qty=50000
+  object 193 meadow 40294 57834 qty=0
+  object 194 meadow 37947 55083 qty=0
+  object 195 meadow 38648 51475 qty=0
+  object 196 meadow 41857 49804 qty=0
+  object 197 meadow 45217 51303 qty=0
+  object 198 meadow 46120 54798 qty=0
+  object 250 path 36000 54000 qty=0
+  object 251 path 47999 54000 qty=0
+  object 268 path 42000 48000 qty=0
+square e1 id=22 x=54000 y=6000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 236 path 48000 6000 0 other=235 portal=0
+  exit 269 path 54000 11999 -90 other=270 portal=0
+  object 45 goldmine 57019 3085 qty=75000
+  object 199 meadow 58166 6508 qty=0
+  object 200 meadow 56221 9561 qty=0
+  object 201 meadow 52563 9943 qty=0
+  object 202 meadow 50031 7365 qty=0
+  object 203 meadow 50480 3715 qty=0
+  object 204 meadow 53563 1825 qty=0
+  object 236 path 48000 6000 qty=0
+  object 269 path 54000 11999 qty=0
+square e2 id=23 x=54000 y=18000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 240 path 48000 18000 0 other=239 portal=0
+  exit 270 path 54000 12000 90 other=269 portal=0
+  exit 271 path 54000 23999 -90 other=272 portal=0
+  object 65 wood 57805 16227 qty=50000
+  object 205 meadow 57771 19839 qty=0
+  object 206 meadow 54940 22090 qty=0
+  object 207 meadow 51358 21263 qty=0
+  object 208 meadow 49800 18000 qty=0
+  object 209 meadow 51417 14690 qty=0
+  object 210 meadow 54940 13909 qty=0
+  object 240 path 48000 18000 qty=0
+  object 270 path 54000 12000 qty=0
+  object 271 path 54000 23999 qty=0
+square e3 id=24 x=54000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 272 path 54000 24000 90 other=271 portal=0
+  exit 273 path 54000 35999 -90 other=274 portal=0
+  object 35 goldmine 58200 30000 qty=500000
+  object 77 wood 56969 32969 qty=250000
+  object 211 meadow 54000 34200 qty=0
+  object 212 meadow 51030 32969 qty=0
+  object 213 meadow 49800 30000 qty=0
+  object 214 meadow 51030 27030 qty=0
+  object 215 meadow 54000 25800 qty=0
+  object 216 meadow 56969 27030 qty=0
+  object 272 path 54000 24000 qty=0
+  object 273 path 54000 35999 qty=0
+square e4 id=25 x=54000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 244 path 48000 42000 0 other=243 portal=0
+  exit 274 path 54000 36000 90 other=273 portal=0
+  exit 275 path 54000 47999 -90 other=276 portal=0
+  object 69 wood 57805 43772 qty=50000
+  object 217 meadow 55012 46074 qty=0
+  object 218 meadow 51475 45351 qty=0
+  object 219 meadow 49804 42071 qty=0
+  object 220 meadow 51303 38782 qty=0
+  object 221 meadow 54869 37892 qty=0
+  object 222 meadow 57742 40097 qty=0
+  object 244 path 48000 42000 qty=0
+  object 274 path 54000 36000 qty=0
+  object 275 path 54000 47999 qty=0
+square e5 id=26 x=54000 y=54000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 252 path 48000 54000 0 other=251 portal=0
+  exit 276 path 54000 48000 90 other=275 portal=0
+  object 49 goldmine 57019 56914 qty=75000
+  object 223 meadow 53634 58183 qty=0
+  object 224 meadow 50518 56347 qty=0
+  object 225 meadow 50005 52702 qty=0
+  object 226 meadow 52496 50081 qty=0
+  object 227 meadow 56163 50400 qty=0
+  object 228 meadow 58158 53416 qty=0
+  object 252 path 48000 54000 qty=0
+  object 276 path 54000 48000 qty=0
+save 
+save 
+save 
+save 
+save 
+save 
+save ; 6 meadows
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save additional_meadows a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 c1 c2 c3 c4 c5 d1 d2 d3 d4 d5 e1 e2 e3 e4 e5
+save computer_only 0 0 a3 12 dragon townhall
+save computer_only 0 0 c1 12 dragon townhall
+save computer_only 0 0 c5 12 dragon townhall
+save computer_only 0 0 e3 12 dragon townhall
+save global_food_limit 150
+save goldmine 1000 c3
+save goldmine 500 a3 c1 c5 e3
+save goldmine 75 a1 a5 b2 b4 d2 d4 e1 e5
+save ground 
+save high_grounds 
+save nb_columns 5
+save nb_lines 5
+save nb_meadows_by_square 0
+save nb_players_max 4
+save nb_players_min 2
+save no_air 
+save objective 4250 4251 5002 3003 4251 102 81
+save south_north path a1 a2 a3 a4 b1 b4 d1 d4 e1 e2 e3 e4
+save square_width 12
+save starting_resources 50 25
+save starting_squares b2 b5 d1 e4
+save starting_units 3 farm workshop magestower 10 peasant 5 mage
+save title 5010 5004 5011 3006
+save water 
+save west_east path a1 a2 a4 a5 b1 b5 c1 c5 d1 d2 d4 d5
+save wood 250 a3 c1 c5 e3
+save wood 50 a2 a4 b1 b5 d1 d5 e2 e4
+save wood 500 c3

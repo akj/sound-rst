@@ -1,0 +1,503 @@
+map title=3007 objective=145,88 players=2-8 starts=8 computers=1 food=80
+square a1 id=2 x=6000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a2 id=3 x=6000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a3 id=4 x=6000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a4 id=5 x=6000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a5 id=6 x=6000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a6 id=7 x=6000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a7 id=8 x=6000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a8 id=9 x=6000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a9 id=10 x=6000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a10 id=11 x=6000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a11 id=12 x=6000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a12 id=13 x=6000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a13 id=14 x=6000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a14 id=15 x=6000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square a15 id=16 x=6000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b1 id=17 x=18000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b2 id=18 x=18000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b3 id=19 x=18000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b4 id=20 x=18000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b5 id=21 x=18000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b6 id=22 x=18000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b7 id=23 x=18000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b8 id=24 x=18000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b9 id=25 x=18000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b10 id=26 x=18000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b11 id=27 x=18000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b12 id=28 x=18000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b13 id=29 x=18000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b14 id=30 x=18000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square b15 id=31 x=18000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c1 id=32 x=30000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c2 id=33 x=30000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c3 id=34 x=30000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c4 id=35 x=30000 y=42000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 476 path 35999 42000 180 other=477 portal=0
+  object 271 wood 26690 39417 qty=100000
+  object 311 wood 31436 38056 qty=100000
+  object 351 wood 34195 42142 qty=100000
+  object 438 meadow 31155 46036 qty=0
+  object 458 meadow 26518 44347 qty=0
+  object 476 path 35999 42000 qty=0
+square c5 id=36 x=30000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c6 id=37 x=30000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c7 id=38 x=30000 y=78000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 500 path 30000 83999 -90 other=501 portal=0
+  object 267 wood 25800 78000 qty=100000
+  object 307 wood 28702 74005 qty=100000
+  object 347 wood 33397 75534 qty=100000
+  object 436 meadow 33397 80465 qty=0
+  object 456 meadow 28702 81994 qty=0
+  object 500 path 30000 83999 qty=0
+square c8 id=39 x=30000 y=90000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 501 path 30000 84000 90 other=500 portal=0
+  exit 502 path 30000 95999 -90 other=503 portal=0
+  object 235 goldmine 25800 90000 qty=400000
+  object 251 wood 27358 86736 qty=100000
+  object 396 meadow 30869 85892 qty=0
+  object 404 meadow 33771 88160 qty=0
+  object 412 meadow 33805 91772 qty=0
+  object 420 meadow 30940 94090 qty=0
+  object 428 meadow 27417 93309 qty=0
+  object 501 path 30000 84000 qty=0
+  object 502 path 30000 95999 qty=0
+square c9 id=40 x=30000 y=102000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 503 path 30000 96000 90 other=502 portal=0
+  object 269 wood 25800 102000 qty=100000
+  object 309 wood 28702 98005 qty=100000
+  object 349 wood 33397 99534 qty=100000
+  object 437 meadow 33397 104465 qty=0
+  object 457 meadow 28702 105994 qty=0
+  object 503 path 30000 96000 qty=0
+square c10 id=41 x=30000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c11 id=42 x=30000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c12 id=43 x=30000 y=138000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 480 path 35999 138000 180 other=481 portal=0
+  object 295 wood 26690 140583 qty=100000
+  object 335 wood 26518 135652 qty=100000
+  object 375 wood 31155 133963 qty=100000
+  object 450 meadow 34195 137857 qty=0
+  object 470 meadow 31436 141943 qty=0
+  object 480 path 35999 138000 qty=0
+square c13 id=44 x=30000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c14 id=45 x=30000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square c15 id=46 x=30000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d1 id=47 x=42000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d2 id=48 x=42000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d3 id=49 x=42000 y=30000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 492 path 42000 35999 -90 other=493 portal=0
+  object 273 wood 39358 26736 qty=100000
+  object 313 wood 44284 26480 qty=100000
+  object 353 wood 46053 31083 qty=100000
+  object 439 meadow 42218 34191 qty=0
+  object 459 meadow 38081 31503 qty=0
+  object 492 path 42000 35999 qty=0
+square d4 id=50 x=42000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 477 path 36000 42000 0 other=476 portal=0
+  exit 493 path 42000 36000 90 other=492 portal=0
+  object 237 goldmine 38980 39085 qty=400000
+  object 253 wood 42365 37816 qty=100000
+  object 397 meadow 45481 39652 qty=0
+  object 405 meadow 45994 43297 qty=0
+  object 413 meadow 43503 45918 qty=0
+  object 421 meadow 39837 45599 qty=0
+  object 429 meadow 37842 42583 qty=0
+  object 477 path 36000 42000 qty=0
+  object 493 path 42000 36000 qty=0
+square d5 id=51 x=42000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d6 id=52 x=42000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d7 id=53 x=42000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d8 id=54 x=42000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d9 id=55 x=42000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d10 id=56 x=42000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d11 id=57 x=42000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d12 id=58 x=42000 y=138000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 481 path 36000 138000 0 other=480 portal=0
+  exit 496 path 42000 143999 -90 other=497 portal=0
+  object 239 goldmine 38980 140914 qty=400000
+  object 255 wood 37833 137491 qty=100000
+  object 398 meadow 39778 134438 qty=0
+  object 406 meadow 43436 134056 qty=0
+  object 414 meadow 45969 136635 qty=0
+  object 422 meadow 45519 140284 qty=0
+  object 430 meadow 42436 142174 qty=0
+  object 481 path 36000 138000 qty=0
+  object 496 path 42000 143999 qty=0
+square d13 id=59 x=42000 y=150000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 497 path 42000 144000 90 other=496 portal=0
+  object 297 wood 39358 153263 qty=100000
+  object 337 wood 38081 148496 qty=100000
+  object 377 wood 42218 145808 qty=100000
+  object 451 meadow 46053 148916 qty=0
+  object 471 meadow 44284 153519 qty=0
+  object 497 path 42000 144000 qty=0
+square d14 id=60 x=42000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square d15 id=61 x=42000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e1 id=62 x=54000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e2 id=63 x=54000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e3 id=64 x=54000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e4 id=65 x=54000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e5 id=66 x=54000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e6 id=67 x=54000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e7 id=68 x=54000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e8 id=69 x=54000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e9 id=70 x=54000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e10 id=71 x=54000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e11 id=72 x=54000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e12 id=73 x=54000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e13 id=74 x=54000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e14 id=75 x=54000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square e15 id=76 x=54000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f1 id=77 x=66000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f2 id=78 x=66000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f3 id=79 x=66000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f4 id=80 x=66000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f5 id=81 x=66000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f6 id=82 x=66000 y=66000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  object 303 wood 62980 63085 qty=100000
+  object 343 wood 67012 61926 qty=100000
+  object 383 wood 70036 64845 qty=100000
+  object 391 goldmine 69019 68914 qty=500000
+  object 454 meadow 64987 70074 qty=0
+  object 474 meadow 61963 67155 qty=0
+square f7 id=83 x=66000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f8 id=84 x=66000 y=90000 high=0 water=0 ground=1 air=1 terrain=mountain speed=10,20 cover=0,0
+square f9 id=85 x=66000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f10 id=86 x=66000 y=114000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  object 305 wood 62980 116914 qty=100000
+  object 345 wood 61963 112845 qty=100000
+  object 385 wood 64987 109926 qty=100000
+  object 393 goldmine 69019 111085 qty=500000
+  object 455 meadow 70036 115155 qty=0
+  object 475 meadow 67012 118074 qty=0
+square f11 id=87 x=66000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f12 id=88 x=66000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f13 id=89 x=66000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f14 id=90 x=66000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square f15 id=91 x=66000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g1 id=92 x=78000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g2 id=93 x=78000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g3 id=94 x=78000 y=30000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 490 path 83999 30000 180 other=491 portal=0
+  object 279 wood 77202 25879 qty=100000
+  object 319 wood 81670 27967 qty=100000
+  object 359 wood 81070 32860 qty=100000
+  object 442 meadow 76227 33805 qty=0
+  object 462 meadow 73833 29491 qty=0
+  object 490 path 83999 30000 qty=0
+square g4 id=95 x=78000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g5 id=96 x=78000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g6 id=97 x=78000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g7 id=98 x=78000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g8 id=99 x=78000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g9 id=100 x=78000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g10 id=101 x=78000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g11 id=102 x=78000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g12 id=103 x=78000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g13 id=104 x=78000 y=150000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 482 path 83999 150000 180 other=483 portal=0
+  object 283 wood 77202 154120 qty=100000
+  object 323 wood 73833 150508 qty=100000
+  object 363 wood 76227 146194 qty=100000
+  object 444 meadow 81070 147139 qty=0
+  object 464 meadow 81670 152032 qty=0
+  object 482 path 83999 150000 qty=0
+square g14 id=105 x=78000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square g15 id=106 x=78000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h1 id=107 x=90000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h2 id=108 x=90000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h3 id=109 x=90000 y=30000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 488 path 95999 30000 180 other=489 portal=0
+  exit 491 path 84000 30000 0 other=490 portal=0
+  object 241 goldmine 90000 25800 qty=400000
+  object 257 wood 93263 27358 qty=100000
+  object 399 meadow 94107 30869 qty=0
+  object 407 meadow 91839 33771 qty=0
+  object 415 meadow 88227 33805 qty=0
+  object 423 meadow 85909 30940 qty=0
+  object 431 meadow 86690 27417 qty=0
+  object 488 path 95999 30000 qty=0
+  object 491 path 84000 30000 qty=0
+square h4 id=110 x=90000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h5 id=111 x=90000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h6 id=112 x=90000 y=66000 high=0 water=0 ground=1 air=1 terrain=mountain speed=10,20 cover=0,0
+square h7 id=113 x=90000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h8 id=114 x=90000 y=90000 high=0 water=0 ground=1 air=1 terrain=marsh speed=50,100 cover=50,0
+  object 227 goldmine 94200 90000 qty=3000000
+  object 229 wood 91297 93994 qty=1000000
+  object 231 wood 86602 92465 qty=1000000
+  object 233 wood 86602 87534 qty=1000000
+  object 395 meadow 91297 86005 qty=0
+square h9 id=115 x=90000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h10 id=116 x=90000 y=114000 high=0 water=0 ground=1 air=1 terrain=mountain speed=10,20 cover=0,0
+square h11 id=117 x=90000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h12 id=118 x=90000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h13 id=119 x=90000 y=150000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 483 path 84000 150000 0 other=482 portal=0
+  exit 484 path 95999 150000 180 other=485 portal=0
+  object 243 goldmine 90000 154200 qty=400000
+  object 259 wood 86736 152641 qty=100000
+  object 400 meadow 85892 149130 qty=0
+  object 408 meadow 88160 146228 qty=0
+  object 416 meadow 91772 146194 qty=0
+  object 424 meadow 94090 149059 qty=0
+  object 432 meadow 93309 152583 qty=0
+  object 483 path 84000 150000 qty=0
+  object 484 path 95999 150000 qty=0
+square h14 id=120 x=90000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square h15 id=121 x=90000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i1 id=122 x=102000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i2 id=123 x=102000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i3 id=124 x=102000 y=30000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 489 path 96000 30000 0 other=488 portal=0
+  object 281 wood 102869 25892 qty=100000
+  object 321 wood 106174 29563 qty=100000
+  object 361 wood 103705 33834 qty=100000
+  object 443 meadow 98879 32809 qty=0
+  object 463 meadow 98362 27900 qty=0
+  object 489 path 96000 30000 qty=0
+square i4 id=125 x=102000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i5 id=126 x=102000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i6 id=127 x=102000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i7 id=128 x=102000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i8 id=129 x=102000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i9 id=130 x=102000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i10 id=131 x=102000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i11 id=132 x=102000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i12 id=133 x=102000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i13 id=134 x=102000 y=150000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 485 path 96000 150000 0 other=484 portal=0
+  object 285 wood 102869 154107 qty=100000
+  object 325 wood 98362 152095 qty=100000
+  object 365 wood 98879 147190 qty=100000
+  object 445 meadow 103705 146165 qty=0
+  object 465 meadow 106174 150436 qty=0
+  object 485 path 96000 150000 qty=0
+square i14 id=135 x=102000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square i15 id=136 x=102000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j1 id=137 x=114000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j2 id=138 x=114000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j3 id=139 x=114000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j4 id=140 x=114000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j5 id=141 x=114000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j6 id=142 x=114000 y=66000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  object 299 wood 117019 63085 qty=100000
+  object 339 wood 118036 67155 qty=100000
+  object 379 wood 115012 70074 qty=100000
+  object 387 goldmine 110980 68914 qty=500000
+  object 452 meadow 109963 64845 qty=0
+  object 472 meadow 112987 61926 qty=0
+square j7 id=143 x=114000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j8 id=144 x=114000 y=90000 high=0 water=0 ground=1 air=1 terrain=mountain speed=10,20 cover=0,0
+square j9 id=145 x=114000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j10 id=146 x=114000 y=114000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  object 301 wood 117019 116914 qty=100000
+  object 341 wood 112987 118074 qty=100000
+  object 381 wood 109963 115155 qty=100000
+  object 389 goldmine 110980 111085 qty=500000
+  object 453 meadow 115012 109926 qty=0
+  object 473 meadow 118036 112845 qty=0
+square j11 id=147 x=114000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j12 id=148 x=114000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j13 id=149 x=114000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j14 id=150 x=114000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square j15 id=151 x=114000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k1 id=152 x=126000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k2 id=153 x=126000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k3 id=154 x=126000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k4 id=155 x=126000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k5 id=156 x=126000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k6 id=157 x=126000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k7 id=158 x=126000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k8 id=159 x=126000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k9 id=160 x=126000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k10 id=161 x=126000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k11 id=162 x=126000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k12 id=163 x=126000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k13 id=164 x=126000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k14 id=165 x=126000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square k15 id=166 x=126000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l1 id=167 x=138000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l2 id=168 x=138000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l3 id=169 x=138000 y=30000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 494 path 138000 35999 -90 other=495 portal=0
+  object 291 wood 140641 26736 qty=100000
+  object 331 wood 141918 31503 qty=100000
+  object 371 wood 137781 34191 qty=100000
+  object 448 meadow 133947 31083 qty=0
+  object 468 meadow 135715 26480 qty=0
+  object 494 path 138000 35999 qty=0
+square l4 id=170 x=138000 y=42000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 478 path 143999 42000 180 other=479 portal=0
+  exit 495 path 138000 36000 90 other=494 portal=0
+  object 245 goldmine 141019 39085 qty=400000
+  object 261 wood 142166 42508 qty=100000
+  object 401 meadow 140221 45561 qty=0
+  object 409 meadow 136563 45943 qty=0
+  object 417 meadow 134031 43365 qty=0
+  object 425 meadow 134480 39715 qty=0
+  object 433 meadow 137563 37825 qty=0
+  object 478 path 143999 42000 qty=0
+  object 495 path 138000 36000 qty=0
+square l5 id=171 x=138000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l6 id=172 x=138000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l7 id=173 x=138000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l8 id=174 x=138000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l9 id=175 x=138000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l10 id=176 x=138000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l11 id=177 x=138000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l12 id=178 x=138000 y=138000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 486 path 143999 138000 180 other=487 portal=0
+  exit 498 path 138000 143999 -90 other=499 portal=0
+  object 247 goldmine 141019 140914 qty=400000
+  object 263 wood 137634 142183 qty=100000
+  object 402 meadow 134518 140347 qty=0
+  object 410 meadow 134005 136702 qty=0
+  object 418 meadow 136496 134081 qty=0
+  object 426 meadow 140163 134400 qty=0
+  object 434 meadow 142158 137416 qty=0
+  object 486 path 143999 138000 qty=0
+  object 498 path 138000 143999 qty=0
+square l13 id=179 x=138000 y=150000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 499 path 138000 144000 90 other=498 portal=0
+  object 287 wood 140641 153263 qty=100000
+  object 327 wood 135715 153519 qty=100000
+  object 367 wood 133947 148916 qty=100000
+  object 446 meadow 137781 145808 qty=0
+  object 466 meadow 141918 148496 qty=0
+  object 499 path 138000 144000 qty=0
+square l14 id=180 x=138000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square l15 id=181 x=138000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m1 id=182 x=150000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m2 id=183 x=150000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m3 id=184 x=150000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m4 id=185 x=150000 y=42000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 479 path 144000 42000 0 other=478 portal=0
+  object 293 wood 153309 39417 qty=100000
+  object 333 wood 153481 44347 qty=100000
+  object 373 wood 148845 46036 qty=100000
+  object 449 meadow 145804 42142 qty=0
+  object 469 meadow 148563 38056 qty=0
+  object 479 path 144000 42000 qty=0
+square m5 id=186 x=150000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m6 id=187 x=150000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m7 id=188 x=150000 y=78000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 504 path 150000 83999 -90 other=505 portal=0
+  object 275 wood 154200 78000 qty=100000
+  object 315 wood 151297 81994 qty=100000
+  object 355 wood 146602 80465 qty=100000
+  object 440 meadow 146602 75534 qty=0
+  object 460 meadow 151297 74005 qty=0
+  object 504 path 150000 83999 qty=0
+square m8 id=189 x=150000 y=90000 high=0 water=0 ground=1 air=1 terrain= speed=100,100 cover=0,0
+  exit 505 path 150000 84000 90 other=504 portal=0
+  exit 506 path 150000 95999 -90 other=507 portal=0
+  object 249 goldmine 154200 90000 qty=400000
+  object 265 wood 152641 93263 qty=100000
+  object 403 meadow 149130 94107 qty=0
+  object 411 meadow 146228 91839 qty=0
+  object 419 meadow 146194 88227 qty=0
+  object 427 meadow 149059 85909 qty=0
+  object 435 meadow 152583 86690 qty=0
+  object 505 path 150000 84000 qty=0
+  object 506 path 150000 95999 qty=0
+square m9 id=190 x=150000 y=102000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 507 path 150000 96000 90 other=506 portal=0
+  object 277 wood 154200 102000 qty=100000
+  object 317 wood 151297 105994 qty=100000
+  object 357 wood 146602 104465 qty=100000
+  object 441 meadow 146602 99534 qty=0
+  object 461 meadow 151297 98005 qty=0
+  object 507 path 150000 96000 qty=0
+square m10 id=191 x=150000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m11 id=192 x=150000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m12 id=193 x=150000 y=138000 high=1 water=0 ground=1 air=1 terrain= speed=100,100 cover=50,0
+  exit 487 path 144000 138000 0 other=486 portal=0
+  object 289 wood 153309 140583 qty=100000
+  object 329 wood 148563 141943 qty=100000
+  object 369 wood 145804 137857 qty=100000
+  object 447 meadow 148845 133963 qty=0
+  object 467 meadow 153481 135652 qty=0
+  object 487 path 144000 138000 qty=0
+square m13 id=194 x=150000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m14 id=195 x=150000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square m15 id=196 x=150000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n1 id=197 x=162000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n2 id=198 x=162000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n3 id=199 x=162000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n4 id=200 x=162000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n5 id=201 x=162000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n6 id=202 x=162000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n7 id=203 x=162000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n8 id=204 x=162000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n9 id=205 x=162000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n10 id=206 x=162000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n11 id=207 x=162000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n12 id=208 x=162000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n13 id=209 x=162000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n14 id=210 x=162000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square n15 id=211 x=162000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o1 id=212 x=174000 y=6000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o2 id=213 x=174000 y=18000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o3 id=214 x=174000 y=30000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o4 id=215 x=174000 y=42000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o5 id=216 x=174000 y=54000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o6 id=217 x=174000 y=66000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o7 id=218 x=174000 y=78000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o8 id=219 x=174000 y=90000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o9 id=220 x=174000 y=102000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o10 id=221 x=174000 y=114000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o11 id=222 x=174000 y=126000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o12 id=223 x=174000 y=138000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o13 id=224 x=174000 y=150000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o14 id=225 x=174000 y=162000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+square o15 id=226 x=174000 y=174000 high=0 water=1 ground=0 air=1 terrain=ocean speed=0,25 cover=0,0
+save 
+save 
+save 
+save 
+save 
+save 
+save ; 1 meadow
+save ; 2 meadows
+save ; 5 meadows
+save additional_meadows c4 c7 c9 c12 d3 d13 f6 f10 g3 g13 i3 i13 j6 j10 l3 l13 m4 m7 m9 m12
+save additional_meadows c4 c7 c9 c12 d3 d13 f6 f10 g3 g13 i3 i13 j6 j10 l3 l13 m4 m7 m9 m12
+save additional_meadows c8 d4 d12 h3 h13 l4 l12 m8
+save additional_meadows c8 d4 d12 h3 h13 l4 l12 m8
+save additional_meadows c8 d4 d12 h3 h13 l4 l12 m8
+save additional_meadows c8 d4 d12 h3 h13 l4 l12 m8
+save additional_meadows c8 d4 d12 h3 h13 l4 l12 m8
+save additional_meadows h8
+save computer_only 0 0 h8 dragon 7 zombie 7 skeleton j6 3 archer j10 3 archer f6 3 archer f10 3 archer
+save cover 0.5 0.0 c4 c7 c9 c12 d3 d13 f6 f10 g3 g13 h8 i3 i13 j6 j10 l3 l13 m4 m7 m9 m12
+save global_food_limit 80
+save goldmine 3000 h8
+save goldmine 400 c8 d4 d12 h3 h13 l4 l12 m8
+save goldmine 500 f6 f10 j6 j10
+save ground 
+save high_grounds c4 c7 c9 c12 d3 d13 f6 f10 g3 g13 i3 i13 j6 j10 l3 l13 m4 m7 m9 m12
+save nb_columns 15
+save nb_lines 15
+save nb_meadows_by_square 0
+save nb_players_max 8
+save nb_players_min 2
+save no_air 
+save objective 145 88
+save south_north path c7 c8 d3 d12 l3 l12 m7 m8
+save speed 0.0 0.25 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 c1 c2 c3 c5 c6 c10 c11 c13 c14 c15 d1 d2 d5 d6 d7 d8 d9 d10 d11 d14 d15 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 e13 e14 e15 f1 f2 f3 f4 f5 f7 f9 f11 f12 f13 f14 f15 g1 g2 g4 g5 g6 g7 g8 g9 g10 g11 g12 g14 g15 h1 h2 h4 h5 h7 h9 h11 h12 h14 h15 i1 i2 i4 i5 i6 i7 i8 i9 i10 i11 i12 i14 i15 j1 j2 j3 j4 j5 j7 j9 j11 j12 j13 j14 j15 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 l1 l2 l5 l6 l7 l8 l9 l10 l11 l14 l15 m1 m2 m3 m5 m6 m10 m11 m13 m14 m15 n1 n2 n3 n4 n5 n6 n7 n8 n9 n10 n11 n12 n13 n14 n15 o1 o2 o3 o4 o5 o6 o7 o8 o9 o10 o11 o12 o13 o14 o15
+save speed 0.1 0.2 f8 h6 h10 j8
+save speed 0.5 1.0 h8
+save square_width 12
+save starting_resources 10 10
+save starting_squares c8 d4 d12 h3 h13 l4 l12 m8
+save starting_units townhall farm 4 peasant
+save terrain marsh h8
+save terrain mountain f8 h6 h10 j8
+save terrain ocean a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 c1 c2 c3 c5 c6 c10 c11 c13 c14 c15 d1 d2 d5 d6 d7 d8 d9 d10 d11 d14 d15 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 e13 e14 e15 f1 f2 f3 f4 f5 f7 f9 f11 f12 f13 f14 f15 g1 g2 g4 g5 g6 g7 g8 g9 g10 g11 g12 g14 g15 h1 h2 h4 h5 h7 h9 h11 h12 h14 h15 i1 i2 i4 i5 i6 i7 i8 i9 i10 i11 i12 i14 i15 j1 j2 j3 j4 j5 j7 j9 j11 j12 j13 j14 j15 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 l1 l2 l5 l6 l7 l8 l9 l10 l11 l14 l15 m1 m2 m3 m5 m6 m10 m11 m13 m14 m15 n1 n2 n3 n4 n5 n6 n7 n8 n9 n10 n11 n12 n13 n14 n15 o1 o2 o3 o4 o5 o6 o7 o8 o9 o10 o11 o12 o13 o14 o15
+save title 3007
+save water a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 c1 c2 c3 c5 c6 c10 c11 c13 c14 c15 d1 d2 d5 d6 d7 d8 d9 d10 d11 d14 d15 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 e13 e14 e15 f1 f2 f3 f4 f5 f7 f9 f11 f12 f13 f14 f15 g1 g2 g4 g5 g6 g7 g8 g9 g10 g11 g12 g14 g15 h1 h2 h4 h5 h7 h9 h11 h12 h14 h15 i1 i2 i4 i5 i6 i7 i8 i9 i10 i11 i12 i14 i15 j1 j2 j3 j4 j5 j7 j9 j11 j12 j13 j14 j15 k1 k2 k3 k4 k5 k6 k7 k8 k9 k10 k11 k12 k13 k14 k15 l1 l2 l5 l6 l7 l8 l9 l10 l11 l14 l15 m1 m2 m3 m5 m6 m10 m11 m13 m14 m15 n1 n2 n3 n4 n5 n6 n7 n8 n9 n10 n11 n12 n13 n14 n15 o1 o2 o3 o4 o5 o6 o7 o8 o9 o10 o11 o12 o13 o14 o15
+save west_east path c4 c12 g3 g13 h3 h13 l4 l12
+save wood 100 c4 c4 c4 c7 c7 c7 c8 c9 c9 c9 c12 c12 c12 d3 d3 d3 d4 d12 d13 d13 d13 f6 f6 f6 f10 f10 f10 g3 g3 g3 g13 g13 g13 h3 h13 i3 i3 i3 i13 i13 i13 j6 j6 j6 j10 j10 j10 l3 l3 l3 l4 l12 l13 l13 l13 m4 m4 m4 m7 m7 m7 m8 m9 m9 m9 m12 m12 m12
+save wood 1000 h8 h8 h8

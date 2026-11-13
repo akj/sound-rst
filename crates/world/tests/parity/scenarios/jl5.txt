@@ -1,0 +1,30 @@
+# boats, loading, walls, blocking, patrols, recall, conversion, and the
+# orders only computers may give (player 2 is a computer that does nothing
+# by itself)
+0 0 cmd add_units c7 boat
+0 0 cmd add_units c6 3 footman
+1 0 control {u:boat:0}
+1 0 order 0 0 load_all {sq:c6}
+10 0 control {u:boat:0}
+10 0 order 0 0 go {sq:d7}
+40 0 control {u:boat:0}
+40 0 order 0 0 unload_all {sq:d6}
+80 0 control {ids:footman}
+80 0 order 0 0 patrol {sq:e6}
+0 1 cmd add_units e5 2 peasant 2 archer
+1 1 control {u:peasant:4}
+1 1 order 0 0 build wall {at:e5:path:0}
+2 1 control {u:archer:0}
+2 1 order 0 0 block {at:e5:path:1}
+5 0 cmd add_units d6 mage priest u_recall u_conversion
+6 0 control {u:mage:0}
+6 0 order 0 0 use a_recall {sq:c6}
+60 0 control {u:priest:0}
+60 0 order 0 0 use a_conversion {eu:archer:1}
+0 2 cmd add_units {hn:townhall:0} 4 footman
+1 2 control {u:footman:0}
+1 2 order 0 0 auto_explore
+1 2 control {u:footman:1}
+1 2 order 0 0 auto_attack
+1 2 control {u:footman:2}
+1 2 order 0 0 wait {here:townhall:0}

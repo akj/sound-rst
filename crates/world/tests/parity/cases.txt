@@ -1,0 +1,27 @@
+# Parity cases. Each line: name, kind (static or trace), map and options.
+# Paths are relative to vendor/soundrts-upstream. Lists are comma separated
+# and are joined with a line break, as the original's resource loader does.
+#
+# static: the squares, exits and objects of the built map.
+# trace: a scripted game, dumped after every update.
+
+name=static_jl1 kind=static map=res/multi/jl1.txt
+name=static_jl5 kind=static map=res/multi/jl5.txt
+name=static_jl7 kind=static map=res/multi/jl7.txt
+name=static_jl8 kind=static map=res/multi/jl8.txt
+name=static_js4 kind=static map=res/multi/js4.txt seed=3
+name=static_ce4 kind=static map=res/multi/ce4.txt seed=5
+name=static_kel6 kind=static map=res/multi/kel6.txt
+name=static_pm1 kind=static map=res/multi/pm1.txt
+name=static_b1 kind=static map=res/multi/b1.txt
+name=static_campaign2 kind=static map=single/campaign/2.txt
+name=static_orc0 kind=static map=single/orc/0.txt rules=res/rules.txt,single/orc/rules.txt ai=res/ai.txt,single/orc/ai.txt
+name=static_height kind=static map=soundrts/tests/height.txt
+name=static_cyclic kind=static map=soundrts/tests/jl1_cyclic.txt
+
+name=trace_jl1 kind=trace map=res/multi/jl1.txt seed=1 triggers=multiplayer players=a,b scenario=scenarios/jl1.txt ticks=400
+name=trace_jl7 kind=trace map=res/multi/jl7.txt seed=4 triggers=multiplayer players=a,b scenario=scenarios/jl7.txt ticks=300
+name=trace_campaign3 kind=trace map=single/campaign/3.txt seed=2 players=a scenario=scenarios/campaign3.txt ticks=300
+name=trace_cyclic kind=trace map=soundrts/tests/jl1_cyclic.txt seed=6 triggers=multiplayer players=a,b scenario=scenarios/cyclic.txt ticks=250
+name=trace_jl5 kind=trace map=res/multi/jl5.txt seed=8 triggers=multiplayer players=a,b,ai_timers scenario=scenarios/jl5.txt ticks=300
+name=trace_campaign2 kind=trace map=single/campaign/2.txt seed=9 players=a scenario=scenarios/none.txt ticks=1100

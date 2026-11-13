@@ -11,3 +11,26 @@ workspace = true
 
 [dependencies]
 soundrts-world = { path = "../world" }
+indexmap = "2"
+rodio = { version = "0.23", default-features = false, features = ["playback", "vorbis"] }
+sha2 = "0.11"
+sys-locale = "0.3"
+tempfile = "3"
+toml = "1"
+winit = "0.30"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+tolk = "0.5"
+tolk-sys = "0.2"
+# The same version winit uses, so it is built once.
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(not(windows))'.dependencies]
+tts = "0.26"

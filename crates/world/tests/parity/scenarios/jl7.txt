@@ -1,0 +1,13 @@
+# a fight on the central marsh island, with the neutral monsters there
+0 0 cmd add_units h8 6 archer
+0 1 cmd add_units h8 6 footman 2 knight
+5 0 cmd add_units h8 priest mage u_summon_dragon
+10 0 control {u:mage:0}
+10 0 order 0 0 use a_summon_dragon
+20 1 cmd add_units h8 necromancer
+60 1 control {u:necromancer:0}
+60 1 order 0 0 use a_raise_dead
+100 0 cmd add_units h8 3 catapult
+25 1 cmd add_units h8 blacksmith
+26 1 control {u:blacksmith:0}
+26 1 order 0 0 research melee_weapon
