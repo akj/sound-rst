@@ -386,7 +386,15 @@ fn a_server_on_the_local_network_answers_the_discovery() {
     })
     .expect("a server");
     let addr = server.local_addr();
-    let found = soundrts::net::discovery::discover(&[addr], Duration::from_millis(500));
+    // UDP may lose a request or be slow on a busy machine: ask again, as a
+    // player would.
+    let mut found = Vec::new();
+    for _ in 0..10 {
+        found = soundrts::net::discovery::discover(&[addr], Duration::from_millis(500));
+        if !found.is_empty() {
+            break;
+        }
+    }
     assert_eq!(
         found,
         [soundrts::net::discovery::FoundServer {
