@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
 use crate::audio::{AudioOutput, Channel, Sound};
@@ -341,6 +342,7 @@ pub struct Script {
     keep_open: bool,
     live: Option<LiveKeys>,
     deadline: Option<f64>,
+    progress: Option<Arc<AtomicUsize>>,
 }
 
 /// A point of a script that waits until an utterance is said.
@@ -398,6 +400,13 @@ impl Script {
     /// As [`Script::wait_for`], for an utterance that is exactly `text`.
     pub fn wait_for_exact(self, text: &str) -> Script {
         self.wait(text, true)
+    }
+
+    /// Counts the waits that are over in `progress`, which another thread
+    /// can read.
+    pub fn progress(mut self, progress: Arc<AtomicUsize>) -> Script {
+        self.progress = Some(progress);
+        self
     }
 
     fn wait(mut self, text: &str, exact: bool) -> Script {
@@ -470,6 +479,7 @@ impl Script {
             waiting_since: None,
             heard_from: 0,
             utterances: None,
+            progress: self.progress,
             live: self.live,
             deadline: self.deadline,
             last_time: 0.0,
@@ -491,6 +501,7 @@ pub struct ScriptedInput {
     /// The utterances before this one are not looked at by the next wait.
     heard_from: usize,
     utterances: Option<UtteranceLog>,
+    progress: Option<Arc<AtomicUsize>>,
     live: Option<LiveKeys>,
     deadline: Option<f64>,
     last_time: f64,
@@ -534,6 +545,9 @@ impl ScriptedInput {
                     self.offsets.push(now);
                     self.last_time = self.last_time.max(now);
                     self.waiting_since = None;
+                    if let Some(p) = &self.progress {
+                        p.store(self.satisfied, std::sync::atomic::Ordering::SeqCst);
+                    }
                 }
                 None => {
                     let since = *self

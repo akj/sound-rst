@@ -49,11 +49,13 @@ impl Clock for SystemClock {
     }
 }
 
-/// A clock that only moves when something sleeps or a test advances it.
+/// A clock that only moves when something sleeps or a test advances it,
+/// or, once told to follow real time, a clock that also runs on its own.
 #[derive(Default)]
 pub struct ManualClock {
     now: Cell<f64>,
-    real_pause: Cell<f64>,
+    /// Since when the clock follows real time.
+    real_since: Cell<Option<Instant>>,
 }
 
 impl ManualClock {
@@ -61,10 +63,10 @@ impl ManualClock {
         Self::default()
     }
 
-    /// Each sleep also waits this long in real time, so that a client
-    /// that talks to a real server does not spin.
-    pub fn set_real_pause(&self, seconds: f64) {
-        self.real_pause.set(seconds);
+    /// From now on the clock runs in real time and a sleep really waits,
+    /// for a client that plays against a real server.
+    pub fn follow_real_time(&self) {
+        self.real_since.set(Some(Instant::now()));
     }
 
     pub fn advance(&self, seconds: f64) {
@@ -74,14 +76,20 @@ impl ManualClock {
 
 impl Clock for ManualClock {
     fn now(&self) -> f64 {
-        self.now.get()
+        let real = self
+            .real_since
+            .get()
+            .map_or(0.0, |since| since.elapsed().as_secs_f64());
+        self.now.get() + real
     }
 
     fn sleep(&self, seconds: f64) {
-        self.advance(seconds.max(0.0));
-        let pause = self.real_pause.get();
-        if pause > 0.0 {
-            std::thread::sleep(Duration::from_secs_f64(pause));
+        if self.real_since.get().is_some() {
+            if seconds > 0.0 {
+                std::thread::sleep(Duration::from_secs_f64(seconds));
+            }
+        } else {
+            self.advance(seconds.max(0.0));
         }
     }
 }
