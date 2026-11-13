@@ -3,6 +3,7 @@
 //! hears, since the server keeps real time. Nothing leaves 127.0.0.1.
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -226,24 +227,51 @@ fn two_players_play_a_game_in_step_and_leave_it() {
     let progress = Arc::new(AtomicUsize::new(0));
     let (room_tx, room_rx) = std::sync::mpsc::channel();
 
-    /// What a player's game hook gathers: the digests sent, and whether
-    /// the game is over for them.
-    type Digests = Rc<RefCell<Vec<(Turn, Digest)>>>;
+    /// What a player's game hook gathers: the digests sent, the square
+    /// its peasants were sent to (with its slot), and every square where
+    /// it saw each slot's peasants, in its own world.
+    #[derive(Default)]
+    struct Seen {
+        digests: Vec<(Turn, Digest)>,
+        target: Option<(usize, String)>,
+        squares: BTreeSet<(usize, String)>,
+    }
+    type Record = Rc<RefCell<Seen>>;
 
-    /// Moves the player's peasants to the next square and back, every ten
-    /// turns, and quits at turn `quit_at` if given.
-    fn orders_hook(digests: Digests, quit_at: Option<i64>) -> GameHook {
+    /// Sends the player's peasants to the next square at turn 10 and back
+    /// at turn 70, and quits at turn `quit_at` if given. Records what the
+    /// player's world shows.
+    fn orders_hook(record: Record, quit_at: Option<i64>) -> GameHook {
         let done = std::cell::Cell::new(0);
         Rc::new(move |g, cx| {
-            if let Some(net) = &g.net {
-                *digests.borrow_mut() = net.digests.clone();
+            let Some(net) = &g.net else { return };
+            let slots = net.slots.clone();
+            let you = net.you;
+            {
+                let mut r = record.borrow_mut();
+                r.digests = net.digests.clone();
+                for (slot, &p) in slots.iter().enumerate() {
+                    for e in g
+                        .world
+                        .player(p)
+                        .units
+                        .iter()
+                        .filter_map(|&u| g.world.entity(u))
+                    {
+                        if &*e.type_name == "peasant"
+                            && let Some(sq) = e.square()
+                        {
+                            r.squares.insert((slot, g.world.square(sq).name.clone()));
+                        }
+                    }
+                }
             }
             let turn = g.world.turn();
-            if turn == 0 || turn % 10 != 0 || done.get() == turn {
+            if done.get() == turn || !matches!(turn, 10 | 70) && quit_at.is_none_or(|q| turn != q) {
                 return;
             }
             done.set(turn);
-            if quit_at.is_some_and(|q| turn >= q) {
+            if quit_at == Some(turn) {
                 g.write_line(cx, "quit");
                 return;
             }
@@ -260,16 +288,23 @@ fn two_players_play_a_game_in_step_and_leave_it() {
             let Some((_, Some(home))) = units.first().copied() else {
                 return;
             };
-            let sq = g.world.square(home);
-            let next = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                .iter()
-                .find_map(|(dc, dr)| g.world.square_at(sq.col + dc, sq.row + dr));
-            let Some(next) = next else { return };
-            let target = if (turn / 10) % 2 == 1 { next } else { home };
-            let name = g.world.square(target).name.clone();
+            let target = if turn == 10 {
+                let sq = g.world.square(home);
+                let Some(next) = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .find_map(|(dc, dr)| g.world.square_at(sq.col + dc, sq.row + dr))
+                else {
+                    return;
+                };
+                let name = g.world.square(next).name.clone();
+                record.borrow_mut().target = Some((you, name.clone()));
+                name
+            } else {
+                g.world.square(home).name.clone()
+            };
             let ids: Vec<String> = units.iter().map(|(id, _)| id.to_string()).collect();
             g.write_line(cx, &format!("control {}", ids.join(" ")));
-            g.write_line(cx, &format!("order 0 0 go {name}"));
+            g.write_line(cx, &format!("order 0 0 go {target}"));
         })
     }
 
@@ -300,8 +335,8 @@ fn two_players_play_a_game_in_step_and_leave_it() {
         s = s.at(0.3).type_text("s").at(0.6).tap(Key::Return);
         s = s.wait_for("Menu please make a selection");
         let mut h = harness("andrew", s.progress(andrew_progress));
-        let digests: Digests = Rc::default();
-        h.client.game.hook = Some(orders_hook(digests.clone(), Some(120)));
+        let record: Record = Rc::default();
+        h.client.game.hook = Some(orders_hook(record.clone(), Some(120)));
         let maps = h.client.res.multiplayer_maps();
         let jl1 = maps.iter().find(|m| m.name == "jl1").unwrap();
         std::fs::write(
@@ -310,8 +345,14 @@ fn two_players_play_a_game_in_step_and_leave_it() {
         )
         .unwrap();
         let _ = soundrts::multiplayer::connect(&mut h.client, &andrew_address, None);
-        let digests = digests.borrow().clone();
-        (h.said_since(0), h.log_text(), digests)
+        let r = record.borrow();
+        (
+            h.said_since(0),
+            h.log_text(),
+            r.digests.clone(),
+            r.target.clone(),
+            r.squares.clone(),
+        )
     });
 
     // Bob comes once Andrew is in his room.
@@ -326,15 +367,22 @@ fn two_players_play_a_game_in_step_and_leave_it() {
         s = s.at(0.3).type_text("i").at(0.6).tap(Key::Return);
         s = s.wait_for("Menu please make a selection");
         let mut h = harness("bob", s);
-        let digests: Digests = Rc::default();
-        h.client.game.hook = Some(orders_hook(digests.clone(), None));
+        let record: Record = Rc::default();
+        h.client.game.hook = Some(orders_hook(record.clone(), None));
         let _ = soundrts::multiplayer::connect(&mut h.client, &bob_address, None);
-        let digests = digests.borrow().clone();
-        (h.said_since(0), h.log_text(), digests)
+        let r = record.borrow();
+        (
+            h.said_since(0),
+            h.log_text(),
+            r.digests.clone(),
+            r.target.clone(),
+            r.squares.clone(),
+        )
     });
 
-    let (bob_said, bob_log, bob_digests) = join("bob", bob);
-    let (andrew_said, andrew_log, andrew_digests) = join("andrew", andrew);
+    let (bob_said, bob_log, bob_digests, bob_target, bob_seen) = join("bob", bob);
+    let (andrew_said, andrew_log, andrew_digests, andrew_target, andrew_seen) =
+        join("andrew", andrew);
     server.shutdown();
 
     assert!(
@@ -366,6 +414,19 @@ fn two_players_play_a_game_in_step_and_leave_it() {
             said.iter().any(|s| s.starts_with("objective")),
             "{who}: {said:#?}"
         );
+    }
+    // The orders had effect: each player's peasants reached the square
+    // they were sent to, in both players' worlds.
+    let andrew_target = andrew_target.expect("andrew gave an order");
+    let bob_target = bob_target.expect("bob gave an order");
+    assert_eq!((andrew_target.0, bob_target.0), (0, 1));
+    for (who, seen) in [("andrew", &andrew_seen), ("bob", &bob_seen)] {
+        for target in [&andrew_target, &bob_target] {
+            assert!(
+                seen.contains(target),
+                "{who} never saw {target:?}: {seen:?}"
+            );
+        }
     }
     // Andrew quit; Bob saw it and won.
     assert!(
