@@ -441,7 +441,8 @@ impl Resources {
             m.title
                 .iter()
                 .map(|p| match p {
-                    soundrts_world::msg::MsgPart::Text(s) => s.to_lowercase(),
+                    soundrts_world::msg::MsgPart::Text(s)
+                    | soundrts_world::msg::MsgPart::Literal(s) => s.to_lowercase(),
                     soundrts_world::msg::MsgPart::Num(_) => "{".to_owned(),
                 })
                 .collect()

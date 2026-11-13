@@ -392,7 +392,7 @@ impl Player {
         match login.as_str() {
             "ai_easy" => msg(mp::QUIET_COMPUTER),
             "ai_aggressive" => msg(mp::AGGRESSIVE_COMPUTER),
-            _ => vec![MsgPart::from(login)],
+            _ => vec![MsgPart::Literal(login)],
         }
     }
 

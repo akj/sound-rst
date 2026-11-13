@@ -109,11 +109,7 @@ impl Session {
             .enumerate()
             .map(|(i, slot)| {
                 let mut c = match &slot.player {
-                    // Said as written by the world too (see `literal`).
-                    SlotPlayer::Human(login) => Controller::human(
-                        &format!("{}{login}", crate::sound_cache::LITERAL),
-                        i == you,
-                    ),
+                    SlotPlayer::Human(login) => Controller::human(login.as_str(), i == you),
                     SlotPlayer::Computer(level) => Controller::computer(level.ai_type()),
                 };
                 c.faction = slot.faction.as_str().to_owned();

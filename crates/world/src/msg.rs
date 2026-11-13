@@ -11,11 +11,13 @@ pub const NB_ENCODE_SHIFT: u64 = 1_000_000;
 /// A number names a recorded sound or a line of `ui/tts.txt`. Text is either
 /// such a name written as a string (map files do this) or words to speak as
 /// written. The two forms of the same name are looked up the same way, by
-/// [`MsgPart::key`].
+/// [`MsgPart::key`]. A literal is what a person wrote, such as a login or a
+/// chat line: it is said as written and never looked up.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MsgPart {
     Num(u64),
     Text(String),
+    Literal(String),
 }
 
 /// A spoken message. The parts are said in order.
@@ -32,7 +34,7 @@ impl fmt::Display for MsgPart {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MsgPart::Num(n) => write!(f, "{n}"),
-            MsgPart::Text(s) => f.write_str(s),
+            MsgPart::Text(s) | MsgPart::Literal(s) => f.write_str(s),
         }
     }
 }

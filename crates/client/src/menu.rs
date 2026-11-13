@@ -85,7 +85,7 @@ pub fn py_repr(m: &Msg) -> String {
         .iter()
         .map(|p| match p {
             MsgPart::Num(n) => n.to_string(),
-            MsgPart::Text(s) => {
+            MsgPart::Text(s) | MsgPart::Literal(s) => {
                 let quote = if s.contains('\'') && !s.contains('"') {
                     '"'
                 } else {
