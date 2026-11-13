@@ -16,7 +16,7 @@ Single-player games work.
 
 The following parts of the original are not ported:
 
-- Multiplayer, the server, and chat.
+- Multiplayer and chat in the game. The server exists, but the game does not connect to it yet.
 - Saved games and replays.
 - The map editor.
 - The on-screen map. The window stays blank.
@@ -58,6 +58,16 @@ To play in another language, write its code, for example `fr`, in `cfg/language.
 
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, and the current folder.
 
+## Run a server
+
+The server is a lobby, a chat, and a turn clock. It does not need the game data.
+
+```powershell
+cargo run -p soundrts-server -- --port 2501 --name "My server"
+```
+
+The server listens on TCP port 2501 for players and answers on UDP port 2501 to players who look for servers on the local network. Add `--upnp` to ask the router to forward the port to players on the internet. Run `cargo run -p soundrts-server -- --help` for every option. Press Ctrl+C to stop the server.
+
 ## Test
 
 ```powershell
@@ -79,6 +89,8 @@ These tests show that the port sends the same text to the speech device as the o
 
 - `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
+- `crates/protocol` is the messages between a client and a server.
+- `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `scripts/fetch-upstream.ps1` fetches the original game.
 
 ## Licenses
