@@ -496,3 +496,73 @@ fn orders_beyond_what_a_turn_takes_wait_for_the_next_turn() {
     assert_eq!(order_bytes(&server), 40 * command.len());
     assert!(g.game.pending_commands().is_empty());
 }
+
+/// A room with a computer on jl1, entered at 10 s, whose game the server
+/// starts at `start` with `you` as the player's slot.
+fn game_starting(h: &mut Harness, s: &FakeServer, start: f64, you: SlotIndex) {
+    let map = jl1(h);
+    let slots = two_slots();
+    let state = room_state(&map, slots.clone());
+    s.at(10.0, room(RoomChange::Entered, &state));
+    s.at(
+        start,
+        ServerMsg::GameStarted {
+            seed: 1,
+            slots,
+            you,
+            map,
+            speed: Speed::Normal,
+        },
+    );
+}
+
+#[test]
+fn a_game_starting_as_the_player_leaves_the_room_is_played() {
+    // Escape and the start in the same pass of the menu.
+    let script = Script::new()
+        .at(20.0)
+        .tap(Key::Escape)
+        .at(60.0)
+        .tap(Key::LShift);
+    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+        game_starting(h, s, 20.0, 0)
+    });
+    let sent = server.sent();
+    assert!(!sent.contains(&ClientMsg::LeaveRoom), "{sent:?}");
+    assert_eq!(sent.first(), Some(&ClientMsg::Loaded), "{sent:?}");
+}
+
+#[test]
+fn a_game_started_after_the_player_asked_to_leave_is_played() {
+    // The server started the game before it read the leave.
+    let script = Script::new()
+        .at(20.0)
+        .tap(Key::Escape)
+        .at(60.0)
+        .tap(Key::LShift);
+    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+        game_starting(h, s, 25.0, 0)
+    });
+    let sent = server.sent();
+    assert_eq!(
+        sent[..2],
+        [ClientMsg::LeaveRoom, ClientMsg::Loaded],
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn a_game_that_does_not_give_the_player_their_slot_is_left() {
+    for you in [1, 7] {
+        let script = Script::new().at(40.0).tap(Key::LShift);
+        let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
+            game_starting(h, s, 20.0, you)
+        });
+        assert_eq!(server.sent(), [ClientMsg::LeaveGame], "slot {you}");
+        let said = said(&h);
+        assert!(
+            said.contains(&"<1029> this game cannot start here".to_owned()),
+            "{said:#?}"
+        );
+    }
+}

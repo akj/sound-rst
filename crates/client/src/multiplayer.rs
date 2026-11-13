@@ -364,12 +364,22 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
             cx.voice.menu(&msg(mp::MAKE_A_SELECTION2));
         }
         let build = |cx: &mut Client| build_lobby(cx, favorite);
-        let stop = |cx: &Client| closed(cx) || net_ref(cx).room.is_some();
+        let stop = |cx: &Client| {
+            let n = net_ref(cx);
+            n.closed.is_some() || n.room.is_some() || n.started.is_some()
+        };
         let left = run_live(cx, &build, &stop)?;
         net_mut(cx).interrupt = false;
         if closed(cx) {
             cx.voice.alert(&msg(mp::CONNECTION_INTERRUPTED));
             return Ok(());
+        }
+        // A game the server started while the player was leaving its room:
+        // the server did not take the player out, so the game is theirs.
+        if let Some(start) = net_mut(cx).started.take() {
+            play(cx, start)?;
+            say_title = false;
+            continue;
         }
         if left {
             return Ok(());
@@ -539,7 +549,9 @@ fn room(cx: &mut Client) -> Result<bool, Exit> {
     };
     let left = run_live(cx, &build, &stop)?;
     net_mut(cx).interrupt = false;
-    if left {
+    // A game that starts wins over a leave the server has not heard of.
+    net::pump(cx);
+    if left && net_ref(cx).started.is_none() {
         net::send(cx, ClientMsg::LeaveRoom);
         let n = net_mut(cx);
         n.room = None;
@@ -693,20 +705,34 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
 }
 
 /// Plays the game the server started, from the room's map.
+/// Plays the game the server started, from the room's map. A game whose
+/// map is missing, or where the player's slot is not theirs, is left.
 fn play(cx: &mut Client, start: net::GameStart) -> Result<(), Exit> {
-    let map = net_ref(cx)
+    let you = net_ref(cx).lobby.you.clone();
+    let mine = start
+        .slots
+        .get(start.you)
+        .is_some_and(|s| s.player == SlotPlayer::Human(you));
+    let room_map = net_ref(cx)
         .room
         .as_ref()
         .and_then(|r| r.map())
         .filter(|m| m.hash().as_ref() == Some(&start.map.hash));
+    let map = room_map.or_else(|| cx.res.find_multiplayer_map(&start.map.hash));
     let result = match map {
-        Some(map) => {
+        Some(map) if mine => {
             Session::multiplayer(map, &start.slots, start.you, start.seed, start.speed).run(cx)
         }
-        None => {
-            cx.log.warning("the game started without its map");
+        _ => {
+            cx.log.warning(format!(
+                "cannot play the game: slot {} of {:?}, map found: {}",
+                start.you,
+                start.slots,
+                map.is_some()
+            ));
             net::send(cx, ClientMsg::LeaveGame);
-            cx.voice.alert(&msg(mp::BEEP));
+            cx.voice
+                .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat());
             Ok(())
         }
     };
