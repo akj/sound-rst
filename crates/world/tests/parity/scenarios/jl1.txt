@@ -1,0 +1,22 @@
+# tick player command; {..} are resolved when the command is given
+0 0 control {u:peasant:0}
+0 0 order 0 0 default {at:a1:goldmine:0}
+0 1 control {u:peasant:0}
+0 1 order 0 0 default {at:c4:goldmine:0}
+1 0 control {u:townhall:0}
+1 0 order 0 0 train peasant
+1 1 control {u:townhall:0}
+1 1 order 0 0 train peasant
+80 0 control {u:peasant:1}
+80 0 order 0 0 build farm {mead:0}
+80 1 control {u:peasant:1}
+80 1 order 0 0 default {at:c2:wood:0}
+150 1 control {u:peasant:2}
+150 1 order 0 0 build barracks {mead:0}
+200 0 control {ids:peasant}
+200 0 order 0 1 go {there:townhall:0}
+250 1 control {ids:peasant}
+250 1 order 0 0 default {eu:peasant:0}
+300 0 cmd add_units b2 4 footman
+301 0 control {ids:footman}
+301 0 order 0 0 go {there:townhall:0}

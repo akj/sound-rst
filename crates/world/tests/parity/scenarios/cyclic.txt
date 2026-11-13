@@ -1,0 +1,10 @@
+# portals: c2 and a2, c3 and a3 are linked
+0 0 cmd add_units c2 3 footman
+0 1 cmd add_units a2 3 footman
+1 0 control {ids:footman}
+1 0 order 0 0 go {sq:a2}
+1 1 control {u:peasant:0}
+1 1 order 0 0 go {sq:c3}
+50 1 cmd add_units a3 dragon
+51 1 control {u:dragon:0}
+51 1 order 0 0 go {sq:c3}

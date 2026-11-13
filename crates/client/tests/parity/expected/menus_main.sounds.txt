@@ -1,0 +1,46 @@
+@5100 step 1
+@5100 stereo 6115 vol=1.000 limit=0.000 started
+@8900 step 2
+@8900 stereo 6115 vol=1.000 limit=0.000 started
+@12200 step 3
+@12200 stereo 6115 vol=1.000 limit=0.000 started
+@14700 step 4
+@14700 stereo 6115 vol=1.000 limit=0.000 started
+@18500 step 5
+@18500 stereo 6115 vol=1.000 limit=0.000 started
+@21800 step 6
+@21800 stereo 6115 vol=1.000 limit=0.000 started
+@24300 step 7
+@24300 stereo 6115 vol=1.000 limit=0.000 started
+@28100 step 8
+@28100 stereo 6115 vol=1.000 limit=0.000 started
+@31400 step 9
+@31400 stereo 6115 vol=1.000 limit=0.000 started
+@35200 step 10
+@35200 stereo 6115 vol=1.000 limit=0.000 started
+@37700 step 11
+@37700 stereo 6115 vol=1.000 limit=0.000 started
+@41500 step 12
+@41500 stereo 6115 vol=1.000 limit=0.000 started
+@44000 step 13
+@44000 stereo 6115 vol=1.000 limit=0.000 started
+@47800 step 14
+@47800 stereo 6115 vol=1.000 limit=0.000 started
+@51600 step 15
+@51600 stereo 6115 vol=1.000 limit=0.000 started
+@54900 step 16
+@54900 stereo 6115 vol=1.000 limit=0.000 started
+@58700 step 17
+@58710 step 18
+@60010 step 19
+@61610 step 20
+@62910 step 21
+@65710 step 22
+@70810 step 23
+@70820 step 24
+@70830 step 25
+@73630 step 26
+@76430 step 27
+@76440 step 28
+@80840 step 29
+@80840 stereo 6116 vol=1.000 limit=0.000 started

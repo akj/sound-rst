@@ -1,0 +1,66 @@
+# Options: modify the login (typed characters, a rejected character,
+# Backspace, Enter), a key pressed during the non-interruptible "new login"
+# alert (dropped), an empty login (refused), Escape (login kept), the mods
+# menu (Back closes the options menu too), the soundpacks menu, then
+# choosing a soundpack: the main menu comes back with a new window title,
+# and quitting it exits the client.
+language en
+login player
+seed 1
+limit 600
+# main menu > options
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# modify login
+key DOWN
+key RETURN
+type bob
+key MINUS
+key SHIFT x
+key BACKSPACE
+type b2
+key RETURN
+interrupt_after 0.5 key DOWN
+# an empty login is refused
+key DOWN
+key RETURN
+key RETURN
+# Escape keeps the current login
+key DOWN
+key RETURN
+type z
+key ESCAPE
+# the mods menu, browsed in full, then Escape
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key ESCAPE
+# back in the main menu: options > soundpacks, choose one
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key UP
+key UP
+key RETURN
+key ESCAPE

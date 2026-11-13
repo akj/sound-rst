@@ -1,0 +1,78 @@
+# Single player: the menu with its campaigns, a campaign's chapter menu,
+# the start-a-game map list (several items, first-letter search both ways,
+# a key that interrupts the menu title), the players menu (invite quiet,
+# aggressive and aggressive 2 until the map is full; start; cancel), a
+# short game cancelled at once, then the map list again with the last map
+# remembered first, and back to the main menu.
+language en
+login player
+seed 7
+limit 1200
+key DOWN
+key RETURN
+# the single player menu
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key UP
+key UP
+# a campaign's chapter menu
+key c
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key ESCAPE
+# the map list: interrupt the title, browse, search
+key s
+key RETURN
+interrupt_after 0.5 key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key UP
+key SHIFT j
+key j
+key j
+key j
+key RETURN
+# the players menu
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key UP
+key RETURN
+# the game: cancel it at once
+wait_turns 3
+key F10
+key DOWN
+key RETURN
+# the map list remembers the last map
+key s
+key RETURN
+key DOWN
+key DOWN
+key UP
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# back to the main menu, quit
+key ESCAPE
+key ESCAPE
+key ESCAPE

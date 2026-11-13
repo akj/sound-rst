@@ -1,0 +1,133 @@
+soundrts-ui-transcript 1
+scenario square_orders
+settings language=en login=player mods= soundpacks= seed=11 limit=900
+length 1000 8091043
+length 1050 913107
+length 1053 133515
+length 1054 167528
+length 1056 1681996
+length 1057 1773787
+length 1058 1975873
+length 1059 510068
+length 1060 536803
+length 1061 730839
+length 1062 578571
+length 1063 578571
+length 1064 1551043
+length 1065 3132608
+length 1091 247279
+length 1194 928345
+length 1195 398866
+length 1344 471361
+length 1345 521859
+length 6115 6871
+length 6116 3719
+length 9999 208980
+@0 title SoundRTS 1.3.8.1  
+@0 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@5100 step 1 key DOWN
+@5100 voice item "single player, , play on your computer"
+@8900 sounds 1 42507bad93becb42
+@8900 step 2 key RETURN
+@8900 voice confirmation "single player,"
+@10310 voice menu "please make a selection"
+@12610 sounds 1 3657aeb304350b3e
+@12610 step 3 key s
+@12610 voice item "start a game on"
+@14110 sounds 1 344f4e764c960118
+@14110 step 4 key RETURN
+@14110 voice confirmation "start a game on"
+@15620 voice menu "start a game on"
+@17120 sounds 1 af27453078b5a2da
+@17120 step 5 key j
+@17120 voice item "jl8 8 ,"
+@18220 sounds 1 de5f41d6f4a5950f
+@18220 step 6 key j
+@18220 voice item "jl7 7 ,"
+@19320 sounds 1 3d08499f87600cdd
+@19320 step 7 key j
+@19320 voice item "jl6 6 ,"
+@20420 sounds 1 2391469c02fe514b
+@20420 step 8 key j
+@20420 voice item "jl5 5 ,"
+@21520 sounds 1 bcbf8c56c00dc0d6
+@21520 step 9 key j
+@21520 voice item "jl1 1 ,"
+@22620 sounds 1 d519a5d2c5966404
+@22620 step 10 key RETURN
+@22620 voice confirmation "jl1 1"
+@23530 voice menu "please make a selection"
+@25830 sounds 1 fb0fa6fd8370bbf3
+@25830 step 11 key DOWN
+@25830 voice item "invite quiet computer ,"
+@28130 sounds 1 536a248d1e8aba5e
+@28130 step 12 key RETURN
+@28130 voice confirmation "invite quiet computer"
+@30240 voice menu "please make a selection"
+@32540 sounds 1 5cd29eca6e07133d
+@32540 step 13 key DOWN
+@32540 voice item "start ,"
+@33240 sounds 1 be728dc679d69146
+@33240 step 14 key RETURN
+@33240 voice confirmation "start"
+@33750 voice confirmation "objective: neutralized enemy"
+@36551 sounds 1 b26d1fc2ee139dfb
+@36551 step 15 key e
+@36551 voice item "peasant 1 at b 4 , awaiting your orders"
+@36650 voice item "b 4 , meadows , 1 town hall , 1 farm and 1 peasant"
+@42450 voice info ", 1 gold mine and 2 wood at a 3"
+@46150 voice info ", 1 wood at a 4"
+@48050 voice info ", 1 gold mine at c 4"
+@50451 sounds 105 2cc921094816e9bb
+@50451 step 16 key RIGHT
+@50451 voice item [1091] "c 4 , meadows , in the fog of war , 1 gold mine"
+@55799 sounds 20 ff8266b937c375f2
+@55799 step 17 key BACKSPACE
+@55799 voice item "go to c 4 ,"
+@56350 sounds 3 642da2e11ba5b24e
+@56350 step 18 wait_turns 2
+@57099 sounds 5 6b97c32f8e964767
+@57099 step 19 key SPACE
+@57099 voice item "b 4 You control peasant 1 at b 4 , go to c 4 ,"
+@62499 sounds 59 3aa8d23805f07ef6
+@62499 step 20 key F8
+@62499 voice item "zoom is now on , c 4 at the center , meadows"
+@67099 voice info "1 peasant enemy at a 3"
+@69700 sounds 43 5151fa980c112842
+@69700 step 21 key UP
+@69700 voice item "c 4 north , meadows"
+@71800 sounds 12 1a1ed4952a512e96
+@71800 step 22 key BACKSPACE
+@71800 voice item "go to c 4 north ,"
+@72250 sounds 2 b08bfec358474099
+@72250 step 23 wait_turns 2
+@73700 sounds 11 a87dd4095a778c06
+@73700 step 24 key SPACE
+@73700 voice item "c 4 You control peasant 1 at c 4 , go to c 4 ,"
+@79100 sounds 34 d598cfafc4d3008e
+@79100 step 25 key ESCAPE
+@79100 voice item "zoom is now off , c 4 , meadows , 1 peasant , 1 gold mine"
+@85400 sounds 34 daaec0ef7b0c4865
+@85400 step 26 key F10
+@85400 voice menu "Menu"
+@85800 step 27 key DOWN
+@85800 voice item "cancel game ,"
+@87100 sounds 1 7b71e021e1909b37
+@87100 step 28 key RETURN
+@87100 voice confirmation "cancel game"
+@88212 voice info "Defeat at 0 minutes 48 seconds"
+@91812 voice info "1 units produced , 0 lost , 0 neutralized"
+@96512 voice info "2 building produced , 0 lost , 0 neutralized"
+@101512 voice info "10 gold gathered , 0 consumed"
+@105012 voice info "10 wood gathered , 0 consumed"
+@108512 voice info "score 23 press F5 to listen again"
+@112412 voice menu "please make a selection"
+@114712 sounds 12 1ce061fad79c5f3c
+@114712 step 29 key ESCAPE
+@114712 voice confirmation "go back to the previous menu"
+@117522 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@122622 sounds 1 25b1e7c49fd05a99
+@122622 step 30 key ESCAPE
+@122622 voice confirmation "quit,"
+@123132 sounds 1 a16011d3209b69de
+@123132 end

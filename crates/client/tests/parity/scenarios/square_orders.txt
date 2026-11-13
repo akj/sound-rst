@@ -1,0 +1,41 @@
+# A peasant ordered to a square, then to a subsquare (in zoom mode): its
+# orders target a place, which has no player, so asking for its status
+# (SPACE) fails inside the game loop. Then quit.
+language en
+login player
+seed 11
+limit 900
+# main menu > single player > start a game on > jl1 > invite quiet > start
+key DOWN
+key RETURN
+key s
+key RETURN
+key j
+key j
+key j
+key j
+key j
+key RETURN
+key DOWN
+key RETURN
+key DOWN
+key RETURN
+# a peasant, the square to its east, the default order there (go)
+key e
+key RIGHT
+key BACKSPACE
+wait_turns 2
+key SPACE
+# the zoom: a subsquare of b1, the default order there
+key F8
+key UP
+key BACKSPACE
+wait_turns 2
+key SPACE
+key ESCAPE
+# quit
+key F10
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

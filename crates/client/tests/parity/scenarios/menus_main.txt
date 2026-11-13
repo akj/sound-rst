@@ -1,0 +1,37 @@
+# The main menu from start-up: title, every item, wrap-around in both
+# directions, first-letter search (forwards, backwards with SHIFT, and a
+# letter no item starts with), keys the menu does not use, the menu help,
+# history, volume, then Escape (selects and confirms the last item: Quit).
+language en
+login player
+seed 1
+limit 300
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key UP
+key UP
+key TAB
+key SHIFT TAB
+key s
+key s
+key o
+key SHIFT s
+key x
+key F1
+key F1
+key SHIFT F1
+key F2
+key F5
+key F6
+key LALT
+key HOME
+key END
+key BACKSPACE
+key F3
+key ESCAPE

@@ -1,0 +1,50 @@
+# The first campaign: the chapter menu, the prologue (a cut scene), which
+# runs chapter 1 at once (title, intro, objectives); a farm completes the
+# first objective; barracks from the console (add units), the cut scene
+# and the second objective, victory and the score; the victory menu continues
+# to chapter 2, where computer units attack; then cancel, the score, the
+# defeat menu, and back to the main menu.
+language en
+login player
+seed 3
+limit 2400
+key DOWN
+key RETURN
+key c
+key RETURN
+key DOWN
+key RETURN
+# chapter 1
+key F9
+key z
+key x
+key e
+key ALT a
+key f
+key RIGHT
+key TAB
+key RETURN
+wait_turns 250
+key F9
+key BACKQUOTE
+type a barracks
+key RETURN
+# victory menu: continue
+key DOWN
+key RETURN
+# chapter 2: the computer attacks
+key F9
+key SPACE
+wait_turns 300
+key SPACE
+wait_turns 300
+key z
+key F10
+key DOWN
+key RETURN
+# defeat menu: quit
+key DOWN
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

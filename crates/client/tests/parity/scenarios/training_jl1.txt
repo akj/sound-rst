@@ -1,0 +1,333 @@
+# A training game on jl1 against a quiet computer: every command of
+# res/ui/bindings.txt except fullscreen and say (chat), then quit through
+# the game menu and hear the score.
+language en
+login player
+seed 42
+limit 3600
+
+# main menu > single player > start a game on > jl1 > invite quiet > start
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key j
+key j
+key j
+key j
+key j
+key RETURN
+key DOWN
+key RETURN
+key DOWN
+key RETURN
+
+# examine the situation (no unit selected yet)
+key z
+key x
+key c
+key v
+key LCTRL
+key RCTRL
+key SPACE
+
+# the peasant and its order menu
+key e
+key v
+key SPACE
+key a
+key a
+key a
+key SHIFT a
+key CTRL a
+key CTRL SHIFT a
+key ESCAPE
+# order shortcut: build a farm on a meadow (f cuts the list short)
+key ALT a
+interrupt_after 2 key f
+key TAB
+key TAB
+key CTRL TAB
+key SHIFT TAB
+key CTRL SHIFT TAB
+key RETURN
+
+# the town hall: recruit a peasant, then a rally point on a1
+key w
+key a
+key KP_ENTER
+wait_turns 40
+key a
+key a
+key a
+key LEFT
+key CTRL RETURN
+key RIGHT
+wait_turns 30
+key ALT e
+key SPACE
+key TAB
+key TAB
+key TAB
+key BACKSPACE
+wait_turns 30
+
+# groups
+key CTRL e
+key CTRL 6
+key 0
+key 6
+key SHIFT 7
+key 7
+key 1
+key 2
+key 3
+key 4
+key 5
+key CTRL 1
+key CTRL 2
+key CTRL 3
+key CTRL 4
+key CTRL 5
+key 8
+key CTRL 9
+key 9
+key CTRL 7
+key CTRL 8
+key SHIFT 6
+key SHIFT 8
+key SHIFT 9
+
+# selecting units
+key q
+key SHIFT q
+key CTRL q
+key CTRL SHIFT q
+key w
+key ALT w
+key CTRL w
+key SHIFT w
+key e
+key SHIFT e
+key ALT e
+key ALT SHIFT e
+key CTRL ALT e
+key QUOTE
+key CTRL QUOTE
+key r
+key SHIFT r
+key CTRL r
+key CTRL f
+key t
+key y
+key u
+key i
+key o
+key p
+key SHIFT t
+key SHIFT y
+key SHIFT u
+key SHIFT i
+key SHIFT o
+key SHIFT p
+key CTRL t
+key CTRL y
+key CTRL u
+key CTRL i
+key CTRL o
+key CTRL p
+key CTRL g
+key CTRL h
+key CTRL j
+key CTRL k
+key CTRL l
+key CTRL SEMICOLON
+key f
+key g
+key h
+key j
+key k
+key l
+key SEMICOLON
+key d
+key ALT d
+key CTRL ALT d
+key CTRL d
+key s
+key CTRL s
+key SHIFT s
+key CTRL SHIFT s
+key ALT s
+key CTRL ALT s
+key TAB
+key BACKSLASH
+
+# exploring the map
+key UP
+key SHIFT UP
+key CTRL UP
+key CTRL SHIFT UP
+key DOWN
+key SHIFT DOWN
+key CTRL DOWN
+key CTRL SHIFT DOWN
+key LEFT
+key SHIFT LEFT
+key CTRL LEFT
+key CTRL SHIFT LEFT
+key RIGHT
+key SHIFT RIGHT
+key CTRL RIGHT
+key CTRL SHIFT RIGHT
+key PAGEDOWN
+key PAGEDOWN
+key PAGEUP
+key CTRL PAGEDOWN
+key CTRL PAGEUP
+key ALT PAGEDOWN
+key ALT PAGEUP
+key SHIFT PAGEDOWN
+key SHIFT PAGEUP
+key LCTRL
+
+# zoom
+key F8
+key RIGHT
+key UP
+key LCTRL
+key TAB
+key ESCAPE
+key F8
+
+# first person mode
+key e
+key CTRL SPACE
+key LEFT
+key LEFT
+key RIGHT
+key TAB
+key ESCAPE
+key ESCAPE
+
+# orders: explicit gather in c1, queued and imperative orders, do again,
+# a default order on the gold mine in a1
+key e
+key a
+key a
+key RIGHT
+key TAB
+key RETURN
+key QUOTE
+key ALT r
+key TAB
+key SHIFT RETURN
+key e
+key ALT g
+key SHIFT ALT g
+key TAB
+key CTRL SHIFT RETURN
+key LEFT
+key LEFT
+key w
+key TAB
+key BACKSPACE
+key e
+key TAB
+key TAB
+key BACKSPACE
+key SHIFT KP_ENTER
+key CTRL KP_ENTER
+key CTRL SHIFT KP_ENTER
+key SHIFT BACKSPACE
+key CTRL BACKSPACE
+key CTRL SHIFT BACKSPACE
+
+# help, time, history, volume, players
+key F1
+key F1
+key SHIFT F1
+key F2
+key F3
+key F9
+key F11
+key F5
+interrupt_after 0.3 key F5
+wait 4
+key F6
+interrupt_after 0.5 key LALT
+interrupt_after 0.5 key LALT
+key RALT
+key LSHIFT
+key RSHIFT
+key HOME
+key KP_PLUS
+key END
+key KP_MINUS
+key CTRL BACKQUOTE
+key CTRL F3
+key CTRL SHIFT F3
+wait_turns 20
+key CTRL SHIFT F3
+
+# cheat mode and the console
+key CTRL SHIFT F2
+key BACKQUOTE
+type r
+key RETURN
+key z
+key BACKQUOTE
+type h
+key RETURN
+key BACKQUOTE
+key ESCAPE
+key w
+key a
+key RETURN
+key ALT g
+key ALT g
+key e
+key ALT a
+key b
+key TAB
+key RETURN
+key CTRL SHIFT F4
+key SPACE
+key CTRL SHIFT F4
+key CTRL SHIFT F2
+
+# the game menu: speed, continue (three ways in)
+key F10
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key F3
+key CTRL c
+key ESCAPE
+key ALT F4
+# quirk: UP first selects the last item, but RETURN does not confirm it
+key UP
+key RETURN
+key ESCAPE
+
+# let the news arrive
+wait_turns 150
+key z
+key x
+key c
+wait_turns 150
+key F3
+key c
+wait_turns 150
+key z
+key CTRL F3
+
+# quit through the game menu, hear the score, back to the main menu
+key F10
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

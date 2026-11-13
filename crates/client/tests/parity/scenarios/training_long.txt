@@ -1,0 +1,53 @@
+# A long training game on jl5 (water, high grounds) against an aggressive
+# computer: mostly waiting, with status keys now and then, until the
+# combat news, the alerts and the end of the game (defeat) are heard.
+language en
+login player
+seed 1234
+limit 1800
+# main menu > single player > start a game on > jl5 > invite aggressive > start
+key DOWN
+key RETURN
+key s
+key RETURN
+key j
+key j
+key j
+key j
+key RETURN
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# a farm and a peasant, then wait
+key e
+key ALT a
+key f
+key TAB
+key RETURN
+key w
+key a
+key RETURN
+wait_turns 250
+key F3
+key CTRL PAGEDOWN
+wait_turns 250
+key F3
+key CTRL PAGEDOWN
+wait_turns 250
+key F3
+key CTRL PAGEDOWN
+wait_turns 250
+key F3
+key CTRL PAGEDOWN
+wait_turns 250
+key F3
+key CTRL PAGEDOWN
+wait_game_end
+# back in the single player menu
+key ESCAPE
+key ESCAPE

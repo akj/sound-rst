@@ -1,0 +1,33 @@
+# a human (player 0) who gathers, builds, and attacks player 1 with
+# added units; {loc:<type>:<n>} is an object on the square of the first unit
+0 0 control {u:peasant:0}
+0 0 order 0 0 default {loc:goldmine:0}
+0 0 control {u:peasant:1}
+0 0 order 0 0 default {loc:wood:0}
+1 0 control {u:townhall:0}
+1 0 order 0 0 train peasant
+2 0 order 0 0 train peasant
+100 0 control {u:peasant:2}
+100 0 order 0 0 build farm {mead:0}
+150 0 control {u:peasant:3}
+150 0 order 0 0 build barracks {mead:1}
+300 0 cmd add_units {hn:townhall:0} 5 footman 3 archer
+301 0 control {ids:footman}
+301 0 order 0 0 go {there:townhall:0}
+302 0 control {ids:archer}
+302 0 order 0 0 go {there:townhall:0}
+450 0 control {ids:peasant}
+450 0 order 0 0 default {loc:goldmine:0}
+600 0 cmd add_units {hn:townhall:0} 6 knight 2 catapult
+601 0 control {ids:knight}
+601 0 order 0 1 go {there:townhall:0}
+602 0 control {ids:catapult}
+602 0 order 0 0 go {there:farm:0}
+900 0 cmd add_units {hn:townhall:0} 3 mage 2 priest 4 archer
+901 0 control {ids:archer}
+901 0 order 0 0 go {there:peasant:0}
+902 0 control {ids:priest}
+902 0 order 0 0 go {there:peasant:0}
+1200 0 cmd add_units {hn:townhall:0} 8 footman
+1201 0 control {ids:footman}
+1201 0 order 0 1 go {there:townhall:0}

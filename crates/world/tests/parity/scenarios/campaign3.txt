@@ -1,0 +1,6 @@
+0 0 control {ids:priest}
+0 0 order 0 0 go {sq:b1}
+40 0 control {u:priest:0}
+40 0 order 0 0 use a_resurrection
+60 0 control {ids:priest}
+60 0 order 0 0 go {sq:c1}

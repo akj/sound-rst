@@ -1,0 +1,228 @@
+soundrts-ui-transcript 1
+scenario campaign
+settings language=en login=player mods= soundpacks= seed=3 limit=2400
+length 1000 8091043
+length 1003 18231
+length 1008 197279
+length 1030 652925
+length 1034 17823
+length 1036 20590
+length 1037 13515
+length 1039 106984
+length 1040 141814
+length 1041 210295
+length 1042 166281
+length 1043 350045
+length 1046 779501
+length 1048 1503129
+length 1049 2739773
+length 1050 913107
+length 1053 133515
+length 1054 167528
+length 1055 2995556
+length 1056 1681996
+length 1057 1773787
+length 1058 1975873
+length 1059 510068
+length 1060 536803
+length 1061 730839
+length 1062 578571
+length 1063 578571
+length 1064 1551043
+length 1065 3132608
+length 1069 367120
+length 1070 155873
+length 1078 1208345
+length 1090 2144127
+length 1091 247279
+length 1097 80091
+length 1098 185533
+length 1130 667166
+length 1194 928345
+length 1195 398866
+length 1196 724172
+length 1200 1341451
+length 1309 909977
+length 1326 938594
+length 1329 3540159
+length 1344 471361
+length 1345 521859
+length 6001 1323537
+length 6002 922993
+length 6004 1039093
+length 6008 1114558
+length 6101 1309025
+length 6102 917188
+length 6103 1262585
+length 6104 1033288
+length 6105 1134875
+length 6106 1050703
+length 6107 1346757
+length 6108 1117460
+length 6109 1497687
+length 6115 6871
+length 6116 3719
+length 9999 208980
+@0 title SoundRTS 1.3.8.1  
+@0 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@5100 step 1 key DOWN
+@5100 voice item "single player, , play on your computer"
+@8900 sounds 1 42507bad93becb42
+@8900 step 2 key RETURN
+@8900 voice confirmation "single player,"
+@10310 voice menu "please make a selection"
+@12610 sounds 1 3657aeb304350b3e
+@12610 step 3 key c
+@12610 voice item "campaign"
+@13410 sounds 1 344f4e764c960118
+@13410 step 4 key RETURN
+@13410 voice confirmation "campaign"
+@14220 voice menu "campaign"
+@15020 sounds 1 d2d506bcc8dfa376
+@15020 step 5 key DOWN
+@15020 voice item "prologue ,"
+@16020 sounds 1 d444a70de2bdc93a
+@16020 step 6 key RETURN
+@16020 voice confirmation "prologue"
+@16830 voice important "prologue"
+@17630 voice important "A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done..."
+@27430 voice important "chapter 1"
+@28530 voice important "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
+@40932 sounds 2 300f113e9ce8c768
+@40932 step 7 key F9
+@41030 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
+@42130 voice confirmation "new objective build 1 farm"
+@44930 voice info ", 1 wood at c 1"
+@44931 voice confirmation "new objective build 1 barracks"
+@48131 voice info ", 1 wood at c 1"
+@50032 sounds 15 afe5e57ae33d4248
+@50032 step 8 key z
+@50032 voice item "5 gold"
+@50832 sounds 3 ef8c58bfb830d073
+@50832 step 9 key x
+@50832 voice item "10 wood"
+@51932 sounds 1 8c6f6234cccf9f35
+@51932 step 10 key e
+@51932 voice item "peasant 1 at a 1 , exploit wood , awaiting your orders"
+@57732 sounds 13 bb6ab8fc4d6693fe
+@57732 step 11 key ALT a
+@57732 voice item "f build farm on , b build barracks on , a build wall on , g build gate on , t build scout tower on ,"
+@67732 sounds 19 b0b45bc8de04fa08
+@67732 step 12 key f
+@67732 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+@78832 sounds 30 8d505f2c6ef0f471
+@78832 step 13 key RIGHT
+@78832 voice item [1091] "b 1 , meadows , in the fog of war"
+@82580 sounds 17 13a4d5ec2378e06c
+@82580 step 14 key TAB
+@82580 voice item [1003] "a meadow at the center , build farm on"
+@86399 sounds 8 ad8c06231d45eccf
+@86399 step 15 key RETURN
+@86399 voice item "build farm on a meadow"
+@137233 voice info "farm 2 complete"
+@137833 voice confirmation "objective complete build 1 farm"
+@141133 voice info "farm 2 complete"
+@164235 sounds 115 0453514235a30b8e
+@164235 step 16 wait_turns 250
+@164236 step 17 key F9
+@164236 voice item "objective: , build 1 barracks ,"
+@167536 sounds 4 ee04f338c888c664
+@167536 step 18 key BACKQUOTE
+@167536 voice menu "Enter a command."
+@169137 step 19 key a (type a barracks)
+@169137 voice item "a . a"
+@169637 step 20 key SPACE (type a barracks)
+@169637 voice item "  . a "
+@170237 step 21 key b (type a barracks)
+@170237 voice item "b . a b"
+@170937 step 22 key a (type a barracks)
+@170937 voice item "a . a ba"
+@171737 step 23 key r (type a barracks)
+@171737 voice item "r . a bar"
+@172637 step 24 key r (type a barracks)
+@172637 voice item "r . a barr"
+@173637 step 25 key a (type a barracks)
+@173637 voice item "a . a barra"
+@174737 step 26 key c (type a barracks)
+@174737 voice item "c . a barrac"
+@175937 step 27 key k (type a barracks)
+@175937 voice item "k . a barrack"
+@177237 step 28 key s (type a barracks)
+@177237 voice item "s . a barracks"
+@178637 step 29 key RETURN
+@178637 voice item "a barracks"
+@178639 voice cut queue=0
+@178639 voice important "Nicely done!"
+@179839 voice info "barracks 1 at b 1"
+@179840 voice confirmation "objective complete build 1 barracks"
+@183540 voice info "barracks 1 at b 1"
+@183541 voice confirmation "mission complete"
+@185141 voice info "barracks 1 at b 1"
+@185143 voice cut queue=0
+@185144 voice info "Victory! at 1 minutes 58 seconds"
+@188944 voice info "2 units produced , 0 lost , 0 neutralized"
+@193644 voice info "4 building produced , 0 lost , 0 neutralized"
+@198644 voice info "5 gold gathered , 5 consumed"
+@201844 voice info "12 wood gathered , 5 consumed"
+@205344 voice info "score 33 press F5 to listen again"
+@209244 voice menu "please make a selection"
+@211544 sounds 18 c6ac0c0b9c1c0a58
+@211544 step 30 key DOWN
+@211544 voice item "continue ,"
+@212544 sounds 1 0767176a864087ab
+@212544 step 31 key RETURN
+@212544 voice confirmation "continue"
+@213354 voice important "chapter 2"
+@214455 sounds 1 bedc8d660ceefa4d
+@214455 step 32 key F9
+@214554 voice item "b 1 , 1 town hall , 1 farm , 2 peasant , 2 footman and 1 archer"
+@215654 voice confirmation "new objective resist ennemy attacks"
+@219154 voice info ", 1 wood at c 1"
+@221055 sounds 13 f9b3a3cb47cc36e9
+@221055 step 33 key SPACE
+@221055 voice item "b 1 , you are not controlling any unit"
+@310956 sounds 159 e51a42db31a47910
+@310956 step 34 wait_turns 300
+@310957 step 35 key SPACE
+@310957 voice item "b 1 , you are not controlling any unit"
+@380856 voice info "1 footman enemy at a 1"
+@384757 voice info "alert at b 1"
+@391056 voice info "1 footman neutralized at b 1"
+@400956 sounds 213 241c22c35df052c7
+@400956 step 36 wait_turns 300
+@400957 step 37 key z
+@400957 voice item "10 gold"
+@402057 sounds 2 1abf7c48b23b9809
+@402057 step 38 key F10
+@402057 voice menu "Menu"
+@402457 step 39 key DOWN
+@402457 voice item "cancel game ,"
+@403757 sounds 1 b775f53f4a0472a2
+@403757 step 40 key RETURN
+@403757 voice confirmation "cancel game"
+@404869 voice info "Defeat at 3 minutes 4 seconds"
+@408169 voice info "5 units produced , 0 lost , 1 neutralized"
+@412869 voice info "3 building produced , 0 lost , 0 neutralized"
+@417869 voice info "10 gold gathered , 0 consumed"
+@421369 voice info "10 wood gathered , 0 consumed"
+@424869 voice info "score 29 press F5 to listen again"
+@428769 voice menu "please make a selection"
+@431069 sounds 10 9f4ea7ea93782969
+@431069 step 41 key DOWN
+@431069 voice item "restart ,"
+@431969 sounds 1 06fa92e29fa78105
+@431969 step 42 key DOWN
+@431969 voice item "Quit ,"
+@432569 sounds 1 707992fbe2ef786a
+@432569 step 43 key RETURN
+@432569 voice confirmation "Quit"
+@432979 voice menu "please make a selection"
+@435279 sounds 1 de55dcae929d6080
+@435279 step 44 key ESCAPE
+@435279 voice confirmation "go back to the previous menu"
+@438089 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@443189 sounds 1 c6109c867e3dd463
+@443189 step 45 key ESCAPE
+@443189 voice confirmation "quit,"
+@443699 sounds 1 41d3faa112e9720e
+@443699 end
