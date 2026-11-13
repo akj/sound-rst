@@ -36,6 +36,7 @@ use crate::mapfile::{Map, name_from_path, title_of};
 use crate::menu::{Exit, input_string};
 use crate::message::InfoOptions;
 use crate::package::{NETWORK_MAP_LIMITS, check_expansion};
+use crate::sound_cache::literal;
 
 /// How the multiplayer menus reach the network. The defaults are those of
 /// a player; tests change them.
@@ -187,7 +188,7 @@ impl Net {
                     .map(|r| title_of(&r.map))
                     .unwrap_or_default();
                 cx.voice
-                    .chat(&[vec![by.as_str().into()], msg(mp::INVITES_YOU), title].concat());
+                    .chat(&[vec![literal(by.as_str())], msg(mp::INVITES_YOU), title].concat());
                 self.invitations.retain(|i| i.room != room);
                 self.invitations.push(Invitation { room, by });
                 self.changed();
@@ -274,7 +275,7 @@ impl Net {
                         if i > 0 {
                             m.extend(msg(mp::COMMA));
                         }
-                        m.push(p.as_str().into());
+                        m.push(literal(p.as_str()));
                     }
                     cx.voice.chat(&m);
                 }

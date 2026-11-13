@@ -6,6 +6,8 @@ use soundrts_protocol::{Channel, ChatLine};
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
+use crate::sound_cache::literal;
+
 /// The sound before a chat line: the alert of the conversion ability,
 /// rarely heard in a game.
 pub const CHAT_SOUND: u64 = 6114;
@@ -69,9 +71,9 @@ pub fn line_msg(line: &ChatLine) -> Msg {
     if line.channel == Channel::Allies {
         m.extend(msg(mp::ALLY));
     }
-    m.push(line.from.as_str().into());
+    m.push(literal(line.from.as_str()));
     m.extend(msg(mp::SAYS));
-    m.push(line.text.as_str().into());
+    m.push(literal(line.text.as_str()));
     m
 }
 

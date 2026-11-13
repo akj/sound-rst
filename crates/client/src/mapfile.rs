@@ -35,10 +35,12 @@ pub struct Map {
 /// The sound said first in the title of a map that is not official.
 pub const CUSTOM_MAP_SOUND: u64 = 1097;
 
-/// The title of a map from what a host said of it: its name, then the
-/// sounds of its `title` line.
+/// The title of a map from what a host said of it: its name, said as
+/// written, then the sounds of its `title` line.
 pub fn title_of(info: &MapInfo) -> Msg {
-    let mut title = vec![MsgPart::Text(name_from_path(info.file_name.as_str()))];
+    let mut title = vec![crate::sound_cache::literal(&name_from_path(
+        info.file_name.as_str(),
+    ))];
     title.extend(
         info.title_sounds
             .iter()

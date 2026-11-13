@@ -31,6 +31,7 @@ use crate::net::servers::{self, ListedServer};
 use crate::net::words::{self, text};
 use crate::net::{self, Net, discovery};
 use crate::session::Session;
+use crate::sound_cache::literal;
 
 /// How long to wait for a server's welcome.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -127,7 +128,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
         } else {
             text(phrase)
         };
-        let label = text(&s.name);
+        let label = vec![literal(&s.name)];
         menu.append(
             label,
             Action::run(move |cx| connect(cx, &s.address, None).map(|()| Flow::Stay)),
@@ -294,9 +295,9 @@ pub fn play_on(
 ) -> Result<(), Exit> {
     let welcome = [
         msg(mp::WELCOME),
-        vec![snapshot.you.as_str().into()],
+        vec![literal(snapshot.you.as_str())],
         msg(mp::ON_THE_SERVER_OF),
-        vec![snapshot.server_name.as_str().into()],
+        vec![literal(&snapshot.server_name)],
     ]
     .concat();
     cx.net = Some(Net::new(conn, snapshot, content));
@@ -409,7 +410,7 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
         {
             let label = [
                 msg(mp::ACCEPT_INVITATION_FROM),
-                vec![i.by.as_str().into()],
+                vec![literal(i.by.as_str())],
                 title_of(&r.map),
             ]
             .concat();
@@ -426,7 +427,7 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
         if can_join {
             let label = [
                 msg(words::JOIN),
-                vec![r.host.as_str().into()],
+                vec![literal(r.host.as_str())],
                 title_of(&r.map),
             ]
             .concat();
@@ -644,7 +645,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
     if room.is_host(&you) {
         if slots.len() < usize::from(map.nb_players_max) {
             for p in net.lobby.available_players() {
-                let label = [msg(mp::INVITE), vec![p.as_str().into()]].concat();
+                let label = [msg(mp::INVITE), vec![literal(p.as_str())]].concat();
                 choices.push(Choice::new(
                     label,
                     send_action(ClientMsg::Invite { login: p }),

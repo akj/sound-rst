@@ -724,3 +724,38 @@ fn chat_from_the_game_menu_goes_to_the_game() {
         server.sent()
     );
 }
+
+#[test]
+fn what_players_wrote_and_their_logins_are_said_as_written() {
+    let script = Script::new().at(30.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |_, s| {
+        s.at(10.0, arrived("4000"));
+        // A sound number, a count as the world encodes it, a phrase number.
+        s.at(15.0, chat("4000", "6114"));
+        s.at(15.0, chat("4000", "1000005"));
+        s.at(15.0, chat("bob", "4056"));
+    });
+    assert_eq!(
+        from(&said(&h), "4000 has just logged in"),
+        [
+            "4000 has just logged in",
+            "<6114> 4000 says 6114",
+            "<6114> 4000 says 1000005",
+            "<6114> bob says 4056",
+        ]
+    );
+}
+
+#[test]
+fn a_players_login_is_said_as_written_in_the_game() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    h.join_fake_server("andrew", &[]);
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("4000"), 2, true)];
+    let g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
+    let other = g.game.world.players[1];
+    let name = g.game.world.player(other).name();
+    assert_eq!(
+        h.client.sounds.translate(&name[0]),
+        soundrts::sound_cache::Spoken::Text("4000".into())
+    );
+}

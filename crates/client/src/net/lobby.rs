@@ -13,6 +13,7 @@ use soundrts_world::msgparts as mp;
 use super::words::{self, text};
 use crate::game::style_msg;
 use crate::mapfile::{Map, title_of};
+use crate::sound_cache::literal;
 use crate::style::Style;
 
 /// The players and rooms of the server.
@@ -44,12 +45,12 @@ impl LobbyModel {
                 self.players.retain(|p| p.login != login);
                 self.players.push(player);
                 (arrivals && login != self.you)
-                    .then(|| [vec![login.as_str().into()], msg(mp::HAS_JUST_LOGGED_IN)].concat())
+                    .then(|| [vec![literal(login.as_str())], msg(mp::HAS_JUST_LOGGED_IN)].concat())
             }
             LobbyChange::PlayerLeft { login } => {
                 self.players.retain(|p| p.login != login);
                 arrivals
-                    .then(|| [vec![login.as_str().into()], msg(mp::HAS_JUST_LOGGED_OUT)].concat())
+                    .then(|| [vec![literal(login.as_str())], msg(mp::HAS_JUST_LOGGED_OUT)].concat())
             }
             LobbyChange::PlayerMoved { player } => {
                 match self.players.iter_mut().find(|p| p.login == player.login) {
@@ -103,7 +104,7 @@ pub struct RoomModel {
 /// How a player of a room is named: the login, or the kind of computer.
 pub fn player_name(p: &SlotPlayer) -> Msg {
     match p {
-        SlotPlayer::Human(login) => vec![login.as_str().into()],
+        SlotPlayer::Human(login) => vec![literal(login.as_str())],
         SlotPlayer::Computer(level) => computer_name(*level),
     }
 }
@@ -238,7 +239,7 @@ impl RoomModel {
             }
             RoomChange::Host { host } => (
                 [
-                    vec![host.as_str().into()],
+                    vec![literal(host.as_str())],
                     text(words::IS_NOW_THE_ORGANIZER),
                 ]
                 .concat(),
