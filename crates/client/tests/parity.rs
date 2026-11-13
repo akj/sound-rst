@@ -644,6 +644,8 @@ impl Desktop for TitleDesk {
     }
 
     fn open_folder(&self, _: &Path) {}
+
+    fn set_clipboard(&self, _: &str) {}
 }
 
 // ---------------------------------------------------------------------------

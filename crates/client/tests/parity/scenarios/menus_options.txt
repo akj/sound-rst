@@ -14,6 +14,8 @@ key DOWN
 key DOWN
 key DOWN
 key DOWN
+key DOWN
+key DOWN
 key RETURN
 # modify login
 key DOWN
@@ -46,6 +48,8 @@ key DOWN
 key DOWN
 key ESCAPE
 # back in the main menu: options > soundpacks, choose one
+key DOWN
+key DOWN
 key DOWN
 key DOWN
 key DOWN

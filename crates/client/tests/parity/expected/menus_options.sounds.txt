@@ -2,92 +2,100 @@
 @5100 stereo 6115 vol=1.000 limit=0.000 started
 @8900 step 2
 @8900 stereo 6115 vol=1.000 limit=0.000 started
-@12200 step 3
-@12200 stereo 6115 vol=1.000 limit=0.000 started
-@14700 step 4
-@14700 stereo 6115 vol=1.000 limit=0.000 started
-@18500 step 5
-@18500 stereo 6115 vol=1.000 limit=0.000 started
-@21800 step 6
-@21800 stereo 6116 vol=1.000 limit=0.000 started
-@23810 step 7
-@23810 stereo 6115 vol=1.000 limit=0.000 started
-@25510 step 8
-@25510 stereo 6116 vol=1.000 limit=0.000 started
-@32621 step 9
-@33121 step 10
-@33821 step 11
-@34721 step 12
-@35462 step 13
-@36562 step 14
-@37062 step 15
-@38162 step 16
-@39862 step 17
-@40362 step 18
-@42762 step 19
-@42762 stereo 6115 vol=1.000 limit=0.000 started
-@44462 step 20
-@44462 stereo 6116 vol=1.000 limit=0.000 started
-@51573 step 21
-@56373 step 22
-@56373 stereo 6115 vol=1.000 limit=0.000 started
-@58073 step 23
-@58073 stereo 6116 vol=1.000 limit=0.000 started
-@65184 step 24
-@65684 step 25
-@69484 step 26
-@69484 stereo 6115 vol=1.000 limit=0.000 started
-@71184 step 27
-@71184 stereo 6115 vol=1.000 limit=0.000 started
-@71584 step 28
-@71584 stereo 6116 vol=1.000 limit=0.000 started
-@72394 step 29
-@72394 stereo 6115 vol=1.000 limit=0.000 started
-@73394 step 30
-@73394 stereo 6115 vol=1.000 limit=0.000 started
-@74994 step 31
-@74994 stereo 6115 vol=1.000 limit=0.000 started
-@75494 step 32
-@75494 stereo 6115 vol=1.000 limit=0.000 started
-@76994 step 33
-@76994 stereo 6115 vol=1.000 limit=0.000 started
-@79994 step 34
-@79994 stereo 6115 vol=1.000 limit=0.000 started
-@80994 step 35
-@80994 stereo 6116 vol=1.000 limit=0.000 started
-@88904 step 36
-@88904 stereo 6115 vol=1.000 limit=0.000 started
-@92704 step 37
-@92704 stereo 6115 vol=1.000 limit=0.000 started
-@96004 step 38
-@96004 stereo 6115 vol=1.000 limit=0.000 started
-@98504 step 39
-@98504 stereo 6115 vol=1.000 limit=0.000 started
-@102304 step 40
-@102304 stereo 6115 vol=1.000 limit=0.000 started
-@105604 step 41
-@105604 stereo 6116 vol=1.000 limit=0.000 started
-@107614 step 42
-@107614 stereo 6115 vol=1.000 limit=0.000 started
-@109314 step 43
-@109314 stereo 6115 vol=1.000 limit=0.000 started
-@109714 step 44
-@109714 stereo 6115 vol=1.000 limit=0.000 started
-@110714 step 45
-@110714 stereo 6116 vol=1.000 limit=0.000 started
-@112724 step 46
-@112724 stereo 6115 vol=1.000 limit=0.000 started
-@113724 step 47
-@113724 stereo 6115 vol=1.000 limit=0.000 started
-@114824 step 48
-@114824 stereo 6115 vol=1.000 limit=0.000 started
-@117824 step 49
-@117824 stereo 6115 vol=1.000 limit=0.000 started
-@118824 step 50
-@118824 stereo 6115 vol=1.000 limit=0.000 started
-@121824 step 51
-@121824 stereo 6115 vol=1.000 limit=0.000 started
-@122924 step 52
-@122924 stereo 6116 vol=1.000 limit=0.000 started
-@129834 step 53
-@129834 stereo 6116 vol=1.000 limit=0.000 started
+@12400 step 3
+@12400 stereo 6115 vol=1.000 limit=0.000 started
+@15700 step 4
+@15700 stereo 6115 vol=1.000 limit=0.000 started
+@18200 step 5
+@18200 stereo 6115 vol=1.000 limit=0.000 started
+@22000 step 6
+@22000 stereo 6115 vol=1.000 limit=0.000 started
+@25500 step 7
+@25500 stereo 6115 vol=1.000 limit=0.000 started
+@28800 step 8
+@28800 stereo 6116 vol=1.000 limit=0.000 started
+@30810 step 9
+@30810 stereo 6115 vol=1.000 limit=0.000 started
+@32510 step 10
+@32510 stereo 6116 vol=1.000 limit=0.000 started
+@39621 step 11
+@40121 step 12
+@40821 step 13
+@41721 step 14
+@42462 step 15
+@43562 step 16
+@44062 step 17
+@45162 step 18
+@46862 step 19
+@47362 step 20
+@49762 step 21
+@49762 stereo 6115 vol=1.000 limit=0.000 started
+@51462 step 22
+@51462 stereo 6116 vol=1.000 limit=0.000 started
+@58573 step 23
+@63373 step 24
+@63373 stereo 6115 vol=1.000 limit=0.000 started
+@65073 step 25
+@65073 stereo 6116 vol=1.000 limit=0.000 started
+@72184 step 26
+@72684 step 27
+@76484 step 28
+@76484 stereo 6115 vol=1.000 limit=0.000 started
+@78184 step 29
+@78184 stereo 6115 vol=1.000 limit=0.000 started
+@78584 step 30
+@78584 stereo 6116 vol=1.000 limit=0.000 started
+@79394 step 31
+@79394 stereo 6115 vol=1.000 limit=0.000 started
+@80394 step 32
+@80394 stereo 6115 vol=1.000 limit=0.000 started
+@81994 step 33
+@81994 stereo 6115 vol=1.000 limit=0.000 started
+@82494 step 34
+@82494 stereo 6115 vol=1.000 limit=0.000 started
+@83994 step 35
+@83994 stereo 6115 vol=1.000 limit=0.000 started
+@86994 step 36
+@86994 stereo 6115 vol=1.000 limit=0.000 started
+@87994 step 37
+@87994 stereo 6116 vol=1.000 limit=0.000 started
+@95904 step 38
+@95904 stereo 6115 vol=1.000 limit=0.000 started
+@99704 step 39
+@99704 stereo 6115 vol=1.000 limit=0.000 started
+@103204 step 40
+@103204 stereo 6115 vol=1.000 limit=0.000 started
+@106504 step 41
+@106504 stereo 6115 vol=1.000 limit=0.000 started
+@109004 step 42
+@109004 stereo 6115 vol=1.000 limit=0.000 started
+@112804 step 43
+@112804 stereo 6115 vol=1.000 limit=0.000 started
+@116304 step 44
+@116304 stereo 6115 vol=1.000 limit=0.000 started
+@119604 step 45
+@119604 stereo 6116 vol=1.000 limit=0.000 started
+@121614 step 46
+@121614 stereo 6115 vol=1.000 limit=0.000 started
+@123314 step 47
+@123314 stereo 6115 vol=1.000 limit=0.000 started
+@123714 step 48
+@123714 stereo 6115 vol=1.000 limit=0.000 started
+@124714 step 49
+@124714 stereo 6116 vol=1.000 limit=0.000 started
+@126724 step 50
+@126724 stereo 6115 vol=1.000 limit=0.000 started
+@127724 step 51
+@127724 stereo 6115 vol=1.000 limit=0.000 started
+@128824 step 52
+@128824 stereo 6115 vol=1.000 limit=0.000 started
+@131824 step 53
+@131824 stereo 6115 vol=1.000 limit=0.000 started
+@132824 step 54
+@132824 stereo 6115 vol=1.000 limit=0.000 started
+@135824 step 55
+@135824 stereo 6115 vol=1.000 limit=0.000 started
+@136924 step 56
+@136924 stereo 6116 vol=1.000 limit=0.000 started
+@143834 step 57
+@143834 stereo 6116 vol=1.000 limit=0.000 started

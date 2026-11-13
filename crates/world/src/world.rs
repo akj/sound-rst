@@ -1116,11 +1116,16 @@ impl World {
 
     /// A short digest of [`World::get_objects_string`].
     pub fn get_digest(&self) -> String {
+        format!("{:016x}", self.digest_u64())
+    }
+
+    /// The digest of [`World::get_digest`] as a number (FNV-1a).
+    pub fn digest_u64(&self) -> u64 {
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         for b in self.get_objects_string().bytes() {
             h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
         }
-        format!("{h:016x}")
+        h
     }
 
     pub(crate) fn collision_radius() -> i64 {

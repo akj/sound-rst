@@ -24,6 +24,8 @@ use crate::tts::Tts;
 const HISTORY_LIMIT: usize = 200;
 /// ...dropping this many of the oldest when it is full.
 const HISTORY_DROP: usize = 100;
+/// Seconds a chat line may wait unsaid.
+const CHAT_EXPIRATION: f64 = 3600.0;
 
 /// One part of an utterance as it started: words, or a recorded sound by
 /// its name.
@@ -396,10 +398,37 @@ impl Voice {
     pub fn info_with(&mut self, msg: &Msg, options: InfoOptions) {
         if !msg.is_empty() {
             let now = self.now();
-            self.msgs
-                .push(Message::new(msg.clone(), options, false, now));
+            let message = Message::new(msg.clone(), options, false, now);
+            if message.priority {
+                // After the message being said and the unsaid priority
+                // messages, before any unsaid ordinary message.
+                let base = if self.active { self.current + 1 } else { 0 };
+                let at = (base..self.msgs.len())
+                    .find(|&i| !self.msgs[i].said && !self.msgs[i].priority)
+                    .unwrap_or(self.msgs.len());
+                self.msgs.insert(at, message);
+                if at <= self.current && self.current < self.msgs.len() - 1 {
+                    self.current += 1;
+                }
+            } else {
+                self.msgs.push(message);
+            }
             self.update();
         }
+    }
+
+    /// Queues a chat line or another message from a player or the server:
+    /// it is said once the message being said ends, before the other
+    /// unsaid messages, and is kept for a long time.
+    pub fn chat(&mut self, msg: &Msg) {
+        self.info_with(
+            msg,
+            InfoOptions {
+                priority: true,
+                expiration_delay: CHAT_EXPIRATION,
+                ..InfoOptions::default()
+            },
+        );
     }
 
     /// Says now (giving up the unsaid queue) until the end, or until a key
@@ -465,11 +494,13 @@ impl Voice {
         if msg.has_expired(self.now()) {
             return true;
         }
-        let newer = &self.msgs[index + 1..];
-        if msg.update_type.is_some() && newer.iter().any(|m| m.update_type == msg.update_type) {
-            return true;
+        if msg.priority {
+            return false;
         }
-        newer.iter().any(|m| m.parts == msg.parts)
+        let mut newer = self.msgs[index + 1..].iter().filter(|m| !m.priority);
+        newer.any(|m| {
+            (msg.update_type.is_some() && m.update_type == msg.update_type) || m.parts == msg.parts
+        })
     }
 
     fn mark_expired_messages_as_said(&mut self) {

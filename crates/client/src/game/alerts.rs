@@ -47,7 +47,7 @@ fn title_key(t: &Msg) -> Vec<(u64, String)> {
     t.iter()
         .map(|p| match p {
             MsgPart::Num(n) => (*n, String::new()),
-            MsgPart::Text(s) => (u64::MAX, s.clone()),
+            MsgPart::Text(s) | MsgPart::Literal(s) => (u64::MAX, s.clone()),
         })
         .collect()
 }

@@ -2,7 +2,9 @@
 //! resources. The client reads the header; the simulation reads the text.
 
 use std::path::Path;
+use std::sync::Arc;
 
+use soundrts_protocol::{MAX_TITLE_SOUNDS, MapData, MapFileName, MapHash, MapInfo};
 use soundrts_world::msg::{Msg, MsgPart};
 
 use crate::package::{Package, decode_text};
@@ -22,6 +24,30 @@ pub struct Map {
     pub nb_players_max: i64,
     /// Official maps come from the base package.
     pub official: bool,
+    /// The name with its extension (`.txt` or `.zip`) for a map file; just
+    /// the name for a folder.
+    pub file_name: String,
+    /// The bytes of the map file; `None` for a folder, which cannot be sent
+    /// to other players.
+    pub bytes: Option<Arc<Vec<u8>>>,
+}
+
+/// The sound said first in the title of a map that is not official.
+pub const CUSTOM_MAP_SOUND: u64 = 1097;
+
+/// The title of a map from what a host said of it: its name, said as
+/// written, then the sounds of its `title` line.
+pub fn title_of(info: &MapInfo) -> Msg {
+    let mut title = vec![crate::sound_cache::literal(&name_from_path(
+        info.file_name.as_str(),
+    ))];
+    title.extend(
+        info.title_sounds
+            .iter()
+            .filter_map(|&n| u64::try_from(n).ok())
+            .map(MsgPart::Num),
+    );
+    title
 }
 
 /// The map name from a file name.
@@ -56,7 +82,9 @@ impl Map {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         if path.is_dir() {
-            Self::from_package(Package::from_path(path)?, name_from_path(&name))
+            let mut m = Self::from_package(Package::from_path(path)?, name_from_path(&name))?;
+            m.file_name = name;
+            Ok(m)
         } else {
             Self::from_bytes(std::fs::read(path)?, &name)
         }
@@ -66,13 +94,67 @@ impl Map {
     /// with `.txt`, else a zipped package.
     pub fn from_bytes(buffer: Vec<u8>, name_with_ext: &str) -> std::io::Result<Map> {
         let name = name_from_path(name_with_ext);
-        if name_with_ext.ends_with(".txt") {
+        let bytes = Arc::new(buffer.clone());
+        let mut map = if name_with_ext.ends_with(".txt") {
             let definition = decode_text(&buffer, name_with_ext);
-            Ok(Self::from_definition(definition, name, None))
+            Self::from_definition(definition, name, None)
         } else {
             let package = Package::from_zip_bytes(name_with_ext.to_owned(), buffer)?;
-            Self::from_package(package, name)
-        }
+            Self::from_package(package, name)?
+        };
+        let base = name_with_ext
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(name_with_ext);
+        map.file_name = base.to_owned();
+        map.bytes = Some(bytes);
+        Ok(map)
+    }
+
+    /// The SHA-256 of the map file; `None` for a folder.
+    pub fn hash(&self) -> Option<MapHash> {
+        self.bytes.as_deref().map(|b| MapHash::of(b))
+    }
+
+    /// The file name other players get: the name and the extension.
+    fn wire_file_name(&self) -> Option<MapFileName> {
+        let ext = if self.file_name.ends_with(".txt") {
+            ".txt"
+        } else {
+            ".zip"
+        };
+        MapFileName::new(format!("{}{ext}", self.name)).ok()
+    }
+
+    /// What a host tells the server and the other players about this map;
+    /// `None` for a map that cannot be sent (a folder, or a name too long).
+    pub fn info(&self) -> Option<MapInfo> {
+        let title_sounds = self
+            .title
+            .iter()
+            .skip(1)
+            .filter_map(|p| match p {
+                MsgPart::Num(n) if *n != CUSTOM_MAP_SOUND => i64::try_from(*n).ok(),
+                _ => None,
+            })
+            .take(MAX_TITLE_SOUNDS)
+            .collect();
+        Some(MapInfo {
+            file_name: self.wire_file_name()?,
+            hash: self.hash()?,
+            title_sounds,
+            nb_players_min: u8::try_from(self.nb_players_min).ok()?,
+            nb_players_max: u8::try_from(self.nb_players_max).ok()?,
+        })
+    }
+
+    /// The map file, to send to the server or a player.
+    pub fn data(&self) -> Option<MapData> {
+        let bytes = soundrts_protocol::MapBytes::new(self.bytes.as_deref()?.clone()).ok()?;
+        Some(MapData {
+            file_name: self.wire_file_name()?,
+            bytes,
+        })
     }
 
     fn from_package(package: Package, name: String) -> std::io::Result<Map> {
@@ -105,6 +187,8 @@ impl Map {
             resources,
             title,
             official: false,
+            file_name: String::new(),
+            bytes: None,
         }
     }
 }

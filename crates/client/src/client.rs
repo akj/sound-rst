@@ -34,6 +34,8 @@ pub trait Desktop {
     fn set_title(&self, title: &str);
     /// Shows a folder to the player (in Explorer on Windows).
     fn open_folder(&self, path: &Path);
+    /// Puts text on the clipboard, for the player to paste elsewhere.
+    fn set_clipboard(&self, text: &str);
 }
 
 /// The devices the client talks through: real ones, or recording fakes.
@@ -95,6 +97,9 @@ pub struct Client {
     /// The client's randomness, apart from the simulation's.
     pub rng: ClientRng,
     pub game: GameSettings,
+    /// The server the player is on, if any.
+    pub net: Option<crate::net::Net>,
+    pub net_config: crate::net::NetConfig,
     fullscreen: bool,
     help: Help,
 }
@@ -187,6 +192,8 @@ impl Client {
             desktop,
             rng,
             game: GameSettings::default(),
+            net: None,
+            net_config: crate::net::NetConfig::default(),
             fullscreen: false,
             help,
         }

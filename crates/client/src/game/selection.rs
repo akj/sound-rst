@@ -195,7 +195,7 @@ impl GameInterface {
                     .iter()
                     .map(|p| match p {
                         MsgPart::Num(n) => *n,
-                        MsgPart::Text(_) => 0,
+                        MsgPart::Text(_) | MsgPart::Literal(_) => 0,
                     })
                     .collect();
                 (t, v.model.number)

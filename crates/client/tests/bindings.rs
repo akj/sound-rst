@@ -45,6 +45,26 @@ fn without_a_players_file_the_games_bindings_stand() {
             "local worker soldier1 soldier2 soldier3 soldier4 soldier5 soldier6 soldier7"
         ))
     );
-    // 172 binding lines; "d" and "CTRL d" are each bound twice.
-    assert_eq!(b.len(), 170);
+    // 172 binding lines; "d" and "CTRL d" are each bound twice. Then the
+    // client's own three: reading the chat again, and chat to the allies.
+    assert_eq!(b.len(), 173);
+    assert_eq!(
+        b.get(&Chord::parse("SHIFT F7").unwrap()),
+        Some(&GameCommand::SayAllies)
+    );
+    assert_eq!(
+        b.get(&Chord::parse("CTRL F5").unwrap()),
+        Some(&GameCommand::ChatPrevious)
+    );
+}
+
+#[test]
+fn the_players_file_can_rebind_the_clients_own_keys() {
+    let h = Harness::new("en", Script::new());
+    std::fs::write(h.client.paths.custom_bindings(), "SHIFT F7: say\n").unwrap();
+    let b = load(&h);
+    assert_eq!(
+        b.get(&Chord::parse("SHIFT F7").unwrap()),
+        Some(&GameCommand::Say)
+    );
 }

@@ -352,6 +352,12 @@ impl Desktop for WindowDesktop {
                 .warning(format!("cannot open {}: {e}", path.display()));
         }
     }
+    fn set_clipboard(&self, text: &str) {
+        if let Err(e) = crate::clipboard::set_text(text) {
+            self.log
+                .warning(format!("cannot copy to the clipboard: {e}"));
+        }
+    }
 }
 
 /// What the game thread gets to talk to the window.

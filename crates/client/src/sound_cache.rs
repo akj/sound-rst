@@ -61,6 +61,12 @@ pub fn update_text_table(table: &mut HashMap<String, String>, txt: &str, log: &L
     }
 }
 
+/// A part said as written, never looked up as a sound or a phrase: what
+/// other players wrote, and their logins.
+pub fn literal(s: &str) -> MsgPart {
+    MsgPart::Literal(s.to_owned())
+}
+
 /// The texts and sounds of the resource layers, merged: a later layer
 /// replaces an earlier one, a translation replaces the original. Sounds are
 /// decoded when first used.
@@ -161,6 +167,9 @@ impl SoundCache {
     /// What a message part becomes: its text, else the number it encodes,
     /// else its sound, else its key said as text.
     pub fn translate(&mut self, part: &MsgPart) -> Spoken {
+        if let MsgPart::Literal(t) = part {
+            return Spoken::Text(t.clone());
+        }
         let key = part.key();
         if let Some(t) = self.text(&key) {
             return Spoken::Text(t.to_owned());

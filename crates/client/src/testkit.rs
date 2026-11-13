@@ -9,6 +9,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex};
 
 use crate::audio::{AudioOutput, Channel, Sound};
 use crate::client::{Client, Desktop, Devices, open_resources};
@@ -17,11 +19,14 @@ use crate::config::Config;
 use crate::game::GameInterface;
 use crate::input::{InputSource, Key, KeyDown, KeyUp, Mods, RawInput};
 use crate::log::Log;
+use crate::net::NetConfig;
+use crate::net::conn::{Connection, Link, NetEvent};
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::session::Session;
 use crate::tts::SpeechBackend;
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
+use soundrts_protocol::{ClientMsg, LobbyPlayer, LobbySnapshot, Login, ServerMsg, Whereabouts};
 
 /// The upstream checkout the tests read the game data from. Panics with
 /// instructions if it is missing.
@@ -326,15 +331,35 @@ impl LiveKeys {
     }
 }
 
-/// A timed list of key presses and releases.
+/// A timed list of key presses and releases, and points where the keys
+/// wait until something has been said.
 #[derive(Clone, Default)]
 pub struct Script {
-    events: VecDeque<(f64, RawInput)>,
+    /// The keys, each in the part of the script after its number of waits.
+    events: VecDeque<(usize, f64, RawInput)>,
+    waits: Vec<Wait>,
     time: f64,
     keep_open: bool,
     live: Option<LiveKeys>,
     deadline: Option<f64>,
+    progress: Option<Arc<AtomicUsize>>,
 }
+
+/// A point of a script that waits until an utterance is said.
+#[derive(Clone, Debug)]
+struct Wait {
+    text: String,
+    /// The whole utterance, rendered, must be `text`; else it contains it.
+    exact: bool,
+}
+
+/// How long, in real time, a script waits for an utterance before the
+/// test fails. Tests that wait run against a real server.
+pub const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How late a key after a wait may come before the keys after it are
+/// delayed as much.
+const LATE: f64 = 0.05;
 
 impl Script {
     pub fn new() -> Script {
@@ -362,21 +387,58 @@ impl Script {
         self
     }
 
-    /// The following events happen at `time` seconds (on the test clock).
+    /// The following events happen at `time` seconds (on the test clock),
+    /// counted from the last wait if there is one.
     pub fn at(mut self, time: f64) -> Script {
         self.time = time;
         self
     }
 
+    /// The following keys wait until an utterance containing `text` (as
+    /// [`render`] writes it) is said after the previous wait, at most
+    /// [`WAIT_LIMIT`] of real time; their times count from then.
+    pub fn wait_for(self, text: &str) -> Script {
+        self.wait(text, false)
+    }
+
+    /// As [`Script::wait_for`], for an utterance that is exactly `text`.
+    pub fn wait_for_exact(self, text: &str) -> Script {
+        self.wait(text, true)
+    }
+
+    /// The number of waits so far: the value `progress` reaches when the
+    /// last one is over.
+    pub fn wait_count(&self) -> usize {
+        self.waits.len()
+    }
+
+    /// Counts the waits that are over in `progress`, which another thread
+    /// can read.
+    pub fn progress(mut self, progress: Arc<AtomicUsize>) -> Script {
+        self.progress = Some(progress);
+        self
+    }
+
+    fn wait(mut self, text: &str, exact: bool) -> Script {
+        self.waits.push(Wait {
+            text: text.to_owned(),
+            exact,
+        });
+        self.time = 0.0;
+        self
+    }
+
+    fn push(&mut self, e: RawInput) {
+        self.events.push_back((self.waits.len(), self.time, e));
+    }
+
     pub fn key_down(mut self, key: Key) -> Script {
-        self.events
-            .push_back((self.time, RawInput::KeyDown(down(key))));
+        self.push(RawInput::KeyDown(down(key)));
         self
     }
 
     pub fn key_up(mut self, key: Key) -> Script {
-        self.events
-            .push_back((self.time, RawInput::KeyUp(KeyUp { key, physical: key })));
+        self.push(RawInput::KeyUp(KeyUp { key, physical: key }));
         self
     }
 
@@ -386,8 +448,7 @@ impl Script {
     }
 
     pub fn tap_with(mut self, key: Key, mods: Mods) -> Script {
-        self.events
-            .push_back((self.time, RawInput::KeyDown(press(key, mods))));
+        self.push(RawInput::KeyDown(press(key, mods)));
         self.key_up(key)
     }
 
@@ -398,8 +459,8 @@ impl Script {
             key: e.key,
             physical: e.physical,
         };
-        self.events.push_back((self.time, RawInput::KeyDown(e)));
-        self.events.push_back((self.time, RawInput::KeyUp(up)));
+        self.push(RawInput::KeyDown(e));
+        self.push(RawInput::KeyUp(up));
         self
     }
 
@@ -422,6 +483,13 @@ impl Script {
     pub fn source(self) -> ScriptedInput {
         ScriptedInput {
             events: self.events,
+            waits: self.waits,
+            satisfied: 0,
+            offsets: vec![0.0],
+            waiting_since: None,
+            heard_from: 0,
+            utterances: None,
+            progress: self.progress,
             live: self.live,
             deadline: self.deadline,
             last_time: 0.0,
@@ -433,11 +501,88 @@ impl Script {
 /// Plays a [`Script`]. Once it has run out, and time has moved past its
 /// last event, the window "closes" so that every blocking loop ends.
 pub struct ScriptedInput {
-    events: VecDeque<(f64, RawInput)>,
+    events: VecDeque<(usize, f64, RawInput)>,
+    waits: Vec<Wait>,
+    /// How many waits are over.
+    satisfied: usize,
+    /// When each part of the script started: 0, then when each wait ended.
+    offsets: Vec<f64>,
+    waiting_since: Option<std::time::Instant>,
+    /// The utterances before this one are not looked at by the next wait.
+    heard_from: usize,
+    utterances: Option<UtteranceLog>,
+    progress: Option<Arc<AtomicUsize>>,
     live: Option<LiveKeys>,
     deadline: Option<f64>,
     last_time: f64,
     quit_sent: bool,
+}
+
+impl ScriptedInput {
+    /// Where the waits look for what was said.
+    pub fn listen(&mut self, utterances: UtteranceLog) {
+        self.utterances = Some(utterances);
+    }
+
+    /// Ends the waits that are met; panics on a wait that has taken too
+    /// long.
+    fn end_waits(&mut self, now: f64) {
+        while self.satisfied < self.waits.len() {
+            if self
+                .events
+                .front()
+                .is_some_and(|(part, _, _)| *part <= self.satisfied)
+            {
+                return;
+            }
+            let wait = &self.waits[self.satisfied];
+            let log = self
+                .utterances
+                .as_ref()
+                .expect("a script that waits listens");
+            let said: Vec<String> = log.utterances().iter().map(render).collect();
+            let found = said.iter().skip(self.heard_from).position(|s| {
+                if wait.exact {
+                    *s == wait.text
+                } else {
+                    s.contains(&wait.text)
+                }
+            });
+            match found {
+                Some(i) => {
+                    self.heard_from += i + 1;
+                    self.satisfied += 1;
+                    self.offsets.push(now);
+                    self.last_time = self.last_time.max(now);
+                    self.waiting_since = None;
+                    if let Some(p) = &self.progress {
+                        p.store(self.satisfied, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+                None => {
+                    let since = *self
+                        .waiting_since
+                        .get_or_insert_with(std::time::Instant::now);
+                    if since.elapsed() > WAIT_LIMIT {
+                        let tail = &said[said.len().saturating_sub(30)..];
+                        panic!(
+                            "waited too long to hear {:?}; the last utterances: {tail:#?}",
+                            wait.text
+                        );
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// When the next key is due, if its part of the script has started.
+    fn next_due(&self) -> Option<f64> {
+        self.events
+            .front()
+            .filter(|(part, _, _)| *part <= self.satisfied)
+            .map(|(part, t, _)| self.offsets[*part] + t)
+    }
 }
 
 impl InputSource for ScriptedInput {
@@ -451,10 +596,12 @@ impl InputSource for ScriptedInput {
             self.quit_sent = true;
             return Some((now, RawInput::Quit));
         }
+        self.end_waits(now);
+        let waiting = self.satisfied < self.waits.len();
+        let script_first = self.next_due();
         if let Some(live) = &self.live {
             let mut q = live.0.borrow_mut();
             let live_first = q.front().map(|(t, _)| *t);
-            let script_first = self.events.front().map(|(t, _)| *t);
             if let Some(t) = live_first
                 && t <= now
                 && script_first.is_none_or(|s| t < s)
@@ -466,13 +613,25 @@ impl InputSource for ScriptedInput {
                 return None;
             }
         }
-        match self.events.front() {
-            Some((t, _)) if *t <= now => {
-                self.last_time = *t;
-                self.events.pop_front()
+        match script_first {
+            Some(t) if t <= now => {
+                let (part, _, e) = self.events.pop_front().expect("a key is due");
+                // After a wait, the clock may be real: a key that comes
+                // late delays the keys after it, so that a stalled client
+                // does not get them all at once (a menu drops keys that
+                // pile up).
+                if part > 0 && now - t > LATE {
+                    self.offsets[part] += now - t;
+                }
+                self.last_time = t;
+                Some((t, e))
             }
             Some(_) => None,
-            None if !self.quit_sent && now > self.last_time => {
+            None if self.events.is_empty()
+                && !waiting
+                && !self.quit_sent
+                && now > self.last_time =>
+            {
                 self.quit_sent = true;
                 Some((now, RawInput::Quit))
             }
@@ -481,11 +640,13 @@ impl InputSource for ScriptedInput {
     }
 }
 
-/// A desktop that records titles and opened folders.
+/// A desktop that records titles, opened folders and the clipboard. The
+/// clipboard record can be shared with another thread.
 #[derive(Default)]
 pub struct RecordingDesktop {
     pub titles: RefCell<Vec<String>>,
     pub opened: RefCell<Vec<PathBuf>>,
+    pub clipboard: Arc<Mutex<Vec<String>>>,
 }
 
 impl Desktop for RecordingDesktop {
@@ -495,6 +656,111 @@ impl Desktop for RecordingDesktop {
 
     fn open_folder(&self, path: &Path) {
         self.opened.borrow_mut().push(path.to_path_buf());
+    }
+
+    fn set_clipboard(&self, text: &str) {
+        self.clipboard
+            .lock()
+            .expect("clipboard record")
+            .push(text.to_owned());
+    }
+}
+
+/// A server that is only a script: it delivers messages at set times on
+/// the test clock and records what the client sends. Clones share the
+/// same server.
+#[derive(Clone)]
+pub struct FakeServer(Rc<RefCell<FakeState>>);
+
+struct FakeState {
+    clock: Rc<dyn Clock>,
+    /// In time order; equal times keep their order.
+    scheduled: VecDeque<(f64, NetEvent)>,
+    sent: Vec<ClientMsg>,
+}
+
+struct FakeLink(FakeServer);
+
+impl Link for FakeLink {
+    fn send(&mut self, msg: ClientMsg) {
+        self.0.0.borrow_mut().sent.push(msg);
+    }
+
+    fn poll(&mut self) -> Option<NetEvent> {
+        let mut s = self.0.0.borrow_mut();
+        let now = s.clock.now();
+        match s.scheduled.front() {
+            Some((t, _)) if *t <= now => s.scheduled.pop_front().map(|(_, e)| e),
+            _ => None,
+        }
+    }
+}
+
+impl FakeServer {
+    /// A server, and the client's connection to it.
+    pub fn new(clock: Rc<dyn Clock>) -> (FakeServer, Connection) {
+        let server = FakeServer(Rc::new(RefCell::new(FakeState {
+            clock,
+            scheduled: VecDeque::new(),
+            sent: Vec::new(),
+        })));
+        let conn = Connection::new(Box::new(FakeLink(server.clone())));
+        (server, conn)
+    }
+
+    fn schedule(&self, time: f64, e: NetEvent) {
+        let mut s = self.0.borrow_mut();
+        let i = s
+            .scheduled
+            .iter()
+            .position(|(t, _)| *t > time)
+            .unwrap_or(s.scheduled.len());
+        s.scheduled.insert(i, (time, e));
+    }
+
+    /// Sends `msg` at `time` on the test clock.
+    pub fn at(&self, time: f64, msg: ServerMsg) {
+        self.schedule(time, NetEvent::Msg(msg));
+    }
+
+    /// Closes the connection at `time`.
+    pub fn close_at(&self, time: f64) {
+        self.schedule(time, NetEvent::Closed("closed by the test".into()));
+    }
+
+    /// What the client has sent so far.
+    pub fn sent(&self) -> Vec<ClientMsg> {
+        self.0.borrow().sent.clone()
+    }
+}
+
+/// A lobby where `you` has just arrived, with `others` there before.
+pub fn snapshot(you: &str, others: &[&str]) -> LobbySnapshot {
+    let player = |l: &str| LobbyPlayer {
+        login: Login::new(l).expect("a login"),
+        whereabouts: Whereabouts::Lobby,
+    };
+    LobbySnapshot {
+        server_name: "test".into(),
+        you: Login::new(you).expect("a login"),
+        players: std::iter::once(you)
+            .chain(others.iter().copied())
+            .map(player)
+            .collect(),
+        rooms: Vec::new(),
+        chat: Vec::new(),
+    }
+}
+
+/// The settings that keep tests off the network: a hosted server listens
+/// on 127.0.0.1 on a free port, with no router and no lists to fetch.
+pub fn test_net_config() -> NetConfig {
+    NetConfig {
+        host_ip: std::net::Ipv4Addr::LOCALHOST.into(),
+        host_port: 0,
+        upnp: false,
+        discovery_targets: Vec::new(),
+        public_list_url: None,
     }
 }
 
@@ -541,16 +807,19 @@ impl Harness {
         let (audio_output, audio) = RecordingAudio::new(clock.clone());
         let desktop = Rc::new(RecordingDesktop::default());
         let utterance_log = UtteranceLog::default();
+        let mut source = script.source();
+        source.listen(utterance_log.clone());
         let devices = Devices {
             speech: Box::new(speech_backend),
             audio: Box::new(audio_output),
-            input: Box::new(script.source()),
+            input: Box::new(source),
             clock: clock.clone(),
             desktop: desktop.clone(),
             random_seed: 1,
             utterances: Some(utterance_log.clone()),
         };
-        let client = Client::new(paths, config, res, log, devices);
+        let mut client = Client::new(paths, config, res, log, devices);
+        client.net_config = test_net_config();
         Harness {
             client,
             speech,
@@ -618,6 +887,40 @@ impl Harness {
         let mut alliances = vec!["1".to_owned()];
         alliances.extend(std::iter::repeat_n("2".to_owned(), players.len() - 1));
         let mut session = Session::training(&self.client, m, &players, &factions, &alliances);
+        let mut game = session.start(&mut self.client).expect("a valid map");
+        self.client.input.clear();
+        game.next_update = self.client.clock.now();
+        TestGame { session, game }
+    }
+
+    /// Connects the client to a [`FakeServer`] as `you`, with `others`
+    /// in the lobby.
+    pub fn join_fake_server(&mut self, you: &str, others: &[&str]) -> FakeServer {
+        let (server, conn) = FakeServer::new(self.clock.clone());
+        let content = self.client.res.content_hash();
+        self.client.net = Some(crate::net::Net::new(conn, snapshot(you, others), content));
+        server
+    }
+
+    /// Starts a game on a server (see [`Harness::join_fake_server`]) on
+    /// the multiplayer map `map`, as `slots[you]`. The world is built and
+    /// the server told; no turn has run yet.
+    pub fn start_multiplayer(
+        &mut self,
+        map: &str,
+        slots: &[soundrts_protocol::Slot],
+        you: usize,
+        seed: i64,
+        speed: soundrts_protocol::Speed,
+    ) -> TestGame {
+        let m = self
+            .client
+            .res
+            .multiplayer_maps()
+            .into_iter()
+            .find(|m| m.name == map)
+            .unwrap_or_else(|| panic!("no multiplayer map {map}"));
+        let mut session = Session::multiplayer(m, slots, you, seed, speed);
         let mut game = session.start(&mut self.client).expect("a valid map");
         self.client.input.clear();
         game.next_update = self.client.clock.now();

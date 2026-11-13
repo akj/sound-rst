@@ -1,0 +1,11 @@
+# The public list of SoundRTS servers. The game reads this file from
+# https://raw.githubusercontent.com/akj/sound-rst/main/servers.txt and
+# lists its servers when a player chooses a server in a list.
+#
+# One server a line: its address, then optionally a space and its name.
+# The address is a host name or an IP address, with ":port" when the port
+# is not 2501. Lines that start with # are comments.
+#
+# Example:
+# soundrts.example.org Example server
+# 203.0.113.7:2502 Another server
