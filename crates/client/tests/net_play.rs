@@ -377,3 +377,24 @@ fn two_players_play_a_game_in_step_and_leave_it() {
         "{bob_said:#?}"
     );
 }
+
+#[test]
+fn a_server_on_the_local_network_answers_the_discovery() {
+    let server = soundrts_server::start(soundrts_server::ServerConfig {
+        name: "the test server".into(),
+        ip: Ipv4Addr::LOCALHOST.into(),
+        port: 0,
+        ..soundrts_server::ServerConfig::default()
+    })
+    .expect("a server");
+    let addr = server.local_addr();
+    let found = soundrts::net::discovery::discover(&[addr], Duration::from_millis(500));
+    assert_eq!(
+        found,
+        [soundrts::net::discovery::FoundServer {
+            addr,
+            name: "the test server".into(),
+            players: 0,
+        }]
+    );
+}

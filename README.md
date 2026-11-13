@@ -6,17 +6,18 @@ The port reads the original game's data files unchanged: rules, maps, sounds, tr
 
 ## What works
 
-Single-player games work.
+Single-player and multiplayer games work.
 
 - The main menu, the options menu (login, mods, soundpacks), and the single-player menus.
 - Games against the computer on every multiplayer map, with the `easy`, `aggressive`, and `ai2` computer players.
 - The campaigns, with cut scenes, objectives, and the chapter bookmark.
-- Every in-game command in `res/ui/bindings.txt` except chat and fullscreen.
+- Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.
+- Every in-game command in `res/ui/bindings.txt` except fullscreen.
 - The 13 languages of the original.
 
 The following parts of the original are not ported:
 
-- Multiplayer and chat in the game. The server exists, but the game does not connect to it yet.
+- Games with players of the original game. The port has its own server and protocol.
 - Saved games and replays.
 - The map editor.
 - The on-screen map. The window stays blank.
@@ -58,9 +59,35 @@ To play in another language, write its code, for example `fr`, in `cfg/language.
 
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, and the current folder.
 
+## Play with others
+
+Choose Multiplayer in the main menu. If your login is still `player`, the game asks for a new one first: the other players hear your login.
+
+To host a game, choose Server. The game starts a server on your computer, says the address to give to the other players, and copies it to the clipboard. Paste the address into a message to the other players. The game asks your router to forward the port (UPnP). If the router does not, players on the internet cannot reach your server, but players on your local network can. The server stops when you leave its menus.
+
+To join a game, choose one of these:
+
+- Choose a server in a list: the servers on your local network, the public list, your favorite servers, and the servers you used recently.
+- Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`.
+
+On a server, the menu lists the invitations you received and the open games you can join. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
+
+In a game room, the host invites players and computers, sets the alliances and factions, and starts the game. The other players choose their faction and say when they are ready.
+
+| Key | In the menus | In a game |
+| --- | --- | --- |
+| F7 | Write to the room, or to the lobby outside a room | Write to every player of the game |
+| Shift+F7 | | Write to your allies |
+| Ctrl+F5 | Read the previous chat message again | Read the previous chat message again |
+| Ctrl+F6 | Read the next chat message again | Read the next chat message again |
+
+A chat message plays a short sound, then the game says who wrote it and what they wrote, after the message that is being said. In a game, the game goes on while you type. The multiplayer menu has an option that stops the game from saying when players arrive on the server or leave it.
+
+Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
+
 ## Run a server
 
-The server is a lobby, a chat, and a turn clock. It does not need the game data.
+You can also run a server on its own, for example on a computer that stays on. The server is a lobby, a chat, and a turn clock. It does not need the game data.
 
 ```powershell
 cargo run -p soundrts-server -- --port 2501 --name "My server"
@@ -76,7 +103,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock.
+The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs` also run real servers, on 127.0.0.1 only, and their clients on real time. No test asks a router to forward a port.
 
 Two sets of tests compare the port with the original Python game:
 
