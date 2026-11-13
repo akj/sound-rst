@@ -4,7 +4,7 @@
 
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use soundrts_protocol::{
@@ -82,6 +82,11 @@ pub fn ws_url(address: &str) -> Option<String> {
     ok.then(|| format!("ws://{host}:{port}"))
 }
 
+/// The most server messages waiting to be read. Beyond it the connection
+/// stops reading the socket, so a server that floods the client fills its
+/// own buffers rather than the client's memory.
+pub const EVENT_QUEUE: usize = 1024;
+
 /// Connects to `address`, says `hello`, and waits for the server's
 /// welcome, at most `timeout`.
 pub fn open(
@@ -90,7 +95,7 @@ pub fn open(
     timeout: Duration,
 ) -> Result<(Connection, LobbySnapshot), ConnectError> {
     let url = ws_url(address).ok_or(ConnectError::BadAddress)?;
-    let (events_tx, events_rx) = mpsc::channel();
+    let (events_tx, events_rx) = tokio_mpsc::channel(EVENT_QUEUE);
     let (out_tx, out_rx) = tokio_mpsc::unbounded_channel();
     let (connected_tx, connected_rx) = mpsc::channel();
     let thread = std::thread::Builder::new()
@@ -99,7 +104,7 @@ pub fn open(
         .map_err(|e| ConnectError::Unreachable(e.to_string()))?;
     let mut link = SocketLink {
         out: Some(out_tx),
-        events: events_rx,
+        events: Some(events_rx),
         thread: Some(thread),
     };
     // The thread gives up on its own at the timeout; the margin covers a
@@ -110,25 +115,29 @@ pub fn open(
         Ok(Err(e)) => return Err(e),
         Err(_) => return Err(ConnectError::Unreachable("timed out".into())),
     }
-    match link.events.recv_timeout(wait) {
-        Ok(NetEvent::Msg(ServerMsg::Welcome { lobby })) => {
-            Ok((Connection::new(Box::new(link)), lobby))
+    let deadline = Instant::now() + wait;
+    let first = loop {
+        if let Some(e) = link.poll() {
+            break e;
         }
-        Ok(NetEvent::Msg(ServerMsg::Rejected { reason })) => Err(ConnectError::Rejected(reason)),
-        Ok(NetEvent::Msg(other)) => Err(ConnectError::NotAServer(format!(
+        if Instant::now() > deadline {
+            return Err(ConnectError::NotAServer("no welcome in time".into()));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    match first {
+        NetEvent::Msg(ServerMsg::Welcome { lobby }) => Ok((Connection::new(Box::new(link)), lobby)),
+        NetEvent::Msg(ServerMsg::Rejected { reason }) => Err(ConnectError::Rejected(reason)),
+        NetEvent::Msg(other) => Err(ConnectError::NotAServer(format!(
             "unexpected first message: {other:?}"
         ))),
-        Ok(NetEvent::Closed(reason)) => Err(ConnectError::NotAServer(reason)),
-        Err(_) => {
-            link.out = None;
-            Err(ConnectError::NotAServer("no welcome in time".into()))
-        }
+        NetEvent::Closed(reason) => Err(ConnectError::NotAServer(reason)),
     }
 }
 
 struct SocketLink {
     out: Option<tokio_mpsc::UnboundedSender<ClientMsg>>,
-    events: mpsc::Receiver<NetEvent>,
+    events: Option<tokio_mpsc::Receiver<NetEvent>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -140,13 +149,16 @@ impl Link for SocketLink {
     }
 
     fn poll(&mut self) -> Option<NetEvent> {
-        self.events.try_recv().ok()
+        self.events.as_mut()?.try_recv().ok()
     }
 }
 
 impl Drop for SocketLink {
     fn drop(&mut self) {
-        // Without a sender, the thread closes the socket and ends.
+        // Without a receiver, a thread waiting to hand over a message, or to
+        // write to a server that no longer reads, gives up at once; without
+        // a sender, it closes the socket, within CLOSE_TIMEOUT.
+        self.events = None;
         self.out = None;
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
@@ -157,12 +169,22 @@ impl Drop for SocketLink {
 /// How long to wait for the server to answer a close.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// Why the connection's loop ended.
+enum End {
+    /// The client dropped the connection: close the socket.
+    Dropped,
+    /// The connection is over, for this reason.
+    Lost(String),
+    /// The client no longer reads: just stop.
+    Abandoned,
+}
+
 fn serve(
     url: String,
     hello: ClientMsg,
     timeout: Duration,
     mut out: tokio_mpsc::UnboundedReceiver<ClientMsg>,
-    events: mpsc::Sender<NetEvent>,
+    events: tokio_mpsc::Sender<NetEvent>,
     connected: mpsc::Sender<Result<(), ConnectError>>,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -197,48 +219,75 @@ fn serve(
                 return;
             }
         };
-        if let Err(e) = ws.send(Message::Text(hello.to_json().into())).await {
-            let _ = connected.send(Err(ConnectError::NotAServer(e.to_string())));
-            return;
+        let hello = Message::Text(hello.to_json().into());
+        match tokio::time::timeout(timeout, ws.send(hello)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                let _ = connected.send(Err(ConnectError::NotAServer(e.to_string())));
+                return;
+            }
+            Err(_) => {
+                let _ = connected.send(Err(ConnectError::Unreachable("timed out".into())));
+                return;
+            }
         }
         let _ = connected.send(Ok(()));
-        let reason = loop {
+        let end = loop {
             tokio::select! {
+                // A dropped connection is closed cleanly first.
+                biased;
+                msg = out.recv() => match msg {
+                    Some(msg) => {
+                        // A server that stops reading blocks the write.
+                        tokio::select! {
+                            sent = ws.send(Message::Text(msg.to_json().into())) => {
+                                if let Err(e) = sent {
+                                    break End::Lost(e.to_string());
+                                }
+                            }
+                            _ = events.closed() => break End::Abandoned,
+                        }
+                    }
+                    None => break End::Dropped,
+                },
                 incoming = ws.next() => match incoming {
                     Some(Ok(Message::Text(text))) => match ServerMsg::from_json(&text) {
+                        // Waits while the queue is full: the socket is not
+                        // read meanwhile.
                         Ok(msg) => {
-                            if events.send(NetEvent::Msg(msg)).is_err() {
-                                break None;
+                            if events.send(NetEvent::Msg(msg)).await.is_err() {
+                                break End::Abandoned;
                             }
                         }
                         Err(e) => {
-                            break Some(format!("cannot read a message from the server: {e}"));
+                            break End::Lost(format!("cannot read a message from the server: {e}"));
                         }
                     },
-                    Some(Ok(Message::Close(_))) | None => break Some("closed by the server".into()),
+                    Some(Ok(Message::Close(_))) | None => break End::Lost("closed by the server".into()),
                     Some(Ok(_)) => {}
-                    Some(Err(e)) => break Some(e.to_string()),
+                    Some(Err(e)) => break End::Lost(e.to_string()),
                 },
-                msg = out.recv() => match msg {
-                    Some(msg) => {
-                        if let Err(e) = ws.send(Message::Text(msg.to_json().into())).await {
-                            break Some(e.to_string());
-                        }
-                    }
-                    None => {
-                        let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
-                            if ws.close(None).await.is_ok() {
-                                while let Some(Ok(_)) = ws.next().await {}
-                            }
-                        })
-                        .await;
-                        break None;
-                    }
-                },
+                _ = events.closed() => break End::Abandoned,
             }
         };
-        if let Some(reason) = reason {
-            let _ = events.send(NetEvent::Closed(reason));
+        match end {
+            End::Dropped => {
+                let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
+                    if ws.close(None).await.is_ok() {
+                        while let Some(Ok(_)) = ws.next().await {}
+                    }
+                })
+                .await;
+            }
+            End::Lost(reason) => {
+                // After the messages before it, unless the client drops
+                // the connection meanwhile.
+                tokio::select! {
+                    _ = events.send(NetEvent::Closed(reason)) => {}
+                    _ = events.closed() => {}
+                }
+            }
+            End::Abandoned => {}
         }
     });
 }

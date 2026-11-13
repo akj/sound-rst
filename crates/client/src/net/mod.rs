@@ -381,12 +381,20 @@ fn save_downloaded_map(cx: &mut Client, file_name: &str, hash: &MapHash, bytes: 
     }
 }
 
-/// Reads what the server sent and acts on it. Every waiting loop calls it.
+/// The most server messages one call to [`pump`] handles: the rest wait
+/// for the next call, so that the player's keys are still read.
+pub const PUMP_LIMIT: usize = 64;
+
+/// Reads what the server sent and acts on it, at most [`PUMP_LIMIT`]
+/// messages. Every waiting loop calls it.
 pub fn pump(cx: &mut Client) {
     let Some(mut net) = cx.net.take() else {
         return;
     };
-    while let Some(event) = net.conn.poll() {
+    for _ in 0..PUMP_LIMIT {
+        let Some(event) = net.conn.poll() else {
+            break;
+        };
         net.handle(cx, event);
     }
     cx.net = Some(net);
