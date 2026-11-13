@@ -172,22 +172,36 @@ const CLOSE_GRACE: Duration = Duration::from_secs(2);
 /// UDP. On Windows a free TCP port can be reserved for UDP.
 const ANY_PORT_TRIES: usize = 20;
 
+/// The ports a server on "any port" picks from.
+const DYNAMIC_PORTS: std::ops::RangeInclusive<u16> = 49152..=65535;
+
 /// Listens on TCP, and on UDP at the same port for local discovery. A
 /// server without discovery still works, so a UDP failure is a warning.
+///
+/// For any port, the tries are random rather than the system's choice:
+/// the system hands out ports in sequence, and Windows reserves blocks of
+/// a hundred ports for one protocol only, so a TCP port at the start of a
+/// block reserved for UDP is followed by many more of the same block.
 async fn bind(ip: IpAddr, port: u16) -> io::Result<(TcpListener, SocketAddr, Option<UdpSocket>)> {
-    let mut tries = if port == 0 { ANY_PORT_TRIES } else { 1 };
-    loop {
-        let listener = TcpListener::bind((ip, port)).await?;
-        let addr = listener.local_addr()?;
-        match UdpSocket::bind(addr).await {
-            Ok(udp) => return Ok((listener, addr, Some(udp))),
-            Err(e) => {
-                tries -= 1;
-                if tries == 0 {
-                    warn!(%addr, error = %e, "no local discovery: cannot listen on UDP");
-                    return Ok((listener, addr, None));
-                }
+    if port == 0 {
+        for _ in 0..ANY_PORT_TRIES {
+            let port = rand::random_range(DYNAMIC_PORTS);
+            let Ok(listener) = TcpListener::bind((ip, port)).await else {
+                continue;
+            };
+            let addr = listener.local_addr()?;
+            if let Ok(udp) = UdpSocket::bind(addr).await {
+                return Ok((listener, addr, Some(udp)));
             }
+        }
+    }
+    let listener = TcpListener::bind((ip, port)).await?;
+    let addr = listener.local_addr()?;
+    match UdpSocket::bind(addr).await {
+        Ok(udp) => Ok((listener, addr, Some(udp))),
+        Err(e) => {
+            warn!(%addr, error = %e, "no local discovery: cannot listen on UDP");
+            Ok((listener, addr, None))
         }
     }
 }

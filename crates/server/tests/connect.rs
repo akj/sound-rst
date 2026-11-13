@@ -263,6 +263,31 @@ async fn the_server_answers_discovery_on_its_port() {
 }
 
 #[tokio::test]
+async fn a_server_on_any_port_answers_discovery_when_the_next_ports_are_taken_for_udp() {
+    // Systems hand out ports in sequence: on Windows a block of them can be
+    // reserved for UDP. Holding the next ports on UDP stands for that.
+    let next = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let _held: Vec<std::net::UdpSocket> = (1..=40u16)
+        .filter_map(|i| std::net::UdpSocket::bind(("127.0.0.1", next.checked_add(i)?)).ok())
+        .collect();
+    let server = server(|_| {});
+    let addr = server.local_addr();
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    socket.send_to(DISCOVERY_REQUEST, addr).await.unwrap();
+    let mut buf = [0u8; 1024];
+    let (n, _) = tokio::time::timeout(TIMEOUT, socket.recv_from(&mut buf))
+        .await
+        .expect("an answer in time")
+        .expect("an answer, not a request that reached no one");
+    let answer = ServerAnnouncement::from_json(std::str::from_utf8(&buf[..n]).unwrap()).unwrap();
+    assert_eq!(answer.port, addr.port());
+}
+
+#[tokio::test]
 async fn shutting_down_closes_connections() {
     let server = server(|_| {});
     let (mut c, _) = Client::hello(server.local_addr(), "andrew").await;
