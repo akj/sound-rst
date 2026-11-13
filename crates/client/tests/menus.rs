@@ -34,11 +34,11 @@ fn the_main_menu_says_its_title_and_the_arrows_walk_its_items() {
         [
             TITLE,
             "single player, , play on your computer",
+            "multiplayer, , play on the Internet",
             "options, , modify your parameters",
-            "quit, , quit this program",
+            "multiplayer, , play on the Internet",
             "options, , modify your parameters",
-            "quit, , quit this program",
-            "options, , modify your parameters",
+            "multiplayer, , play on the Internet",
             "quit,",
         ]
     );
@@ -92,6 +92,8 @@ fn options_then_modify_login_with_typed_characters() {
     let script = Script::new()
         .at(5.0)
         .tap(Key::Down)
+        .at(7.0)
+        .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
         .at(20.0)
@@ -126,6 +128,7 @@ fn options_then_modify_login_with_typed_characters() {
         [
             TITLE,
             "single player, , play on your computer",
+            "multiplayer, , play on the Internet",
             "options, , modify your parameters",
             "options,",
             "options menu",
@@ -161,6 +164,8 @@ fn escape_while_typing_keeps_the_login() {
     let script = Script::new()
         .at(5.0)
         .tap(Key::Down)
+        .at(7.0)
+        .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
         .at(20.0)
@@ -180,7 +185,7 @@ fn escape_while_typing_keeps_the_login() {
     let mut h = Harness::new("en", script);
     assert_eq!(main_menu(&mut h.client), Ok(()));
     assert_eq!(
-        h.spoken()[8..],
+        h.spoken()[9..],
         [
             "x . x",
             "the current login was kept",
@@ -197,6 +202,8 @@ fn escape_while_typing_keeps_the_login() {
 fn the_same_menu_speaks_french() {
     let script = Script::new()
         .at(5.0)
+        .tap(Key::Down)
+        .at(7.0)
         .tap(Key::Down)
         .at(10.0)
         .tap(Key::Down)
@@ -216,6 +223,7 @@ fn the_same_menu_speaks_french() {
         [
             "SoundRTS 1.3.8.1  , Que souhaitez-vous ?",
             "Un seul joueur, , jouer seul sur votre ordinateur",
+            "Multijoueur, , jouer à plusieurs sur Internet",
             "Options, , modifier vos paramètres",
             "Options,",
             "menu options",

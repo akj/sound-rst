@@ -53,11 +53,18 @@ impl Clock for SystemClock {
 #[derive(Default)]
 pub struct ManualClock {
     now: Cell<f64>,
+    real_pause: Cell<f64>,
 }
 
 impl ManualClock {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Each sleep also waits this long in real time, so that a client
+    /// that talks to a real server does not spin.
+    pub fn set_real_pause(&self, seconds: f64) {
+        self.real_pause.set(seconds);
     }
 
     pub fn advance(&self, seconds: f64) {
@@ -72,5 +79,9 @@ impl Clock for ManualClock {
 
     fn sleep(&self, seconds: f64) {
         self.advance(seconds.max(0.0));
+        let pause = self.real_pause.get();
+        if pause > 0.0 {
+            std::thread::sleep(Duration::from_secs_f64(pause));
+        }
     }
 }

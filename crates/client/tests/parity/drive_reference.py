@@ -902,10 +902,10 @@ def deterministic_hashes(perturb, classes):
 
 
 # ---------------------------------------------------------------------------
-# THE PORT'S SCOPE. The Rust port has no multiplayer, server, replays,
-# save/restore or documentation item yet, so the original's menus are cut
-# down to what the port has (README, "The port's scope"). Each patch goes
-# away when its feature is ported.
+# THE PORT'S SCOPE. The Rust port has no server item (hosting is in its
+# multiplayer menu), replays, save/restore or documentation item yet, so the
+# original's menus are cut down to what the port has (README, "The port's
+# scope"). Each patch goes away when its feature is ported.
 
 
 def restrict_to_port_scope():
@@ -915,11 +915,12 @@ def restrict_to_port_scope():
     from soundrts.lib.resource import res
 
     def main_menu():
-        # without multiplayer, server, observe a recorded game, documentation
+        # without server, observe a recorded game, documentation
         Menu(
             [clientmain.app_title() + ","] + mp.MAKE_A_SELECTION,
             [
                 [mp.SINGLE_PLAYER, clientmain.single_player_menu, mp.SINGLE_PLAYER_EXPLANATION],
+                [mp.MULTIPLAYER2, clientmain.multiplayer_menu, mp.MULTIPLAYER2_EXPLANATION],
                 [mp.OPTIONS, clientmain.options_menu, mp.OPTIONS_EXPLANATION],
                 [mp.QUIT2, CLOSE_MENU, mp.QUIT2_EXPLANATION],
             ],

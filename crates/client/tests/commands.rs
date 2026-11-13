@@ -7,10 +7,7 @@ use soundrts::log::Log;
 use soundrts::testkit::{Harness, Script, upstream_root};
 
 /// Commands whose feature this client leaves out, and what they do.
-const EXCLUDED: &[(&str, &str)] = &[
-    // Chat needs a server: a beep, as upstream does without a feature.
-    ("say", "beeps"),
-];
+const EXCLUDED: &[(&str, &str)] = &[];
 
 /// Upstream methods that a player's own bindings could name, which this
 /// client does not have (sound debugging).
@@ -38,7 +35,14 @@ fn every_command_of_bindings_txt_is_parsed_into_a_handled_command() {
     let mut typed: Bindings<GameCommand> = Bindings::new();
     let text = game_bindings_text(&h.client.res, &h.client.paths.custom_bindings());
     typed.load(&text, &GameCommand::parse, &h.client.log);
-    assert_eq!(typed.len(), raw.len());
+    // The client's own bindings come on top of the file's.
+    let mut own: Bindings<String> = Bindings::new();
+    own.load(
+        soundrts::bindings::CLIENT_BINDINGS,
+        &|name, _| Ok(name.to_owned()),
+        &Log::silent(),
+    );
+    assert_eq!(typed.len(), raw.len() + own.len());
     for (chord, c) in typed.iter() {
         assert!(!matches!(c, GameCommand::Broken { .. }), "{chord:?}: {c:?}");
     }

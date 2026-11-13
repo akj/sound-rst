@@ -371,9 +371,11 @@ The other `SoundRTS.ini` options keep their defaults; `user/` starts empty
 | `events` | with the console: a research completing, an impossible order and its reason (no food), a small gold mine exhausted, a priest's holy vision on another square (an ability with a target), footmen against the computer's base (fights, neutralized units), victory and the score |
 | `transport` | jl5 (water): a boat loads every footman of a coastal square, its status, unloads them on that square |
 
-Not covered (not in the Rust port yet): multiplayer and server menus, chat
-(`say`, F7), replays, save and restore, the map editor, fullscreen and the
-grid display, the Documentation item.
+Not covered: the multiplayer menus and chat (the port's server and
+protocol differ from the original's; `crates/client/tests/multiplayer.rs`
+and `net_play.rs` test them), and, not in the Rust port yet, replays, save
+and restore, the map editor, fullscreen and the grid display, the
+Documentation item.
 
 ## The port's scope
 
@@ -384,7 +386,7 @@ run time:
 
 | patch | removes | why |
 |---|---|---|
-| `clientmain.main_menu` | multiplayer, server, observe a recorded game, documentation | the port has single player, options and quit only |
+| `clientmain.main_menu` | server, observe a recorded game, documentation | the port has single player, multiplayer (where it hosts servers too), options and quit only |
 | `clientmain.single_player_menu` | restore a saved game | the port cannot save or restore |
 | `GameInterface.can_save` returns `False` | save, in the game menu | the same |
 
