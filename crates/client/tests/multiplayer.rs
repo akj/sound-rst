@@ -692,6 +692,37 @@ fn moving_a_player_whose_slot_moved_moves_that_player() {
 }
 
 #[test]
+fn a_line_being_typed_is_said_as_written() {
+    let script = Script::new()
+        .at(8.0)
+        .tap(Key::F7)
+        .at(20.0)
+        .type_text("6")
+        .at(21.0)
+        .type_text("1")
+        .at(22.0)
+        .type_text("1")
+        .at(23.0)
+        .type_text("4")
+        .at(24.0)
+        .tap(Key::Return)
+        .at(30.0)
+        .tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |_, _| {});
+    assert_eq!(
+        from(&said(&h), "enter your message"),
+        [
+            "enter your message",
+            "6 . 6",
+            "1 . 61",
+            "1 . 611",
+            "4 . 6114",
+            "6114",
+        ]
+    );
+}
+
+#[test]
 fn chat_from_the_game_menu_goes_to_the_game() {
     let live = LiveKeys::default();
     let mut h = Harness::with_config(

@@ -428,7 +428,7 @@ pub fn first_letter_of(cx: &Client, choice: &Choice) -> Option<String> {
 /// `spell`, the whole string is said as a word.
 pub fn string_to_msg(s: &str, spell: bool) -> Msg {
     if !spell {
-        return vec![MsgPart::from(s)];
+        return vec![MsgPart::Literal(s.to_owned())];
     }
     let mut out = Vec::new();
     for c in s.chars() {
@@ -490,7 +490,7 @@ impl TextEntry {
         match e.key {
             Key::LShift | Key::RShift => Typed::Ignored,
             Key::Return | Key::KpEnter => {
-                cx.voice.item(&vec![MsgPart::from(s.as_str())]);
+                cx.voice.item(&string_to_msg(s, false));
                 Typed::Done(std::mem::take(s))
             }
             Key::Escape => Typed::Cancelled,
