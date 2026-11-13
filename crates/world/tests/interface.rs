@@ -122,3 +122,24 @@ fn the_world_can_move_to_another_thread() {
     fn assert_send<T: Send>() {}
     assert_send::<World>();
 }
+
+#[test]
+fn a_control_of_too_many_ids_is_ignored_and_the_game_goes_on() {
+    let (mut w, me, _) = game();
+    let peasant = common::find_player_unit(&w, me, "peasant", 0).unwrap();
+    let square = w.square(w.square_by_name("b2").unwrap()).id;
+    w.queue_command(me, &format!("control {peasant}"));
+    // From another player: it would expand into more ids than memory holds.
+    w.queue_command(me, "control 1-9223372036854775807");
+    w.queue_command(me, &format!("order 0 0 go {square}"));
+    w.update();
+    let warnings = w.drain_warnings();
+    assert!(
+        warnings.iter().any(|m| m.contains("too many ids")),
+        "{warnings:?}"
+    );
+    // The bad control leaves no unit controlled: the order goes nowhere.
+    let events = w.drain_events(me);
+    assert!(!entity_events(&events).contains(&EntityEvent::OrderOk));
+    w.update();
+}

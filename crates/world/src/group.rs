@@ -23,8 +23,12 @@ pub fn encode(ids: &[i64]) -> String {
         .join(" ")
 }
 
+/// The most ids a list may hold: far more than a game has units, and few
+/// enough that a list sent by another player cannot exhaust memory.
+pub const MAX_IDS: usize = 10_000;
+
 /// Decodes ids into their text form. Fails on an empty item, as the
-/// original does on two spaces in a row.
+/// original does on two spaces in a row, and on more than [`MAX_IDS`] ids.
 pub fn decode(s: &str) -> Result<Vec<String>, String> {
     if s.is_empty() {
         return Ok(Vec::new());
@@ -40,8 +44,15 @@ pub fn decode(s: &str) -> Result<Vec<String>, String> {
                 return Err(format!("too many values to unpack: {r:?}"));
             };
             let (a, b) = (int(a)?, int(b)?);
+            let len = (i128::from(b) - i128::from(a) + 1).max(0);
+            if len > (MAX_IDS - result.len()) as i128 {
+                return Err(format!("too many ids: {r:?}"));
+            }
             result.extend((a..=b).map(|i| i.to_string()));
         } else {
+            if result.len() == MAX_IDS {
+                return Err(format!("too many ids: {r:?}"));
+            }
             result.push(int(r)?.to_string());
         }
     }
@@ -70,5 +81,16 @@ mod tests {
         assert_eq!(encode(&[]), "");
         assert_eq!(decode("").unwrap(), Vec::<String>::new());
         assert!(decode("1  2").is_err());
+    }
+
+    #[test]
+    fn a_list_of_too_many_ids_is_refused_without_being_expanded() {
+        assert!(decode("1-9223372036854775807").is_err());
+        assert!(decode("-9223372036854775808-9223372036854775807").is_err());
+        assert_eq!(decode("1-10000").unwrap().len(), MAX_IDS);
+        assert!(decode("1-10000 10001").is_err());
+        assert!(decode("1-5000 6000-11000").is_err());
+        // A reversed range is empty, as in the original.
+        assert_eq!(decode("5-1").unwrap(), Vec::<String>::new());
     }
 }
