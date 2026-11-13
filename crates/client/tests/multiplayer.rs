@@ -566,3 +566,54 @@ fn a_game_that_does_not_give_the_player_their_slot_is_left() {
         );
     }
 }
+
+#[test]
+fn a_map_package_that_unpacks_too_large_is_refused() {
+    use std::io::Write;
+    // 65 MiB of zeros: a few tens of KiB once compressed.
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    w.start_file("map.txt", options).unwrap();
+    let zeros = vec![0u8; 1024 * 1024];
+    for _ in 0..65 {
+        w.write_all(&zeros).unwrap();
+    }
+    let bomb = w.finish().unwrap().into_inner();
+    let hash = MapHash::of(&bomb);
+    let file_name = MapFileName::new("bomb.zip").unwrap();
+    let map = MapInfo {
+        file_name: file_name.clone(),
+        hash: hash.clone(),
+        title_sounds: Vec::new(),
+        nb_players_min: 2,
+        nb_players_max: 2,
+    };
+    let script = Script::new().at(30.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |_, s| {
+        let mut state = room_state(&map, vec![slot(human("bob"), 1, true)]);
+        state.host = login("bob");
+        state.slots.push(slot(human("andrew"), 2, false));
+        s.at(10.0, room(RoomChange::Entered, &state));
+        s.at(
+            15.0,
+            ServerMsg::Map {
+                map: MapData {
+                    file_name,
+                    bytes: MapBytes::new(bomb).unwrap(),
+                },
+            },
+        );
+    });
+    assert!(server.sent().contains(&ClientMsg::GetMap { hash }));
+    let said = said(&h);
+    assert!(
+        said.contains(&"<1029> the map of this game is too large once unpacked".to_owned()),
+        "{said:#?}"
+    );
+    let saved = std::fs::read_dir(h.client.paths.downloaded().join("multi"))
+        .unwrap()
+        .count();
+    assert_eq!(saved, 0, "the map is not kept");
+    assert!(h.log_text().contains("refused the map received"));
+}

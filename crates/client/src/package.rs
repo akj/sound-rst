@@ -348,6 +348,67 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
     }
 }
 
+/// How much a zip file from elsewhere may hold once decompressed.
+#[derive(Clone, Copy, Debug)]
+pub struct ExpansionLimits {
+    /// The most bytes one entry may decompress to.
+    pub entry: u64,
+    /// The most bytes all entries together may decompress to, those of
+    /// zip files inside it included.
+    pub total: u64,
+}
+
+/// The limits of a map package another player sends: far above any real
+/// map, far below what would exhaust memory.
+pub const NETWORK_MAP_LIMITS: ExpansionLimits = ExpansionLimits {
+    entry: 64 * 1024 * 1024,
+    total: 256 * 1024 * 1024,
+};
+
+/// How deep zip files inside zip files are looked into.
+const MAX_ZIP_DEPTH: u32 = 3;
+
+/// Checks that a zip file decompresses within `limits` by decompressing
+/// it, without keeping what it decompresses (the sizes the zip file states
+/// may lie). Zip files inside it are checked too, deeper ones refused.
+pub fn check_expansion(bytes: &[u8], limits: ExpansionLimits) -> Result<(), String> {
+    let mut total = 0;
+    check_zip(bytes, limits, &mut total, 0)
+}
+
+fn check_zip(
+    bytes: &[u8],
+    limits: ExpansionLimits,
+    total: &mut u64,
+    depth: u32,
+) -> Result<(), String> {
+    if depth > MAX_ZIP_DEPTH {
+        return Err("zip files nested too deep".into());
+    }
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = file.name().map(|n| n.into_owned()).unwrap_or_default();
+        let nested = name.to_lowercase().ends_with(".zip");
+        let left = limits.entry.min(limits.total - *total);
+        let mut kept = Vec::new();
+        let mut reader = (&mut file).take(left + 1);
+        let n = if nested {
+            reader.read_to_end(&mut kept).map_err(|e| e.to_string())? as u64
+        } else {
+            std::io::copy(&mut reader, &mut std::io::sink()).map_err(|e| e.to_string())?
+        };
+        if n > left {
+            return Err(format!("{name} decompresses to too many bytes"));
+        }
+        *total += n;
+        if nested {
+            check_zip(&kept, limits, total, depth + 1)?;
+        }
+    }
+    Ok(())
+}
+
 /// A folder as an uncompressed zip file, in memory.
 fn zip_folder(dir: &Path) -> std::io::Result<Vec<u8>> {
     let mut names = Vec::new();
@@ -415,6 +476,45 @@ impl PackageStack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn zipped(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, bytes) in entries {
+            w.start_file(*name, options).unwrap();
+            w.write_all(bytes).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    const SMALL: ExpansionLimits = ExpansionLimits {
+        entry: 1000,
+        total: 1500,
+    };
+
+    #[test]
+    fn a_zip_file_within_the_limits_passes() {
+        let z = zipped(&[("map.txt", vec![b'a'; 1000]), ("a.ogg", vec![0; 500])]);
+        assert_eq!(check_expansion(&z, SMALL), Ok(()));
+    }
+
+    #[test]
+    fn a_zip_file_that_expands_too_much_is_refused() {
+        // One entry too large, small once compressed.
+        let z = zipped(&[("map.txt", vec![0; 1001])]);
+        assert!(z.len() < 200);
+        assert!(check_expansion(&z, SMALL).is_err());
+        // Entries each within the limit, too large together.
+        let z = zipped(&[("a", vec![0; 1000]), ("b", vec![0; 501])]);
+        assert!(check_expansion(&z, SMALL).is_err());
+        // Too large inside a zip file inside the zip file.
+        let inner = zipped(&[("map.txt", vec![0; 1001])]);
+        let z = zipped(&[("inner.zip", inner)]);
+        assert!(check_expansion(&z, SMALL).is_err());
+        // Not a zip file.
+        assert!(check_expansion(b"title 1", SMALL).is_err());
+    }
     use crate::testkit::upstream_tests_dir;
 
     fn check_res2(p: &Package) {

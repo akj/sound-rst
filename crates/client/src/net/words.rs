@@ -46,6 +46,7 @@ pub const ON: &str = "on";
 pub const OFF: &str = "off";
 pub const SERVER_FULL: &str = "the server is full";
 pub const NO_SERVER_FOUND: &str = "no server found";
+pub const MAP_REFUSED: &str = "the map of this game is too large once unpacked";
 pub const GAME_CANNOT_START: &str = "this game cannot start here";
 pub const NO_PORT_FORWARDING: &str =
     "the router did not open the port: only the players of your local network can join";

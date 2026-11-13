@@ -35,6 +35,7 @@ use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
 use crate::menu::{Exit, input_string};
 use crate::message::InfoOptions;
+use crate::package::{NETWORK_MAP_LIMITS, check_expansion};
 
 /// How the multiplayer menus reach the network. The defaults are those of
 /// a player; tests change them.
@@ -341,6 +342,14 @@ impl Net {
         }
         let file_name = data.file_name.as_str().to_owned();
         let bytes = data.bytes.into_vec();
+        if !file_name.ends_with(".txt")
+            && let Err(e) = check_expansion(&bytes, NETWORK_MAP_LIMITS)
+        {
+            cx.log.warning(format!("refused the map received: {e}"));
+            cx.voice
+                .chat(&[msg(mp::BEEP), text(words::MAP_REFUSED)].concat());
+            return;
+        }
         let map = match Map::from_bytes(bytes.clone(), &file_name) {
             Ok(m) => Arc::new(m),
             Err(e) => {
