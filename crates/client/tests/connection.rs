@@ -114,7 +114,7 @@ fn a_server_that_floods_the_client_waits_for_it() {
             }
         }
     }
-    assert!(EVENT_QUEUE < TOTAL);
+    const { assert!(EVENT_QUEUE < TOTAL) };
 }
 
 #[test]
