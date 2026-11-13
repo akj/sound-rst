@@ -16,6 +16,12 @@ testkit = ["dep:tempfile"]
 
 [dependencies]
 soundrts-world = { path = "../world" }
+soundrts-protocol = { path = "../protocol" }
+soundrts-server = { path = "../server" }
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+tokio = { version = "1.54.1", features = ["rt", "net", "time", "sync", "macros"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+ureq = "3"
 indexmap = "2"
 rodio = { version = "0.23", default-features = false, features = ["playback", "vorbis"] }
 sys-locale = "0.3"
@@ -30,6 +36,9 @@ tolk-sys = "0.2"
 # The same version winit uses, so it is built once.
 windows-sys = { version = "0.52", features = [
     "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     "Win32_System_Console",
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",

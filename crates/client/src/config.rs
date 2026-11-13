@@ -54,6 +54,8 @@ pub struct Config {
     pub fpct_max: i64,
     pub require_humans: i64,
     pub wait_delay_per_character: f64,
+    /// Say when a player arrives on or leaves the server (1) or not (0).
+    pub announce_arrivals: i64,
 }
 
 impl Default for Config {
@@ -73,6 +75,7 @@ impl Default for Config {
             fpct_max: 3,
             require_humans: 0,
             wait_delay_per_character: 0.1,
+            announce_arrivals: 1,
         }
     }
 }
@@ -167,7 +170,7 @@ fn text(s: &str) -> Option<String> {
 }
 
 impl Config {
-    fn rows(&self) -> [(&'static str, &'static str, String); 12] {
+    fn rows(&self) -> [(&'static str, &'static str, String); 13] {
         [
             ("general", "login", self.login.to_string()),
             ("general", "mods", self.mods.clone()),
@@ -176,6 +179,11 @@ impl Config {
             ("general", "speed", self.speed.to_string()),
             ("general", "verbosity", self.verbosity.clone()),
             ("general", "debug_mode", self.debug_mode.to_string()),
+            (
+                "general",
+                "announce_arrivals",
+                self.announce_arrivals.to_string(),
+            ),
             ("server", "timeout", py_float(self.timeout)),
             ("server", "fpct_coef", py_float(self.fpct_coef)),
             ("server", "fpct_max", self.fpct_max.to_string()),
@@ -254,6 +262,18 @@ impl Config {
         field!("server", fpct_max, int);
         field!("server", require_humans, int);
         field!("tts", wait_delay_per_character, float);
+        // Not an option of the original, whose files lack it: missing is
+        // not an error.
+        match read(&ini, "general", "announce_arrivals", int) {
+            Read::Value(v) => c.announce_arrivals = v,
+            Read::Missing => {}
+            Read::Invalid(raw) => {
+                log.warning(format!(
+                    "announce_arrivals will be \"1\" instead of {raw:?}"
+                ));
+                error = true;
+            }
+        }
         (c, error)
     }
 

@@ -36,7 +36,7 @@ fn test_load_defaults_if_file_doesnt_exist() {
         std::fs::read_to_string(&path).unwrap(),
         "[general]\nlogin = player\nmods = \nsoundpacks = \nnum_channels = 16\nspeed = 1\n\
          verbosity = menu_changed,unit_added,unit_complete,scout_info,food,resources,resource_exhausted\n\
-         debug_mode = 0\n\n[server]\ntimeout = 60.0\nfpct_coef = 2.3\nfpct_max = 3\nrequire_humans = 0\n\n\
+         debug_mode = 0\nannounce_arrivals = 1\n\n[server]\ntimeout = 60.0\nfpct_coef = 2.3\nfpct_max = 3\nrequire_humans = 0\n\n\
          [tts]\nwait_delay_per_character = 0.1\n\n"
     );
 }

@@ -34,6 +34,8 @@ pub trait Desktop {
     fn set_title(&self, title: &str);
     /// Shows a folder to the player (in Explorer on Windows).
     fn open_folder(&self, path: &Path);
+    /// Puts text on the clipboard, for the player to paste elsewhere.
+    fn set_clipboard(&self, text: &str);
 }
 
 /// The devices the client talks through: real ones, or recording fakes.

@@ -410,7 +410,7 @@ impl Resources {
                 match multi.open_binary(&n).and_then(|b| Map::from_bytes(b, &n)) {
                     Ok(mut m) => {
                         // The heal sound tells the player this map is not official.
-                        m.title.insert(0, 1097.into());
+                        m.title.insert(0, crate::mapfile::CUSTOM_MAP_SOUND.into());
                         maps.push(m);
                     }
                     Err(e) => self.log.warning(format!("couldn't load map {n}: {e}")),
@@ -457,6 +457,36 @@ impl Resources {
         }
         self.multi_maps = Some((self.mods.clone(), maps.clone()));
         maps
+    }
+
+    /// Forgets the multiplayer maps read before, so that the next call to
+    /// [`Resources::multiplayer_maps`] sees a map just saved.
+    pub fn forget_multiplayer_maps(&mut self) {
+        self.multi_maps = None;
+    }
+
+    /// The multiplayer map whose file has this hash.
+    pub fn find_multiplayer_map(&mut self, hash: &soundrts_protocol::MapHash) -> Option<Arc<Map>> {
+        self.multiplayer_maps()
+            .into_iter()
+            .find(|m| m.hash().as_ref() == Some(hash))
+    }
+
+    /// What decides whether two players can play together: the SHA-256 of
+    /// the rules and the computer players' scripts, mods included, without
+    /// any map's.
+    pub fn content_hash(&mut self) -> soundrts_protocol::ContentHash {
+        let map = self.map.take();
+        if map.is_some() {
+            self.reload();
+        }
+        let text = format!("{}\n{}", self.rules_text(), self.ai_text());
+        if map.is_some() {
+            self.map = map;
+            self.reload();
+        }
+        let hash = soundrts_protocol::MapHash::of(text.as_bytes());
+        soundrts_protocol::ContentHash::new(hash.as_str()).expect("64 hex digits")
     }
 
     /// The campaigns: the folders of every package's `single` folder.

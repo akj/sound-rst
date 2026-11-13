@@ -15,6 +15,9 @@ pub struct InfoOptions {
     pub expiration_delay: f64,
     /// A newer message of the same type makes this one obsolete.
     pub update_type: Option<String>,
+    /// Jumps ahead of the unsaid ordinary messages, and is never dropped
+    /// as a duplicate or by a newer message of its type (chat).
+    pub priority: bool,
 }
 
 impl Default for InfoOptions {
@@ -24,6 +27,7 @@ impl Default for InfoOptions {
             rv: DEFAULT_VOLUME,
             expiration_delay: 45.0,
             update_type: None,
+            priority: false,
         }
     }
 }
@@ -36,6 +40,7 @@ pub struct Message {
     pub said: bool,
     pub expiration_time: f64,
     pub update_type: Option<String>,
+    pub priority: bool,
 }
 
 impl Message {
@@ -47,6 +52,7 @@ impl Message {
             said,
             expiration_time: now + options.expiration_delay,
             update_type: options.update_type,
+            priority: options.priority,
         }
     }
 

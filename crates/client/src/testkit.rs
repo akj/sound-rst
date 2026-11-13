@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::audio::{AudioOutput, Channel, Sound};
 use crate::client::{Client, Desktop, Devices, open_resources};
@@ -481,11 +482,13 @@ impl InputSource for ScriptedInput {
     }
 }
 
-/// A desktop that records titles and opened folders.
+/// A desktop that records titles, opened folders and the clipboard. The
+/// clipboard record can be shared with another thread.
 #[derive(Default)]
 pub struct RecordingDesktop {
     pub titles: RefCell<Vec<String>>,
     pub opened: RefCell<Vec<PathBuf>>,
+    pub clipboard: Arc<Mutex<Vec<String>>>,
 }
 
 impl Desktop for RecordingDesktop {
@@ -495,6 +498,13 @@ impl Desktop for RecordingDesktop {
 
     fn open_folder(&self, path: &Path) {
         self.opened.borrow_mut().push(path.to_path_buf());
+    }
+
+    fn set_clipboard(&self, text: &str) {
+        self.clipboard
+            .lock()
+            .expect("clipboard record")
+            .push(text.to_owned());
     }
 }
 

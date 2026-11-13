@@ -13,6 +13,7 @@ pub mod audio;
 pub mod bindings;
 pub mod campaign;
 pub mod client;
+pub mod clipboard;
 pub mod clock;
 pub mod config;
 pub mod game;
