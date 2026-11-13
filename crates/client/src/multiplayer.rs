@@ -188,15 +188,19 @@ fn host(cx: &mut Client) -> Result<(), Exit> {
         .info(format!("hosting on {local}, shared as {shared}"));
     let address = shared.to_string();
     cx.desktop.set_clipboard(&address);
-    cx.voice.important(
-        &[
-            text(words::SHARE_ADDRESS),
-            string_to_msg(&address, true),
-            msg(mp::PERIOD),
-            text(words::ADDRESS_COPIED),
-        ]
-        .concat(),
-    );
+    let mut said = [
+        text(words::SHARE_ADDRESS),
+        string_to_msg(&address, true),
+        msg(mp::PERIOD),
+        text(words::ADDRESS_COPIED),
+    ]
+    .concat();
+    if let UpnpOutcome::Failed { reason } = server.upnp() {
+        cx.log.warning(format!("no port forwarding: {reason}"));
+        said.extend(msg(mp::PERIOD));
+        said.extend(text(words::NO_PORT_FORWARDING));
+    }
+    cx.voice.important(&said);
     let to = SocketAddr::new(
         if local.ip().is_unspecified() {
             IpAddr::from([127, 0, 0, 1])

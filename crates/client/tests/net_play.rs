@@ -41,6 +41,12 @@ fn keys(mut s: Script, list: &[Key]) -> Script {
     s
 }
 
+/// From the main menu to the multiplayer menu.
+fn main_menu_to_multiplayer() -> Script {
+    let s = Script::new().wait_for("please make a selection");
+    keys(s, &[Key::Down, Key::Down, Key::Return]).wait_for_exact("please make a selection")
+}
+
 /// Typed text from `start` on, then Enter: a prompt reads one key at a
 /// time.
 fn typed(mut s: Script, start: f64, text: &str) -> Script {
@@ -98,20 +104,14 @@ fn private_map() -> Vec<u8> {
 fn a_player_hosts_another_joins_by_address_and_they_chat() {
     let progress = Arc::new(AtomicUsize::new(0));
     let (clip_tx, clip_rx) = std::sync::mpsc::channel();
+    let (room_tx, room_rx) = std::sync::mpsc::channel();
     let map_hash = MapHash::of(&private_map());
 
     let andrew_progress = progress.clone();
     let andrew = std::thread::spawn(move || {
-        let mut s = keys(Script::new(), &[Key::Down, Key::Down, Key::Return]);
-        s = s
-            .at(1.5)
-            .tap(Key::Down)
-            .at(1.8)
-            .tap(Key::Down)
-            .at(2.1)
-            .tap(Key::Down)
-            .at(2.4)
-            .tap(Key::Return);
+        // multiplayer > server
+        let mut s = main_menu_to_multiplayer();
+        s = keys(s, &[Key::Down, Key::Down, Key::Down, Key::Return]);
         s = s.wait_for("welcome andrew on the server of andrew");
         // The welcome takes the key pressed while it is said.
         s = s.wait_for_exact("please make a selection");
@@ -123,6 +123,7 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         s = s.wait_for("start a game on <1097> zzmap 1");
         s = keys(s, &[Key::Down, Key::Return]);
         s = s.wait_for_exact("zzmap 1");
+        let in_room = s.wait_count();
         s = s.wait_for("bob has just logged in");
         // invite bob
         s = keys(s, &[Key::Down, Key::Return]);
@@ -131,6 +132,7 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         s = typed(s, 0.6, "héllo bob");
         s = s.wait_for("bob says salut à tous");
         s = s.wait_for("bob has just logged out");
+        room_tx.send(in_room).unwrap();
         let mut h = harness("andrew", s.progress(andrew_progress));
         let multi = h.client.paths.downloaded().join("multi");
         std::fs::write(multi.join("zzmap.txt"), private_map()).unwrap();
@@ -143,9 +145,10 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         (h.said_since(0), h.log_text())
     });
 
+    let in_room = room_rx.recv().unwrap();
     let clipboard = clip_rx.recv().unwrap();
-    // Bob comes once Andrew is in his room: the fourth wait.
-    let andrew = wait_for_progress(&progress, 4, "andrew", andrew);
+    // Bob comes once Andrew is in his room.
+    let andrew = wait_for_progress(&progress, in_room, "andrew", andrew);
     let address = clipboard
         .lock()
         .unwrap()
@@ -158,18 +161,10 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
     let bob_hash = map_hash.clone();
     let bob = std::thread::spawn(move || {
         // multiplayer > enter the address
-        let mut s = keys(
-            Script::new(),
-            &[
-                Key::Down,
-                Key::Down,
-                Key::Return,
-                Key::Down,
-                Key::Down,
-                Key::Return,
-            ],
-        );
-        s = typed(s, 2.2, &bob_address);
+        let mut s = main_menu_to_multiplayer();
+        s = keys(s, &[Key::Down, Key::Down, Key::Return]);
+        s = s.wait_for("enter the I P address of the server");
+        s = typed(s, 0.3, &bob_address);
         s = s.wait_for("andrew invites you");
         // accept the invitation
         s = keys(s, &[Key::Down, Key::Return]);
@@ -229,6 +224,7 @@ fn two_players_play_a_game_in_step_and_leave_it() {
     .expect("a server");
     let address = server.local_addr().to_string();
     let progress = Arc::new(AtomicUsize::new(0));
+    let (room_tx, room_rx) = std::sync::mpsc::channel();
 
     /// What a player's game hook gathers: the digests sent, and whether
     /// the game is over for them.
@@ -297,6 +293,7 @@ fn two_players_play_a_game_in_step_and_leave_it() {
             ],
         );
         s = s.wait_for_exact("jl1 1");
+        room_tx.send(s.wait_count()).unwrap();
         s = s.wait_for("bob has just logged in");
         s = keys(s, &[Key::Down, Key::Return]);
         s = s.wait_for("bob is ready");
@@ -317,8 +314,9 @@ fn two_players_play_a_game_in_step_and_leave_it() {
         (h.said_since(0), h.log_text(), digests)
     });
 
-    // Bob comes once Andrew is in his room: the second wait.
-    let andrew = wait_for_progress(&progress, 2, "andrew", andrew);
+    // Bob comes once Andrew is in his room.
+    let in_room = room_rx.recv().unwrap();
+    let andrew = wait_for_progress(&progress, in_room, "andrew", andrew);
     let bob_address = address.clone();
     let bob = std::thread::spawn(move || {
         let mut s = Script::new().wait_for("andrew invites you");

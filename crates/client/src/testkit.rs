@@ -357,6 +357,10 @@ struct Wait {
 /// test fails. Tests that wait run against a real server.
 pub const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// How late a key after a wait may come before the keys after it are
+/// delayed as much.
+const LATE: f64 = 0.05;
+
 impl Script {
     pub fn new() -> Script {
         Script::default()
@@ -400,6 +404,12 @@ impl Script {
     /// As [`Script::wait_for`], for an utterance that is exactly `text`.
     pub fn wait_for_exact(self, text: &str) -> Script {
         self.wait(text, true)
+    }
+
+    /// The number of waits so far: the value `progress` reaches when the
+    /// last one is over.
+    pub fn wait_count(&self) -> usize {
+        self.waits.len()
     }
 
     /// Counts the waits that are over in `progress`, which another thread
@@ -605,8 +615,16 @@ impl InputSource for ScriptedInput {
         }
         match script_first {
             Some(t) if t <= now => {
+                let (part, _, e) = self.events.pop_front().expect("a key is due");
+                // After a wait, the clock may be real: a key that comes
+                // late delays the keys after it, so that a stalled client
+                // does not get them all at once (a menu drops keys that
+                // pile up).
+                if part > 0 && now - t > LATE {
+                    self.offsets[part] += now - t;
+                }
                 self.last_time = t;
-                self.events.pop_front().map(|(_, _, e)| (t, e))
+                Some((t, e))
             }
             Some(_) => None,
             None if self.events.is_empty()

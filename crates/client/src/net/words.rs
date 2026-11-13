@@ -46,6 +46,8 @@ pub const ON: &str = "on";
 pub const OFF: &str = "off";
 pub const SERVER_FULL: &str = "the server is full";
 pub const NO_SERVER_FOUND: &str = "no server found";
+pub const NO_PORT_FORWARDING: &str =
+    "the router did not open the port: only the players of your local network can join";
 
 /// A phrase as a message.
 pub fn text(s: &str) -> Msg {

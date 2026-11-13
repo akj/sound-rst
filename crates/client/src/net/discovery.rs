@@ -27,7 +27,17 @@ pub fn broadcast_target() -> SocketAddr {
 /// `wait`. Servers of another protocol version are left out; a server
 /// that answers twice is listed once.
 pub fn discover(targets: &[SocketAddr], wait: Duration) -> Vec<FoundServer> {
-    let Ok(socket) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else {
+    if targets.is_empty() {
+        return Vec::new();
+    }
+    // Only on this machine when only this machine is asked.
+    let local = targets.iter().all(|t| t.ip().is_loopback());
+    let ip = if local {
+        Ipv4Addr::LOCALHOST
+    } else {
+        Ipv4Addr::UNSPECIFIED
+    };
+    let Ok(socket) = UdpSocket::bind((ip, 0)) else {
         return Vec::new();
     };
     let _ = socket.set_broadcast(true);
