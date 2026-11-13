@@ -15,11 +15,19 @@ use crate::log::Log;
 use crate::package::universal_newlines;
 use crate::resource::Resources;
 
+/// The bindings this client adds to the original's: reading the chat again,
+/// and chat to the allies.
+pub const CLIENT_BINDINGS: &str =
+    "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n";
+
 /// The text of the game's bindings: every `ui/bindings.txt` of the
-/// resource layers (translations included), then the player's own
-/// `bindings.txt` if there is one, so the player's lines win.
+/// resource layers (translations included), this client's own additions,
+/// then the player's own `bindings.txt` if there is one, so the player's
+/// lines win.
 pub fn game_bindings_text(res: &Resources, custom: &Path) -> String {
     let mut text = res.text_appended("ui/bindings", true);
+    text.push('\n');
+    text.push_str(CLIENT_BINDINGS);
     if let Ok(bytes) = std::fs::read(custom) {
         text.push('\n');
         text.push_str(&universal_newlines(&String::from_utf8_lossy(&bytes)));

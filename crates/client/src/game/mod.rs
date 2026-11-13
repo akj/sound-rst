@@ -21,6 +21,7 @@ pub mod animation;
 pub mod command;
 pub mod entity;
 pub mod focus;
+pub mod lockstep;
 pub mod misc;
 pub mod news;
 pub mod order;
@@ -40,7 +41,7 @@ use soundrts_world::{Entity, EntityId, Place, PlayerId, SquareId, Voila, World};
 use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, KeyDown};
-use crate::menu::Exit;
+use crate::menu::{Exit, TextEntry, Typed};
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
 
@@ -226,6 +227,10 @@ pub struct GameInterface {
     pub(crate) pending_commands: Vec<String>,
     /// The order kinds of the menus, in menu order.
     pub(crate) orders_list: Vec<Keyword>,
+    /// In a game on a server: what runs the turns the server sends.
+    pub net: Option<lockstep::NetDriver>,
+    /// A chat line being typed, and who it is for.
+    pub(crate) chat_entry: Option<(soundrts_protocol::Channel, TextEntry)>,
 }
 
 impl GameInterface {
@@ -287,6 +292,8 @@ impl GameInterface {
             srv_queue: VecDeque::new(),
             pending_commands: Vec::new(),
             orders_list: Vec::new(),
+            net: None,
+            chat_entry: None,
         }
     }
 
@@ -350,7 +357,10 @@ impl GameInterface {
     }
 
     fn try_step(&mut self, cx: &mut Client) -> Result<(), Stop> {
-        if self.time_to_ask_for_next_update(cx) {
+        crate::net::pump(cx);
+        if self.net.is_some() {
+            self.net_update(cx);
+        } else if self.time_to_ask_for_next_update(cx) {
             self.ask_for_update(cx);
         }
         self.animate_objects(cx);
@@ -373,8 +383,14 @@ impl GameInterface {
         for c in std::mem::take(&mut self.pending_commands) {
             self.world.queue_command(self.me, &c);
         }
-        self.waiting_for_world_update = true;
         self.next_update = cx.clock.now() + TURN / self.speed;
+        self.run_turn(cx);
+    }
+
+    /// Runs a turn of the world with the commands queued, and queues what
+    /// happened.
+    pub(crate) fn run_turn(&mut self, cx: &mut Client) {
+        self.waiting_for_world_update = true;
         self.world.update();
         for w in self.world.drain_warnings() {
             cx.log.warning(format!("world: {w}"));
@@ -407,6 +423,18 @@ impl GameInterface {
         for e in cx.input.get_all() {
             match e {
                 InputEvent::Quit => return Err(Stop::Exit),
+                InputEvent::KeyDown(k) if self.chat_entry.is_some() => {
+                    let (channel, entry) = self.chat_entry.as_mut().expect("checked");
+                    let channel = *channel;
+                    match entry.key(cx, &k) {
+                        Typed::Done(line) => {
+                            self.chat_entry = None;
+                            crate::net::send_chat(cx, channel, &line);
+                        }
+                        Typed::Cancelled => self.chat_entry = None,
+                        Typed::Typing | Typed::Ignored => {}
+                    }
+                }
                 InputEvent::KeyDown(k) => {
                     if self.shortcut_mode {
                         self.shortcut_mode = false;
@@ -448,7 +476,12 @@ impl GameInterface {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
             SrvEvent::VoiceImportant(m) => cx.voice.confirmation(&m),
             SrvEvent::Sequence(parts) => cx.play_sequence(&parts),
-            SrvEvent::Speed(s) => self.speed = s,
+            // In a game on a server, the server keeps the time.
+            SrvEvent::Speed(s) => {
+                if self.net.is_none() {
+                    self.speed = s;
+                }
+            }
             SrvEvent::Quit => self.srv_quit(cx),
             SrvEvent::Voila(v) => self.srv_voila(cx, *v)?,
         }

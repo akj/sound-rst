@@ -131,6 +131,9 @@ pub enum GameCommand {
     GameMenu,
     SayPlayers,
     Say,
+    SayAllies,
+    ChatPrevious,
+    ChatNext,
     Volume(i64),
     Immersion,
     RotateLeft,
@@ -189,6 +192,9 @@ pub const COMMAND_NAMES: &[&str] = &[
     "gamemenu",
     "say_players",
     "say",
+    "say_allies",
+    "chat_previous",
+    "chat_next",
     "volume",
     "immersion",
     "rotate_left",
@@ -336,6 +342,9 @@ impl GameCommand {
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
             "say" => none(C::Say)?,
+            "say_allies" => none(C::SayAllies)?,
+            "chat_previous" => none(C::ChatPrevious)?,
+            "chat_next" => none(C::ChatNext)?,
             "volume" => {
                 arity(args, 0, 1)?;
                 C::Volume(match args.first() {

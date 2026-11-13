@@ -24,6 +24,11 @@ pub fn main_menu(cx: &mut Client) -> Result<(), Exit> {
                 msg(mp::SINGLE_PLAYER_EXPLANATION),
             ),
             Choice::explained(
+                msg(mp::MULTIPLAYER2),
+                Action::run(|cx| crate::multiplayer::multiplayer_menu(cx).map(|()| Flow::Stay)),
+                msg(mp::MULTIPLAYER2_EXPLANATION),
+            ),
+            Choice::explained(
                 msg(mp::OPTIONS),
                 Action::run(|cx| options_menu(cx).map(|()| Flow::Stay)),
                 msg(mp::OPTIONS_EXPLANATION),
@@ -70,7 +75,7 @@ pub fn modify_login(cx: &mut Client) -> Result<(), Exit> {
         msg(mp::USE_LETTERS_AND_NUMBERS_ONLY),
     ]
     .concat();
-    match input_string(cx, &prompt, &letters_and_digits, "", true)? {
+    match input_string(cx, &prompt, letters_and_digits, "", true)? {
         None => cx.voice.alert(&msg(mp::CURRENT_LOGIN_KEPT)),
         Some(login) => match Login::parse(&login) {
             None => cx

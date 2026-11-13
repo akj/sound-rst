@@ -97,6 +97,9 @@ pub struct Client {
     /// The client's randomness, apart from the simulation's.
     pub rng: ClientRng,
     pub game: GameSettings,
+    /// The server the player is on, if any.
+    pub net: Option<crate::net::Net>,
+    pub net_config: crate::net::NetConfig,
     fullscreen: bool,
     help: Help,
 }
@@ -189,6 +192,8 @@ impl Client {
             desktop,
             rng,
             game: GameSettings::default(),
+            net: None,
+            net_config: crate::net::NetConfig::default(),
             fullscreen: false,
             help,
         }

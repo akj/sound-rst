@@ -9,8 +9,10 @@ use soundrts_world::msgparts as mp;
 use soundrts_world::player::ControllerKind;
 
 use crate::client::Client;
-use crate::menu::{Action, Flow, Menu, input_string};
+use crate::menu::{Action, Flow, Menu, TextEntry, input_string};
+use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
+use soundrts_protocol::Channel;
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
@@ -89,8 +91,10 @@ impl GameInterface {
                 }
                 cx.voice.item(&m);
             }
-            // Chat needs a server; single player games have none.
-            C::Say => cx.voice.item(&msg(mp::BEEP)),
+            C::Say => self.cmd_say(cx, Channel::Game),
+            C::SayAllies => self.cmd_say(cx, Channel::Allies),
+            C::ChatPrevious => crate::net::chat_previous(cx),
+            C::ChatNext => crate::net::chat_next(cx),
             C::Volume(incr) => cx.modify_volume(*incr as i32),
             C::Immersion => {
                 if !self.immersion {
@@ -113,6 +117,21 @@ impl GameInterface {
             }
         }
         Ok(())
+    }
+
+    /// Starts typing a chat line to the game's players or to the allies;
+    /// the game goes on meanwhile. A beep without a server.
+    fn cmd_say(&mut self, cx: &mut Client, channel: Channel) {
+        if self.net.is_none() {
+            cx.voice.item(&msg(mp::BEEP));
+            return;
+        }
+        let mut prompt = msg(mp::ENTER_MESSAGE);
+        if channel == Channel::Allies {
+            prompt.extend(text(words::TO_YOUR_ALLIES));
+        }
+        let entry = TextEntry::start(cx, &prompt, crate::net::chat_char, "", false);
+        self.chat_entry = Some((channel, entry));
     }
 
     fn cmd_resource_status(&self, cx: &mut Client, r: i64) {
@@ -227,7 +246,7 @@ impl GameInterface {
             cx.voice.item(&msg(mp::BEEP));
             return Ok(());
         }
-        if let Some(cmd) = input_string(cx, &msg(mp::ENTER_COMMAND), &console_char, "", false)? {
+        if let Some(cmd) = input_string(cx, &msg(mp::ENTER_COMMAND), console_char, "", false)? {
             self.execute_command(cx, &cmd)?;
         }
         Ok(())
@@ -278,7 +297,8 @@ impl GameInterface {
         };
         let mut menu = Menu::new(msg(mp::MENU), Vec::new());
         menu.append(msg(mp::CANCEL_GAME), set(GameMenuChoice::Quit), None);
-        if self.is_admin() {
+        // In a game on a server, the server keeps the time.
+        if self.is_admin() && self.net.is_none() {
             menu.append(
                 msg(mp::SET_SPEED_TO_SLOW),
                 set(GameMenuChoice::Speed("0.5")),

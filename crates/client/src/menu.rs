@@ -126,6 +126,10 @@ pub struct Menu {
     remembered_choice: String,
     choice_done: bool,
     end_loop: bool,
+    /// A server event that interrupts the menus (a game starting, the
+    /// connection lost) picks the last item, as Escape does. Live menus
+    /// that follow the server turn this off.
+    pub escape_on_interrupt: bool,
 }
 
 impl Menu {
@@ -139,6 +143,7 @@ impl Menu {
             remembered_choice: String::new(),
             choice_done: false,
             end_loop: false,
+            escape_on_interrupt: true,
         }
     }
 
@@ -233,7 +238,7 @@ impl Menu {
         }
     }
 
-    fn process_keydown(&mut self, cx: &mut Client, e: &KeyDown) {
+    fn process_keydown(&mut self, cx: &mut Client, e: &KeyDown) -> Result<(), Exit> {
         // Building a menu can take time; drop the presses that piled up.
         cx.input.clear_keydowns();
         let (shift, ctrl) = (e.mods.shift, e.mods.ctrl);
@@ -259,13 +264,14 @@ impl Menu {
                 let m = cx.help_msg("menu", 1);
                 cx.voice.item(&m);
             }
+            Key::F5 if ctrl => crate::net::chat_previous(cx),
+            Key::F6 if ctrl => crate::net::chat_next(cx),
             Key::F5 => cx.voice.previous(),
             Key::LAlt | Key::RAlt => cx.voice.say_next(false),
             Key::F6 => cx.voice.say_next(true),
             Key::Home | Key::KpPlus => cx.modify_volume(1),
             Key::End | Key::KpMinus => cx.modify_volume(-1),
-            // Chat needs a server; the client has none here.
-            Key::F7 => cx.voice.item(&msg(mp::BEEP)),
+            Key::F7 => crate::net::chat_in_menus(cx)?,
             _ if !e.unicode.is_empty() && shift => {
                 self.select_next_choice(cx, Some(&e.unicode), -1)
             }
@@ -273,6 +279,7 @@ impl Menu {
             Key::LShift | Key::RShift => {}
             _ => cx.voice.item(&msg(mp::SELECT_AND_CONFIRM_EXPLANATION)),
         }
+        Ok(())
     }
 
     /// Replaces the title and items with those of `menu`, keeping the
@@ -330,8 +337,13 @@ impl Menu {
     fn try_to_get_choice(&mut self, cx: &mut Client, e: Option<Event>) -> Result<(), Exit> {
         match e {
             Some(Event::Quit) => return Err(Exit),
-            Some(Event::KeyDown(k)) => self.process_keydown(cx, &k),
+            Some(Event::KeyDown(k)) => self.process_keydown(cx, &k)?,
             _ => {}
+        }
+        crate::net::pump(cx);
+        if self.escape_on_interrupt && !self.choices.is_empty() && crate::net::interrupted(cx) {
+            self.choice_index = Some(self.choices.len() as i64 - 1);
+            self.choice_done = true;
         }
         cx.voice.update();
         Ok(())
@@ -364,14 +376,19 @@ impl Menu {
         Ok(())
     }
 
-    /// Says the title, waits for a choice, and runs it.
-    pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
+    /// Says the title, or asks for a selection if there is none.
+    pub fn say_title(&self, cx: &mut Client) {
         if self.title.is_empty() {
             cx.voice.menu(&msg(mp::MAKE_A_SELECTION2));
         } else {
             let title = self.title.clone();
             cx.voice.menu(&title);
         }
+    }
+
+    /// Says the title, waits for a choice, and runs it.
+    pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
+        self.say_title(cx);
         self.get_choice_from_static_menu(cx)?;
         self.execute_choice(cx)
     }
@@ -426,54 +443,109 @@ pub fn string_to_msg(s: &str, spell: bool) -> Msg {
     out
 }
 
+/// What a key press did to a line being typed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Typed {
+    /// The line goes on.
+    Typing,
+    /// A key that does nothing here (Shift).
+    Ignored,
+    /// Enter: the line.
+    Done(String),
+    /// Escape.
+    Cancelled,
+}
+
+/// A line of text being typed: each key press is handled as it comes, so
+/// that a caller that must not block (the game) can go on meanwhile.
+pub struct TextEntry {
+    text: String,
+    allowed: fn(char) -> bool,
+    spell: bool,
+}
+
+impl TextEntry {
+    /// Says the prompt and starts with `default`. Each typed character
+    /// must match `allowed`; with `spell`, the line is spelled back.
+    pub fn start(
+        cx: &mut Client,
+        prompt: &Msg,
+        allowed: fn(char) -> bool,
+        default: &str,
+        spell: bool,
+    ) -> TextEntry {
+        cx.voice.menu(prompt);
+        TextEntry {
+            text: default.to_owned(),
+            allowed,
+            spell,
+        }
+    }
+
+    /// Handles a key press: Enter accepts, Escape cancels, Backspace
+    /// erases, and a character is added if allowed (else a beep).
+    pub fn key(&mut self, cx: &mut Client, e: &KeyDown) -> Typed {
+        let spell = self.spell;
+        let s = &mut self.text;
+        match e.key {
+            Key::LShift | Key::RShift => Typed::Ignored,
+            Key::Return | Key::KpEnter => {
+                cx.voice.item(&vec![MsgPart::from(s.as_str())]);
+                Typed::Done(std::mem::take(s))
+            }
+            Key::Escape => Typed::Cancelled,
+            Key::Backspace => {
+                s.pop();
+                cx.voice.item(&string_to_msg(s, spell));
+                Typed::Typing
+            }
+            _ => {
+                let mut chars = e.unicode.chars();
+                let mut m = match (chars.next(), chars.next()) {
+                    (Some(c), None) if (self.allowed)(c) => {
+                        s.push(c);
+                        string_to_msg(&c.to_string(), true)
+                    }
+                    _ => msg(mp::BEEP),
+                };
+                m.extend(msg(mp::PERIOD));
+                m.extend(string_to_msg(s, spell));
+                cx.voice.item(&m);
+                Typed::Typing
+            }
+        }
+    }
+}
+
 /// Asks for a line of text. Each typed character must match `allowed`;
-/// Enter accepts, Escape gives `None`, Backspace erases.
+/// Enter accepts, Escape gives `None`, Backspace erases. A server event
+/// that interrupts the menus (a game starting, the connection lost) gives
+/// `None` too.
 pub fn input_string(
     cx: &mut Client,
     prompt: &Msg,
-    allowed: &dyn Fn(char) -> bool,
+    allowed: fn(char) -> bool,
     default: &str,
     spell: bool,
 ) -> Result<Option<String>, Exit> {
-    cx.voice.menu(prompt);
-    let mut s = default.to_owned();
+    let mut entry = TextEntry::start(cx, prompt, allowed, default, spell);
     loop {
         // A millisecond per read rather than spinning.
         cx.clock.sleep(0.001);
+        crate::net::pump(cx);
+        if crate::net::interrupted(cx) {
+            return Ok(None);
+        }
         cx.input.input_point(InputPoint::Text, cx.voice.is_idle());
         match cx.input.poll() {
             Some(Event::Quit) => return Err(Exit),
             Some(Event::KeyDown(e)) => {
                 cx.input.clear();
-                match e.key {
-                    Key::LShift | Key::RShift => continue,
-                    Key::Return | Key::KpEnter => {
-                        cx.voice.item(&vec![MsgPart::from(s.as_str())]);
-                        return Ok(Some(s));
-                    }
-                    Key::Escape => return Ok(None),
-                    Key::Backspace => {
-                        s.pop();
-                        cx.voice.item(&string_to_msg(&s, spell));
-                    }
-                    _ => {
-                        let mut chars = e.unicode.chars();
-                        match (chars.next(), chars.next()) {
-                            (Some(c), None) if allowed(c) => {
-                                s.push(c);
-                                let mut m = string_to_msg(&c.to_string(), true);
-                                m.extend(msg(mp::PERIOD));
-                                m.extend(string_to_msg(&s, spell));
-                                cx.voice.item(&m);
-                            }
-                            _ => {
-                                let mut m = msg(mp::BEEP);
-                                m.extend(msg(mp::PERIOD));
-                                m.extend(string_to_msg(&s, spell));
-                                cx.voice.item(&m);
-                            }
-                        }
-                    }
+                match entry.key(cx, &e) {
+                    Typed::Ignored => continue,
+                    Typed::Done(s) => return Ok(Some(s)),
+                    Typed::Cancelled => return Ok(None),
+                    Typed::Typing => {}
                 }
             }
             Some(_) | None => {}

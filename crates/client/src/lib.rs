@@ -23,6 +23,8 @@ pub mod mainmenu;
 pub mod mapfile;
 pub mod menu;
 pub mod message;
+pub mod multiplayer;
+pub mod net;
 pub mod notice;
 pub mod options;
 pub mod package;
