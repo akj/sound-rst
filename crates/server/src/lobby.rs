@@ -295,6 +295,7 @@ impl Lobby {
             ClientMsg::Start => self.start(conn),
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
+            ClientMsg::Loaded => self.pass_to_game(conn, |slot| GameInput::Loaded { slot }),
             ClientMsg::Orders { orders } => {
                 self.pass_to_game(conn, |slot| GameInput::Orders { slot, orders })
             }

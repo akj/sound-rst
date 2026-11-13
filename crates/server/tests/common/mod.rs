@@ -377,11 +377,25 @@ pub async fn ready(clients: &mut [Client], who: usize, members: &[usize]) {
     }
 }
 
+/// Starts a game as [`start_game_unloaded`] does, then every player says
+/// they have loaded, so the clock starts.
+pub async fn start_game(clients: &mut [Client], room: RoomId, players: &[usize]) -> Vec<ServerMsg> {
+    let started = start_game_unloaded(clients, room, players).await;
+    for &p in players {
+        clients[p].send(ClientMsg::Loaded).await;
+    }
+    started
+}
+
 /// Starts a game from `room` hosted by `clients[0]`, where every human
 /// listed in `players` (by index, in slot order) is ready. Returns each
 /// player's `GameStarted`; every client is then past the moves into the
-/// game.
-pub async fn start_game(clients: &mut [Client], room: RoomId, players: &[usize]) -> Vec<ServerMsg> {
+/// game. Nobody has said they have loaded.
+pub async fn start_game_unloaded(
+    clients: &mut [Client],
+    room: RoomId,
+    players: &[usize],
+) -> Vec<ServerMsg> {
     clients[0].send(ClientMsg::Start).await;
     let mut started = Vec::new();
     for &p in players {

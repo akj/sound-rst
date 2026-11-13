@@ -33,8 +33,20 @@ fn slot_orders(slot: SlotIndex, list: &[&str]) -> SlotOrders {
 }
 
 /// Andrew hosts and Bob joins a room on a 2 to 4 player map, and they
-/// start a game; the `extra` players stay in the lobby.
+/// start a game and load; the `extra` players stay in the lobby.
 async fn two_player_game(
+    tweak: impl FnOnce(&mut soundrts_server::ServerConfig),
+    extra: &[&str],
+) -> (soundrts_server::ServerHandle, Vec<Client>, RoomId) {
+    let (server, mut all, room) = two_player_game_unloaded(tweak, extra).await;
+    for c in &mut all[..2] {
+        c.send(ClientMsg::Loaded).await;
+    }
+    (server, all, room)
+}
+
+/// As [`two_player_game`], but nobody has loaded.
+async fn two_player_game_unloaded(
     tweak: impl FnOnce(&mut soundrts_server::ServerConfig),
     extra: &[&str],
 ) -> (soundrts_server::ServerHandle, Vec<Client>, RoomId) {
@@ -45,7 +57,7 @@ async fn two_player_game(
     let room = open_room(&mut all, 0, &map(2, 4), true).await;
     join_room(&mut all, 1, room).await;
     ready(&mut all, 1, &[0, 1]).await;
-    start_game(&mut all, room, &[0, 1]).await;
+    start_game_unloaded(&mut all, room, &[0, 1]).await;
     (server, all, room)
 }
 
@@ -226,7 +238,7 @@ async fn a_player_who_keeps_the_game_waiting_too_long_is_taken_out() {
     let (_server, mut all, _) = two_player_game(
         |c| {
             c.max_lead = LEAD;
-            c.lag_timeout = Duration::from_millis(500);
+            c.lag_timeout = Duration::from_secs(1);
         },
         &[],
     )
@@ -416,4 +428,81 @@ async fn disconnecting_from_a_game_sends_quit_and_the_last_one_out_closes_the_ro
     carol
         .expect(lobby(LobbyChange::RoomClosed { id: room }))
         .await;
+}
+
+#[tokio::test]
+async fn no_turn_comes_before_everyone_has_loaded() {
+    let (_server, mut all, _) = two_player_game_unloaded(|c| c.max_lead = NO_WAIT, &[]).await;
+    all[0].send(ClientMsg::Loaded).await;
+    // Several turn intervals pass: the clock must not start without Bob.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    all[0].send(ClientMsg::Loaded).await;
+    all[0].expect(refused(Refusal::NotNow)).await;
+    all[1]
+        .send(ClientMsg::TurnDone { turn: 0, digest: 0 })
+        .await;
+    all[1].expect(refused(Refusal::NotNow)).await;
+
+    all[1].send(ClientMsg::Loaded).await;
+    for c in &mut all {
+        c.expect(ServerMsg::Turn {
+            turn: 0,
+            orders: vec![],
+        })
+        .await;
+    }
+    // Loading is over.
+    all[1].send(ClientMsg::Loaded).await;
+    all[1].expect_event(false, refused(Refusal::NotNow)).await;
+}
+
+#[tokio::test]
+async fn a_player_who_never_loads_is_taken_out_and_the_game_starts_without_them() {
+    let (_server, mut all, _) = two_player_game_unloaded(
+        |c| {
+            c.max_lead = NO_WAIT;
+            c.lag_timeout = Duration::from_millis(500);
+        },
+        &[],
+    )
+    .await;
+    let bob = login("bob");
+    all[0].send(ClientMsg::Loaded).await;
+    all[0].expect(ServerMsg::PlayerLeftGame { slot: 1 }).await;
+    all[0]
+        .expect_event(false, moved(&bob, Whereabouts::Lobby))
+        .await;
+    assert_eq!(
+        turn_at(&mut all[0], 0).await,
+        (0, vec![slot_orders(1, &["quit"])])
+    );
+
+    // Bob gets no turn, and no word of waiting.
+    all[1].expect(ServerMsg::GameEnded).await;
+    all[1].expect(moved(&bob, Whereabouts::Lobby)).await;
+}
+
+#[tokio::test]
+async fn orders_sent_while_loading_go_into_turn_0() {
+    let (_server, mut all, _) = two_player_game_unloaded(|c| c.max_lead = NO_WAIT, &[]).await;
+    all[1]
+        .send(ClientMsg::Orders {
+            orders: orders(&["b1"]),
+        })
+        .await;
+    all[0]
+        .send(ClientMsg::Orders {
+            orders: orders(&["a1"]),
+        })
+        .await;
+    for c in &mut all {
+        c.send(ClientMsg::Loaded).await;
+    }
+    for c in &mut all {
+        c.expect(ServerMsg::Turn {
+            turn: 0,
+            orders: vec![slot_orders(0, &["a1"]), slot_orders(1, &["b1"])],
+        })
+        .await;
+    }
 }

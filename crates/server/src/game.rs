@@ -1,7 +1,8 @@
-//! One task per running game: the turn clock, the orders for the next
-//! turn, the wait for slow players, and the comparison of digests.
+//! One task per running game: the wait for every player to load, the turn
+//! clock, the orders for the next turn, the wait for slow players, and the
+//! comparison of digests.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use soundrts_protocol::{
@@ -9,7 +10,7 @@ use soundrts_protocol::{
     SlotOrders, Turn,
 };
 use tokio::sync::mpsc;
-use tokio::time::{Instant, MissedTickBehavior};
+use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tracing::{info, warn};
 
 use crate::connection::{ConnId, Outbox, encode};
@@ -17,6 +18,9 @@ use crate::lobby::{LobbyInput, LobbyTx};
 
 /// What the lobby passes to a game, for the slot of the player who sent it.
 pub(crate) enum GameInput {
+    Loaded {
+        slot: SlotIndex,
+    },
     Orders {
         slot: SlotIndex,
         orders: Orders,
@@ -73,7 +77,10 @@ pub(crate) fn spawn(
         humans,
         next_turn: 0,
         pending: BTreeMap::new(),
-        waiting: false,
+        phase: Phase::Loading {
+            deadline: Instant::now() + settings.lag_timeout,
+            loaded: BTreeSet::new(),
+        },
         digests: Digests::Comparing(BTreeMap::new()),
         settings,
         lobby,
@@ -91,6 +98,29 @@ struct Human {
     holding_since: Option<Instant>,
 }
 
+enum Phase {
+    /// The clock has not started: the game waits for every human to build
+    /// the world. A human who has not loaded by `deadline` is taken out.
+    Loading {
+        deadline: Instant,
+        loaded: BTreeSet<SlotIndex>,
+    },
+    /// The clock runs. `waiting` while it is stopped for slow players.
+    Running { clock: Interval, waiting: bool },
+}
+
+impl Phase {
+    /// When the game next has something to do on its own.
+    async fn wake(&mut self) {
+        match self {
+            Phase::Loading { deadline, .. } => tokio::time::sleep_until(*deadline).await,
+            Phase::Running { clock, .. } => {
+                clock.tick().await;
+            }
+        }
+    }
+}
+
 enum Digests {
     /// The digests of the turns some human still in the game has not
     /// reported.
@@ -106,7 +136,7 @@ struct Game {
     next_turn: Turn,
     /// The orders for `next_turn`, in arrival order for each slot.
     pending: BTreeMap<SlotIndex, Vec<Order>>,
-    waiting: bool,
+    phase: Phase,
     digests: Digests,
     settings: Settings,
     lobby: LobbyTx,
@@ -114,12 +144,10 @@ struct Game {
 
 impl Game {
     async fn run(mut self, mut inputs: mpsc::UnboundedReceiver<GameInput>) {
-        info!(room = self.room.0, "game started");
-        let mut clock = tokio::time::interval(self.settings.turn_interval);
-        clock.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        info!(room = self.room.0, "game loading");
         while !self.humans.is_empty() {
             tokio::select! {
-                _ = clock.tick() => self.tick(Instant::now()),
+                _ = self.phase.wake() => self.wake(Instant::now()),
                 input = inputs.recv() => match input {
                     Some(input) => self.on_input(input),
                     None => return,
@@ -140,6 +168,7 @@ impl Game {
                         .extend(Vec::from(orders));
                 }
             }
+            GameInput::Loaded { slot } => self.loaded(slot),
             GameInput::TurnDone { slot, turn, digest } => self.turn_done(slot, turn, digest),
             GameInput::Leave { slot } => self.leave(slot),
         }
@@ -158,14 +187,69 @@ impl Game {
             .collect()
     }
 
+    fn loaded(&mut self, slot: SlotIndex) {
+        let Some(human) = self.humans.get(&slot) else {
+            return;
+        };
+        let newly = match &mut self.phase {
+            Phase::Loading { loaded, .. } => loaded.insert(slot),
+            Phase::Running { .. } => false,
+        };
+        if newly {
+            self.start_if_all_loaded();
+        } else {
+            human.outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NotNow,
+            });
+        }
+    }
+
+    /// Starts the clock once every human still in the game has loaded. The
+    /// first tick is immediate, so turn 0 goes out at once.
+    fn start_if_all_loaded(&mut self) {
+        let Phase::Loading { loaded, .. } = &self.phase else {
+            return;
+        };
+        if self.humans.is_empty() || !self.humans.keys().all(|s| loaded.contains(s)) {
+            return;
+        }
+        info!(room = self.room.0, "game clock started");
+        let mut clock = tokio::time::interval(self.settings.turn_interval);
+        clock.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        self.phase = Phase::Running {
+            clock,
+            waiting: false,
+        };
+    }
+
+    fn wake(&mut self, now: Instant) {
+        match &self.phase {
+            Phase::Loading { loaded, .. } => {
+                let late: Vec<SlotIndex> = self
+                    .humans
+                    .keys()
+                    .filter(|s| !loaded.contains(s))
+                    .copied()
+                    .collect();
+                for slot in late {
+                    info!(room = self.room.0, login = %self.humans[&slot].login, "did not load in time; taken out of the game");
+                    self.leave(slot);
+                }
+            }
+            Phase::Running { .. } => self.tick(now),
+        }
+    }
+
     fn tick(&mut self, now: Instant) {
         let laggards = self.laggards();
         if laggards.is_empty() {
             self.send_turn();
             return;
         }
-        if !self.waiting {
-            self.waiting = true;
+        if let Phase::Running { waiting, .. } = &mut self.phase
+            && !*waiting
+        {
+            *waiting = true;
             let players = laggards
                 .iter()
                 .map(|s| self.humans[s].login.clone())
@@ -234,6 +318,7 @@ impl Game {
         self.broadcast(&ServerMsg::PlayerLeftGame { slot });
         self.compare_digests();
         self.resume_if_nobody_behind();
+        self.start_if_all_loaded();
         let _ = self.lobby.send(LobbyInput::LeftGame {
             room: self.room,
             conn: human.conn,
@@ -241,8 +326,11 @@ impl Game {
     }
 
     fn resume_if_nobody_behind(&mut self) {
-        if self.waiting && !self.humans.is_empty() && self.laggards().is_empty() {
-            self.waiting = false;
+        let waiting = matches!(self.phase, Phase::Running { waiting: true, .. });
+        if waiting && !self.humans.is_empty() && self.laggards().is_empty() {
+            if let Phase::Running { waiting, .. } = &mut self.phase {
+                *waiting = false;
+            }
             for human in self.humans.values_mut() {
                 human.holding_since = None;
             }

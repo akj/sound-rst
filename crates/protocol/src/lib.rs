@@ -692,6 +692,9 @@ pub enum ClientMsg {
         ready: bool,
     },
 
+    /// You have built the world and can run turn 0. The server starts the
+    /// game's clock once every human has sent it.
+    Loaded,
     /// Your orders, for the next turn the server sends.
     Orders {
         orders: Orders,
