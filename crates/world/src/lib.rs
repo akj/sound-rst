@@ -7,3 +7,5 @@
 
 pub mod msg;
 pub mod msgparts;
+
+pub mod defs;
