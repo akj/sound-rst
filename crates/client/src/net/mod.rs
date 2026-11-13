@@ -408,14 +408,17 @@ pub fn chat_char(c: char) -> bool {
     !c.is_control()
 }
 
-/// Asks for a chat line and sends it: to the room in a room, else to the
-/// lobby. A beep without a server.
+/// Asks for a chat line and sends it: to the game's players in a game
+/// (from the game menu), to the room in a room, else to the lobby. A beep
+/// without a server.
 pub fn chat_in_menus(cx: &mut Client) -> Result<(), Exit> {
     let Some(net) = &cx.net else {
         cx.voice.item(&msg(mp::BEEP));
         return Ok(());
     };
-    let channel = if net.room.is_some() {
+    let channel = if net.game.is_some() {
+        Channel::Game
+    } else if net.room.is_some() {
         Channel::Room
     } else {
         Channel::Lobby

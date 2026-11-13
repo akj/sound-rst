@@ -690,3 +690,37 @@ fn moving_a_player_whose_slot_moved_moves_that_player() {
         }]
     );
 }
+
+#[test]
+fn chat_from_the_game_menu_goes_to_the_game() {
+    let live = LiveKeys::default();
+    let mut h = Harness::with_config(
+        "en",
+        Script::new().keep_open().with_live(live.clone()),
+        config("andrew"),
+    );
+    let server = h.join_fake_server("andrew", &[]);
+    // The room of the game is still known during the game.
+    let map = jl1(&mut h);
+    h.client.net.as_mut().unwrap().room = Some(soundrts::net::lobby::RoomModel {
+        state: room_state(&map, two_slots()),
+        map: soundrts::net::lobby::MapState::Downloading,
+    });
+    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let t0 = h.clock.now();
+    live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
+    live.tap_at(t0 + 5.0, Key::F7, Mods::NONE);
+    live.type_at(t0 + 8.0, 0.5, "hi");
+    live.tap_at(t0 + 10.0, Key::Return, Mods::NONE);
+    live.tap_at(t0 + 15.0, Key::Escape, Mods::NONE);
+    h.run_for(&mut g, 20.0);
+    assert!(live.is_empty(), "every key was read");
+    assert!(
+        server.sent().contains(&ClientMsg::Chat {
+            channel: Channel::Game,
+            text: ChatText::clean("hi").unwrap(),
+        }),
+        "{:?}",
+        server.sent()
+    );
+}
