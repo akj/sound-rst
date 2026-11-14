@@ -173,7 +173,9 @@ impl ChannelSource {
     fn next_frame(&mut self) -> bool {
         let stopped = self.playback.stop.load(Ordering::Relaxed);
         if stopped && self.ramp.is_none() {
-            // Stopped before it was ever heard.
+            // Stopped before the mixer took any of it. A mixer that
+            // resamples takes the first frames as the sound is added, so
+            // then the sound fades out like any other.
             return false;
         }
         let (gains, frames) = (&self.gains, self.ramp_frames);
@@ -580,9 +582,8 @@ mod tests {
         o.set_gains(CH, 0.2, 0.2, 0.0);
         o.play(CH, &sound(vec![0.5; 2 * RATE as usize], 1.0), false);
         pull(&mut out, 100);
-        // A stereo sound sets its gains just after it starts.
-        o.play(CH, &sound(vec![0.25; 2 * RATE as usize], 1.0), false);
         o.set_gains(CH, 0.6, 0.3, 0.0);
+        o.play(CH, &sound(vec![0.25; 2 * RATE as usize], 1.0), false);
         let (l, r) = pull(&mut out, 2 * ramp);
         let fading = |i: usize| 0.1 * (1.0 - (i + 1) as f32 / ramp as f32);
         for i in [0, ramp / 2] {
@@ -599,5 +600,25 @@ mod tests {
         }
         assert!(l[ramp..].iter().all(|&s| s == 0.25 * 0.6));
         assert!(r[ramp..].iter().all(|&s| s == 0.25 * 0.3));
+    }
+
+    #[test]
+    fn a_sound_starts_at_its_gains_on_a_device_at_another_rate() {
+        // A 48 kHz device takes a 44.1 kHz sound's first frames as it is
+        // added, before anything else happens.
+        let (mixer, mut out) =
+            rodio::mixer::mixer(NonZero::new(2).unwrap(), NonZero::new(48_000).unwrap());
+        let mut o = RodioOutput::on(mixer, None, 2);
+        o.set_gains(CH, 1.0, 1.0, 0.0);
+        o.play(CH, &sound(vec![0.5; 2 * RATE as usize], 1.0), false);
+        o.stop(CH);
+        o.set_gains(CH, 0.6, 0.3, 0.0);
+        o.play(CH, &sound(vec![0.25; 2 * RATE as usize], 1.0), false);
+        // The first sound fades out from 0.5 while the second plays at
+        // its gains from its first frame.
+        let (l, r) = pull(&mut out, 1_000);
+        assert!((l[0] - (0.15 + 0.5)).abs() < 0.01, "left {}", l[0]);
+        assert!((r[0] - (0.075 + 0.5)).abs() < 0.01, "right {}", r[0]);
+        assert!((l[999] - 0.15).abs() < 1e-6 && (r[999] - 0.075).abs() < 1e-6);
     }
 }

@@ -182,7 +182,9 @@ impl Channel {
 /// and right gains that can change while it plays. Gains belong to the
 /// channel and stay until changed.
 pub trait AudioOutput {
-    /// Starts `sound` on `channel`, replacing what played there.
+    /// Starts `sound` on `channel`, replacing what played there, at the
+    /// channel's gains. Set them first: the device may take the sound's
+    /// first frames during this call, and a later change is ramped.
     fn play(&mut self, channel: Channel, sound: &Sound, looping: bool);
     /// Sets the channel's gains, and how far behind the listener its sound
     /// is (see [`behind`]): 0 plays the sound as recorded, 1 at its dullest.

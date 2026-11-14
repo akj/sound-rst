@@ -440,12 +440,12 @@ impl Audio {
             && let Some(c) = a.find_a_channel(10)
         {
             let m = a.main_volume;
-            a.mixer.play(Channel::Effect(c), &sound, false);
             let (l, r) = match volume {
                 StereoVolume::Both(v) => (v, v),
                 StereoVolume::Split(l, r) => (l, r),
             };
             a.mixer.set_gains(Channel::Effect(c), l * m, r * m, 0.0);
+            a.mixer.play(Channel::Effect(c), &sound, false);
             a.remember_start_time(&sound);
             started = true;
         }
@@ -625,5 +625,17 @@ mod tests {
         a.play_stereo(sound("click"), StereoVolume::Split(1.0, 0.5), 0.0);
         a.voice_play(&sound("voice").unwrap(), 1.0, 1.0);
         assert_eq!(behind_sent(&log), [(1, 0.0), (2, 0.0), (0, 0.0)]);
+    }
+
+    #[test]
+    fn a_stereo_sound_starts_at_its_volumes() {
+        let (a, log) = audio();
+        a.play_stereo(sound("click"), StereoVolume::Split(1.0, 0.5), 0.0);
+        // At the main volume, 0.5.
+        let started = log.events().into_iter().find_map(|e| match e {
+            AudioEvent::Play { left, right, .. } => Some((left, right)),
+            _ => None,
+        });
+        assert_eq!(started, Some((0.5, 0.25)));
     }
 }
