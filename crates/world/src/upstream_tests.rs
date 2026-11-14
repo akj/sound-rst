@@ -1935,6 +1935,46 @@ starting_resources 100 100
         assert_eq!(w.find_nearest_meadow(a1, f), Some(first));
     }
 
+    #[test]
+    fn adding_a_unit_where_there_is_no_space_leaves_the_other_units_alone() {
+        use crate::command::{Cheat, Command};
+        let mut w = world_text(
+            "
+square_width 1
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        w.allow_cheatmode = true;
+        let p = w
+            .populate_map(&[Controller::human("a", false)], false, false)
+            .unwrap()[0];
+        let a1 = sq(&w, "a1");
+        let add = |n: &str| {
+            Command::Cheat(Cheat::AddUnits {
+                square: Some(a1),
+                units: format!("{n} footman"),
+            })
+        };
+        w.queue(p, add("100"));
+        w.update();
+        let warnings = w.drain_warnings();
+        assert!(
+            warnings.contains(&"not enough space".to_owned()),
+            "{warnings:?}"
+        );
+        let full = w.player(p).units.clone();
+        assert!(!full.is_empty());
+        w.queue(p, add("1"));
+        w.update();
+        assert_eq!(w.drain_warnings(), ["not enough space"]);
+        assert_eq!(w.player(p).units, full);
+    }
+
     /// The events of the entities the player perceives, since the last call.
     fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
         w.drain_events(p)
