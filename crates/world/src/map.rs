@@ -872,11 +872,9 @@ impl World {
             s.strict_neighbors = strict;
             s.neighbors = all;
         }
-        // At most 26 columns of 100 squares of width each.
-        let xmax = self.map.nb_columns.saturating_mul(sw);
         let res = World::collision_radius().saturating_mul(2) / 3;
-        self.collision_ground = crate::collision::CollisionMatrix::new(xmax, res);
-        self.collision_air = crate::collision::CollisionMatrix::new(xmax, res);
+        self.collision_ground = crate::collision::CollisionMatrix::new(res);
+        self.collision_air = crate::collision::CollisionMatrix::new(res);
         Ok(())
     }
 
