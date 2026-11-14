@@ -640,8 +640,8 @@ impl GameInterface {
     }
 
     /// A key pressed while a story is told: the keys of the game menu,
-    /// the history, the news, help and the volume do as in the game; any
-    /// other key skips the message being said.
+    /// the history, the news, help, key help and the volume do as in the
+    /// game; any other key skips the message being said.
     fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
@@ -654,6 +654,7 @@ impl GameInterface {
                 | C::ReviewNext
                 | C::ReviewCategory
                 | C::Help(_)
+                | C::KeyHelp
                 | C::Volume(_)),
             ) => self.execute(cx, &c),
             _ => {

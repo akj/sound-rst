@@ -553,7 +553,7 @@ impl GameCommand {
                 format!("go to the {} explored square", direction(*i))
             }
             C::SelectConflictSquare(i) => {
-                format!("go to the {} square with a fight", direction(*i))
+                format!("go to the {} square with an enemy", direction(*i))
             }
             C::SelectUnknownSquare(i) => {
                 format!("go to the {} unexplored square", direction(*i))
@@ -583,9 +583,10 @@ impl GameCommand {
             C::DoAgain { now: false, flags } => {
                 format!("select the last order again{}", order_flags(*flags))
             }
-            C::DoAgain { now: true, flags } => {
-                format!("give the last order again{}", order_flags(*flags))
-            }
+            C::DoAgain { now: true, flags } => format!(
+                "give the last order again{}, or select it if it needs a target",
+                order_flags(*flags)
+            ),
             C::Escape => "cancel the order, or leave the zoom".into(),
             C::SelectUnit { inc, filter } => {
                 format!("select the {} {}", direction(*inc), units(filter, false))
