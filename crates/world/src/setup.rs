@@ -32,6 +32,31 @@ pub struct GameSetup {
 }
 
 impl GameSetup {
+    /// A game with other players on a server: the map's default triggers
+    /// if it has none, no cheats, random starting places, and the
+    /// factions' own start units. `controllers` are the room's slots in
+    /// order; which humans receive events is theirs to say (a client
+    /// running the game marks its own player, a host every human).
+    pub fn multiplayer(
+        rules: String,
+        ai: String,
+        map: String,
+        seed: i64,
+        controllers: Vec<Controller>,
+    ) -> GameSetup {
+        GameSetup {
+            rules,
+            ai,
+            map,
+            seed,
+            controllers,
+            default_triggers: crate::world::multiplayer_default_triggers(),
+            allow_cheatmode: false,
+            random_starts: true,
+            equivalents: true,
+        }
+    }
+
     /// Builds the world and its map, and creates the players. Returns the
     /// world and the players of the controllers, in order; the error is the
     /// map's.
