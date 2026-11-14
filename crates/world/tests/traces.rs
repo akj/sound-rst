@@ -381,9 +381,19 @@ fn fnv64(text: &str) -> String {
     format!("{h:016x}")
 }
 
-/// Runs a scripted game: one summary line per update (turn, hash of the
-/// full dump, first line of the dump), and the full dump.
-fn run_trace(case: &Case) -> (Vec<String>, Vec<String>) {
+/// A scripted game as the port plays it.
+struct Trace {
+    /// One line per update: the turn, the hash of the full dump and the
+    /// dump's first line.
+    summary: Vec<String>,
+    /// One line per update: the turn and [`World::digest_u64`].
+    digests: Vec<String>,
+    /// The dump of every update.
+    full: Vec<String>,
+}
+
+/// Runs a scripted game.
+fn run_trace(case: &Case) -> Trace {
     let mut w = make_world(case);
     let players = w
         .populate_map(&controllers(&case.players), true, true)
@@ -404,6 +414,7 @@ fn run_trace(case: &Case) -> (Vec<String>, Vec<String>) {
             .push((pi, it.next().unwrap().to_owned()));
     }
     let mut summary = Vec::new();
+    let mut digests = Vec::new();
     let mut full = Vec::new();
     for t in 0..case.ticks {
         for (pi, cmd) in by_tick.get(&t).cloned().unwrap_or_default() {
@@ -420,10 +431,15 @@ fn run_trace(case: &Case) -> (Vec<String>, Vec<String>) {
             fnv64(&lines.join("\n")),
             lines[0]
         ));
+        digests.push(format!("tick {t} {:016x}", w.digest_u64()));
         full.push(format!("tick {t}"));
         full.extend(lines);
     }
-    (summary, full)
+    Trace {
+        summary,
+        digests,
+        full,
+    }
 }
 
 /// Where the tests write the full dump of a case that differs.
@@ -471,20 +487,29 @@ fn check_static() {
 }
 
 /// The scripted games whose name starts with `prefix`: one line per update
-/// in `expected/<case>.txt`.
+/// in `expected/<case>.txt`, and the digest of the whole world after each
+/// update in `expected/<case>.digest.txt`. The dump covers less than the
+/// digest, but it stays the same when only the way the state is stored
+/// changes.
 fn check(prefix: &str) {
     let mut n = 0;
     for case in cases()
         .into_iter()
         .filter(|c| c.kind == "trace" && c.name.starts_with(prefix))
     {
-        let (summary, full) = run_trace(&case);
-        let text = summary.join("\n") + "\n";
+        let trace = run_trace(&case);
+        let text = trace.summary.join("\n") + "\n";
         if let Err(expected) = check_expected(&format!("{}.txt", case.name), &text) {
-            let path = write_actual(&case.name, &full);
+            let path = write_actual(&case.name, &trace.full);
             eprintln!("{}: the full dump is in {}", case.name, path.display());
             eprintln!("{IF_INTENDED}");
             compare(&case.name, &expected, &text);
+        }
+        let digests = trace.digests.join("\n") + "\n";
+        let file = format!("{}.digest.txt", case.name);
+        if let Err(expected) = check_expected(&file, &digests) {
+            eprintln!("{IF_INTENDED}");
+            compare(&file, &expected, &digests);
         }
         n += 1;
     }
@@ -495,11 +520,19 @@ fn check(prefix: &str) {
 #[test]
 fn a_different_seed_gives_a_different_trace() {
     let mut case = cases().into_iter().find(|c| c.name == "trace_jl1").unwrap();
-    let (first, _) = run_trace(&case);
+    let first = run_trace(&case);
     case.seed += 1;
-    let (second, _) = run_trace(&case);
-    assert_eq!(first.len(), case.ticks, "one line per update");
-    assert_ne!(first, second, "a different seed gave the same trace");
+    let second = run_trace(&case);
+    assert_eq!(first.summary.len(), case.ticks, "one line per update");
+    assert_eq!(first.digests.len(), case.ticks, "one digest per update");
+    assert_ne!(
+        first.summary, second.summary,
+        "a different seed gave the same trace"
+    );
+    assert_ne!(
+        first.digests, second.digests,
+        "a different seed gave the same digests"
+    );
 }
 
 #[test]

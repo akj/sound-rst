@@ -101,7 +101,7 @@ pub const SIM_VERSION: u32 = 1;
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.
 #[cfg(test)]
-const TRACES_HASH: u64 = 0x3d68_f52f_4501_34d6;
+const TRACES_HASH: u64 = 0xd716_57f0_6583_39d6;
 
 #[cfg(test)]
 mod sim_version {
