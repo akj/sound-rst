@@ -13,6 +13,7 @@ use crate::orders::{Keyword, TargetRef};
 
 /// Something a player asks of the game.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Command {
     /// Chooses the units the next orders go to: the player's units, or an
     /// ally's that the player may control, among these. An empty list
@@ -37,6 +38,7 @@ pub enum Command {
 
 /// Whether an order replaces the orders a unit has or comes after them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Queue {
     Replace,
     Append,
@@ -44,6 +46,7 @@ pub enum Queue {
 
 /// An order to the units chosen.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Order {
     /// An order named by its keyword, as a unit's menu offers it.
     Keyword(KeywordOrder),
@@ -64,6 +67,8 @@ pub enum Order {
 /// on the ability (see [`World::order_info`]); a missing or extra target is
 /// refused by the world when the order runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "KeywordOrderParts"))]
 pub struct KeywordOrder {
     keyword: Keyword,
     type_name: Option<String>,
@@ -115,10 +120,39 @@ impl KeywordOrder {
     }
 }
 
+/// A [`KeywordOrder`] as it is sent, read through [`KeywordOrder::new`]
+/// and [`KeywordOrder::typed`] so that a keyword and a type that do not go
+/// together are refused.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct KeywordOrderParts {
+    keyword: Keyword,
+    type_name: Option<String>,
+    target: Option<OrderTarget>,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<KeywordOrderParts> for KeywordOrder {
+    type Error = String;
+
+    fn try_from(p: KeywordOrderParts) -> Result<KeywordOrder, String> {
+        let order = match p.type_name {
+            None => KeywordOrder::new(p.keyword),
+            Some(t) => KeywordOrder::typed(p.keyword, t),
+        }
+        .ok_or_else(|| format!("{:?} with a type it cannot have", p.keyword))?;
+        Ok(match p.target {
+            Some(t) => order.at(t),
+            None => order,
+        })
+    }
+}
+
 /// What an order aims at, as the player names it. The world resolves an
 /// entity through what the player perceives or remembers, so an order
 /// cannot aim at something the player has not seen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OrderTarget {
     /// A square: its center.
     Square(SquareId),
@@ -131,6 +165,7 @@ pub enum OrderTarget {
 
 /// A cheat. Each is refused unless the game allows cheats.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Cheat {
     /// Turns the player's cheat mode on or off. In cheat mode a player has
     /// observed every square.

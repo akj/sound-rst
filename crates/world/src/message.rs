@@ -24,13 +24,17 @@ use crate::player::{Objective, PlayerStats};
 use crate::rules::Rules;
 use crate::world::World;
 
-/// What every seat is sent once, when the game starts: what does not
-/// change during a game.
+/// What every seat knows from the start of the game: what does not change
+/// during a game. The host sends the [`StartMessage`]; the seat's client
+/// supplies the rules itself ([`GameStart::from_message`]).
 #[derive(Clone, Debug)]
 pub struct GameStart {
     /// The rules of the game, every layer applied: the game's, a mod's, a
     /// campaign's and the map's. The interface reads unit types, costs and
     /// requirements from them, and computes order menus with them.
+    ///
+    /// Never sent: every client of a game has loaded the same layers from
+    /// its own files, which the room's content hash checks.
     pub rules: Rules,
     pub map: GameMap,
     /// Every player's name as it is said, by player id: the name of
@@ -40,8 +44,42 @@ pub struct GameStart {
     pub cheats_allowed: bool,
 }
 
+/// What the host sends every seat once, when the game starts: the
+/// [`GameStart`] without its rules, which the seat's client supplies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct StartMessage {
+    pub map: GameMap,
+    /// As [`GameStart::player_names`].
+    pub player_names: Vec<Msg>,
+    pub cheats_allowed: bool,
+}
+
+impl GameStart {
+    /// What the host sends of it.
+    pub fn message(&self) -> StartMessage {
+        StartMessage {
+            map: self.map.clone(),
+            player_names: self.player_names.clone(),
+            cheats_allowed: self.cheats_allowed,
+        }
+    }
+
+    /// The start of the game from what the host sent and the rules the
+    /// client loaded.
+    pub fn from_message(message: StartMessage, rules: Rules) -> GameStart {
+        GameStart {
+            rules,
+            map: message.map,
+            player_names: message.player_names,
+            cheats_allowed: message.cheats_allowed,
+        }
+    }
+}
+
 /// The map as every player knows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GameMap {
     /// The width of a square.
     pub square_width: i64,
@@ -58,6 +96,7 @@ pub struct GameMap {
 /// A square of the map: its place, name and shape. What is on it is not
 /// part of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SquareInfo {
     /// Its id in the text protocol. An order may name the square by it.
     pub protocol_id: u32,
@@ -92,6 +131,7 @@ impl SquareInfo {
 /// the map and do not move. What closes one changes, and is told with the
 /// exit when the player knows it ([`KnownExit`](crate::KnownExit)).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MapExit {
     pub id: EntityId,
     /// The square it is on.
@@ -144,7 +184,8 @@ impl GameMap {
 /// What one seat is told at the end of a turn: everything its interface
 /// reads until the next one. The interface installs it when it takes the
 /// turn.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TurnMessage {
     /// The player the message is for.
     pub seat: PlayerId,
@@ -173,6 +214,7 @@ pub struct TurnMessage {
 
 /// The seat's own state, and what everyone may know of the players.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SeatState {
     /// The amount of each resource.
     pub resources: Vec<i64>,
@@ -206,6 +248,7 @@ pub struct SeatState {
 /// that shares control. What its units' order menus and requirements read
 /// of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ControlledPlayer {
     pub player: PlayerId,
     /// Its units, in the order it got them. Each is among the perceived
@@ -225,6 +268,7 @@ pub struct ControlledPlayer {
 
 /// What the seat knows of the squares at the end of the turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KnownSquares {
     /// The squares the seat observes. Every square in cheat mode.
     pub observed: BTreeSet<SquareId>,
@@ -238,11 +282,13 @@ pub struct KnownSquares {
     /// map's `terrain`, or `_meadows`, `_forest`, `_dense_forest` or
     /// nothing, from what grows on the square now. The interface keeps the
     /// terrain of a square in the fog as it last saw it.
+    #[cfg_attr(feature = "serde", serde(with = "crate::wire::pairs"))]
     pub terrain: BTreeMap<SquareId, String>,
 }
 
 /// What a seat is sent once, when the game ends for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GameEnd {
     /// What the seat produced, lost, killed and gathered, for the score.
     /// The result is the last turn's [`SeatState::has_victory`].

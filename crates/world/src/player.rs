@@ -17,6 +17,7 @@ use crate::triggers::Expr;
 
 /// Who controls a player.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ControllerKind {
     /// A person. `local` is true for the person using this machine: only a
     /// local human receives events.
@@ -44,6 +45,7 @@ impl Hash for ControllerKind {
 
 /// A controller: who plays, with which alliance and faction.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Controller {
     pub kind: ControllerKind,
     /// Players with the same alliance are allies. `None` means no alliance.
@@ -114,6 +116,7 @@ pub enum PlayerKind {
 
 /// A mission objective.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Objective {
     pub number: String,
     pub description: Vec<i64>,
@@ -135,6 +138,7 @@ pub struct Remembrance {
 
 /// What the game statistics count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StatEvent {
     Produced,
     Lost,
@@ -143,6 +147,7 @@ pub enum StatEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum StatTarget {
     Unit,
     Building,
@@ -162,7 +167,9 @@ impl From<StatType> for StatTarget {
 /// The statistics of a player (`worldplayerstats.Stats`). The client
 /// builds the score messages from them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerStats {
+    #[cfg_attr(feature = "serde", serde(with = "crate::wire::pairs"))]
     counts: BTreeMap<(StatEvent, StatTarget), i64>,
     game_duration: Option<i64>,
 }

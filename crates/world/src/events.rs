@@ -9,6 +9,7 @@ use crate::msg::Msg;
 
 /// Why an order cannot be carried out.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Reason {
     TheQueueIsFull,
     NotEnoughFood,
@@ -39,6 +40,7 @@ impl Reason {
 
 /// Something that happened to an entity.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EntityEvent {
     /// Hit by an attacker of this type, with its damage upgrade level.
     Wounded {
@@ -114,7 +116,8 @@ impl EntityEvent {
 
 /// An event for a player's interface. Drain them with
 /// [`crate::World::drain_events`] after each update.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Event {
     /// Something happened to an entity the player perceives (or to any
     /// entity, for universal notifications). The entity is as the player
@@ -134,12 +137,16 @@ pub enum Event {
     Quit,
     /// The turn is over: what the player knows at its end, before the game
     /// may end.
+    ///
+    /// Never sent: a seat is sent the end of a turn as a
+    /// [`TurnMessage`](crate::TurnMessage).
+    #[cfg_attr(feature = "serde", serde(skip))]
     Voila(Box<Voila>),
 }
 
 /// What a player knows at the end of a turn: the entities it remembers
 /// and perceives, as it knows them, and the squares it observes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Voila {
     /// The world's time after the turn, in milliseconds.
     pub time: i64,

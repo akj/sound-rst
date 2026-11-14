@@ -11,63 +11,12 @@ use crate::command::{Cheat, Command};
 use crate::events::Event;
 use crate::player::Controller;
 use crate::setup::GameSetup;
+use crate::test_games::{
+    Case, allies_sharing_control, cheat_mode_and_defeat, computer, mods, sixteen,
+};
 use crate::view::View;
 use crate::view::tests::read;
 use crate::world::{World, multiplayer_default_triggers};
-
-/// A game to play, and what to do to it on the way.
-struct Case {
-    name: &'static str,
-    rules: Vec<&'static str>,
-    ai: Vec<&'static str>,
-    map: &'static str,
-    seed: i64,
-    controllers: Vec<Controller>,
-    turns: usize,
-    /// Every player shares control of its units with its allies.
-    shared_control: bool,
-    /// Changes made to the game at the start of a turn.
-    script: fn(&mut World, usize),
-}
-
-fn computer(ai_type: &str, alliance: &str) -> Controller {
-    let mut c = Controller::computer(ai_type);
-    c.alliance = Some(alliance.into());
-    c
-}
-
-fn with_faction(mut c: Controller, faction: &str) -> Controller {
-    c.faction = faction.into();
-    c
-}
-
-fn nothing(_: &mut World, _: usize) {}
-
-/// Builds a `kind` of `p` on an exit of the square of one of its units,
-/// makes it block the exit, and puts a unit of `p` inside it.
-fn shelter(w: &mut World, p: PlayerId, kind: &str) {
-    let units = w.player(p).units.clone();
-    let Some((square, exit)) = units.iter().find_map(|&u| {
-        let q = w.entity(u)?.square()?;
-        Some((q, *w.square(q).exits.first()?))
-    }) else {
-        panic!("no exit beside a unit of player {}", p.0);
-    };
-    let (x, y) = {
-        let e = w.entity(exit).unwrap();
-        (e.x, e.y)
-    };
-    let t = w.rules.type_id(kind).unwrap();
-    let Ok(b) = w.create_creature(t, Some(p), Place::Square(square), x, y) else {
-        panic!("no room for a {kind} on square {}", square.0);
-    };
-    w.block(b, exit);
-    let inside = units.iter().copied().find(|&u| {
-        w.entity(u)
-            .is_some_and(|e| e.class.is_unit() && !e.is_inside())
-    });
-    w.load(b, inside.expect("a unit to put inside"));
-}
 
 /// The disagreements and the number of answers compared.
 #[derive(Default)]
@@ -600,35 +549,8 @@ fn targets(w: &World, v: &View, u: &KnownEntity) -> Vec<OrderTarget> {
 /// Plays a case, and compares both views of every player on every turn.
 /// Returns the tally.
 fn play(case: &Case) -> Tally {
-    let setup = GameSetup {
-        rules: case
-            .rules
-            .iter()
-            .map(|r| read(r))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        ai: case
-            .ai
-            .iter()
-            .map(|r| read(r))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        map: read(case.map),
-        seed: case.seed,
-        controllers: case.controllers.clone(),
-        default_triggers: multiplayer_default_triggers(),
-        allow_cheatmode: true,
-        random_starts: true,
-        equivalents: true,
-    };
-    let (mut w, _) = setup.build_world().unwrap();
+    let mut w = case.world(read);
     let players: Vec<PlayerId> = w.all_players().map(|(p, _)| p).collect();
-    if case.shared_control {
-        for &p in &players {
-            let allied = w.player(p).allied.clone();
-            w.player_mut(p).allied_control = allied;
-        }
-    }
     let start = Arc::new(GameStart::of(&w));
     let mut seats: Vec<(SeatView, Kept)> = players
         .iter()
@@ -709,135 +631,6 @@ fn report(cases: &[Case]) {
         "the views disagree:\n{}",
         total.differences.join("\n")
     );
-}
-
-/// Two alliances of computers on jl7, each player sharing control of its
-/// units with its allies: the case no measurement had covered.
-fn allies_sharing_control(turns: usize) -> Case {
-    Case {
-        name: "jl7, allies sharing control",
-        rules: vec!["res/rules.txt"],
-        ai: vec!["res/ai.txt"],
-        map: "res/multi/jl7.txt",
-        seed: 7,
-        controllers: vec![
-            computer("aggressive", "1"),
-            computer("easy", "1"),
-            computer("ai2", "1"),
-            computer("aggressive", "2"),
-            computer("easy", "2"),
-            computer("aggressive", "2"),
-        ],
-        turns,
-        shared_control: true,
-        script: |w, turn| {
-            if turn == 30 {
-                // An ally's unit inside an ally's gate: controlled, not
-                // perceived. An enemy's wall closes another exit.
-                shelter(w, PlayerId(0), "gate");
-                shelter(w, PlayerId(3), "wall");
-            }
-            if turn == 40 {
-                // Groups are shared by every player: each seat recalls
-                // only the units it controls.
-                for (p, group) in [(0, "1"), (3, "1"), (1, "2")] {
-                    let units = w.player(PlayerId(p)).units.clone();
-                    let ids: Vec<String> = units.iter().take(3).map(|u| u.0.to_string()).collect();
-                    w.queue_command(PlayerId(p), &format!("control {}", ids.join(" ")));
-                    w.queue_command(PlayerId(p), &format!("order 0 0 join_group {group}"));
-                }
-            }
-        },
-    }
-}
-
-/// A person on jl7 who turns cheat mode on with a unit in a gate, then
-/// off, and has everything for a while, against two computers, and is
-/// defeated while they play on.
-fn cheat_mode_and_defeat(turns: usize) -> Case {
-    fn script(w: &mut World, turn: usize) {
-        let me = PlayerId(0);
-        match turn {
-            20 | 400 => w.queue(me, Command::Cheat(Cheat::ToggleMode)),
-            30 => shelter(w, me, "gate"),
-            200 => w.player_mut(me).cheat_has_all = true,
-            300 => w.player_mut(me).cheat_has_all = false,
-            700 => w.defeat(me, false),
-            _ => {}
-        }
-        if (450..=700).contains(&turn) && turn.is_multiple_of(5) {
-            // Woods are cut, in sight and in the fog: the terrain changes.
-            for q in 0..w.squares.len() {
-                let wood = w.squares[q]
-                    .objects
-                    .iter()
-                    .copied()
-                    .find(|&o| w.entity(o).is_some_and(|e| &*e.type_name == "wood"));
-                if let Some(wood) = wood {
-                    w.die(wood, None).unwrap();
-                }
-            }
-        }
-    }
-    let mut me = Controller::human("me", true);
-    me.alliance = Some("1".into());
-    Case {
-        name: "jl7, cheat mode and defeat",
-        rules: vec!["res/rules.txt"],
-        ai: vec!["res/ai.txt"],
-        map: "res/multi/jl7.txt",
-        seed: 1,
-        controllers: vec![me, computer("aggressive", "2"), computer("easy", "3")],
-        turns,
-        shared_control: false,
-        script,
-    }
-}
-
-/// Orcs and humans with the teleportation mod's abilities on jl7, every
-/// player alone.
-fn mods(turns: usize) -> Case {
-    Case {
-        name: "jl7, orc and teleportation mods",
-        rules: vec![
-            "res/rules.txt",
-            "mods/orc/rules.txt",
-            "mods/teleportation/rules.txt",
-        ],
-        ai: vec!["res/ai.txt", "mods/orc/ai.txt"],
-        map: "res/multi/jl7.txt",
-        seed: 5,
-        controllers: vec![
-            with_faction(computer("aggressive", "1"), "orc_faction"),
-            with_faction(computer("easy", "2"), "orc_faction"),
-            with_faction(computer("aggressive", "3"), "human_faction"),
-            computer("ai2", "4"),
-        ],
-        turns,
-        shared_control: false,
-        script: nothing,
-    }
-}
-
-/// Sixteen computers on js13, every one alone.
-fn sixteen(turns: usize) -> Case {
-    let types = ["aggressive", "ai2", "easy"];
-    let alliances: Vec<String> = (1..=16).map(|i| i.to_string()).collect();
-    Case {
-        name: "js13, 16 computers",
-        rules: vec!["res/rules.txt"],
-        ai: vec!["res/ai.txt"],
-        map: "res/multi/js13.txt",
-        seed: 1,
-        controllers: alliances
-            .iter()
-            .enumerate()
-            .map(|(i, a)| computer(types[i % 3], a))
-            .collect(),
-        turns,
-        shared_control: false,
-        script: nothing,
-    }
 }
 
 #[test]

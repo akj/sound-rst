@@ -14,6 +14,7 @@ pub const NB_ENCODE_SHIFT: u64 = 1_000_000;
 /// [`MsgPart::key`]. A literal is what a person wrote, such as a login or a
 /// chat line: it is said as written and never looked up.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MsgPart {
     Num(u64),
     Text(String),

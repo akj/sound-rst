@@ -19,6 +19,7 @@ macro_rules! keywords {
     ($($v:ident = $s:literal),* $(,)?) => {
         /// The kind of an order, by its keyword.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub enum Keyword { $($v,)* }
 
         impl Keyword {
