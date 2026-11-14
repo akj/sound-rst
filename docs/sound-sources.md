@@ -19,6 +19,7 @@ Run these from the repository root. Nothing plays until you run the audition com
 2. `pwsh scripts/audition-sounds.ps1` lists the roles.
 3. `pwsh scripts/audition-sounds.ps1 footsteps-grass` plays every grass candidate, best first. Before each it prints a line saying which candidate it is, who made it, how it was recorded and how bright it is.
 4. `pwsh scripts/audition-sounds.ps1 footsteps-grass 2` plays only the second one again.
+5. `pwsh scripts/rate-sounds.ps1` plays every role's candidates in random order without saying which is which, and asks you to rate each from 1 to 5. Type r to hear one again, or q to stop. At the end of each role it tells you which version was which candidate, then asks for a comment. To rate only some roles, name them: `pwsh scripts/rate-sounds.ps1 footsteps-*` rates only the footsteps. Your answers are saved after each one in `vendor/sound-candidates/ratings/`, in a new file for each session.
 
 What you hear:
 
