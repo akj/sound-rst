@@ -1179,23 +1179,33 @@ impl World {
 
     // Computer: choosing a place
 
-    /// `is_ok_for_warehouse`: no warehouse for the resource on the square,
-    /// and a deposit of it.
-    pub(crate) fn is_ok_for_warehouse(&self, z: SquareId, resource_type: i64) -> bool {
-        let objects = &self.square(z).objects;
-        for &o in objects {
-            let stores = self.e(o).type_id.is_some_and(|t| {
+    /// `is_ok_for_warehouse`: as far as the player knows, no warehouse for
+    /// the resource on the square, and a deposit of it.
+    pub(crate) fn is_ok_for_warehouse(&self, p: PlayerId, z: SquareId, resource_type: i64) -> bool {
+        let pl = self.pl(p);
+        let perceived = self
+            .square(z)
+            .objects
+            .iter()
+            .filter(|o| pl.perception.contains(o));
+        let remembered = pl
+            .memory
+            .values()
+            .map(|r| &*r.snapshot)
+            .filter(|e| e.place == Some(Place::Square(z)));
+        let known: Vec<&Entity> = perceived.map(|&o| self.e(o)).chain(remembered).collect();
+        let stores = |e: &Entity| {
+            e.type_id.is_some_and(|t| {
                 self.rules
                     .ty(t)
                     .storable_resource_types
                     .contains(&resource_type)
-            });
-            if stores {
-                return false;
-            }
+            })
+        };
+        if known.iter().any(|e| stores(e)) {
+            return false;
         }
-        objects.iter().any(|&o| {
-            let e = self.e(o);
+        known.iter().any(|e| {
             e.class == EntityClass::Deposit
                 && e.type_id.and_then(|t| self.rules.ty(t).resource_type) == Some(resource_type)
         })
@@ -1208,7 +1218,7 @@ impl World {
         let Place::Square(s) = place else {
             return resource_type.is_none();
         };
-        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(s, rt))
+        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(p, s, rt))
             && !self.square_is_dangerous(p, s)
     }
 

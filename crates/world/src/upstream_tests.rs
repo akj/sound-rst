@@ -1459,14 +1459,20 @@ mod test_worldplayercomputer {
         assert_eq!(w.square(a1).name, "a1");
         assert!(w.square(a1).objects.is_empty());
         let owner = human(&mut w);
-        assert!(!w.is_ok_for_warehouse(a1, 0));
+        // The square is judged by what the owner sees: a peasant is there.
+        create(&mut w, "peasant", owner, a1);
+        let is_ok = |w: &mut World| {
+            w.update_perception_and_memory(owner).unwrap();
+            w.is_ok_for_warehouse(owner, a1, 0)
+        };
+        assert!(!is_ok(&mut w));
         let gold = w.rules.type_id("goldmine").unwrap();
         w.create_deposit(gold, a1, "75").unwrap();
-        assert!(w.is_ok_for_warehouse(a1, 0));
+        assert!(is_ok(&mut w));
         create(&mut w, "lumbermill", owner, a1); // stores resource 1
-        assert!(w.is_ok_for_warehouse(a1, 0));
+        assert!(is_ok(&mut w));
         create(&mut w, "townhall", owner, a1); // stores resource 0
-        assert!(!w.is_ok_for_warehouse(a1, 0));
+        assert!(!is_ok(&mut w));
     }
 }
 
@@ -1998,6 +2004,37 @@ starting_squares a1
         w.time += 1;
         is_perceiving(&mut w, cp, enemy);
         assert!(!w.player(cp).memory.contains_key(&enemy));
+    }
+
+    #[test]
+    fn a_computer_judges_a_warehouse_place_by_what_it_has_seen() {
+        let mut w = world_text(THREE_SQUARES);
+        let controllers = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+            Controller::human("c", false),
+        ];
+        let ps = w.populate_map(&controllers, false, false).unwrap();
+        let (cp, b) = (ps[0], ps[1]);
+        let (a1, c1) = (sq(&w, "a1"), sq(&w, "c1"));
+        let gold = w.rules.type_id("goldmine").unwrap();
+        let mine = w.create_deposit(gold, a1, "75").unwrap();
+        let scout = create(&mut w, "footman", cp, a1);
+        assert!(is_perceiving(&mut w, cp, mine));
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // The scout leaves; the mine is remembered.
+        move_to(&mut w, scout, c1);
+        assert!(!is_perceiving(&mut w, cp, mine));
+        assert!(w.player(cp).memory.contains_key(&mine));
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // A town hall the computer has not seen does not change its mind.
+        create(&mut w, "townhall", b, a1);
+        is_perceiving(&mut w, cp, mine);
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // Once seen, it does.
+        move_to(&mut w, scout, a1);
+        is_perceiving(&mut w, cp, mine);
+        assert!(!w.is_ok_for_warehouse(cp, a1, 0));
     }
 
     /// The events of the entities the player perceives, since the last call.
