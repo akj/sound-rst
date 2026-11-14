@@ -1,5 +1,12 @@
 //! Map files: a text file, or a package with `map.txt` and its own
 //! resources. The client reads the header; the simulation reads the text.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::path::Path;
 use std::sync::Arc;
@@ -7,7 +14,7 @@ use std::sync::Arc;
 use soundrts_protocol::{MAX_TITLE_SOUNDS, MapData, MapFileName, MapHash, MapInfo};
 use soundrts_world::msg::{Msg, MsgPart};
 
-use crate::package::{Package, decode_text};
+use crate::package::{MAX_PACKAGE_BYTES, Package, decode_text, read_file};
 
 /// A map, as the menus and the resource stack see it.
 #[derive(Clone, Debug)]
@@ -24,6 +31,10 @@ pub struct Map {
     pub nb_players_max: i64,
     /// Official maps come from the base package.
     pub official: bool,
+    /// The map came from a server, now or in an earlier game: its
+    /// resources may add to the interface but not change it (see
+    /// [`crate::resource::Resources::set_map`]).
+    pub downloaded: bool,
     /// The name with its extension (`.txt` or `.zip`) for a map file; just
     /// the name for a folder.
     pub file_name: String,
@@ -53,8 +64,8 @@ pub fn title_of(info: &MapInfo) -> Msg {
 /// The map name from a file name.
 pub fn name_from_path(path: &str) -> String {
     let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    let stem = match base.rfind('.') {
-        Some(i) if i > 0 => &base[..i],
+    let stem = match base.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem,
         _ => base,
     };
     stem.chars()
@@ -86,8 +97,15 @@ impl Map {
             m.file_name = name;
             Ok(m)
         } else {
-            Self::from_bytes(std::fs::read(path)?, &name)
+            Self::from_bytes(read_file(path, MAX_PACKAGE_BYTES)?, &name)
         }
+    }
+
+    /// Reads a map that came from a server, as [`Map::from_bytes`].
+    pub fn from_server(buffer: Vec<u8>, name_with_ext: &str) -> std::io::Result<Map> {
+        let mut map = Self::from_bytes(buffer, name_with_ext)?;
+        map.downloaded = true;
+        Ok(map)
     }
 
     /// Reads a map from its bytes and its file name: text if the name ends
@@ -187,6 +205,7 @@ impl Map {
             resources,
             title,
             official: false,
+            downloaded: false,
             file_name: String::new(),
             bytes: None,
         }
@@ -194,6 +213,11 @@ impl Map {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use crate::testkit::upstream_tests_dir;

@@ -1,5 +1,12 @@
 //! The text table and the sounds of the active resources: what each sound
 //! number of a message turns into.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,6 +20,9 @@ use crate::package::Package;
 use crate::parameters::Parameters;
 
 pub const TXT_FILE: &str = "ui/tts";
+/// The largest `tts.txt` of one layer, in bytes; a larger one is ignored
+/// whole. The original's largest is 16 KB.
+pub const MAX_TTS_BYTES: usize = 1024 * 1024;
 /// A sound of 0.01 s, said as "," when there is no recording.
 pub const SHORT_SILENCE: &str = "9998";
 /// A sound of 0.2 s, said as "." when there is no recording.
@@ -42,6 +52,13 @@ enum SoundRef {
 
 /// Reads the lines `<key> <text>` of `ui/tts.txt` files into `table`.
 pub fn update_text_table(table: &mut HashMap<String, String>, txt: &str, log: &Log) {
+    if txt.len() > MAX_TTS_BYTES {
+        log.warning(format!(
+            "'{TXT_FILE}' of {} bytes, more than {MAX_TTS_BYTES}, ignored",
+            txt.len()
+        ));
+        return;
+    }
     for line in txt.split('\n') {
         let line = line.trim();
         if line.is_empty() {
@@ -128,6 +145,45 @@ impl SoundCache {
         }
     }
 
+    /// Adds the texts and sounds of a map that came from a server, as
+    /// [`SoundCache::new`] reads them, but only under the keys this cache
+    /// lacks: the game's own texts and sounds stay. Returns how many were
+    /// ignored because the cache has them.
+    pub fn add_downloaded(&mut self, texts: &[String], sound_dirs: &[(Package, String)]) -> usize {
+        let mut ignored: usize = 0;
+        let mut txt = HashMap::new();
+        for t in texts {
+            update_text_table(&mut txt, t, &self.log);
+        }
+        for (key, value) in txt {
+            if self.txt.contains_key(&key) || self.sounds.contains_key(&key) {
+                ignored = ignored.saturating_add(1);
+            } else {
+                self.txt.insert(key, value);
+            }
+        }
+        let mut sounds = HashMap::new();
+        for (package, dir) in sound_dirs.iter().rev() {
+            for name in package.relative_paths_of_files_in_subtree(dir) {
+                let Some(stem) = name.strip_suffix(".ogg") else {
+                    continue;
+                };
+                let key = stem.rsplit('/').next().unwrap_or(stem).to_owned();
+                sounds
+                    .entry(key)
+                    .or_insert_with(|| SoundRef::Unloaded(package.clone(), name.clone()));
+            }
+        }
+        for (key, sound) in sounds {
+            if self.txt.contains_key(&key) || self.sounds.contains_key(&key) {
+                ignored = ignored.saturating_add(1);
+            } else {
+                self.sounds.insert(key, sound);
+            }
+        }
+        ignored
+    }
+
     pub fn get_sound(&mut self, name: &str, warn: bool) -> Option<Sound> {
         match self.sounds.get(name) {
             Some(SoundRef::Loaded(s)) => return Some(s.clone()),
@@ -176,9 +232,9 @@ impl SoundCache {
         }
         if is_all_digits(&key)
             && let Ok(n) = key.parse::<u64>()
-            && n >= NB_ENCODE_SHIFT
+            && let Some(n) = n.checked_sub(NB_ENCODE_SHIFT)
         {
-            return Spoken::Text((n - NB_ENCODE_SHIFT).to_string());
+            return Spoken::Text(n.to_string());
         }
         if let Some(s) = self.get_sound(&key, false) {
             return Spoken::Sound(s);

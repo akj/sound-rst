@@ -88,6 +88,8 @@ To join a game, choose one of these:
 
 On a server, the menu lists the invitations you received and the open games you can join. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
 
+A map from a server can bring its own rules, and names and sounds for its own units. It cannot change your keys, the game's own words, sounds or help, or anything a mod you installed defines. The game ignores those parts of the map and notes them in `tmp/client.log`. A map that you put in a `multi` folder yourself keeps every power.
+
 In a game room, the host invites players and computers, sets the alliances and factions, and starts the game. The other players choose their faction and say when they are ready.
 
 | Key | In the menus | In a game |
