@@ -169,3 +169,119 @@ fn a_control_of_too_many_ids_is_ignored_and_the_game_goes_on() {
     assert!(!entity_events(&events).contains(&EntityEvent::OrderOk));
     w.update();
 }
+
+#[test]
+fn cancelling_a_training_that_was_never_paid_for_refunds_nothing() {
+    let (mut w, me, _) = game();
+    let th = common::find_player_unit(&w, me, "townhall", 0).unwrap();
+    assert_eq!(w.player(me).resources, [10000, 10000]);
+    // A peasant costs 4000 gold: two are paid for, 2000 is left.
+    for _ in 0..2 {
+        w.queue_command(me, &format!("control {th}"));
+        w.queue_command(me, "order 0 0 train peasant");
+        w.update();
+    }
+    assert_eq!(w.player(me).resources, [2000, 10000]);
+    for _ in 0..3 {
+        w.queue_command(me, &format!("control {th}"));
+        w.queue_command(me, "order 0 0 train peasant");
+        w.queue_command(me, "order 0 0 cancel_training");
+        w.update();
+    }
+    assert_eq!(w.player(me).resources, [2000, 10000]);
+    assert_eq!(w.entity(th).unwrap().orders.len(), 2);
+}
+
+#[test]
+fn cancelling_a_training_that_has_finished_refunds_nothing() {
+    let (mut w, me, _) = game();
+    let th = common::find_player_unit(&w, me, "townhall", 0).unwrap();
+    let peasants = |w: &World| {
+        w.player(me)
+            .units
+            .iter()
+            .filter(|&&u| &*w.entity(u).unwrap().type_name == "peasant")
+            .count()
+    };
+    let before = peasants(&w);
+    w.queue_command(me, &format!("control {th}"));
+    w.queue_command(me, "order 0 0 train peasant");
+    w.update();
+    while peasants(&w) == before {
+        w.update();
+    }
+    // The finished order waits in the queue until the townhall's next
+    // update, which comes after the commands of the next turn.
+    assert!(w.entity(th).unwrap().orders[0].is_complete);
+    let used_food = w.player(me).used_food;
+    w.queue_command(me, &format!("control {th}"));
+    w.queue_command(me, "order 0 0 cancel_training");
+    w.update();
+    assert_eq!(w.player(me).resources, [6000, 10000]);
+    assert_eq!(w.player(me).used_food, used_food);
+    assert_eq!(peasants(&w), before + 1);
+}
+
+/// A player who quits and is disconnected in the same turn sends "quit"
+/// twice; the second comes from a player who has already left.
+#[test]
+fn a_player_who_has_left_gives_no_more_commands() {
+    let (mut w, me, you) = game();
+    w.queue_command(you, "quit");
+    w.queue_command(you, "quit");
+    w.update();
+    assert_eq!(w.ex_players, [you]);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    let told = w
+        .drain_events(me)
+        .iter()
+        .filter(|e| matches!(e, Event::VoiceImportant(_)))
+        .count();
+    assert_eq!(told, 2, "has been defeated, then has just quit, once each");
+    w.queue_command(you, "quit");
+    w.update();
+    assert_eq!(w.ex_players, [you]);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+/// The interface sends the center of one of the nine subsquares of a
+/// square; another player's order may carry any number.
+#[test]
+fn a_zoom_outside_its_square_is_refused() {
+    let (mut w, me, _) = game();
+    let peasant = common::find_player_unit(&w, me, "peasant", 0).unwrap();
+    let a1 = w.square(w.square_by_name("a1").unwrap());
+    let (id, y) = (a1.id, a1.y);
+    let east = a1.x + (a1.xmax - a1.xmin) / 3;
+    w.queue_command(me, &format!("control {peasant}"));
+    w.queue_command(
+        me,
+        &format!("order 0 0 build farm zoom-{id}-9223372036854775807-{y}"),
+    );
+    w.update();
+    assert_eq!(
+        w.drain_warnings(),
+        [format!(
+            "problem with order: [\"build\", \"farm\", \"zoom-{id}-9223372036854775807-{y}\"]: \
+             the zoom is outside its square"
+        )]
+    );
+    let keywords = |w: &World| {
+        w.entity(peasant)
+            .unwrap()
+            .orders
+            .iter()
+            .map(|o| o.keyword)
+            .collect::<Vec<_>>()
+    };
+    // The order was queued before its target was read. With no target, it
+    // is impossible at its first execution and leaves at the next turn.
+    w.update();
+    assert_eq!(keywords(&w), []);
+    assert_eq!(w.player(me).resources, [10000, 10000]);
+    // The center of the east subsquare, as the interface sends it.
+    w.queue_command(me, &format!("order 0 0 go zoom-{id}-{east}-{y}"));
+    w.update();
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    assert_eq!(keywords(&w), [Keyword::Go]);
+}
