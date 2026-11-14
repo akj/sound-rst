@@ -6,6 +6,8 @@ use soundrts_world::msgparts as mp;
 use crate::client::Client;
 use crate::config::Login;
 use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, letters_and_digits};
+use crate::net::words;
+use crate::sound_and_speech::sound_and_speech_menu;
 
 fn text(s: &str) -> Msg {
     vec![MsgPart::from(s)]
@@ -43,7 +45,7 @@ pub fn main_menu(cx: &mut Client) -> Result<(), Exit> {
     .run_loop(cx)
 }
 
-/// Login, mods, soundpacks, and the user folder.
+/// Login, sound and speech, mods, soundpacks, and the user folder.
 pub fn options_menu(cx: &mut Client) -> Result<(), Exit> {
     Menu::new(
         msg(mp::OPTIONS_MENU),
@@ -51,6 +53,10 @@ pub fn options_menu(cx: &mut Client) -> Result<(), Exit> {
             Choice::new(
                 msg(mp::MODIFY_LOGIN),
                 Action::run(|cx| modify_login(cx).map(|()| Flow::Stay)),
+            ),
+            Choice::new(
+                text(words::SOUND_AND_SPEECH),
+                Action::run(|cx| sound_and_speech_menu(cx).map(|()| Flow::Stay)),
             ),
             Choice::new(msg(mp::MODS), Action::run(mods_menu)),
             Choice::new(msg(mp::SOUNDPACKS), Action::run(soundpacks_menu)),

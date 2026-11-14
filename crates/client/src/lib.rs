@@ -38,6 +38,7 @@ pub mod rodio_output;
 pub mod session;
 pub mod singleplayer;
 pub mod sound;
+pub mod sound_and_speech;
 pub mod sound_cache;
 pub mod style;
 #[cfg(any(test, feature = "testkit"))]

@@ -1,9 +1,9 @@
 # Options: modify the login (typed characters, a rejected character,
 # Backspace, Enter), a key pressed during the non-interruptible "new login"
-# alert (dropped), an empty login (refused), Escape (login kept), the mods
-# menu (Back closes the options menu too), the soundpacks menu, then
-# choosing a soundpack: the main menu comes back with a new window title,
-# and quitting it exits the client.
+# alert (dropped), an empty login (refused), Escape (login kept), the sound
+# and speech menu, the mods menu (Back closes the options menu too), the
+# soundpacks menu, then choosing a soundpack: the main menu comes back with
+# a new window title, and quitting it exits the client.
 language en
 login player
 seed 1
@@ -36,7 +36,45 @@ key DOWN
 key RETURN
 type z
 key ESCAPE
+# sound and speech: every item, wrapping round to the first; the volume
+# changed with Enter and End; a news item cycled through its four values;
+# first-letter search forwards and backwards; the speech rate measured
+# (Space starts the sentence, and Return comes when its estimated speech
+# ends: a held key's repeats would not end it, and steps release no key),
+# then a key far too early; Escape goes back to the options menu
+key DOWN
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key END
+key DOWN
+key RETURN
+key RETURN
+key RETURN
+key RETURN
+key s
+key SHIFT s
+key RETURN
+key SPACE
+key RETURN
+key RETURN
+key SPACE
+interrupt_after 0.5 key RETURN
+key ESCAPE
 # the mods menu, browsed in full, then Escape
+key DOWN
 key DOWN
 key DOWN
 key RETURN
@@ -56,6 +94,7 @@ key DOWN
 key DOWN
 key DOWN
 key RETURN
+key DOWN
 key DOWN
 key DOWN
 key DOWN

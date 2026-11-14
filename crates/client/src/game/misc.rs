@@ -395,7 +395,12 @@ impl GameInterface {
     fn game_menu_chosen(&mut self, cx: &mut Client, choice: Option<GameMenuChoice>) {
         match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
-            Some(GameMenuChoice::Speed(s)) => self.send_command(cx, Command::Speed(s)),
+            Some(GameMenuChoice::Speed(s)) => {
+                self.send_command(cx, Command::Speed(s));
+                // The next single-player game starts at this speed.
+                cx.config.speed = s;
+                cx.save_config();
+            }
             None => {}
         }
     }
