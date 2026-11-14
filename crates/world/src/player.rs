@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::ai::Computer;
 use crate::entity::{Entity, EntityId, SquareId, StatType};
 use crate::events::Event;
+use crate::message::TurnMessage;
 use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::nofloat::PRECISION;
@@ -226,6 +227,15 @@ impl PlayerStats {
     }
 }
 
+/// The end of a local human's turn, as the world records it for the host.
+#[derive(Debug)]
+pub(crate) struct EndOfTurn {
+    /// How many of the player's events came before it.
+    pub(crate) after_events: usize,
+    /// What the player knew then, without the events.
+    pub(crate) message: TurnMessage,
+}
+
 /// A player of the game.
 pub struct Player {
     /// The id in the text protocol (players share the entity counter).
@@ -292,11 +302,15 @@ pub struct Player {
     /// The random computer player has everything it requires.
     pub cheat_has_all: bool,
     pub(crate) events: Vec<Event>,
+    /// The end of the last turn, for a local human, until the host takes
+    /// it.
+    pub(crate) end_of_turn: Option<EndOfTurn>,
     /// The state of a scripted computer player.
     pub(crate) ai: Option<Box<Computer>>,
 }
 
-/// Every field but the events, which only a local human records.
+/// Every field but the events and the end of the turn, which only a
+/// local human records.
 impl Hash for Player {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let Player {
@@ -346,6 +360,7 @@ impl Hash for Player {
             places_to_explore,
             cheat_has_all,
             events: _,
+            end_of_turn: _,
             ai,
         } = self;
         obj_id.hash(state);
@@ -460,6 +475,7 @@ impl Player {
             places_to_explore: None,
             cheat_has_all: false,
             events: Vec::new(),
+            end_of_turn: None,
             ai: None,
         }
     }

@@ -258,3 +258,67 @@ fn key_help_turns_on_during_a_story_and_the_story_is_still_said() {
         ]
     );
 }
+
+/// What the interface knows of a turn: its message from the moment the
+/// turn is taken, its own copies of the entities once the end of the turn
+/// is handled. On the turn that ends the game, the end of the turn is as
+/// it was before the players left, and the answers as they are after.
+#[test]
+fn the_last_turn_ends_before_the_players_leave_and_is_answered_after() {
+    use soundrts_world::{Cheat, Command};
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let me = g.game.me;
+    g.game
+        .send_command(&h.client, Command::Cheat(Cheat::Victory));
+    let handled = g.game.turns_handled;
+    while !g.game.view().players().is_empty() {
+        h.step(&mut g);
+    }
+    // Taken: every player has left, and the turn's end waits, then the
+    // player's leaving.
+    assert_eq!(g.game.turns_handled, handled);
+    assert!(g.game.view().has_victory());
+    assert!(g.game.view().own_units().all(|u| u.place.is_none()));
+    assert!(matches!(g.game.srv_queue.back(), Some(SrvEvent::Quit)));
+    while g.game.turns_handled == handled {
+        h.step(&mut g);
+    }
+    // The end of the turn handled: the player's units are still there.
+    let mine = |g: &TestGame| {
+        g.game
+            .dobjets
+            .values()
+            .filter(|v| v.player() == Some(me) && v.place().is_some())
+            .count()
+    };
+    assert!(mine(&g) > 0);
+    assert!(!g.game.end_loop);
+    h.step(&mut g);
+    assert!(g.game.end_loop, "the player has left");
+    // The statistics come with the end of the game.
+    assert!(g.game.view().stats().is_none());
+    g.game.end_game();
+    assert!(g.game.view().stats().is_some());
+}
+
+/// Playing as another player: what the interface reads is that player's
+/// at once, from a seat that remembers nothing yet.
+#[test]
+fn playing_as_another_player_starts_a_new_seat_at_once() {
+    use soundrts_world::Cheat;
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let me = g.game.me;
+    let other = *g.game.view().players().iter().find(|&&p| p != me).unwrap();
+    let home = g.game.place.unwrap();
+    assert_ne!(g.game.view().terrain(home), "");
+    let turn = g.game.view().turn();
+    g.game.cheat_at_once(Cheat::PlayAs(other));
+    assert_eq!((g.game.me, g.game.view().player()), (other, other));
+    assert_eq!(g.game.view().turn(), turn);
+    assert_eq!(g.game.view().terrain(home), "");
+    let theirs = g.game.host.world().player(other).units.clone();
+    let told: Vec<_> = g.game.view().own_units().map(|u| u.id).collect();
+    assert_eq!(told, theirs);
+}

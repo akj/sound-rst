@@ -4,8 +4,8 @@
 //! there is refused. The encoded form is proved in the protocol crate.
 
 use super::*;
+use crate::seat_view::tests::read;
 use crate::test_games::{Game, allies_sharing_control, cheat_mode_and_defeat};
-use crate::view::tests::read;
 
 fn entities(m: &TurnMessage) -> impl Iterator<Item = &KnownEntity> {
     m.perceived.iter().chain(&m.remembered)

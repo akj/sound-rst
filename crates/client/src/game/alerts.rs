@@ -164,7 +164,7 @@ impl GameInterface {
     /// Says when a kind of unit can do more than before.
     pub(crate) fn send_menu_alerts_if_needed(&mut self, cx: &mut Client) {
         let mut done: Vec<String> = Vec::new();
-        for e in self.host.view(self.me).own_units() {
+        for e in self.seat.own_units() {
             let u = e.id;
             let type_name = e.type_name.to_string();
             // A view of each unit, as the original makes one: it draws its

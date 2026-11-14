@@ -13,7 +13,7 @@ use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{Keyword, Mode, Order, OrderInfo, Request, TargetRef};
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
-use crate::view::Comrades;
+use crate::seat_view::Comrades;
 use crate::world::{Abort, Res, World};
 
 /// The effects of an ability that its `use` order may always be given for.

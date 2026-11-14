@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn the_zoom_cuts_a_square_in_nine_and_crosses_into_the_next() {
         let host = host();
-        let view = host.view(host.seats()[0]);
+        let view = soundrts_world::SeatView::new(host.game_start(), host.message(host.seats()[0]));
         // b3
         let sq = view.square(view.square_at(1, 2).unwrap());
         let mut z = Zoom::new(sq);

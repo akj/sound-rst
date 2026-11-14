@@ -1,754 +1,507 @@
-//! The proof that a seat's view made only of what it was sent answers
-//! every question the interface asks, alike: whole games are played, and
-//! on every turn, for every player, both views are asked every question of
-//! [`View`] with every argument the interface passes.
-
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Debug;
+//! What a seat knows, question by question, and the proof that it knows
+//! all the world tells it ([`proof`]).
 
 use super::*;
-use crate::command::{Cheat, Command};
-use crate::events::Event;
-use crate::player::Controller;
+use crate::player::{Controller, Remembrance};
 use crate::setup::GameSetup;
-use crate::test_games::{
-    Case, allies_sharing_control, cheat_mode_and_defeat, computer, mods, sixteen,
-};
-use crate::view::View;
-use crate::view::tests::read;
 use crate::world::{World, multiplayer_default_triggers};
 
-/// The disagreements and the number of answers compared.
-#[derive(Default)]
-struct Tally {
-    compared: u64,
-    by_question: BTreeMap<&'static str, u64>,
-    /// How often a case worth comparing came up: what the comparisons
-    /// covered beyond empty answers.
-    seen: BTreeMap<String, u64>,
-    differences: Vec<String>,
+mod proof;
+
+pub(crate) fn read(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../vendor/soundrts-upstream")
+        .join(relative);
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"));
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
-impl Tally {
-    fn saw(&mut self, what: impl Into<String>) {
-        *self.seen.entry(what.into()).or_default() += 1;
-    }
-
-    fn same<T: PartialEq + Debug>(&mut self, question: &'static str, args: impl Debug, a: T, b: T) {
-        self.compared += 1;
-        *self.by_question.entry(question).or_default() += 1;
-        if a != b && self.differences.len() < 40 {
-            self.differences.push(format!(
-                "{question}{args:?}: the world's view {a:?}, the seat's {b:?}"
-            ));
-        }
-    }
-}
-
-/// What the interface keeps of earlier turns, kept from the world's view
-/// as the interface keeps it today.
-#[derive(Default)]
-struct Kept {
-    terrain: BTreeMap<SquareId, String>,
-    upgrades: BTreeMap<EntityId, Vec<String>>,
-}
-
-impl Kept {
-    fn note(&mut self, v: &View, w: &World) {
-        let pl = w.player(v.player());
-        for &s in pl
-            .observed_squares
-            .iter()
-            .chain(&pl.partly_observed_squares)
-        {
-            self.terrain.insert(s, v.terrain(s).to_owned());
-        }
-        for &id in &pl.perception {
-            if let Some(e) = v.perceived(id)
-                && e.is_creature()
-                && e.player.is_some()
-            {
-                self.upgrades.insert(id, v.unit_upgrades(id));
-            }
-        }
-        self.upgrades.retain(|&id, _| v.known(id).is_some());
-    }
-}
-
-/// Asks both views every question, with every argument the interface
-/// passes, and a few it does not.
-fn compare(t: &mut Tally, w: &World, v: &View, s: &SeatView, kept: &Kept, label: &str) {
-    let me = v.player();
-    let pl = w.player(me);
-    let at = |what: &str| format!("{label} {what}");
-    if pl.cheatmode {
-        t.saw("turns of a seat in cheat mode");
-    }
-    if pl.cheat_has_all {
-        t.saw("turns of a seat that has everything");
-    }
-    if pl.has_been_defeated {
-        t.saw("turns of a defeated seat");
-    }
-    t.saw(format!(
-        "unperceived controlled units: {}",
-        s.message().unperceived_units.len().min(1)
-    ));
-    for _ in &s.message().unperceived_units {
-        t.saw("unperceived controlled unit");
-    }
-
-    // 1. The game, known to everyone.
-    t.same("player", at(""), v.player(), s.player());
-    t.same("time", at(""), v.time(), s.time());
-    t.same("turn", at(""), v.turn(), s.turn());
-    t.same(
-        "cheats_allowed",
-        at(""),
-        v.cheats_allowed(),
-        s.cheats_allowed(),
-    );
-    t.same(
-        "map_objective",
-        at(""),
-        v.map_objective(),
-        s.map_objective(),
-    );
-    t.same("map_intro", at(""), v.map_intro(), s.map_intro());
-    t.same("square_width", at(""), v.square_width(), s.square_width());
-    t.same("square_count", at(""), v.square_count(), s.square_count());
-    t.same("grid_max", at(""), v.grid_max(), s.grid_max());
-    let (cols, rows) = v.grid_max();
-    for col in -1..=cols + 1 {
-        for row in -1..=rows + 1 {
-            t.same(
-                "square_at",
-                (col, row),
-                v.square_at(col, row),
-                s.square_at(col, row),
-            );
-        }
-    }
-    let squares: Vec<SquareId> = (0..v.square_count() as u32).map(SquareId).collect();
-    for &q in &squares {
-        let (a, b) = (v.square(q), s.square(q));
-        let facts = |m: MapSquare| {
-            (
-                m.protocol_id(),
-                (m.col(), m.row()),
-                m.name().to_owned(),
-                m.title().clone(),
-                (m.center(), m.min(), m.max()),
-                (m.high_ground(), m.is_water()),
-                m.neighbors().to_vec(),
-            )
-        };
-        t.same("square", q, facts(a), facts(b));
-    }
-    // The terrain the interface asks for: the squares observed now, fully
-    // or partly. Of the others it keeps what it last saw.
-    for &q in pl
-        .observed_squares
-        .iter()
-        .chain(&pl.partly_observed_squares)
-    {
-        t.same("terrain", q, v.terrain(q), s.terrain(q));
-    }
-    for &q in &squares {
-        let k = kept.terrain.get(&q).map_or("", String::as_str);
-        if !k.is_empty() && k != v.terrain(q) {
-            t.saw("square whose terrain changed since the seat saw it");
-        }
-        t.same("terrain as last seen", q, k, s.terrain(q));
-    }
-    let exits: Vec<EntityId> = s.game_start().map.exits.iter().map(|x| x.id).collect();
-    for &x in &exits {
-        t.same(
-            "other_side_of_exit",
-            x,
-            v.other_side_of_exit(x),
-            s.other_side_of_exit(x),
-        );
-    }
-
-    // 2. The player's own state.
-    t.same("resources", at(""), v.resources(), s.resources());
-    t.same(
-        "available_food",
-        at(""),
-        v.available_food(),
-        s.available_food(),
-    );
-    t.same("used_food", at(""), v.used_food(), s.used_food());
-    let own: Vec<_> = v.own_units().collect();
-    t.same(
-        "own_units",
-        at(""),
-        &own,
-        &s.own_units().collect::<Vec<_>>(),
-    );
-    let controlled: Vec<KnownEntity> = v.controlled_units().collect();
-    t.same(
-        "controlled_units",
-        at(""),
-        &controlled,
-        &s.controlled_units().collect::<Vec<_>>(),
-    );
-    let players: Vec<PlayerId> = w.all_players().map(|(p, _)| p).collect();
-    for &p in &players {
-        t.same("controls", p, v.controls(p), s.controls(p));
-        t.same("is_ally", p, v.is_ally(p), s.is_ally(p));
-        t.same("player_name", p, v.player_name(p), s.player_name(p));
-        for &q in &players {
-            t.same("allied", (p, q), v.allied(p, q), s.allied(p, q));
-        }
-    }
-    let mut names: Vec<&str> = w.groups.iter().map(|(n, _)| n.as_str()).collect();
-    names.push("no such group");
-    for n in names {
-        if !v.recallable_group(n).is_empty() {
-            t.saw("recallable group with units");
-        }
-        t.same(
-            "recallable_group",
-            n,
-            v.recallable_group(n),
-            s.recallable_group(n),
-        );
-    }
-    t.same(
-        "partly_observed_squares",
-        at(""),
-        v.partly_observed_squares(),
-        s.partly_observed_squares(),
-    );
-    t.same("objectives", at(""), v.objectives(), s.objectives());
-    t.same("cheat_mode", at(""), v.cheat_mode(), s.cheat_mode());
-    t.same("has_victory", at(""), v.has_victory(), s.has_victory());
-
-    // 3. What everyone may know of the other players.
-    t.same("players", at(""), v.players(), s.players());
-    if !v.defeated().is_empty() {
-        t.saw("defeated player");
-    }
-    t.same("defeated", at(""), &v.defeated()[..], s.defeated());
-
-    // 4. Entities the player perceives or remembers, and every other id.
-    let ids: Vec<EntityId> = w
-        .entities()
-        .map(|e| e.id)
-        .chain([EntityId(u32::MAX)])
-        .collect();
-    for &id in &ids {
-        let known = v.known(id);
-        t.same("perceived", id, v.perceived(id), s.perceived(id));
-        t.same("remembered", id, v.remembered(id), s.remembered(id));
-        t.same("known", id, &known, &s.known(id));
-        t.same("activity", id, v.activity(id), s.activity(id));
-        t.same(
-            "remembered_activity",
-            id,
-            v.remembered_activity(id),
-            s.remembered_activity(id),
-        );
-        t.same(
-            "unit_upgrades",
-            id,
-            v.unit_upgrades(id),
-            s.unit_upgrades(id),
-        );
-        if let Some(e) = &known {
-            t.saw(if e.is_memory() {
-                "remembered entity"
-            } else {
-                "perceived entity"
-            });
-            if e.activity.is_some() {
-                t.saw(if e.is_memory() {
-                    "remembered activity"
-                } else {
-                    "activity"
-                });
-            }
-            if !e.upgrades.is_empty() {
-                t.saw("perceived entity with upgrades");
-            }
-            if e.exit.as_ref().is_some_and(|x| !x.blockers.is_empty()) {
-                t.saw("exit with a blocker");
-            }
-        }
-        if let Some(e) = known {
-            if let Some(owner) = e.player {
-                t.same(
-                    "comrades",
-                    (owner, e.place, id),
-                    v.comrades(owner, e.place, id),
-                    s.comrades(owner, e.place, id),
-                );
-            }
-            if e.is_memory() {
-                let k = kept.upgrades.get(&id).cloned().unwrap_or_default();
-                t.same(
-                    "upgrades as last seen",
-                    id,
-                    &k[..],
-                    s.remembered_upgrades(id),
-                );
-            }
-        }
-    }
-    for &x in &exits {
-        if v.exit_is_blocked(x, false) {
-            t.saw("exit blocked");
-        }
-        if v.known(x)
-            .and_then(|e| e.exit)
-            .is_some_and(|e| e.is_blocked_by_forests)
-        {
-            t.saw("exit closed by forests");
-        }
-        for open in [false, true] {
-            t.same(
-                "exit_is_blocked",
-                (x, open),
-                v.exit_is_blocked(x, open),
-                s.exit_is_blocked(x, open),
-            );
-        }
-    }
-
-    // 5. Questions computed on demand, for the units the player controls.
-    let rules = &s.game_start().rules;
-    for u in &controlled {
-        let ally = u.player != Some(me);
-        if ally {
-            t.saw("ally's unit controlled");
-        }
-        if !v.order_menu(u.id, Keyword::Train, true).is_empty() {
-            t.saw("unit with a train menu");
-        }
-        let ty = rules
-            .unit_type(&u.type_name)
-            .filter(|_| !u.is_building_site());
-        for &k in Keyword::ALL {
-            for strict in [true, false] {
-                t.same(
-                    "order_menu",
-                    (u.id, k, strict),
-                    v.order_menu(u.id, k, strict),
-                    s.order_menu(u.id, k, strict),
-                );
-            }
-            let mut types: Vec<Option<&str>> = vec![None];
-            if let (Some(attr), Some(ty)) = (k.menu_attribute(), ty) {
-                let list = questions::type_list(Some(ty), attr);
-                types.extend(list.iter().map(|t| Some(t.as_str())));
-                for name in list {
-                    let requirements = rules.unit_type(name).map_or(&[][..], |t| &t.requirements);
-                    for r in requirements.iter().chain([name]) {
-                        t.same(
-                            "owner_has",
-                            (u.id, r),
-                            v.owner_has(u.id, r),
-                            s.owner_has(u.id, r),
-                        );
-                    }
-                }
-            }
-            types.push(Some("no_such_type"));
-            for ty in types {
-                t.same(
-                    "order_info",
-                    (u.id, k, ty),
-                    v.order_info(u.id, k, ty),
-                    s.order_info(u.id, k, ty),
-                );
-            }
-        }
-        for target in targets(w, v, u) {
-            let answer = v.default_order(u.id, target);
-            let kind = match &answer {
-                Ok(Some(k)) => k.as_str(),
-                Ok(None) => "nothing",
-                Err(_) => "error",
-            };
-            t.saw(format!(
-                "default order {kind}{}",
-                if ally { ", ally's unit" } else { "" }
-            ));
-            t.same(
-                "default_order",
-                (u.id, target),
-                v.default_order(u.id, target),
-                s.default_order(u.id, target),
-            );
-        }
-    }
-    // A requirement is not known for a unit of a player not controlled.
-    for e in pl.perception.iter().filter_map(|&id| v.perceived(id)) {
-        if e.player.is_some_and(|p| !v.controls(p)) {
-            t.same(
-                "owner_has",
-                (e.id, "farm"),
-                v.owner_has(e.id, "farm"),
-                s.owner_has(e.id, "farm"),
-            );
-        }
-    }
-}
-
-/// The data sent once against the world's own state, read as the world's
-/// view read it before that data existed: both views now read the data
-/// sent, so comparing them with each other could not find it wrong.
-fn compare_start(t: &mut Tally, w: &World, s: &SeatView) {
-    for (i, sq) in w.squares.iter().enumerate() {
-        let m = s.square(SquareId(i as u32));
-        t.same(
-            "square, against the world",
-            i,
-            (
-                sq.id,
-                (sq.col, sq.row),
-                sq.name.clone(),
-                sq.title.clone(),
-                ((sq.x, sq.y), (sq.xmin, sq.ymin), (sq.xmax, sq.ymax)),
-                (sq.high_ground, sq.is_water),
-                sq.neighbors.clone(),
-            ),
-            (
-                m.protocol_id(),
-                (m.col(), m.row()),
-                m.name().to_owned(),
-                m.title().clone(),
-                (m.center(), m.min(), m.max()),
-                (m.high_ground(), m.is_water()),
-                m.neighbors().to_vec(),
-            ),
-        );
-        t.same(
-            "square_at, against the world",
-            (sq.col, sq.row),
-            w.square_at(sq.col, sq.row),
-            s.square_at(sq.col, sq.row),
-        );
-    }
-    let grid = (
-        w.squares.iter().map(|s| s.col).max().unwrap_or(0),
-        w.squares.iter().map(|s| s.row).max().unwrap_or(0),
-    );
-    t.same("grid_max, against the world", (), grid, s.grid_max());
-    t.same(
-        "square_width, against the world",
-        (),
-        w.square_width(),
-        s.square_width(),
-    );
-    t.same(
-        "square_count, against the world",
-        (),
-        w.squares.len(),
-        s.square_count(),
-    );
-    t.same(
-        "map_objective, against the world",
-        (),
-        &w.map.objective[..],
-        s.map_objective(),
-    );
-    t.same(
-        "map_intro, against the world",
-        (),
-        &w.map.intro[..],
-        s.map_intro(),
-    );
-    t.same(
-        "cheats_allowed, against the world",
-        (),
-        w.allow_cheatmode,
-        s.cheats_allowed(),
-    );
-    for e in w.entities() {
-        let other = e
-            .exit
-            .as_ref()
-            .and_then(|x| x.other_side)
-            .and_then(|o| w.entity(o)?.place);
-        t.same(
-            "other_side_of_exit, against the world",
-            e.id,
-            other,
-            s.other_side_of_exit(e.id),
-        );
-    }
-    for (p, pl) in w.all_players() {
-        t.same(
-            "player_name, against the world",
-            p,
-            pl.name(),
-            s.player_name(p),
-        );
-    }
-    for (i, ty) in w.rules.types().iter().enumerate() {
-        let id = TypeId(i as u32);
-        t.same("unit_type_by_id", id, ty, s.unit_type_by_id(id));
-        t.same("unit_type", &ty.name, Some(ty), s.unit_type(&ty.name));
-    }
-    t.same(
-        "unit_type",
-        "no_such_type",
-        None,
-        s.unit_type("no_such_type"),
-    );
-}
-
-/// The targets of a default order the interface may give `u`: its square,
-/// a point of it and one outside it, the square named by its protocol id,
-/// every entity the player knows on the unit's square and around, and an
-/// id that names nothing.
-fn targets(w: &World, v: &View, u: &KnownEntity) -> Vec<OrderTarget> {
-    let here = match u.place {
-        Some(Place::Square(q)) => q,
-        Some(Place::Inside(c)) => v
-            .known(c)
-            .and_then(|c| c.place)
-            .and_then(Place::square)
-            .unwrap_or(SquareId(0)),
-        None => SquareId(0),
-    };
-    let sq = v.square(here);
-    let (x, y) = sq.center();
-    let mut out = vec![
-        OrderTarget::Square(here),
-        OrderTarget::Point { square: here, x, y },
-        OrderTarget::Point {
-            square: here,
-            x: sq.max().0,
-            y,
-        },
-        OrderTarget::Entity(EntityId(sq.protocol_id())),
-        OrderTarget::Entity(EntityId(u32::MAX)),
-    ];
-    let near: BTreeSet<SquareId> = sq.neighbors().iter().copied().chain([here]).collect();
-    let pl = w.player(v.player());
-    let known = pl.perception.iter().chain(pl.memory.keys());
-    for &id in known {
-        if v.known(id)
-            .and_then(|e| e.place)
-            .and_then(|p| match p {
-                Place::Square(q) => Some(q),
-                Place::Inside(c) => v.known(c)?.place?.square(),
-            })
-            .is_some_and(|q| near.contains(&q))
-        {
-            out.push(OrderTarget::Entity(id));
-        }
-    }
-    out
-}
-
-/// Plays a case, and compares both views of every player on every turn.
-/// Returns the tally.
-fn play(case: &Case) -> Tally {
-    let mut w = case.world(read);
-    let players: Vec<PlayerId> = w.all_players().map(|(p, _)| p).collect();
-    let start = Arc::new(GameStart::of(&w));
-    let mut seats: Vec<(SeatView, Kept)> = players
-        .iter()
-        .map(|&p| {
-            let mut kept = Kept::default();
-            kept.note(&View::new(&w, &start, p), &w);
-            (
-                SeatView::new(Arc::clone(&start), w.turn_message(p, Vec::new())),
-                kept,
-            )
-        })
-        .collect();
-    let mut t = Tally::default();
-    compare_start(&mut t, &w, &seats[0].0);
-    for turn in 0..case.turns {
-        (case.script)(&mut w, turn);
-        w.update();
-        let digest = turn.is_multiple_of(100).then(|| w.digest_u64());
-        for (&p, (s, kept)) in players.iter().zip(&mut seats) {
-            let events: Vec<Event> = w
-                .drain_events(p)
-                .into_iter()
-                .filter(|e| !matches!(e, Event::Voila(_)))
-                .collect();
-            s.install(w.turn_message(p, events));
-            let v = View::new(&w, &start, p);
-            kept.note(&v, &w);
-            let label = format!("{} turn {} player {}", case.name, turn + 1, p.0);
-            compare(&mut t, &w, &v, s, kept, &label);
-        }
-        if let Some(d) = digest {
-            assert_eq!(d, w.digest_u64(), "asking the views changed the world");
-        }
-        if w.true_playing_players().is_empty() {
-            break;
-        }
-    }
-    compare_start(&mut t, &w, &seats[0].0);
-    let end = GameStart::of(&w);
-    assert_eq!(end.map, start.map, "{}: the map changed", case.name);
-    assert_eq!(
-        end.player_names, start.player_names,
-        "{}: a name changed",
-        case.name
-    );
-    for (&p, (s, _)) in players.iter().zip(&mut seats) {
-        s.install_end(w.game_end(p));
-        let v = View::new(&w, &start, p);
-        t.same("stats", (case.name, p), Some(v.stats()), s.stats());
-    }
-    t
-}
-
-fn report(cases: &[Case]) {
-    let mut total = Tally::default();
-    for case in cases {
-        let t = play(case);
-        eprintln!("{}: {} answers compared", case.name, t.compared);
-        total.compared += t.compared;
-        for (q, n) in t.by_question {
-            *total.by_question.entry(q).or_default() += n;
-        }
-        for (q, n) in t.seen {
-            *total.seen.entry(q).or_default() += n;
-        }
-        total.differences.extend(t.differences);
-    }
-    eprintln!("{} answers compared in all", total.compared);
-    for (q, n) in &total.by_question {
-        eprintln!("  {q}: {n}");
-    }
-    eprintln!("cases covered:");
-    for (q, n) in &total.seen {
-        eprintln!("  {q}: {n}");
-    }
-    assert!(
-        total.differences.is_empty(),
-        "the views disagree:\n{}",
-        total.differences.join("\n")
-    );
-}
-
-#[test]
-fn a_seat_knows_from_what_it_is_sent_all_the_world_tells_its_view() {
-    report(&[
-        allies_sharing_control(600),
-        cheat_mode_and_defeat(1000),
-        mods(400),
-        sixteen(60),
-    ]);
-}
-
-/// The same games, longer: run by hand with `--ignored`.
-#[test]
-#[ignore = "long: run by hand"]
-fn the_longer_games_agree_too() {
-    report(&[
-        allies_sharing_control(3000),
-        cheat_mode_and_defeat(3000),
-        mods(2000),
-        sixteen(400),
-    ]);
-}
-
-/// An ally's catapult goes into the ally's tower: its owner still
-/// perceives it, the seat only remembers it as it went in. Hurt since, the
-/// ally's peasant would repair it, and the seat says so too: a unit of the
-/// owner is read as the owner perceives it, which the seat is sent.
-#[test]
-fn a_default_order_reads_the_owners_own_unit_as_it_is_now() {
+/// A game on jl1 between the local human and another human, who gives no
+/// order unless a test does, after a few turns. Returns the world, the
+/// local human and the other.
+pub(crate) fn game() -> (World, PlayerId, PlayerId) {
     let mut me = Controller::human("me", true);
     me.alliance = Some("1".into());
-    let mut ally = Controller::human("ally", false);
-    ally.alliance = Some("1".into());
+    let mut them = Controller::human("them", false);
+    them.alliance = Some("2".into());
     let setup = GameSetup {
         rules: read("res/rules.txt"),
         ai: read("res/ai.txt"),
-        map: read("res/multi/jl7.txt"),
-        seed: 2,
-        controllers: vec![me, ally, computer("timers", "2")],
-        default_triggers: multiplayer_default_triggers(),
-        allow_cheatmode: false,
-        random_starts: true,
-        equivalents: true,
-    };
-    let (mut w, seats) = setup.build_world().unwrap();
-    let (me, ally) = (seats[0], seats[1]);
-    for p in [me, ally] {
-        w.player_mut(p).allied_control = vec![me, ally];
-    }
-    w.update();
-    let peasant = crate::view::tests::unit(&w, ally, "peasant");
-    let q = w.entity(peasant).unwrap().square().unwrap();
-    let (x, y) = (w.square(q).x, w.square(q).y);
-    let make = |w: &mut World, kind: &str| {
-        let t = w.rules.type_id(kind).unwrap();
-        w.create_creature(t, Some(ally), Place::Square(q), x, y)
-            .unwrap()
-    };
-    let catapult = make(&mut w, "catapult");
-    let tower = make(&mut w, "guardtower");
-    w.update();
-    w.load(tower, catapult);
-    w.update();
-    assert!(w.player(me).memory.contains_key(&catapult));
-    w.entity_mut(catapult).unwrap().hp = 1000;
-
-    let start = Arc::new(GameStart::of(&w));
-    let v = View::new(&w, &start, me);
-    let s = SeatView::new(Arc::clone(&start), w.turn_message(me, Vec::new()));
-    let target = OrderTarget::Entity(catapult);
-    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Repair)));
-    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Repair)));
-}
-
-/// In cheat mode a player perceives only what is on the squares: its own
-/// catapult in its own tower is remembered as it went in, by the world as
-/// by the seat, though it has been hurt since.
-#[test]
-fn in_cheat_mode_the_seats_own_unit_inside_is_remembered() {
-    let mut me = Controller::human("me", true);
-    me.alliance = Some("1".into());
-    let setup = GameSetup {
-        rules: read("res/rules.txt"),
-        ai: read("res/ai.txt"),
-        map: read("res/multi/jl7.txt"),
-        seed: 2,
-        controllers: vec![me, computer("timers", "2")],
+        map: read("res/multi/jl1.txt"),
+        seed: 3,
+        controllers: vec![me, them],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
         random_starts: true,
         equivalents: true,
     };
     let (mut w, seats) = setup.build_world().unwrap();
-    let me = seats[0];
-    w.queue(me, Command::Cheat(Cheat::ToggleMode));
-    w.update();
-    assert!(w.player(me).cheatmode);
-    let peasant = crate::view::tests::unit(&w, me, "peasant");
-    let q = w.entity(peasant).unwrap().square().unwrap();
-    let (x, y) = (w.square(q).x, w.square(q).y);
-    let make = |w: &mut World, kind: &str| {
-        let t = w.rules.type_id(kind).unwrap();
-        w.create_creature(t, Some(me), Place::Square(q), x, y)
-            .unwrap()
-    };
-    let catapult = make(&mut w, "catapult");
-    let tower = make(&mut w, "guardtower");
-    w.update();
-    w.load(tower, catapult);
-    w.update();
-    assert!(w.player(me).memory.contains_key(&catapult));
-    w.entity_mut(catapult).unwrap().hp = 1000;
+    for _ in 0..5 {
+        w.update();
+    }
+    (w, seats[0], seats[1])
+}
 
-    let start = Arc::new(GameStart::of(&w));
-    let v = View::new(&w, &start, me);
-    let s = SeatView::new(Arc::clone(&start), w.turn_message(me, Vec::new()));
-    let target = OrderTarget::Entity(catapult);
-    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Go)));
-    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Go)));
+/// The first unit of `p` of this type.
+pub(crate) fn unit(w: &World, p: PlayerId, type_name: &str) -> EntityId {
+    w.player(p)
+        .units
+        .iter()
+        .copied()
+        .find(|&u| &*w.entity(u).unwrap().type_name == type_name)
+        .unwrap_or_else(|| panic!("no {type_name}"))
+}
+
+fn square_of(w: &World, id: EntityId) -> SquareId {
+    w.entity(id).unwrap().square().unwrap()
+}
+
+/// Makes `p` remember an entity as it is now.
+pub(crate) fn remember(w: &mut World, p: PlayerId, id: EntityId) {
+    let r = Remembrance {
+        time_stamp: w.time,
+        snapshot: Arc::new(w.entity(id).unwrap().clone()),
+    };
+    w.player_mut(p).memory.insert(id, r);
+}
+
+/// What `p` is told of the world as it is now, with the terrain and the
+/// upgrades it sees noted.
+pub(crate) fn seat(w: &World, p: PlayerId) -> SeatView {
+    let mut s = SeatView::new(Arc::new(GameStart::of(w)), w.turn_message(p, Vec::new()));
+    s.remember();
+    s
+}
+
+/// Runs the commands of `p` in the next turn.
+pub(crate) fn command(w: &mut World, p: PlayerId, lines: &[String]) {
+    for l in lines {
+        w.queue_command(p, l);
+    }
+    w.update();
+}
+
+#[test]
+fn a_seat_knows_no_entity_it_neither_perceives_nor_remembers() {
+    let (mut w, me, them) = game();
+    let townhall = unit(&w, them, "townhall");
+    let peasant = unit(&w, me, "peasant");
+    assert!(!w.player(me).perception.contains(&townhall));
+    let v = seat(&w, me);
+    assert!(v.perceived(townhall).is_none());
+    assert!(v.remembered(townhall).is_none());
+    assert_eq!(v.perceived(peasant).map(|e| e.id), Some(peasant));
+    assert!(v.remembered(peasant).is_none());
+
+    remember(&mut w, me, townhall);
+    let v = seat(&w, me);
+    assert!(v.perceived(townhall).is_none());
+    assert_eq!(
+        v.remembered(townhall).map(|r| (r.id, r.last_seen)),
+        Some((townhall, Some(1500)))
+    );
+}
+
+#[test]
+fn an_entity_is_known_as_perceived_else_as_remembered() {
+    let (mut w, me, them) = game();
+    let townhall = unit(&w, them, "townhall");
+    let peasant = unit(&w, me, "peasant");
+    // Neither perceived nor remembered: unknown, though it is there.
+    assert!(w.entity(townhall).is_some());
+    assert!(seat(&w, me).known(townhall).is_none());
+
+    // Remembered: the copy as last seen, not the town hall now.
+    remember(&mut w, me, townhall);
+    let seen_hp = w.entity(townhall).unwrap().hp;
+    w.entity_mut(townhall).unwrap().hp = 1000;
+    assert_ne!(seen_hp, 1000);
+    let v = seat(&w, me);
+    let e = v.known(townhall).unwrap();
+    assert_eq!((e.id, e.hp, e.last_seen), (townhall, seen_hp, Some(1500)));
+
+    // Perceived: as it is now.
+    let e = v.known(peasant).unwrap();
+    assert_eq!((e.id, e.last_seen), (peasant, None));
+}
+
+#[test]
+fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
+    let (mut w, me, them) = game();
+    let home = square_of(&w, unit(&w, me, "townhall"));
+    let exit = w
+        .square(home)
+        .exits
+        .iter()
+        .copied()
+        .find(|&x| {
+            w.entity(x)
+                .unwrap()
+                .exit
+                .as_ref()
+                .unwrap()
+                .other_side
+                .is_some()
+        })
+        .unwrap();
+    let other_side = w
+        .entity(exit)
+        .unwrap()
+        .exit
+        .as_ref()
+        .unwrap()
+        .other_side
+        .unwrap();
+    let blocker = unit(&w, them, "peasant");
+    assert!(!seat(&w, me).exit_is_blocked(exit, true));
+    assert!(!seat(&w, me).exit_is_blocked(exit, false));
+
+    // A blocker on the other side that the player has never seen: the
+    // exit is open for the player, though it is closed.
+    w.entity_mut(other_side)
+        .unwrap()
+        .exit
+        .as_mut()
+        .unwrap()
+        .blockers
+        .push(blocker);
+    let v = seat(&w, me);
+    assert!(v.known(blocker).is_none());
+    assert!(!v.exit_is_blocked(exit, true));
+    assert!(!v.exit_is_blocked(exit, false));
+
+    // Once the player remembers the blocker and the other side with it,
+    // the exit is closed.
+    remember(&mut w, me, other_side);
+    remember(&mut w, me, blocker);
+    let v = seat(&w, me);
+    assert!(v.exit_is_blocked(exit, true));
+    assert!(v.exit_is_blocked(exit, false));
+    // The exit's place on the other side is part of the map.
+    assert_eq!(
+        v.other_side_of_exit(exit),
+        w.entity(other_side).unwrap().place
+    );
+    assert_eq!(v.other_side_of_exit(blocker), None);
+}
+
+#[test]
+fn a_friendly_gate_lets_the_player_through() {
+    let (mut w, me, _) = game();
+    let home = square_of(&w, unit(&w, me, "townhall"));
+    let exit = w.square(home).exits[0];
+    let gate = unit(&w, me, "farm");
+    w.entity_mut(gate).unwrap().stats.is_a_gate = 1;
+    w.entity_mut(exit)
+        .unwrap()
+        .exit
+        .as_mut()
+        .unwrap()
+        .blockers
+        .push(gate);
+    let v = seat(&w, me);
+    assert!(v.perceived(exit).is_some());
+    assert!(!v.exit_is_blocked(exit, true));
+    assert!(v.exit_is_blocked(exit, false));
+}
+
+#[test]
+fn the_comrades_of_a_unit_are_its_owners_units_the_player_sees_beside_it() {
+    let (w, me, them) = game();
+    let v = seat(&w, me);
+    // The computer's peasant has a town hall and a farm beside it, unseen.
+    let peasant = unit(&w, them, "peasant");
+    let place = w.entity(peasant).unwrap().place;
+    let beside = w
+        .player(them)
+        .units
+        .iter()
+        .filter_map(|&u| w.entity(u))
+        .filter(|u| u.place == place && u.id != peasant)
+        .count();
+    assert_eq!(beside, 2);
+    assert_eq!(
+        v.comrades(them, place, peasant),
+        Comrades {
+            units: 0,
+            soldiers: 0
+        }
+    );
+    // The player's own peasant: its town hall and farm, seen.
+    let mine = unit(&w, me, "peasant");
+    let place = w.entity(mine).unwrap().place;
+    assert_eq!(
+        v.comrades(me, place, mine),
+        Comrades {
+            units: 2,
+            soldiers: 0
+        }
+    );
+}
+
+#[test]
+fn only_a_perceived_unit_has_upgrades() {
+    let (mut w, me, them) = game();
+    for p in [me, them] {
+        let square = w
+            .square(square_of(&w, unit(&w, p, "townhall")))
+            .name
+            .clone();
+        command(&mut w, p, &[format!("cmd add_units {square} footman")]);
+        w.player_mut(p).upgrades.push("melee_weapon".into());
+    }
+    let theirs = unit(&w, them, "footman");
+    let mine = unit(&w, me, "footman");
+    remember(&mut w, me, theirs);
+    let v = seat(&w, me);
+    // The computer's footman, remembered: its owner's upgrades now are
+    // not the player's to know (the interface keeps those it saw).
+    assert!(v.perceived(theirs).is_none());
+    assert_eq!(w.unit_upgrades(theirs), ["melee_weapon"]);
+    assert_eq!(v.unit_upgrades(theirs), Vec::<String>::new());
+    // The player's own footman.
+    assert_eq!(v.unit_upgrades(mine), ["melee_weapon"]);
+}
+
+#[test]
+fn a_remembered_unit_is_busy_with_what_it_did_when_last_seen() {
+    let (mut w, me, them) = game();
+    let peasant = unit(&w, them, "peasant");
+    let farm = unit(&w, them, "farm");
+    // Last seen idle; repairing now.
+    remember(&mut w, me, peasant);
+    w.entity_mut(farm).unwrap().hp = 1000;
+    command(
+        &mut w,
+        them,
+        &[
+            format!("control {}", peasant.0),
+            format!("order 0 0 repair {}", farm.0),
+        ],
+    );
+    for _ in 0..30 {
+        w.update();
+    }
+    let v = seat(&w, me);
+    assert!(v.perceived(peasant).is_none());
+    assert_eq!(w.activity(peasant).as_deref(), Some("building"));
+    assert_eq!(v.activity(peasant), None);
+    assert_eq!(v.remembered_activity(peasant), None);
+
+    // Last seen repairing.
+    remember(&mut w, me, peasant);
+    let v = seat(&w, me);
+    assert_eq!(v.remembered_activity(peasant).as_deref(), Some("building"));
+}
+
+#[test]
+fn a_remembered_unit_gathers_from_what_the_player_knows() {
+    let (mut w, me, them) = game();
+    let peasant = unit(&w, them, "peasant");
+    // A gold mine the player knows nothing of. The computer is made to
+    // see it, so that its order aims at the mine itself.
+    let mine = *w
+        .player(them)
+        .memory
+        .keys()
+        .find(|&&o| &*w.entity(o).unwrap().type_name == "goldmine")
+        .unwrap();
+    assert!(seat(&w, me).known(mine).is_none());
+    w.player_mut(them).perception.insert(mine);
+    command(
+        &mut w,
+        them,
+        &[
+            format!("control {}", peasant.0),
+            format!("order 0 0 gather {}", mine.0),
+        ],
+    );
+    for _ in 0..1000 {
+        if w.activity(peasant).is_some() {
+            break;
+        }
+        w.update();
+    }
+    assert_eq!(w.activity(peasant).as_deref(), Some("exploiting_goldmine"));
+    // Last seen gathering from a mine the player knows nothing of: no
+    // activity; once the player remembers the mine, it is named.
+    remember(&mut w, me, peasant);
+    assert_eq!(seat(&w, me).remembered_activity(peasant), None);
+    remember(&mut w, me, mine);
+    assert_eq!(
+        seat(&w, me).remembered_activity(peasant).as_deref(),
+        Some("exploiting_goldmine")
+    );
+}
+
+#[test]
+fn a_recallable_group_holds_only_the_players_units() {
+    let (mut w, me, them) = game();
+    let theirs = unit(&w, them, "peasant");
+    let mine = unit(&w, me, "peasant");
+    for (p, u) in [(them, theirs), (me, mine)] {
+        command(
+            &mut w,
+            p,
+            &[format!("control {}", u.0), "order 0 0 join_group 1".into()],
+        );
+    }
+    // The game's group 1 holds both peasants; the player recalls its own.
+    assert_eq!(w.group_list("1").unwrap(), &[theirs, mine]);
+    let v = seat(&w, me);
+    assert_eq!(v.recallable_group("1"), [mine]);
+    assert_eq!(v.recallable_group("2"), []);
+    assert_eq!(seat(&w, them).recallable_group("1"), [theirs]);
+}
+
+#[test]
+fn the_order_menus_are_the_worlds() {
+    let (w, me, _) = game();
+    let v = seat(&w, me);
+    for u in w.player(me).units.clone() {
+        for &k in Keyword::ALL {
+            for strict in [true, false] {
+                assert_eq!(v.order_menu(u, k, strict), w.order_menu(u, k, strict));
+            }
+        }
+    }
+    let peasant = unit(&w, me, "peasant");
+    assert_eq!(v.order_menu(peasant, Keyword::Go, true), ["go"]);
+    assert!(
+        v.order_menu(peasant, Keyword::Build, false)
+            .contains(&"build farm".to_owned())
+    );
+    assert_eq!(
+        v.order_menu(EntityId(99_999), Keyword::Go, true),
+        Vec::<String>::new()
+    );
+    let info = v.order_info(peasant, Keyword::Build, Some("farm")).unwrap();
+    let old = w.order_info(peasant, Keyword::Build, Some("farm")).unwrap();
+    assert_eq!(
+        (info.cost, info.food_cost, info.nb_args),
+        (old.cost, old.food_cost, old.nb_args)
+    );
+}
+
+#[test]
+fn the_default_order_is_the_worlds() {
+    let (mut w, me, them) = game();
+    let peasant = unit(&w, me, "peasant");
+    let farm = unit(&w, me, "farm");
+    w.entity_mut(farm).unwrap().hp = 1000;
+    let townhall = unit(&w, them, "townhall");
+    let b2 = w.square_by_name("b2").unwrap();
+    let v = seat(&w, me);
+    let (x, y) = v.square(b2).center();
+    let cases = [
+        (OrderTarget::Square(b2), Some(Keyword::Go)),
+        (OrderTarget::Point { square: b2, x, y }, Some(Keyword::Go)),
+        (OrderTarget::Entity(farm), Some(Keyword::Repair)),
+        // Not perceived nor remembered: the target is unknown.
+        (OrderTarget::Entity(townhall), None),
+    ];
+    for (target, expected) in cases {
+        assert_eq!(v.default_order(peasant, target), Ok(expected));
+    }
+}
+
+#[test]
+fn a_requirement_is_known_only_for_a_controlled_owner() {
+    let (w, me, them) = game();
+    let mine = unit(&w, me, "peasant");
+    let theirs = unit(&w, them, "peasant");
+    let v = seat(&w, me);
+    assert_eq!(v.owner_has(mine, "farm"), Some(true));
+    assert_eq!(v.owner_has(mine, "barracks"), Some(false));
+    // The other player has a farm: not the player's to know.
+    assert!(w.has(them, "farm"));
+    assert_eq!(v.owner_has(theirs, "farm"), None);
+}
+
+#[test]
+fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
+    let (mut w, me, _) = game();
+    let v = seat(&w, me);
+    let pl = w.player(me);
+    // Seen from the next square: not observed, but observed before.
+    let partly = v.partly_observed_squares();
+    assert!(!partly.is_empty());
+    assert!(partly.is_disjoint(&pl.observed_squares));
+    assert!(partly.is_subset(&pl.observed_before_squares));
+    // In cheat mode every square is observed, none partly.
+    w.player_mut(me).cheatmode = true;
+    w.update();
+    assert!(seat(&w, me).partly_observed_squares().is_empty());
+}
+
+#[test]
+fn a_production_tells_its_time_left_to_the_player_who_controls_it() {
+    let (mut w, me, them) = game();
+    for p in [me, them] {
+        let townhall = unit(&w, p, "townhall");
+        command(
+            &mut w,
+            p,
+            &[
+                format!("control {}", townhall.0),
+                "order 0 0 train peasant".into(),
+            ],
+        );
+    }
+    for _ in 0..10 {
+        w.update();
+    }
+    let v = seat(&w, me);
+    let first = |id| {
+        let own = v.known(id).and_then(|e| e.own)?;
+        own.orders.first().map(|o| o.time_left)
+    };
+    // A peasant takes 10 seconds: 11 turns of 300 milliseconds have gone.
+    assert_eq!(first(unit(&w, me, "townhall")), Some(Some(6700)));
+    assert_eq!(first(unit(&w, them, "townhall")), None);
+}
+
+#[test]
+fn a_defeated_player_is_known_to_every_player() {
+    let (mut w, me, them) = game();
+    assert!(seat(&w, me).defeated().is_empty());
+    w.defeat(them, true);
+    let v = seat(&w, me);
+    assert_eq!(v.defeated(), [them]);
+    assert_eq!(v.players(), [me]);
+}
+
+#[test]
+fn a_seat_takes_note_of_what_it_sees_only_when_told_to() {
+    let (mut w, me, _) = game();
+    let home = square_of(&w, unit(&w, me, "townhall"));
+    let square = w.square(home).name.clone();
+    command(&mut w, me, &[format!("cmd add_units {square} footman")]);
+    let footman = unit(&w, me, "footman");
+    let mut s = SeatView::new(Arc::new(GameStart::of(&w)), w.turn_message(me, Vec::new()));
+    // A seat that has just joined remembers nothing.
+    assert_eq!(s.terrain(home), "");
+    s.remember();
+    assert_eq!(s.terrain(home), "_meadows");
+
+    // The square's terrain and the footman's upgrades change. A new
+    // message tells them; what the seat remembers of them changes only
+    // once it takes note.
+    w.player_mut(me).upgrades.push("melee_weapon".into());
+    w.squares[home.0 as usize].type_name = "_forest".into();
+    s.install(w.turn_message(me, Vec::new()));
+    assert_eq!(s.terrain(home), "_meadows");
+    assert_eq!(s.unit_upgrades(footman), ["melee_weapon"]);
+    assert_eq!(s.remembered_upgrades(footman), Vec::<String>::new());
+    s.remember();
+    assert_eq!(s.terrain(home), "_forest");
+    assert_eq!(s.remembered_upgrades(footman), ["melee_weapon"]);
+
+    // Forgotten once the seat neither perceives nor remembers it.
+    w.player_mut(me).perception.remove(&footman);
+    s.install(w.turn_message(me, Vec::new()));
+    assert_eq!(s.remembered_upgrades(footman), ["melee_weapon"]);
+    s.remember();
+    assert_eq!(s.remembered_upgrades(footman), Vec::<String>::new());
 }

@@ -148,8 +148,8 @@ At an input point, the client is settled when:
 1. no key press is waiting in the queue;
 2. the voice is idle;
 3. at a `game` point only: no server event waits to be handled, and the
-   interface has handled at least one end of turn (`Voila`) since the
-   previous step was delivered.
+   interface has handled at least one end of turn since the previous step
+   was delivered.
 
 The `voice` point is never settled for key steps: speech is in progress
 there by definition.
@@ -199,9 +199,10 @@ menu or the console is open. One pass of the game loop:
 
 1. if the world does not wait, is not waiting for a world update, and
    `now >= next_update`: the orders written since the last update go to
-   the world in order; `next_update = now + 0.3 / speed`; the world updates
-   and queues its server events for the interface (entity events,
-   important messages, sequences, speed changes), then `Voila`, the end of
+   the world in order; `next_update = now + 0.3 / speed`; the world
+   updates; the interface takes the turn's message, from which it answers
+   every question from then on, and queues the turn's events (entity
+   events, important messages, sequences, speed changes), then the end of
    the turn; at the end of a game, the events of the players quitting
    follow it;
 2. if the world does not wait, the animations, if
@@ -214,7 +215,9 @@ menu or the console is open. One pass of the game loop:
 6. a sleep of 1 ms.
 
 So the events of an update reach the interface one per loop pass, and
-`Voila` last. A pass takes 1 ms: nothing said holds it. Important messages
+the end of the turn last. Handling the end of the turn brings the
+interface's own copies of the entities and of the observed squares up to
+date, and notes the terrain and the upgrades it sees. A pass takes 1 ms: nothing said holds it. Important messages
 and the messages of a story are news, said before the other news waiting.
 A story ends when its last message has been said or skipped; any key but
 those of the game menu, the history, the news, help and the volume skips
@@ -406,8 +409,5 @@ again.
 - A unit's status names a square or a subsquare target by the place's own
   title ("go to c 4"). Naming a target draws one random number, as making
   an entity view does (`square_orders`).
-- The `Voila` of the last turn of a game carries copies of the memory and
-  the perception made before the players quit: the last animations of a
-  game still hear the units (`events`).
 - An error in the game loop skips the rest of the pass, the 1 ms sleep
   included. No scenario raises one.

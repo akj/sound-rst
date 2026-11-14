@@ -15,7 +15,7 @@ use crate::events::{EntityEvent, Event};
 use crate::known::KnownEntity;
 use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
-use crate::player::Player;
+use crate::player::{EndOfTurn, Player};
 use crate::pyrandom::PyRandom;
 use crate::rules::{AiScripts, AirGround, EntityClass, Rules, VIRTUAL_TIME_INTERVAL};
 use crate::square::Square;
@@ -856,27 +856,6 @@ impl World {
         }
     }
 
-    /// What `p` knows now, as the end of a turn tells it.
-    fn voila(&self, p: PlayerId) -> crate::events::Voila {
-        let pl = self.pl(p);
-        crate::events::Voila {
-            time: self.time,
-            memory: pl
-                .memory
-                .values()
-                .map(|r| KnownEntity::of(self, p, &r.snapshot, Some(r.time_stamp)))
-                .collect(),
-            perception: pl
-                .perception
-                .iter()
-                .filter_map(|&id| self.entity(id))
-                .map(|e| KnownEntity::of(self, p, e, None))
-                .collect(),
-            observed_squares: pl.observed_squares.clone(),
-            observed_before_squares: self.observed_before_squares(p),
-        }
-    }
-
     /// `player.push(...)`: only a local human records events.
     pub(crate) fn push(&mut self, p: PlayerId, event: Event) {
         if self.pl(p).is_local_human() {
@@ -1022,10 +1001,15 @@ impl World {
         self.time += VIRTUAL_TIME_INTERVAL;
         for p in self.players.clone() {
             if self.pl(p).is_local_human() {
-                let voila = self.voila(p);
-                self.plm(p).events.push(Event::Voila(Box::new(voila)));
+                let end = EndOfTurn {
+                    after_events: self.pl(p).events.len(),
+                    message: self.turn_message(p, Vec::new()),
+                };
+                self.plm(p).end_of_turn = Some(end);
             }
         }
+        // The only change after the end of a turn: when nobody is left
+        // playing, every player leaves the game.
         if self.true_playing_players().is_empty() {
             for p in self.players.clone() {
                 self.quit_game(p);

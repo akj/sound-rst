@@ -286,6 +286,7 @@ impl Session {
     /// waits until it is said (a key skips ahead).
     pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
         cx.voice.flush(true);
+        game.end_game();
         for m in score_msgs(game.view(), cx.res.style()) {
             cx.news(News::new(Category::System, m));
         }

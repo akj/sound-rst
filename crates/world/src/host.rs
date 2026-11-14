@@ -10,7 +10,6 @@ use crate::message::{GameEnd, GameStart, TurnMessage};
 use crate::nofloat::PRECISION;
 use crate::player::ControllerKind;
 use crate::setup::GameSetup;
-use crate::view::View;
 use crate::world::World;
 
 /// The host of one game. It owns the world: everything that changes the
@@ -22,7 +21,8 @@ use crate::world::World;
 /// The exception is the cheats that change the game at once
 /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
 /// [`Cheat::PlayAs`]): the host carries them out when they are queued,
-/// between steps, as the single-player console always has.
+/// between steps, as the single-player console always has, and tells the
+/// seat at once what it knows now.
 ///
 /// Nothing steps the host on its own: the game loop and the tests call
 /// [`Host::step`] when a turn is due.
@@ -40,17 +40,31 @@ pub struct Host {
 /// What a step gives back.
 #[derive(Debug)]
 pub struct TurnReport {
-    /// What the player perceived during the turn, in order. Only a local
-    /// human receives events.
-    pub events: Vec<Event>,
-    /// Everything the player is told of the turn, as of its end: the same
-    /// events without the end of turn, and what the end of turn tells and
-    /// the view answers.
-    pub message: TurnMessage,
+    /// The end of the seat's turn: everything as of then, with what the
+    /// seat perceived during the turn. `None` for a seat that was no longer
+    /// in the game at the end of the turn. Only a local human has one.
+    pub end_of_turn: Option<Arc<TurnMessage>>,
+    /// What the seat perceived after the end of its turn: the players
+    /// leaving, when the turn ended the game. For a seat without an end of
+    /// turn, everything it perceived during the step.
+    pub then: Vec<Event>,
+    /// What the seat knows after the step: the end of its turn, unless the
+    /// game ended then or the seat had no end of turn.
+    pub message: Arc<TurnMessage>,
     /// What went wrong in the game since the last step: a refused or
     /// broken command, a map problem... For the log; a player does not
     /// hear them.
     pub warnings: Vec<String>,
+}
+
+/// Whether a cheat changes the game at once.
+enum AtOnce {
+    /// It waits for the next step.
+    No,
+    /// The game refused it.
+    Refused,
+    /// It changed the game; this seat gave it, or now plays.
+    Done(PlayerId),
 }
 
 impl Host {
@@ -73,13 +87,19 @@ impl Host {
 
     /// Queues a command of `player` for the next step, or carries out at
     /// once a cheat that changes the game between turns (see [`Host`]).
-    pub fn queue(&mut self, player: PlayerId, command: Command) {
-        if let Command::Cheat(cheat) = &command
-            && self.cheat_at_once(player, cheat)
-        {
-            return;
+    /// After such a cheat, returns what the seat is told of the game now:
+    /// after [`Cheat::PlayAs`], the seat it plays as.
+    #[must_use = "a cheat carried out at once changes what the seat is told now"]
+    pub fn queue(&mut self, player: PlayerId, command: Command) -> Option<TurnMessage> {
+        if let Command::Cheat(cheat) = &command {
+            match self.cheat_at_once(player, cheat) {
+                AtOnce::No => {}
+                AtOnce::Refused => return None,
+                AtOnce::Done(seat) => return Some(self.message(seat)),
+            }
         }
         self.world.queue(player, command);
+        None
     }
 
     /// Queues a command of `player` received as text: the orders of a game
@@ -91,19 +111,34 @@ impl Host {
     }
 
     /// Runs one turn: the commands queued, then 300 ms of game time.
-    /// Returns what `player` perceived and the warnings since the last step.
-    pub fn step(&mut self, player: PlayerId) -> TurnReport {
+    /// Returns what `seat` was told and the warnings since the last step.
+    pub fn step(&mut self, seat: PlayerId) -> TurnReport {
         self.world.update();
-        let events = self.world.drain_events(player);
-        let told = events
-            .iter()
-            .filter(|e| !matches!(e, Event::Voila(_)))
-            .cloned()
-            .collect();
+        let mut events = self.world.drain_events(seat);
+        let end = self.world.player_mut(seat).end_of_turn.take();
+        let (end_of_turn, then, message) = match end {
+            Some(end) => {
+                let then = events.split_off(end.after_events);
+                let end = Arc::new(TurnMessage {
+                    events,
+                    ..end.message
+                });
+                // A seat leaves the game after the end of its turn only
+                // when that turn ended the game.
+                let message = if self.world.players.contains(&seat) {
+                    Arc::clone(&end)
+                } else {
+                    Arc::new(self.message(seat))
+                };
+                (Some(end), then, message)
+            }
+            None => (None, events, Arc::new(self.message(seat))),
+        };
         TurnReport {
+            end_of_turn,
+            then,
+            message,
             warnings: self.drain_warnings(),
-            message: self.world.turn_message(player, told),
-            events,
         }
     }
 
@@ -130,11 +165,6 @@ impl Host {
         w
     }
 
-    /// What `player` knows of the game: see [`View`].
-    pub fn view(&self, player: PlayerId) -> View<'_> {
-        View::new(&self.world, &self.start, player)
-    }
-
     /// The text line of a command, as a game on a server sends it and the
     /// world reads it. `None` for the cheats the host carries out itself
     /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
@@ -153,26 +183,25 @@ impl Host {
 
     /// The whole world, to check a game's results in tests. Only the
     /// `truth` feature has it, and the interface is built without that
-    /// feature: what a player knows goes through [`Host::view`].
+    /// feature: a seat knows only what it is told.
     #[cfg(feature = "truth")]
     pub fn world(&self) -> &World {
         &self.world
     }
 
     /// Carries out a cheat that changes the game at once, or refuses it if
-    /// the game allows no cheat. False for the other cheats, which wait for
-    /// the next step.
-    fn cheat_at_once(&mut self, player: PlayerId, cheat: &Cheat) -> bool {
+    /// the game allows no cheat. The other cheats wait for the next step.
+    fn cheat_at_once(&mut self, player: PlayerId, cheat: &Cheat) -> AtOnce {
         if matches!(
             cheat,
             Cheat::ToggleMode | Cheat::Victory | Cheat::AddUnits { .. } | Cheat::Trigger(_)
         ) {
-            return false;
+            return AtOnce::No;
         }
         if !self.world.allow_cheatmode {
             self.warnings
                 .push(format!("cheat mode is not allowed: {cheat:?}"));
-            return true;
+            return AtOnce::Refused;
         }
         let w = &mut self.world;
         match cheat {
@@ -193,7 +222,7 @@ impl Host {
                 if !w.players.contains(&other) {
                     self.warnings
                         .push(format!("no player {} to play as", other.0));
-                    return true;
+                    return AtOnce::Refused;
                 }
                 if other != player {
                     let login = w.player(other).controller.login();
@@ -205,10 +234,11 @@ impl Host {
                         *local = false;
                     }
                 }
+                return AtOnce::Done(other);
             }
             Cheat::ToggleMode | Cheat::Victory | Cheat::AddUnits { .. } | Cheat::Trigger(_) => {}
         }
-        true
+        AtOnce::Done(player)
     }
 }
 

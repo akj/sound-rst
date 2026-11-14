@@ -56,6 +56,13 @@ pub(crate) fn cheat(g: &mut TestGame, p: PlayerId, line: &str) {
     g.game.host.queue_line(p, &format!("cmd {line}"));
 }
 
+/// Runs a turn of the game and tells the seat, without the interface
+/// handling what happened.
+pub(crate) fn step(g: &mut TestGame) {
+    let report = g.game.host.step(g.game.me);
+    g.game.seat.install(report.message);
+}
+
 /// Orders `unit` of `p` to go to the center of `square`.
 pub(crate) fn go(g: &mut TestGame, p: PlayerId, unit: EntityId, square: SquareId) {
     let to = g.game.view().square(square).protocol_id();

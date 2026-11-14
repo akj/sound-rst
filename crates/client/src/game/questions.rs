@@ -7,7 +7,7 @@
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{KnownEntity, KnownTarget, View};
+use soundrts_world::{KnownEntity, KnownTarget, SeatView};
 
 use crate::client::Client;
 use crate::net::words::{self, text};
@@ -249,7 +249,7 @@ impl GameInterface {
 /// The danger a creature represents by the rules of its type, as the
 /// simulation's menace weighs it: its damage, or for a transport, what it
 /// can carry.
-fn threat(view: View, e: &KnownEntity) -> i64 {
+fn threat(view: &SeatView, e: &KnownEntity) -> i64 {
     let Some(s) = view.unit_type(&e.type_name).map(|t| &t.stats) else {
         return 0;
     };
@@ -324,7 +324,7 @@ mod tests {
         let (mut h, mut g) = training();
         let me = g.game.me;
         let (_, name) = home(&g, me);
-        g.game.host.queue(me, Command::Cheat(Cheat::Resources));
+        g.game.cheat_at_once(Cheat::Resources);
         cheat(&mut g, me, &format!("add_units {name} barracks"));
         run_turns(&mut h, &mut g, 1);
         let barracks = unit(&g, me, "barracks");
@@ -351,8 +351,8 @@ mod tests {
         let me = g.game.me;
         let (square, name) = home(&g, me);
         // Cheat mode shows the whole map: the deposits are known.
-        g.game.host.queue(me, Command::Cheat(Cheat::ToggleMode));
-        g.game.host.queue(me, Command::Cheat(Cheat::Resources));
+        let _ = g.game.host.queue(me, Command::Cheat(Cheat::ToggleMode));
+        g.game.cheat_at_once(Cheat::Resources);
         cheat(&mut g, me, &format!("add_units {name} 5 peasant"));
         run_turns(&mut h, &mut g, 1);
         let find = |g: &TestGame, type_name: &str| {
@@ -412,7 +412,7 @@ mod tests {
     fn the_other_players_are_said_ally_or_enemy_and_defeated() {
         let (mut h, mut g) = training_allied("jl2", &["easy"; 3], &["1", "1", "2", "2"]);
         let them = g.game.view().players()[3];
-        g.game.host.queue(them, Command::Quit);
+        let _ = g.game.host.queue(them, Command::Quit);
         run_turns(&mut h, &mut g, 2);
         assert_eq!(
             ask(&mut h, &mut g, Key::F12, Mods::NONE),

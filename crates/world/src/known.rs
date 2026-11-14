@@ -1,5 +1,5 @@
-//! An entity as one player knows it: what a [`View`](crate::View), the end
-//! of a turn ([`Voila`](crate::Voila)) and an event
+//! An entity as one player knows it: what a turn's message
+//! ([`TurnMessage`](crate::TurnMessage)) and an event
 //! ([`Event::Entity`](crate::Event::Entity)) tell an interface about an
 //! entity.
 //!

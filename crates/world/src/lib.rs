@@ -35,13 +35,13 @@
 //!
 //! # Reading the state
 //!
-//! An interface reads what one player knows through [`Host::view`]: see
-//! [`view`]. It is told about an entity as that player knows it, a
-//! [`KnownEntity`]: see [`known`]. The host also tells each player what it
-//! knows as plain data, made to be sent: a [`GameStart`] once, a
-//! [`TurnMessage`] with each step and a [`GameEnd`] at the end (see
-//! [`message`]). A [`SeatView`] answers the view's questions from those
-//! alone (see [`seat_view`]). The world itself has the whole state:
+//! The [`Host`] tells each player what it knows as plain data, made to be
+//! sent: a [`GameStart`] once, a [`TurnMessage`] with each step and a
+//! [`GameEnd`] at the end (see [`message`]). An interface reads them
+//! through a [`SeatView`], which answers its questions from those alone
+//! (see [`seat_view`]). It is told about an entity as that player knows
+//! it, a [`KnownEntity`]: see [`known`]. The world itself has the whole
+//! state:
 //!
 //! - The map: [`World::squares`] (grid, names, neighbors, exits, terrain),
 //!   [`World::map`] (title, objective, sizes, starts), [`World::time`],
@@ -110,7 +110,6 @@ pub mod triggers;
 mod unit;
 #[cfg(test)]
 mod upstream_tests;
-pub mod view;
 #[cfg(feature = "serde")]
 mod wire;
 pub mod world;
@@ -123,7 +122,7 @@ pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
 #[cfg(feature = "truth")]
 pub use entity::Entity;
 pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
-pub use events::{EntityEvent, Event, Reason, Voila};
+pub use events::{EntityEvent, Event, Reason};
 pub use host::{Host, TurnReport};
 pub use known::{Activity, KnownEntity, KnownExit, KnownOrder, KnownTarget, OwnPart};
 pub use map::MapError;
@@ -133,9 +132,8 @@ pub use message::{
 };
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
-pub use seat_view::SeatView;
+pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;
-pub use view::{Comrades, MapSquare, View};
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with

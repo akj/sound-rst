@@ -6,7 +6,7 @@ use std::sync::Arc;
 use soundrts_world::orders::Keyword;
 use soundrts_world::{
     Cheat, Controller, EntityId, Event, KeywordOrder, KnownEntity, KnownOrder, KnownTarget, Order,
-    OrderTarget, OwnPart, PlayerId, Queue, SquareId, Voila,
+    OrderTarget, OwnPart, PlayerId, Queue, SquareId,
 };
 
 use super::*;
@@ -243,18 +243,6 @@ fn message(perceived: Vec<KnownEntity>, events: Vec<Event>) -> TurnMessage {
         remembered: Vec::new(),
         unperceived_units: Vec::new(),
     }
-}
-
-#[test]
-fn the_end_of_a_turn_is_never_sent_as_an_event() {
-    let voila = Event::Voila(Box::new(Voila {
-        time: 0,
-        memory: Vec::new(),
-        perception: Vec::new(),
-        observed_squares: Default::default(),
-        observed_before_squares: Default::default(),
-    }));
-    assert!(encode_turn(&message(Vec::new(), vec![voila])).is_err());
 }
 
 /// Remembered entities nest in order targets as deep as the limit, and

@@ -2,14 +2,16 @@
 //! and what the keys do.
 //!
 //! The interface owns the game's [`Host`] and gives it the player's
-//! commands. It reads the game through the host's view of what its player
-//! knows ([`GameInterface::view`]), never the world itself. Its loop steps
-//! the host when a turn is due (every 300 ms
-//! divided by the speed), then reads what happened as the original's
-//! server events: entity events, messages, and a `voila` with the
-//! perception, memory and observed squares at the end of the turn. One
-//! server event is handled per pass of the loop, after the key presses,
-//! as in the original.
+//! commands. It reads the game only through what its seat is told
+//! ([`GameInterface::view`]): the game's start, then a [`TurnMessage`]
+//! for each turn, installed when the turn is taken. Its loop steps the
+//! host when a turn is due (every 300 ms divided by the speed), then
+//! handles what happened as the original's server events: the turn's
+//! events, then the end of the turn, which brings the interface's own
+//! copies of the entities and squares up to date. One server event is
+//! handled per pass of the loop, after the key presses, as in the
+//! original, so the questions answer for the end of the turn from the
+//! moment it is taken, while those copies catch up a few passes later.
 //!
 //! Nothing said stops the loop. What the keys do depends on one [`Mode`].
 //! In single-player the world waits, on purpose, while a story is told
@@ -43,6 +45,7 @@ mod testing;
 mod tests;
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use indexmap::{IndexMap, IndexSet};
 use soundrts_world::events::{EntityEvent, Event};
@@ -50,7 +53,7 @@ use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
 use soundrts_world::{
-    Command, EntityId, Host, KnownEntity, Place, PlayerId, SquareId, View, Voila,
+    Command, EntityId, Host, KnownEntity, Place, PlayerId, SeatView, SquareId, TurnMessage,
 };
 
 use crate::bindings::{Bindings, Chord, game_bindings_text};
@@ -148,8 +151,21 @@ pub enum SrvEvent {
     Sequence(Vec<String>),
     Speed(f64),
     Quit,
-    /// The turn is over: what the player knows at its end.
-    Voila(Box<Voila>),
+    /// The turn is over: the message of the turn, whose entities and
+    /// squares the interface's copies take.
+    EndOfTurn(Arc<TurnMessage>),
+}
+
+impl From<Event> for SrvEvent {
+    fn from(e: Event) -> SrvEvent {
+        match e {
+            Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
+            Event::VoiceImportant(m) => SrvEvent::VoiceImportant(m),
+            Event::Sequence(s) => SrvEvent::Sequence(s),
+            Event::Speed(s) => SrvEvent::Speed(s),
+            Event::Quit => SrvEvent::Quit,
+        }
+    }
 }
 
 /// What the keys do now.
@@ -245,15 +261,19 @@ pub struct GameInterface {
     pub host: Host,
     /// The player this interface plays.
     pub me: PlayerId,
+    /// What the player knows of the game: everything the interface reads
+    /// of it.
+    pub(crate) seat: SeatView,
     /// The game speed: 1 is normal.
     pub speed: f64,
-    /// What the player perceives or remembers, by id, in arrival order.
+    /// What the player perceives or remembers, by id, in arrival order, as
+    /// of the last end of turn handled.
     pub dobjets: IndexMap<EntityId, EntityView>,
-    /// The squares observed now.
+    /// The squares observed at the last end of turn handled.
     pub scouted_squares: BTreeSet<SquareId>,
-    /// The squares observed before (all of them in cheat mode).
+    /// The squares observed before then (all of them in cheat mode).
     pub scouted_before_squares: BTreeSet<SquareId>,
-    /// The game time of the last turn, in seconds.
+    /// The game time of the last end of turn handled, in seconds.
     pub last_virtual_time: f64,
     /// The number of turns whose results have been handled.
     pub(crate) turns_handled: u64,
@@ -308,11 +328,6 @@ pub struct GameInterface {
     pub(crate) already_asked_to_quit: bool,
     pub forced_quit: bool,
     pub(crate) terrain_noises: Vec<(SquareId, NoiseSource)>,
-    /// The terrain of each square when the player last observed it.
-    pub(crate) seen_terrain: HashMap<SquareId, String>,
-    /// The upgrades of each known creature when the player last perceived
-    /// it.
-    pub(crate) seen_upgrades: HashMap<EntityId, Vec<String>>,
     pub(crate) previous_animation: f64,
     pub(crate) bindings: Bindings<GameCommand>,
     pub(crate) srv_queue: VecDeque<SrvEvent>,
@@ -326,13 +341,16 @@ pub struct GameInterface {
 }
 
 impl GameInterface {
-    /// The interface of `me` in the game of `host`. Says nothing: queued
-    /// messages are dropped.
+    /// The interface of `me` in the game of `host`, from the start of the
+    /// game and what `me` is told before the first turn. Says nothing:
+    /// queued messages are dropped.
     pub fn new(cx: &mut Client, host: Host, me: PlayerId) -> Self {
         cx.voice.silent_flush();
+        let seat = SeatView::new(host.game_start(), host.message(me));
         GameInterface {
             host,
             me,
+            seat,
             speed: cx.config.speed,
             dobjets: IndexMap::new(),
             scouted_squares: BTreeSet::new(),
@@ -377,8 +395,6 @@ impl GameInterface {
             already_asked_to_quit: false,
             forced_quit: false,
             terrain_noises: Vec::new(),
-            seen_terrain: HashMap::new(),
-            seen_upgrades: HashMap::new(),
             previous_animation: 0.0,
             bindings: Bindings::new(),
             srv_queue: VecDeque::new(),
@@ -389,8 +405,30 @@ impl GameInterface {
     }
 
     /// What the player knows of the game.
-    pub fn view(&self) -> View<'_> {
-        self.host.view(self.me)
+    pub fn view(&self) -> &SeatView {
+        &self.seat
+    }
+
+    /// Takes what the host tells the seat when the game is over for it:
+    /// the statistics of the score.
+    pub fn end_game(&mut self) {
+        self.seat.install_end(self.host.game_end(self.me));
+    }
+
+    /// Takes what the host tells the seat between turns, after a cheat
+    /// that changed the game at once: the answers are from it from now
+    /// on. After playing as another player, the seat is that player's, and
+    /// what the interface remembered of the game starts again. An end of
+    /// turn of the previous seat still waiting in the queue brings the
+    /// interface's copies up to date with that seat's entities and squares;
+    /// the new seat notes only what it sees itself.
+    pub(crate) fn install_at_once(&mut self, told: TurnMessage) {
+        if told.seat == self.me {
+            self.seat.install(told);
+        } else {
+            self.me = told.seat;
+            self.seat = SeatView::new(self.host.game_start(), told);
+        }
     }
 
     /// The square width in meters.
@@ -538,29 +576,32 @@ impl GameInterface {
     /// turn, and queues what happened.
     fn ask_for_update(&mut self, cx: &mut Client) {
         for c in std::mem::take(&mut self.pending_commands) {
-            self.host.queue(self.me, c);
+            if let Some(told) = self.host.queue(self.me, c) {
+                self.install_at_once(told);
+            }
         }
         self.next_update = cx.clock.now() + TURN / self.speed;
         self.run_turn(cx);
     }
 
-    /// Runs a turn of the game with the commands queued, and queues what
-    /// happened.
+    /// Runs a turn of the game with the commands queued, takes the turn's
+    /// message, and queues what happened: the turn's events, its end, and
+    /// what followed when the turn ended the game.
     pub(crate) fn run_turn(&mut self, cx: &mut Client) {
         self.waiting_for_world_update = true;
         let report = self.host.step(self.me);
         for w in report.warnings {
             cx.log.warning(format!("world: {w}"));
         }
-        for e in report.events {
-            self.srv_queue.push_back(match e {
-                Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
-                Event::VoiceImportant(m) => SrvEvent::VoiceImportant(m),
-                Event::Sequence(s) => SrvEvent::Sequence(s),
-                Event::Speed(s) => SrvEvent::Speed(s),
-                Event::Quit => SrvEvent::Quit,
-                Event::Voila(v) => SrvEvent::Voila(v),
-            });
+        self.seat.install(report.message);
+        if let Some(end) = report.end_of_turn {
+            for e in end.events.iter().cloned() {
+                self.srv_queue.push_back(SrvEvent::from(e));
+            }
+            self.srv_queue.push_back(SrvEvent::EndOfTurn(end));
+        }
+        for e in report.then {
+            self.srv_queue.push_back(SrvEvent::from(e));
         }
     }
 
@@ -704,7 +745,7 @@ impl GameInterface {
                 }
             }
             SrvEvent::Quit => self.srv_quit(cx),
-            SrvEvent::Voila(v) => self.srv_voila(cx, *v)?,
+            SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m)?,
         }
         Ok(())
     }
@@ -729,21 +770,22 @@ impl GameInterface {
         self.end_loop = true;
     }
 
-    fn srv_voila(&mut self, cx: &mut Client, v: Voila) -> R {
+    /// The end of a turn: the interface's copies of the squares and the
+    /// entities take the turn's, and the seat takes note of what it sees.
+    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) -> R {
         self.turns_handled += 1;
-        self.last_virtual_time = v.time as f64 / 1000.0;
+        self.last_virtual_time = m.time as f64 / 1000.0;
         self.waiting_for_world_update = false;
-        self.scouted_squares = v.observed_squares;
-        self.scouted_before_squares = v.observed_before_squares;
-        self.note_terrain();
+        self.scouted_squares = m.squares.observed.clone();
+        self.scouted_before_squares = m.squares.observed_before.clone();
+        self.seat.remember();
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);
         }
         self.units_alert_if_needed(cx, None);
         self.scout_info_if_needed(cx);
-        self.update_fog_of_war(cx, v.memory, v.perception);
-        self.note_upgrades();
+        self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
         self.update_group();
         if self.bell_enabled {
             self.eventually_play_bell(cx);
