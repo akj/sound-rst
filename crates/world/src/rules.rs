@@ -426,11 +426,20 @@ fn property_value(w0: &str, args: &[String]) -> Option<RawValue> {
         RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
     } else {
         let mut words = args.to_vec();
-        if w0 == "effect" && first()? == "bonus" && is_precision_property(args.get(1)?) {
-            for w in words.iter_mut().skip(2).take(2) {
-                *w = decimal(w)?.to_string();
+        if w0 == "effect" && first()? == "bonus" {
+            if is_precision_property(args.get(1)?) {
+                for w in words.iter_mut().skip(2).take(2) {
+                    *w = decimal(w)?.to_string();
+                }
+                args.get(2)?;
+            } else {
+                // The simulation reads these as integers and adds them.
+                for w in words.iter().skip(2).take(2) {
+                    if py_int(w).is_ok() {
+                        int(w)?;
+                    }
+                }
             }
-            args.get(2)?;
         }
         RawValue::Words(words)
     })
@@ -1609,6 +1618,32 @@ mod tests {
                 "error in definition of farm: food_provided 9223372036854775807",
                 "error in definition of farm: hp_max 3000000"
             ]
+        );
+    }
+
+    /// The simulation adds an integer bonus to the stat when the upgrade
+    /// applies, and this value made the sum overflow.
+    #[test]
+    fn an_integer_bonus_beyond_the_limit_is_an_error_in_its_line() {
+        let r = Rules::load(&[
+            "def boost\nclass upgrade\neffect bonus collision 9223372036854775807\n\
+             def plus\nclass upgrade\neffect bonus collision 1 2\n",
+        ]);
+        assert_eq!(r.unit_type("boost").unwrap().effect, None);
+        assert_eq!(
+            r.unit_type("plus").unwrap().effect.as_deref(),
+            Some(
+                &[
+                    "bonus".to_owned(),
+                    "collision".to_owned(),
+                    "1".to_owned(),
+                    "2".to_owned()
+                ][..]
+            )
+        );
+        assert_eq!(
+            r.warnings,
+            ["error in definition of boost: effect bonus collision 9223372036854775807"]
         );
     }
 
