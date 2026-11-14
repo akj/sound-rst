@@ -326,21 +326,23 @@ fn a_remembered_unit_gathers_from_what_the_player_knows() {
 }
 
 #[test]
-fn a_recallable_group_holds_every_players_units() {
+fn a_recallable_group_holds_only_the_players_units() {
     let (mut w, me, them) = game();
-    let peasant = unit(&w, them, "peasant");
-    command(
-        &mut w,
-        them,
-        &[
-            format!("control {}", peasant.0),
-            "order 0 0 join_group 1".into(),
-        ],
-    );
+    let theirs = unit(&w, them, "peasant");
+    let mine = unit(&w, me, "peasant");
+    for (p, u) in [(them, theirs), (me, mine)] {
+        command(
+            &mut w,
+            p,
+            &[format!("control {}", u.0), "order 0 0 join_group 1".into()],
+        );
+    }
+    // The game's group 1 holds both peasants; the player recalls its own.
+    assert_eq!(w.group_list("1").unwrap(), &[theirs, mine]);
     let v = View::new(&w, me);
-    assert!(v.perceived(peasant).is_none());
-    assert_eq!(v.leaks().recallable_group("1"), [peasant]);
-    assert_eq!(v.leaks().recallable_group("2"), []);
+    assert_eq!(v.recallable_group("1"), [mine]);
+    assert_eq!(v.recallable_group("2"), []);
+    assert_eq!(View::new(&w, them).recallable_group("1"), [theirs]);
 }
 
 #[test]

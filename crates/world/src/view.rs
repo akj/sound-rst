@@ -7,7 +7,7 @@
 //! the game. Its answers are facts: small owned values, ids, or borrowed
 //! data that a copy sent over a network could carry as well.
 //!
-//! The methods come in six groups. The groups are the contract for a view
+//! The methods come in five groups. The groups are the contract for a view
 //! that is sent rather than borrowed: each says where its answers would
 //! come from.
 //!
@@ -16,26 +16,24 @@
 //!    the rules (unit types and costs), the clock and whether cheats are
 //!    allowed. A host sends the map and the rules once, at the start.
 //! 2. **The player's own state**: resources, food, units, upgrades,
-//!    objectives, alliances, cheat mode, victory and statistics. Sent to
-//!    that player only.
+//!    recallable groups, objectives, alliances, cheat mode, victory and
+//!    statistics. Sent to that player only.
 //! 3. **What everyone may know of the other players**: names, who is
 //!    allied with whom, who is still playing.
 //! 4. **Entities the player perceives or remembers**, looked up through
-//!    that knowledge: nothing else is returned.
+//!    that knowledge, and what follows from them alone: whether an exit
+//!    is closed, the units beside one that died, what a remembered unit
+//!    was busy with. Nothing else is returned or read.
 //! 5. **Questions computed on demand** about units the player perceives or
 //!    controls: order menus, order costs, what a unit is busy with, its
 //!    upgrades, the default order for a target. A host in the same process
 //!    answers them from the world; a host over a network has to send the
 //!    answers or the inputs they are computed from.
-//! 6. **What the interface reads today that its player should not know**,
-//!    under [`View::leaks`]. Each of those reads goes past what the player
-//!    perceives or remembers, and each is to be removed.
 //!
-//! The methods of groups 1, 2, 3 and 5 do not check their arguments
-//! against what the player knows: they answer for the square, player or
-//! unit they are given. Their documentation says for which arguments the
-//! answer is the player's knowledge; a read outside that belongs in
-//! group 6.
+//! The methods of groups 1, 3 and 5 do not check their arguments against
+//! what the player knows: they answer for the square, player or unit they
+//! are given. Their documentation says for which arguments the answer is
+//! the player's knowledge, and the interface asks them only for those.
 
 use std::collections::BTreeSet;
 
@@ -258,6 +256,24 @@ impl<'a> View<'a> {
             .filter_map(move |&u| w.entity(u))
     }
 
+    /// The units of a recallable group that the player may give orders
+    /// to, in the group's order. The groups of a game are shared by every
+    /// player, as in the original: a group of this name may also hold
+    /// other players' units, which are left out.
+    pub fn recallable_group(&self, name: &str) -> Vec<EntityId> {
+        let w = self.world;
+        let units = w.group_list(name).map_or(&[][..], Vec::as_slice);
+        units
+            .iter()
+            .copied()
+            .filter(|&u| {
+                w.entity(u)
+                    .and_then(|e| e.player)
+                    .is_some_and(|p| self.controls(p))
+            })
+            .collect()
+    }
+
     /// The squares the player sees only partly at the end of the turn,
     /// from a unit on the next square: not observed, but seen enough to
     /// know their terrain. The squares it observes come with each turn's
@@ -472,47 +488,16 @@ impl<'a> View<'a> {
             .get_default_order(unit, &id)?
             .and_then(Keyword::parse))
     }
-
-    // 6. What the interface reads that its player should not know.
-
-    /// The reads of the interface that go past what the player perceives
-    /// or remembers. See [`Leaks`].
-    pub fn leaks(&self) -> Leaks<'a> {
-        Leaks { world: self.world }
-    }
 }
 
-/// What the interface reads today that its player should not know: each
-/// method reads the game as it truly is, without going through what the
-/// player perceives or remembers. Each one keeps an announcement or a
-/// sound as it is until a decision is made about what the player should
-/// hear instead; each is to be removed then. A view sent over a network
-/// does not carry these.
-#[derive(Clone, Copy)]
-pub struct Leaks<'a> {
-    world: &'a World,
-}
-
-/// The units of a player that are on the same place as one of theirs that
-/// died: see [`View::comrades`].
+/// The units of a player that the player perceives on the place where one
+/// of theirs died: see [`View::comrades`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comrades {
     /// How many there are.
     pub units: usize,
     /// How many of them can fight.
     pub soldiers: usize,
-}
-
-impl<'a> Leaks<'a> {
-    /// The units of a recallable group. The groups of a game are shared by
-    /// every player, as in the original: a group of this name may hold
-    /// other players' units.
-    ///
-    /// Used to recall a group; the interface then keeps only the units it
-    /// controls and knows, so nothing of another player's is heard.
-    pub fn recallable_group(&self, name: &str) -> &'a [EntityId] {
-        self.world.group_list(name).map_or(&[], Vec::as_slice)
-    }
 }
 
 #[cfg(test)]

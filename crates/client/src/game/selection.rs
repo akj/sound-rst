@@ -457,7 +457,7 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) -> R {
-        self.group = self.view().leaks().recallable_group(name).to_vec();
+        self.group = self.view().recallable_group(name);
         self.say_group(cx, &Vec::new())
     }
 
