@@ -1,10 +1,10 @@
 //! Choosing what to act on and acting: the target, the units controlled,
-//! the order, and sending the order to the world.
+//! the order, and sending the order to the game.
 
-use soundrts_world::EntityId;
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
+use soundrts_world::{Command, EntityId, Order, OrderTarget};
 
 use crate::audio::stereo;
 use crate::client::Client;
@@ -165,18 +165,18 @@ impl GameInterface {
     /// The units the player controls, on the map (not inside), perceived.
     /// Without `even_if_no_menu`, only those that can be given an order.
     pub fn units(&self, cx: &Client, even_if_no_menu: bool, sort: bool) -> Vec<EntityId> {
-        let p = self.world.player(self.me);
+        let p = self.host.world_until_view().player(self.me);
         let mut result: Vec<EntityId> = Vec::new();
         for &ap in &p.allied_control {
-            for &u in &self.world.player(ap).units {
-                let Some(e) = self.world.entity(u) else {
+            for &u in &self.host.world_until_view().player(ap).units {
+                let Some(e) = self.host.world_until_view().entity(u) else {
                     continue;
                 };
                 if e.is_inside() || !self.dobjets.contains_key(&u) {
                     continue;
                 }
                 let has_menu = even_if_no_menu || {
-                    let t = self.world.rules.unit_type(&e.type_name);
+                    let t = self.host.world_until_view().rules.unit_type(&e.type_name);
                     t.is_some_and(|t| !t.can_train.is_empty() || !t.can_upgrade_to.is_empty())
                         || !e.orders.is_empty()
                         || !e.basic_abilities().is_empty()
@@ -207,7 +207,7 @@ impl GameInterface {
 
     /// Keeps in the group the units still known and controlled.
     pub fn update_group(&mut self) {
-        let p = self.world.player(self.me);
+        let p = self.host.world_until_view().player(self.me);
         let group = std::mem::take(&mut self.group);
         self.group = group
             .into_iter()
@@ -429,7 +429,7 @@ impl GameInterface {
             }
             None => self
                 .place
-                .map(|p| self.world.square(p).title.clone())
+                .map(|p| self.host.world_until_view().square(p).title.clone())
                 .unwrap_or_default(),
         };
         self.say_group(cx, &place_title)?;
@@ -452,17 +452,18 @@ impl GameInterface {
     // recallable groups
 
     pub(crate) fn cmd_set_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) -> R {
-        self.send_order(cx, "reset_group", Some(name), flags)?;
-        self.send_order(cx, "join_group", Some(name), flags)
+        self.send_order(cx, Order::ResetGroup(name.to_owned()), flags)?;
+        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags)
     }
 
     pub(crate) fn cmd_append_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) -> R {
-        self.send_order(cx, "join_group", Some(name), flags)
+        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags)
     }
 
     pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) -> R {
         self.group = self
-            .world
+            .host
+            .world_until_view()
             .groups
             .iter()
             .find(|(n, _)| n == name)
@@ -492,9 +493,13 @@ impl GameInterface {
             };
             for o in entries {
                 if !done.contains(&o) {
-                    if let Some(v) =
-                        OrderTypeView::new(&o, *u, &self.world, cx.res.style(), &cx.log)
-                    {
+                    if let Some(v) = OrderTypeView::new(
+                        &o,
+                        *u,
+                        self.host.world_until_view(),
+                        cx.res.style(),
+                        &cx.log,
+                    ) {
                         result.push(v);
                     }
                     done.push(o);
@@ -518,7 +523,7 @@ impl GameInterface {
     pub(crate) fn select_order(&mut self, cx: &mut Client, order: OrderTypeView, help: bool) {
         let mut m = order.title.clone();
         m.extend(msg(mp::COMMA));
-        m.extend(order.full_comment(&self.world, cx.res.style()));
+        m.extend(order.full_comment(self.host.world_until_view(), cx.res.style()));
         if help {
             m.extend(msg(mp::COMMA));
             if order.nb_args == 0 {
@@ -606,44 +611,48 @@ impl GameInterface {
     }
 
     /// Sends an order to the units of the group that may receive it.
-    pub(crate) fn send_order(
-        &mut self,
-        cx: &Client,
-        order: &str,
-        target: Option<&str>,
-        flags: OrderFlags,
-    ) -> R {
-        let g: Vec<EntityId> = if order == "default" || order == "join_group" {
-            self.group.clone()
-        } else {
-            let mut g = Vec::new();
-            for uid in &self.group {
-                if !self.dobjets.contains_key(uid) {
-                    return Err(Oops::missing(uid.0));
-                }
-                if self.view_menu(*uid, false).iter().any(|o| o == order) {
-                    g.push(*uid);
-                }
+    pub(crate) fn send_order(&mut self, cx: &Client, order: Order, flags: OrderFlags) -> R {
+        let g: Vec<EntityId> = match &order {
+            Order::Default(_) | Order::JoinGroup(_) => self.group.clone(),
+            // In no unit's menu: no unit receives it, as in the original.
+            Order::ResetGroup(_) => self.units_offering(None)?,
+            Order::Keyword(o) => {
+                // As the world's menus list it: `train footman`.
+                let entry = match o.type_name() {
+                    Some(t) => format!("{} {t}", o.keyword().as_str()),
+                    None => o.keyword().as_str().to_owned(),
+                };
+                self.units_offering(Some(&entry))?
             }
-            g
         };
         if self.previous_group.as_ref() != Some(&g) {
-            let ids: Vec<i64> = g.iter().map(|u| i64::from(u.0)).collect();
-            let line = format!("control {}", soundrts_world::group::encode(&ids));
-            self.write_line(cx, &line);
+            self.send_command(cx, Command::Control(g.clone()));
             self.previous_group = Some(g);
         }
-        let order = match target {
-            Some(t) => format!("{order} {t}"),
-            None => order.to_owned(),
-        };
-        let line = format!(
-            "order {} {} {order}",
-            i32::from(flags.queue),
-            i32::from(flags.imperative)
+        self.send_command(
+            cx,
+            Command::Order {
+                order,
+                queue: flags.queue(),
+                imperative: flags.imperative,
+            },
         );
-        self.write_line(cx, &line);
         Ok(())
+    }
+
+    /// The units of the group whose menu has the order `entry`; none for no
+    /// entry. Every unit of the group must be known.
+    fn units_offering(&self, entry: Option<&str>) -> R<Vec<EntityId>> {
+        let mut g = Vec::new();
+        for uid in &self.group {
+            if !self.dobjets.contains_key(uid) {
+                return Err(Oops::missing(uid.0));
+            }
+            if entry.is_some_and(|e| self.view_menu(*uid, false).iter().any(|o| o == e)) {
+                g.push(*uid);
+            }
+        }
+        Ok(g)
     }
 
     /// What an order aims at: the target, else the zoom, else the square.
@@ -656,17 +665,18 @@ impl GameInterface {
         }
     }
 
-    /// The id the `order` command accepts for the target.
-    fn ui_target_id(&self) -> R<String> {
+    /// What an order aims at, as the game takes it.
+    fn ui_order_target(&self) -> R<OrderTarget> {
         Ok(match self.ui_target() {
-            UiTarget::Entity(t) => t.0.to_string(),
+            UiTarget::Entity(t) => OrderTarget::Entity(t),
             UiTarget::Zoom => {
                 let (Some(z), Some(p)) = (&self.zoom, self.place) else {
                     unreachable!("zoom mode needs a square")
                 };
-                z.id(self.world.square(p))
+                let (x, y) = z.point(self.host.world_until_view().square(p));
+                OrderTarget::Point { square: p, x, y }
             }
-            UiTarget::Square(p) => self.world.square(p).id.to_string(),
+            UiTarget::Square(p) => OrderTarget::Square(p),
             UiTarget::Nothing => {
                 return Err(Oops::new("'NoneType' object has no attribute 'id'"));
             }
@@ -686,9 +696,9 @@ impl GameInterface {
                 let (Some(z), Some(p)) = (&self.zoom, self.place) else {
                     unreachable!("zoom mode needs a square")
                 };
-                Ok(z.title(self.world.square(p)))
+                Ok(z.title(self.host.world_until_view().square(p)))
             }
-            UiTarget::Square(p) => Ok(self.world.square(p).title.clone()),
+            UiTarget::Square(p) => Ok(self.host.world_until_view().square(p).title.clone()),
             UiTarget::Nothing => Err(Oops::new("'NoneType' object has no attribute 'title'")),
         }
     }
@@ -706,7 +716,7 @@ impl GameInterface {
             self.cmd_command_unit(cx)?;
         } else if self.an_order_not_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
-            self.send_order(cx, &o.encode(), None, flags)?;
+            self.send_order(cx, Order::Keyword(o.order()?), flags)?;
             cx.voice.item(&o.title);
             self.previous_order = Some(o);
         } else if self.an_order_requiring_a_target_is_selected() {
@@ -718,8 +728,8 @@ impl GameInterface {
                     0.0,
                 );
             } else {
-                let id = self.ui_target_id()?;
-                self.send_order(cx, &o.encode(), Some(&id), flags)?;
+                let target = self.ui_order_target()?;
+                self.send_order(cx, Order::Keyword(o.order()?.at(target)), flags)?;
                 let m = [o.title.clone(), self.ui_target_title(cx)?].concat();
                 cx.voice.item(&m);
                 self.previous_order = Some(o);
@@ -731,19 +741,26 @@ impl GameInterface {
     /// Says what the default order means for each kind of unit of the
     /// group: "gather a goldmine, go to a goldmine".
     fn say_default_confirmation(&mut self, cx: &mut Client) -> R {
-        let id = self.ui_target_id()?;
+        let target = self.ui_order_target()?;
         let mut msgs: Vec<Msg> = Vec::new();
         for u in self.group.clone() {
             if !self.dobjets.contains_key(&u) {
                 continue;
             }
-            let order = self
-                .world
-                .get_default_order(u, &id)
+            let keyword = self
+                .host
+                .default_order(u, target)
                 .map_err(|e| Oops::new(e.0))?;
-            if let Some(order) = order {
-                let o = OrderTypeView::new(order, u, &self.world, cx.res.style(), &cx.log)
-                    .ok_or_else(|| Oops::missing(order))?;
+            if let Some(keyword) = keyword {
+                let order = keyword.as_str();
+                let o = OrderTypeView::new(
+                    order,
+                    u,
+                    self.host.world_until_view(),
+                    cx.res.style(),
+                    &cx.log,
+                )
+                .ok_or_else(|| Oops::missing(order))?;
                 let m = [o.title, self.ui_target_title(cx)?].concat();
                 if !msgs.contains(&m) {
                     msgs.push(m);
@@ -767,8 +784,8 @@ impl GameInterface {
         if self.group.is_empty() {
             cx.voice.item(&msg(mp::NO_UNIT_CONTROLLED));
         } else {
-            let id = self.ui_target_id()?;
-            self.send_order(cx, "default", Some(&id), flags)?;
+            let target = self.ui_order_target()?;
+            self.send_order(cx, Order::Default(target), flags)?;
             self.say_default_confirmation(cx)?;
         }
         self.order = None;
