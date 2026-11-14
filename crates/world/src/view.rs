@@ -504,15 +504,6 @@ pub struct Comrades {
 }
 
 impl<'a> Leaks<'a> {
-    /// The memory of another player: when `owner` last saw an entity.
-    ///
-    /// An order of an ally's unit that the player controls names its target
-    /// as the ally remembers it. Used to say "in the fog, 3 minutes" for
-    /// that target in the unit's orders.
-    pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
-        self.world.player(owner).memory.get(&id)
-    }
-
     /// Whether the owner of a unit has a type, built or researched, when
     /// the player does not control that owner's units: the unit an order
     /// was listed for may since have been converted, or have no owner.

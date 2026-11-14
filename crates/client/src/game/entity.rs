@@ -399,7 +399,7 @@ impl GameInterface {
                         result.extend(style_msg(style, &tn, "title"));
                     }
                     // A site the player does not know: no building said.
-                    None if matches!(t, Target::Entity(_)) => {}
+                    None if matches!(t, Target::Entity(_) | Target::Memory(_)) => {}
                     None => return Err(Oops::new("'Square' object has no attribute 'type'")),
                 }
             } else {
@@ -410,11 +410,13 @@ impl GameInterface {
     }
 
     /// The entity an order's target shows: as the player perceives or
-    /// remembers it, or the order's remembered copy.
+    /// remembers it, or the copy the player's own order remembers.
     fn target_entity(&self, t: &Target) -> Option<Arc<Entity>> {
+        let known = |id| self.view().known(id).map(|(e, _)| Arc::new(e.clone()));
         match t {
-            Target::Entity(id) => self.view().known(*id).map(|(e, _)| Arc::new(e.clone())),
-            Target::Memory(m) => Some(m.snapshot.clone()),
+            Target::Entity(id) => known(*id),
+            Target::Memory(m) if m.owner == self.me => Some(m.snapshot.clone()),
+            Target::Memory(m) => known(m.snapshot.id),
             _ => None,
         }
     }
@@ -434,33 +436,31 @@ impl GameInterface {
     /// The title of an order's target, made as the original makes a view
     /// of it (the view draws its footstep offset first). An entity is
     /// described as the player perceives or remembers it, and has no title
-    /// if the player knows nothing of it. A square or a subsquare gives the
-    /// square's title (see [`GameInterface::place_view_title`]); a point
-    /// has no title.
+    /// if the player knows nothing of it; so is the remembered target of
+    /// an ally's order. The remembered target of the player's own order is
+    /// its own memory. A square or a subsquare gives the square's title
+    /// (see [`GameInterface::place_view_title`]); a point has no title.
     fn target_title(&self, cx: &Client, t: &Target) -> R<Msg> {
+        let known_title = |id: EntityId| match self.view().known(id) {
+            Some((e, ts)) => {
+                let v = EntityView::new(Arc::new(e.clone()), ts, &cx.rng);
+                self.title(cx, &v)
+            }
+            None => {
+                EntityView::footstep_offset(&cx.rng);
+                Ok(Vec::new())
+            }
+        };
         match t {
-            Target::Entity(id) => match self.view().known(*id) {
-                Some((e, ts)) => {
-                    let v = EntityView::new(Arc::new(e.clone()), ts, &cx.rng);
-                    self.title(cx, &v)
-                }
-                None => {
-                    EntityView::footstep_offset(&cx.rng);
-                    Ok(Vec::new())
-                }
-            },
-            Target::Memory(m) => {
-                // The target as the order's owner remembers it.
+            Target::Entity(id) => known_title(*id),
+            Target::Memory(m) if m.owner == self.me => {
                 let view = self.view();
-                let remembered = if m.owner == self.me {
-                    view.remembered(m.snapshot.id)
-                } else {
-                    view.leaks().memory_of(m.owner, m.snapshot.id)
-                };
+                let remembered = view.remembered(m.snapshot.id);
                 let ts = remembered.map_or(view.time(), |r| r.time_stamp);
                 let v = EntityView::new(m.snapshot.clone(), Some(ts), &cx.rng);
                 self.title(cx, &v)
             }
+            Target::Memory(m) => known_title(m.snapshot.id),
             Target::Square(s) => self.place_view_title(cx, Some(Place::Square(*s))),
             Target::Zoom(z) => self.place_view_title(cx, Some(Place::Square(z.place))),
             Target::Xy(..) => {
@@ -1156,6 +1156,60 @@ mod tests {
         assert!(g.game.view().known(townhall).is_none());
         let m = g.game.orders_txt(&h.client, &v).unwrap();
         assert_eq!(said(&mut h, &m), ", go to ,");
+    }
+
+    #[test]
+    fn an_allys_remembered_target_is_named_as_the_player_knows_it() {
+        let (mut h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        // An order that aims at the town hall as its owner, another player,
+        // remembers it; the player knows nothing of it.
+        let snapshot = Arc::new(g.game.host.world().entity(townhall).unwrap().clone());
+        let memory = soundrts_world::entity::MemoryRef {
+            owner: them,
+            snapshot,
+        };
+        let mut v = peasant_aiming_at(&mut g, Target::Memory(memory));
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", go to ,");
+        // The same for the building a second build phase makes: the ally
+        // remembers a farm's site, which the player knows nothing of.
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let meadow = g.game.dobjets.values().find(|o| o.type_name() == "meadow");
+        let meadow = meadow.unwrap().id();
+        g.game
+            .host
+            .queue_line(me, &format!("control {}", peasant.0));
+        g.game
+            .host
+            .queue_line(me, &format!("order 0 0 build farm {}", meadow.0));
+        let has_site = |g: &crate::testkit::TestGame| {
+            let w = g.game.host.world();
+            let units = &w.player(me).units;
+            units
+                .iter()
+                .any(|&u| &*w.entity(u).unwrap().type_name == "buildingsite")
+        };
+        for _ in 0..300 {
+            if has_site(&g) {
+                break;
+            }
+            g.game.host.step(me);
+        }
+        let site = unit(&g, me, "buildingsite");
+        let mut snapshot = g.game.host.world().entity(site).unwrap().clone();
+        snapshot.id = EntityId(999_999);
+        let memory = soundrts_world::entity::MemoryRef {
+            owner: them,
+            snapshot: Arc::new(snapshot),
+        };
+        let model = Arc::get_mut(&mut v.model).unwrap();
+        model.orders[0].keyword = Keyword::BuildPhaseTwo;
+        model.orders[0].target = Some(Target::Memory(memory));
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", build ,");
     }
 
     #[test]

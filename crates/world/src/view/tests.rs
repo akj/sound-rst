@@ -117,18 +117,6 @@ fn an_entity_is_known_as_perceived_else_as_remembered() {
 }
 
 #[test]
-fn an_allys_memory_is_read_from_the_ally() {
-    let (mut w, me, them) = game();
-    let farm = unit(&w, me, "farm");
-    remember(&mut w, them, farm);
-    let v = View::new(&w, me);
-    assert!(v.remembered(farm).is_none());
-    let old = w.player(them).memory.get(&farm).map(|r| r.time_stamp);
-    assert_eq!(old, Some(1500));
-    assert_eq!(v.leaks().memory_of(them, farm).map(|r| r.time_stamp), old);
-}
-
-#[test]
 fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
     let (mut w, me, them) = game();
     let home = square_of(&w, unit(&w, me, "townhall"));
