@@ -87,11 +87,13 @@ impl LobbyModel {
     }
 }
 
-/// The map of the room: here, or still coming from the server.
+/// The map of the room: here, still coming from the server, or refused
+/// (the server does not have it, or it cannot be unpacked or read).
 #[derive(Clone, Debug)]
 pub enum MapState {
     Ready(Arc<Map>),
     Downloading,
+    Refused,
 }
 
 /// The room the player is in, before its game starts.
@@ -148,7 +150,7 @@ impl RoomModel {
     pub fn map(&self) -> Option<Arc<Map>> {
         match &self.map {
             MapState::Ready(m) => Some(m.clone()),
-            MapState::Downloading => None,
+            MapState::Downloading | MapState::Refused => None,
         }
     }
 

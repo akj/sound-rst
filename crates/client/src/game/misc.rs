@@ -9,7 +9,7 @@ use soundrts_world::msgparts as mp;
 use soundrts_world::player::ControllerKind;
 
 use crate::client::Client;
-use crate::input::{Event, Key, KeyDown};
+use crate::input::{Event, KeyDown};
 use crate::menu::{Action, Flow, Menu, TextEntry, input_string};
 use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
@@ -343,12 +343,18 @@ impl GameInterface {
         Ok(())
     }
 
-    /// A key pressed while the game menu is open in a game on a server: F7
-    /// writes to the game as in the game, the other keys go to the menu,
-    /// which closes once an item is chosen.
+    /// A key pressed while the game menu is open in a game on a server: the
+    /// keys bound to writing to the game or to the allies do so as in the
+    /// game, the other keys go to the menu, which closes once an item is
+    /// chosen.
     pub(crate) fn game_menu_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
-        if k.key == Key::F7 {
-            self.cmd_say(cx, Channel::Game);
+        let channel = match self.bindings.command_for(&k) {
+            Some(GameCommand::Say) => Some(Channel::Game),
+            Some(GameCommand::SayAllies) => Some(Channel::Allies),
+            _ => None,
+        };
+        if let Some(channel) = channel {
+            self.cmd_say(cx, channel);
             return Ok(());
         }
         let Some(gm) = &mut self.game_menu else {

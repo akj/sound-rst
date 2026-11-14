@@ -938,8 +938,9 @@ fn a_line_being_typed_is_said_as_written() {
     );
 }
 
-#[test]
-fn chat_from_the_game_menu_goes_to_the_game() {
+/// Andrew opens the game menu, presses F7 with `mods`, and writes "hi".
+/// What his client sends.
+fn chat_from_the_game_menu(mods: Mods) -> Vec<ClientMsg> {
     let live = LiveKeys::default();
     let mut h = Harness::with_config(
         "en",
@@ -956,19 +957,38 @@ fn chat_from_the_game_menu_goes_to_the_game() {
     let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
     let t0 = h.clock.now();
     live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
-    live.tap_at(t0 + 5.0, Key::F7, Mods::NONE);
+    live.tap_at(t0 + 5.0, Key::F7, mods);
     live.type_at(t0 + 8.0, 0.5, "hi");
     live.tap_at(t0 + 10.0, Key::Return, Mods::NONE);
     live.tap_at(t0 + 15.0, Key::Escape, Mods::NONE);
     h.run_for(&mut g, 20.0);
     assert!(live.is_empty(), "every key was read");
+    server.sent()
+}
+
+#[test]
+fn chat_from_the_game_menu_goes_to_the_game() {
     assert!(
-        server.sent().contains(&ClientMsg::Chat {
+        chat_from_the_game_menu(Mods::NONE).contains(&ClientMsg::Chat {
             channel: Channel::Game,
             text: ChatText::clean("hi").unwrap(),
-        }),
-        "{:?}",
-        server.sent()
+        })
+    );
+}
+
+#[test]
+fn shift_f7_from_the_game_menu_writes_to_the_allies() {
+    let sent = chat_from_the_game_menu(Mods::SHIFT);
+    let chats: Vec<&ClientMsg> = sent
+        .iter()
+        .filter(|m| matches!(m, ClientMsg::Chat { .. }))
+        .collect();
+    assert_eq!(
+        chats,
+        [&ClientMsg::Chat {
+            channel: Channel::Allies,
+            text: ChatText::clean("hi").unwrap(),
+        }]
     );
 }
 
@@ -1004,5 +1024,97 @@ fn a_players_login_is_said_as_written_in_the_game() {
     assert_eq!(
         h.client.sounds.translate(&name[0]),
         soundrts::sound_cache::Spoken::Text("4000".into())
+    );
+}
+
+#[test]
+fn a_removal_that_crosses_the_players_leave_does_not_close_the_lobby_prompts() {
+    // Andrew leaves Bob's room at 20 s; Bob's removal of Andrew reaches
+    // him in the lobby at 27 s, then he writes a chat line there.
+    let script = Script::new()
+        .at(20.0)
+        .tap(Key::Escape)
+        .at(30.0)
+        .tap(Key::F7)
+        .at(32.0)
+        .type_text("y")
+        .at(34.0)
+        .tap(Key::Return)
+        .at(50.0)
+        .tap(Key::LShift);
+    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = jl1(h);
+        let mut state = room_state(
+            &map,
+            vec![slot(human("bob"), 1, true), slot(human("andrew"), 2, false)],
+        );
+        state.host = login("bob");
+        s.at(10.0, room(RoomChange::Entered, &state));
+        s.at(
+            27.0,
+            ServerMsg::RoomExited {
+                reason: RoomExit::Removed,
+            },
+        );
+    });
+    assert_eq!(
+        server.sent(),
+        [
+            ClientMsg::LeaveRoom,
+            ClientMsg::Chat {
+                channel: Channel::Lobby,
+                text: ChatText::clean("y").unwrap(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_map_that_cannot_be_read_is_said_and_the_room_does_not_wait_for_it() {
+    use std::io::Write;
+    // A package without a map in it.
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    w.start_file("readme.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(b"no map here").unwrap();
+    let package = w.finish().unwrap().into_inner();
+    let file_name = MapFileName::new("broken.zip").unwrap();
+    let map = MapInfo {
+        file_name: file_name.clone(),
+        hash: MapHash::of(&package),
+        title_sounds: Vec::new(),
+        nb_players_min: 2,
+        nb_players_max: 2,
+    };
+    // Andrew goes to the item before "leave this game".
+    let script = Script::new()
+        .at(20.0)
+        .tap(Key::Up)
+        .at(22.0)
+        .tap(Key::Up)
+        .at(30.0)
+        .tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |_, s| {
+        let mut state = room_state(&map, vec![slot(human("bob"), 1, true)]);
+        state.host = login("bob");
+        state.slots.push(slot(human("andrew"), 2, false));
+        s.at(10.0, room(RoomChange::Entered, &state));
+        s.at(
+            15.0,
+            ServerMsg::Map {
+                map: MapData {
+                    file_name,
+                    bytes: MapBytes::new(package).unwrap(),
+                },
+            },
+        );
+    });
+    assert_eq!(
+        from(&said(&h), "<1029> this game cannot start here"),
+        [
+            "<1029> this game cannot start here",
+            "quit, leave this game",
+            "this game cannot start here",
+        ]
     );
 }

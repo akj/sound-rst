@@ -209,14 +209,27 @@ impl Style {
     }
 
     fn val(&self, object: &str, attr: &str) -> Option<&StyleValue> {
+        self.val_from(object, attr, &mut HashSet::new())
+    }
+
+    /// The value of `object.attr`, looked up through the parents, each
+    /// object at most once: a style can make a type its own ancestor.
+    fn val_from(
+        &self,
+        object: &str,
+        attr: &str,
+        seen: &mut HashSet<String>,
+    ) -> Option<&StyleValue> {
+        if !seen.insert(object.to_owned()) {
+            return None;
+        }
         let o = self.dict.get(object)?;
         if let Some(v) = o.get(attr) {
             return Some(v);
         }
         self.parents(object)
             .iter()
-            .filter(|p| self.dict.contains_key(p.as_str()))
-            .find_map(|p| self.val(p, attr))
+            .find_map(|p| self.val_from(p, attr, seen))
     }
 
     /// The value of `object.attr`. An attribute `x_level_N` falls back to `x`.
@@ -367,5 +380,15 @@ mod tests {
         assert!(style.has("footman", "title"));
         assert!(!style.has("footman", "nothing"));
         assert_eq!(style.words("footman", "nothing"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_type_that_is_its_own_ancestor_has_no_missing_attribute() {
+        let mut style = Style::new(Log::silent());
+        style.load(&["def a\ntitle 1\nis_a a b b\n\ndef b\nis_a a a\n"]);
+        assert_eq!(style.words("a", "title"), ["1"]);
+        assert_eq!(style.words("b", "title"), ["1"]);
+        assert_eq!(style.value("a", "nothing"), None);
+        assert_eq!(style.value("b", "nothing_level_2"), None);
     }
 }

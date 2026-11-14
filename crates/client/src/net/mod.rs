@@ -3,10 +3,11 @@
 //!
 //! Server messages are read by one hook, [`pump`], that every waiting loop
 //! of the client calls: menus, text entry and the game loop. It updates
-//! the models, says what changed, and sets flags: [`Net::version`] changes
-//! when the multiplayer menus must be built again, and [`Net::interrupt`]
-//! makes the menu or prompt that is open give up, as Escape would, when
-//! the game starts, the connection is lost, or the host removes the player.
+//! the models, says what changed, and counts: [`Net::version`] changes
+//! when the multiplayer menus must be built again, and [`Net::interrupts`]
+//! goes up when the game starts, the connection is lost, or the host
+//! removes the player; a menu or prompt opened before it went up gives up,
+//! as Escape would.
 
 pub mod chat;
 pub mod conn;
@@ -123,8 +124,9 @@ pub struct Net {
     pub game: Option<GameLink>,
     /// Changes whenever the multiplayer menus must be built again.
     pub version: u64,
-    /// The open prompt or static menu must give up.
-    pub interrupt: bool,
+    /// How many events have made the open prompts and static menus give
+    /// up. Each remembers the count when it opens.
+    pub interrupts: u64,
     /// Why the connection ended, once it has.
     pub closed: Option<String>,
     pub content: ContentHash,
@@ -149,7 +151,7 @@ impl Net {
             started: None,
             game: None,
             version: 0,
-            interrupt: false,
+            interrupts: 0,
             closed: None,
             content,
             creating: None,
@@ -172,7 +174,7 @@ impl Net {
                 if self.closed.is_none() {
                     self.closed = Some(reason);
                 }
-                self.interrupt = true;
+                self.interrupts += 1;
                 self.changed();
             }
         }
@@ -247,7 +249,7 @@ impl Net {
                 self.room = None;
                 if reason == RoomExit::Removed {
                     cx.voice.chat(&text(words::YOU_HAVE_BEEN_REMOVED));
-                    self.interrupt = true;
+                    self.interrupts += 1;
                 }
                 self.changed();
             }
@@ -275,7 +277,7 @@ impl Net {
                     map,
                     speed,
                 });
-                self.interrupt = true;
+                self.interrupts += 1;
                 self.changed();
             }
             ServerMsg::Turn { turn, orders } => {
@@ -326,6 +328,14 @@ impl Net {
             }
             ServerMsg::Refused { reason } => {
                 cx.log.info(format!("refused by the server: {reason:?}"));
+                // The answer to the map asked for when entering the room.
+                if reason == Refusal::WrongMap
+                    && let Some(r) = &mut self.room
+                    && matches!(r.map, MapState::Downloading)
+                {
+                    r.map = MapState::Refused;
+                    self.changed();
+                }
                 let m = match reason {
                     Refusal::TooManyRooms => msg(mp::TOO_MANY_GAMES),
                     Refusal::CannotStart => {
@@ -368,12 +378,16 @@ impl Net {
             cx.log.warning(format!("refused the map received: {e}"));
             cx.voice
                 .chat(&[msg(mp::BEEP), text(words::MAP_REFUSED)].concat());
+            room.map = MapState::Refused;
             return;
         }
         let map = match Map::from_bytes(bytes.clone(), &file_name) {
             Ok(m) => Arc::new(m),
             Err(e) => {
                 cx.log.warning(format!("cannot read the map received: {e}"));
+                cx.voice
+                    .chat(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat());
+                room.map = MapState::Refused;
                 return;
             }
         };
@@ -426,9 +440,10 @@ pub fn send(cx: &mut Client, msg: ClientMsg) {
     }
 }
 
-/// Whether the open prompt or static menu must give up.
-pub fn interrupted(cx: &Client) -> bool {
-    cx.net.as_ref().is_some_and(|n| n.interrupt)
+/// The count of [`Net::interrupts`], 0 off a server: a prompt or static
+/// menu opened when it was `n` gives up once it is no longer `n`.
+pub fn interrupts(cx: &Client) -> u64 {
+    cx.net.as_ref().map_or(0, |n| n.interrupts)
 }
 
 /// The characters of a chat line: any but control characters.
