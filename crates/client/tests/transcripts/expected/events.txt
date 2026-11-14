@@ -35,6 +35,7 @@ length 1194 928345
 length 1195 398866
 length 1196 724172
 length 1300 2966259
+length 1326 938594
 length 1327 39138
 length 1329 3540159
 length 1339 1624512
@@ -294,18 +295,18 @@ length 9999 208980
 @280758 step 77 wait_turns 100
 @280759 step 78 key z
 @280759 voice item "1033 gold"
-@282559 voice info "1 farm at building enemy at b 4"
-@293058 voice info "1 farm enemy at b 4"
-@310758 sounds 913 8ae8068da23065ca
+@282560 voice info "1 farm at building enemy at c 4"
+@292758 voice info "1 farm enemy at c 4"
+@310758 sounds 908 c165fc654171b3c4
 @310758 step 79 wait_turns 100
 @310759 step 80 key z
-@310759 voice item "1044 gold"
+@310759 voice item "1045 gold"
 @312459 voice info "1 peasant enemy at b 4"
-@340758 sounds 889 c690051d55764ec5
+@340758 sounds 897 510c144dbc5b87b4
 @340758 step 81 wait_turns 100
 @340759 step 82 key z
 @340759 voice item "1056 gold"
-@342459 sounds 51 a8e07a3200b94c87
+@342459 sounds 50 003f2019c95c4930
 @342459 step 83 key BACKQUOTE
 @342459 voice menu "Enter a command."
 @344060 step 84 key a (type a 10 footman)
@@ -334,7 +335,7 @@ length 9999 208980
 @358860 voice item "n . a 10 footman"
 @360860 step 96 key RETURN
 @360860 voice item "a 10 footman"
-@361461 sounds 73 3df9e2a2b147222a
+@361461 sounds 74 3291eb0c8a8081e7
 @361461 step 97 wait_turns 3
 @362460 voice info "footman 1 at b 2"
 @364460 voice info "footman 2 at b 2"
@@ -346,46 +347,56 @@ length 9999 208980
 @376460 voice info "footman 8 at b 2"
 @378460 voice info "footman 9 at b 2"
 @380460 voice info "footman 10 at b 2"
-@382762 sounds 562 672879b912b4afdb
+@382762 sounds 567 59949c528b1f4686
 @382762 step 98 key f
 @382762 voice item ", You control 10 footman , ,"
-@385962 sounds 93 626c9c5229c65e28
+@385962 sounds 92 21a325eb1033de84
 @385962 step 99 key CTRL UP
 @385962 voice item "b 3 , meadows"
-@387462 sounds 57 0000a19c832edc52
+@387462 sounds 53 4eb3c66ad6a7a192
 @387462 step 100 key CTRL UP
-@387462 voice item "b 4 , 1 town hall , 2 farm and 4 peasant enemy"
-@392862 sounds 145 0486ee40fa29c2f8
-@392862 step 101 key BACKSPACE
-@392862 voice item "go to b 4 ,"
-@411861 voice info "gold mine exhausted"
-@422674 voice info "1 farm neutralized at b 4"
-@433176 voice info "1 farm neutralized at b 4"
-@437661 sounds 2347 bfa8e522d024625f
-@437661 step 102 wait_turns 150
-@437674 sounds 11 350e280bd56be35e
-@437674 step 103 key c
-@437674 voice item "9 food to 21"
-@446664 voice info "1 town hall neutralized at b 4"
-@446673 voice confirmation "quiet computer has been defeated"
-@449873 voice info "1 town hall neutralized at b 4"
-@449874 voice confirmation "quiet computer has just quit the game"
-@453574 voice info "1 town hall neutralized at b 4"
-@454177 voice cut queue=0
-@454178 voice info "Victory! at 5 minutes 54 seconds"
-@457978 voice info "20 units produced , 0 lost , 0 neutralized"
-@462978 voice info "3 building produced , 0 lost , 3 neutralized"
-@467978 voice info "85 gold gathered , consumed"
-@471078 voice info "10 wood gathered , consumed"
-@474178 voice info "score press F5 to listen again"
-@477378 voice menu "please make a selection"
-@477378 sounds 570 f51bb0c7347691d8
-@477378 step 104 wait_game_end
-@479678 step 105 key ESCAPE
-@479678 voice confirmation "go back to the previous menu"
-@482488 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@487588 sounds 1 89cae6d2896e42d0
-@487588 step 106 key ESCAPE
-@487588 voice confirmation "quit,"
-@488098 sounds 1 23f9e73f15d97bd9
-@488098 end
+@387462 voice item "b 4 , meadows , 1 town hall , 1 farm and 3 peasant enemy"
+@393862 sounds 161 18d2fb462da9c375
+@393862 step 101 key BACKSPACE
+@393862 voice item "go to b 4 ,"
+@410961 voice info "gold mine exhausted"
+@425975 voice info "1 farm neutralized at b 4"
+@437968 voice info "1 town hall neutralized at b 4"
+@438861 sounds 2307 72ba6061246f85e3
+@438861 step 102 wait_turns 150
+@441369 sounds 55 77c5dcb061ad5675
+@441369 step 103 key c
+@441369 voice item "9 food to 21"
+@443169 sounds 39 bc0fd0506a141e75
+@443169 step 104 key f
+@443169 voice item ", You control 10 footman , ,"
+@446369 sounds 88 afb6f98177e3f231
+@446369 step 105 key CTRL RIGHT
+@446369 voice item "c 4 , meadows , 9 peasant and 1 farm enemy , 1 gold mine"
+@452769 voice info "gold mine exhausted"
+@454670 sounds 177 916e22630c576636
+@454670 step 106 key BACKSPACE
+@454670 voice item "go to c 4 ,"
+@462864 voice info "1 farm neutralized at c 4"
+@463761 voice confirmation "quiet computer has been defeated"
+@466961 voice info "1 farm neutralized at c 4"
+@466962 voice confirmation "quiet computer has just quit the game"
+@470662 voice info "1 farm neutralized at c 4"
+@471265 voice cut queue=0
+@471266 voice info "Victory! at 6 minutes 11 seconds"
+@475066 voice info "20 units produced , 0 lost , 0 neutralized"
+@480066 voice info "3 building produced , 0 lost , 3 neutralized"
+@485066 voice info "85 gold gathered , consumed"
+@488166 voice info "10 wood gathered , consumed"
+@491266 voice info "score press F5 to listen again"
+@494466 voice menu "please make a selection"
+@494466 sounds 489 91ed022dd6381078
+@494466 step 107 wait_game_end
+@496766 step 108 key ESCAPE
+@496766 voice confirmation "go back to the previous menu"
+@499576 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@504676 sounds 1 f3c819ececf3daad
+@504676 step 109 key ESCAPE
+@504676 voice confirmation "quit,"
+@505186 sounds 1 f55bc673f392023f
+@505186 end
