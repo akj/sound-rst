@@ -11,7 +11,6 @@
 //! (see [`EntityClass::default_stats`]), and the data only one class has
 //! lives in [`ExitData`], [`SiteData`] and the corpse's unit.
 
-use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
@@ -23,14 +22,6 @@ use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 /// text protocol: all of them share one counter, as in the original.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityId(pub u32);
-
-impl EntityId {
-    /// Compares as the original does where it sorts by `id`: ids are
-    /// strings there, so "10" comes before "9".
-    pub fn cmp_as_text(self, other: EntityId) -> Ordering {
-        self.0.to_string().cmp(&other.0.to_string())
-    }
-}
 
 impl fmt::Display for EntityId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

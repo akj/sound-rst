@@ -558,15 +558,14 @@ impl World {
         let mut friends = BTreeSet::new();
         let mut cataclysmic = BTreeSet::new();
         let allied = self.pl(p).allied.clone();
-        let mut perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
-        perceived.sort_by(|a, b| a.cmp_as_text(*b));
-        let mut remembered: Vec<Arc<Entity>> = self
+        // Both in id order.
+        let perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
+        let remembered: Vec<Arc<Entity>> = self
             .pl(p)
             .memory
             .values()
             .map(|r| r.snapshot.clone())
             .collect();
-        remembered.sort_by(|a, b| a.id.cmp_as_text(b.id));
         let entities = perceived
             .iter()
             .map(|&o| self.e(o))
@@ -913,7 +912,7 @@ impl World {
                 }
             }
         }
-        warehouses.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp_as_text(b.1)));
+        warehouses.sort();
         Ok(warehouses.first().map(|w| w.1))
     }
 

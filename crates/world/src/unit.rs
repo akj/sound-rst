@@ -1368,7 +1368,7 @@ impl World {
             let (ea, eb) = (self.e(a), self.e(b));
             (-ea.menace(), square_of_distance(x, y, ea.x, ea.y))
                 .cmp(&(-eb.menace(), square_of_distance(x, y, eb.x, eb.y)))
-                .then(a.cmp_as_text(b))
+                .then(a.cmp(&b))
         });
         self.attack(id, Target::Entity(reachable[0]));
         Ok(true)

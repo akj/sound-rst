@@ -1920,6 +1920,21 @@ starting_resources 100 100
         assert!(!zoom(2000, 2000).same(&zoom(2000, 6000)));
     }
 
+    #[test]
+    fn of_two_meadows_as_near_the_one_with_the_smaller_id_comes_first() {
+        let (mut w, a, _) = two_humans();
+        let a1 = sq(&w, "a1");
+        let f = create(&mut w, "footman", a, a1);
+        let (fx, fy) = (w.e(f).x, w.e(f).y);
+        let first = w.create_meadow(a1, Some((fx - 1000, fy)));
+        // The next id with one more digit: 9 then 10, or 99 then 100.
+        let digits = first.0.to_string().len() as u32;
+        while w.create_meadow(a1, Some((1000, 1000))).0 + 1 < 10_u32.pow(digits) {}
+        let second = w.create_meadow(a1, Some((fx + 1000, fy)));
+        assert!(second.0.to_string() < first.0.to_string());
+        assert_eq!(w.find_nearest_meadow(a1, f), Some(first));
+    }
+
     /// The events of the entities the player perceives, since the last call.
     fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
         w.drain_events(p)

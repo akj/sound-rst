@@ -181,7 +181,7 @@ impl World {
             let (ea, eb) = (self.e(a), self.e(b));
             int_distance(ea.x, ea.y, u.x, u.y)
                 .cmp(&int_distance(eb.x, eb.y, u.x, u.y))
-                .then(a.cmp_as_text(b))
+                .then(a.cmp(&b))
         });
         meadows.first().copied()
     }

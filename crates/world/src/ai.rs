@@ -93,15 +93,9 @@ struct Tracked {
     order: Order,
 }
 
-/// The comparison key of `_deposit_priority`: the id is text, and the
-/// missing deposit has 0 instead.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum IdKey {
-    Zero,
-    Text(String),
-}
-
-type DepositPriority = (i64, i64, IdKey);
+/// The comparison key of `_deposit_priority`: the deposit's id last, and
+/// none for a missing deposit.
+type DepositPriority = (i64, i64, Option<EntityId>);
 
 /// The state of a scripted computer player (`Computer`).
 #[derive(Clone, Debug, Default, Hash)]
@@ -280,7 +274,7 @@ impl World {
             ));
         }
         targets.retain(|(_, t)| !self.t_entity(t).is_some_and(Entity::is_exit));
-        targets.sort_by(|a, b| a.0.cmp_as_text(b.0));
+        targets.sort_by_key(|t| t.0);
         let ids: Vec<EntityId> = targets.into_iter().map(|(i, _)| i).collect();
         let mut i = 0;
         while i < self.pl(p).units.len() {
@@ -725,7 +719,7 @@ impl World {
         v.sort_by(|&a, &b| {
             self.value_as_an_explorer(b)
                 .cmp(&self.value_as_an_explorer(a))
-                .then_with(|| b.cmp_as_text(a))
+                .then_with(|| b.cmp(&a))
         });
         v
     }
@@ -988,7 +982,7 @@ impl World {
     }
 
     /// `_builders_place`: where most workers are; on a tie, the place with
-    /// the greatest id (as text).
+    /// the greatest id.
     fn builders_place(&self, p: PlayerId) -> Res<Option<Place>> {
         let mut starts: Vec<(Option<Place>, i64)> = Vec::new();
         for &u in &self.cs(p).workers {
@@ -1011,8 +1005,8 @@ impl World {
             .into_iter()
             .max_by(|a, b| {
                 let id = |pl: &Option<Place>| match pl {
-                    Some(Place::Square(s)) => self.square(*s).id.to_string(),
-                    _ => String::new(),
+                    Some(Place::Square(s)) => Some(self.square(*s).id),
+                    _ => None,
                 };
                 id(a).cmp(&id(b))
             })
@@ -1266,7 +1260,7 @@ impl World {
             }
         }
         candidates.retain(|(_, o)| self.choose_is_ok(p, o, resource_type));
-        candidates.sort_by(|a, b| a.0.cmp_as_text(b.0));
+        candidates.sort_by_key(|c| c.0);
         let mut candidates: Vec<Target> = candidates.into_iter().map(|(_, o)| o).collect();
         if candidates.len() > 10 {
             candidates = self.remove_far_candidates(&candidates, start, 10)?;
@@ -1288,7 +1282,7 @@ impl World {
             for o in candidates.into_iter().filter(|o| self.t_place_of(o) == p0) {
                 keyed.push((self.deposit_priority(p, &Some(o.clone()))?, o));
             }
-            keyed.sort_by(|a, b| b.0.cmp(&a.0));
+            keyed.sort_by_key(|k| std::cmp::Reverse(k.0));
             candidates = keyed.into_iter().map(|(_, o)| o).collect();
         }
         let result = candidates.into_iter().next();
@@ -1344,7 +1338,7 @@ impl World {
 
     fn deposit_priority(&self, p: PlayerId, d: &Option<Target>) -> Res<DepositPriority> {
         let Some(t) = d else {
-            return Ok((-100, 0, IdKey::Zero));
+            return Ok((-100, 0, None));
         };
         let workers = self
             .cs(p)
@@ -1360,7 +1354,7 @@ impl World {
             .copied()
             .ok_or_else(|| Abort::new("list index out of range"))?;
         let id = self.t_entity(t).expect("an entity").id;
-        Ok((floordiv(-r, 10), -workers, IdKey::Text(id.to_string())))
+        Ok((floordiv(-r, 10), -workers, Some(id)))
     }
 
     // Computer: counting and getting units
@@ -1694,7 +1688,7 @@ impl World {
                 for u in units {
                     keyed.push((self.worker_orders_priority(p, u)?, u));
                 }
-                keyed.sort_by(|a, b| a.0.cmp(&b.0));
+                keyed.sort_by_key(|k| k.0);
                 units = keyed.into_iter().map(|(_, u)| u).collect();
             }
             let u = units.remove(0);
