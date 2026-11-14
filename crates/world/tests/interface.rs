@@ -243,3 +243,45 @@ fn a_player_who_has_left_gives_no_more_commands() {
     assert_eq!(w.ex_players, [you]);
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+/// The interface sends the center of one of the nine subsquares of a
+/// square; another player's order may carry any number.
+#[test]
+fn a_zoom_outside_its_square_is_refused() {
+    let (mut w, me, _) = game();
+    let peasant = common::find_player_unit(&w, me, "peasant", 0).unwrap();
+    let a1 = w.square(w.square_by_name("a1").unwrap());
+    let (id, y) = (a1.id, a1.y);
+    let east = a1.x + (a1.xmax - a1.xmin) / 3;
+    w.queue_command(me, &format!("control {peasant}"));
+    w.queue_command(
+        me,
+        &format!("order 0 0 build farm zoom-{id}-9223372036854775807-{y}"),
+    );
+    w.update();
+    assert_eq!(
+        w.drain_warnings(),
+        [format!(
+            "problem with order: [\"build\", \"farm\", \"zoom-{id}-9223372036854775807-{y}\"]: \
+             the zoom is outside its square"
+        )]
+    );
+    let keywords = |w: &World| {
+        w.entity(peasant)
+            .unwrap()
+            .orders
+            .iter()
+            .map(|o| o.keyword)
+            .collect::<Vec<_>>()
+    };
+    // The order was queued before its target was read. With no target, it
+    // is impossible at its first execution and leaves at the next turn.
+    w.update();
+    assert_eq!(keywords(&w), []);
+    assert_eq!(w.player(me).resources, [10000, 10000]);
+    // The center of the east subsquare, as the interface sends it.
+    w.queue_command(me, &format!("order 0 0 go zoom-{id}-{east}-{y}"));
+    w.update();
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    assert_eq!(keywords(&w), [Keyword::Go]);
+}

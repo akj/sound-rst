@@ -92,8 +92,16 @@ impl Definitions {
     }
 
     /// `_Definitions._val`: the value of a property, looked up through the
-    /// parents when the class does not define it.
-    fn val(&self, obj: &str, attr: &str, depth: usize) -> Option<RawValue> {
+    /// parents when the class does not define it. Each class is searched
+    /// once, and at most 64 parents deep, so that a class that is its own
+    /// parent, or a parent listed twice, cannot make the search grow.
+    fn val<'a>(
+        &'a self,
+        obj: &'a str,
+        attr: &str,
+        depth: usize,
+        visited: &mut Vec<&'a str>,
+    ) -> Option<RawValue> {
         let o = self.def(obj)?;
         if let Some(v) = def_get(o, attr) {
             return Some(v.clone());
@@ -101,10 +109,12 @@ impl Definitions {
         if depth > 64 {
             return None;
         }
+        visited.push(obj);
         if let Some(RawValue::Words(parents)) = def_get(o, "is_a") {
             for p in parents {
                 if self.def(p).is_some()
-                    && let Some(v) = self.val(p, attr, depth + 1)
+                    && !visited.contains(&p.as_str())
+                    && let Some(v) = self.val(p, attr, depth + 1, visited)
                 {
                     return Some(v);
                 }
@@ -114,12 +124,12 @@ impl Definitions {
     }
 
     fn get(&self, obj: &str, attr: &str) -> Option<RawValue> {
-        let mut v = self.val(obj, attr, 0);
+        let mut v = self.val(obj, attr, 0, &mut Vec::new());
         if v.is_none()
             && attr.len() >= 8
             && attr.get(attr.len() - 8..attr.len() - 1) == Some("_level_")
         {
-            v = self.val(obj, &attr[..attr.len() - 8], 0);
+            v = self.val(obj, &attr[..attr.len() - 8], 0, &mut Vec::new());
         }
         v
     }
@@ -905,10 +915,14 @@ impl Rules {
         let s = replace_class_race(&join_layers(texts));
         read_rules_text(&s, &mut raw, &mut warnings);
         raw.apply_inheritance(true, &mut warnings);
-        let nb_res = match raw.get("parameters", "nb_of_resource_types") {
-            Some(RawValue::Int(n)) if n >= 0 => n as usize,
-            _ => 2,
-        };
+        if let Some(RawValue::Int(n)) = raw.get("parameters", "nb_of_resource_types")
+            && n > MAX_NB_OF_RESOURCE_TYPES as i64
+        {
+            warnings.push(format!(
+                "nb_of_resource_types {n}, more than {MAX_NB_OF_RESOURCE_TYPES}"
+            ));
+        }
+        let nb_res = nb_of_resource_types(&raw);
         let mut types = Vec::new();
         let mut by_name = BTreeMap::new();
         for i in 0..raw.defs.len() {
@@ -978,12 +992,9 @@ impl Rules {
     }
 
     /// The number of resource types (`parameters nb_of_resource_types`,
-    /// 2 by default).
+    /// 2 by default, [`MAX_NB_OF_RESOURCE_TYPES`] at most).
     pub fn nb_of_resource_types(&self) -> usize {
-        match self.get("parameters", "nb_of_resource_types") {
-            Some(RawValue::Int(n)) if n >= 0 => n as usize,
-            _ => 2,
-        }
+        nb_of_resource_types(&self.raw)
     }
 
     /// Pads with zeros or truncates to the number of resource types.
@@ -1064,6 +1075,18 @@ impl Rules {
             Some(RawValue::Int(n)) => n,
             _ => 17 * PRECISION / 100,
         }
+    }
+}
+
+/// `parameters nb_of_resource_types`: 2 if missing or negative, and
+/// [`MAX_NB_OF_RESOURCE_TYPES`] at most.
+fn nb_of_resource_types(raw: &Definitions) -> usize {
+    match raw.get("parameters", "nb_of_resource_types") {
+        Some(RawValue::Int(n)) if n >= 0 => usize::try_from(n)
+            .map_or(MAX_NB_OF_RESOURCE_TYPES, |n| {
+                n.min(MAX_NB_OF_RESOURCE_TYPES)
+            }),
+        _ => 2,
     }
 }
 
@@ -1332,6 +1355,23 @@ mod tests {
             r.unit_type("p").unwrap().damage_vs,
             [("a".into(), 2000), ("b".into(), 2000), ("c".into(), 3000)]
         );
+    }
+
+    #[test]
+    fn the_number_of_resource_types_is_cut_to_the_maximum_with_a_warning() {
+        let r = Rules::load(&[
+            "def parameters\nnb_of_resource_types 1000\ndef p\nclass soldier\ncost 1 2\n",
+        ]);
+        assert_eq!(r.nb_of_resource_types(), 10);
+        assert_eq!(r.unit_type("p").unwrap().cost.len(), 10);
+        assert_eq!(r.warnings, ["nb_of_resource_types 1000, more than 10"]);
+    }
+
+    #[test]
+    fn a_class_listed_twice_as_its_own_parent_is_searched_once() {
+        let r = Rules::load(&["def a\nclass soldier\nhp_max 3\ndef b\nis_a b b a b a\n"]);
+        assert_eq!(r.get("b", "hp_max"), Some(RawValue::Int(3000)));
+        assert_eq!(r.get("b", "speed"), None);
     }
 
     #[test]
