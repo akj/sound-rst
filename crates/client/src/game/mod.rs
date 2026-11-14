@@ -224,6 +224,8 @@ pub struct GameInterface {
     pub(crate) already_asked_to_quit: bool,
     pub forced_quit: bool,
     pub(crate) terrain_noises: Vec<(SquareId, NoiseSource)>,
+    /// The terrain of each square when the player last observed it.
+    pub(crate) seen_terrain: HashMap<SquareId, String>,
     /// The upgrades of each known creature when the player last perceived
     /// it.
     pub(crate) seen_upgrades: HashMap<EntityId, Vec<String>>,
@@ -296,6 +298,7 @@ impl GameInterface {
             already_asked_to_quit: false,
             forced_quit: false,
             terrain_noises: Vec::new(),
+            seen_terrain: HashMap::new(),
             seen_upgrades: HashMap::new(),
             previous_animation: 0.0,
             bindings: Bindings::new(),
@@ -535,6 +538,7 @@ impl GameInterface {
         self.waiting_for_world_update = false;
         self.scouted_squares = v.observed_squares;
         self.scouted_before_squares = v.observed_before_squares;
+        self.note_terrain();
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);

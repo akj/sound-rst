@@ -1,17 +1,47 @@
-//! A running game for the tests of the interface: a training game on jl1
+//! A running game for the tests of the interface: a training game
 //! against a quiet computer, on recording devices.
 
 use soundrts_world::msg::Msg;
-use soundrts_world::{EntityId, PlayerId};
+use soundrts_world::{EntityId, PlayerId, SquareId};
 
+use super::GameInterface;
 use crate::testkit::{Harness, Script, TestGame};
 
 /// A training game on jl1 against a quiet computer, after three turns.
 pub(crate) fn training() -> (Harness, TestGame) {
+    training_on("jl1")
+}
+
+/// A training game on `map` against a quiet computer, after three turns.
+pub(crate) fn training_on(map: &str) -> (Harness, TestGame) {
     let mut h = Harness::new("en", Script::new().keep_open());
-    let mut g = h.start_training("jl1", &["quiet"], 1);
+    let mut g = h.start_training(map, &["quiet"], 1);
     h.run_until_turn(&mut g, 3);
     (h, g)
+}
+
+/// Gives `p` a command in the map language, as the console does.
+pub(crate) fn cheat(g: &mut TestGame, p: PlayerId, line: &str) {
+    g.game.host.queue_line(p, &format!("cmd {line}"));
+}
+
+/// Orders `unit` of `p` to go to the center of `square`.
+pub(crate) fn go(g: &mut TestGame, p: PlayerId, unit: EntityId, square: SquareId) {
+    let to = g.game.view().square(square).protocol_id();
+    g.game.host.queue_line(p, &format!("control {}", unit.0));
+    g.game.host.queue_line(p, &format!("order 0 0 go {to}"));
+}
+
+/// Runs the game a turn at a time until `done`, at most 400 turns.
+pub(crate) fn run_until(h: &mut Harness, g: &mut TestGame, done: impl Fn(&GameInterface) -> bool) {
+    for _ in 0..400 {
+        if done(&g.game) {
+            return;
+        }
+        let next = g.game.view().turn() + 1;
+        h.run_until_turn(g, next);
+    }
+    panic!("not done after 400 turns");
 }
 
 /// What the voice says of a message.

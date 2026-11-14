@@ -338,22 +338,6 @@ fn a_remembered_unit_gathers_from_what_the_player_knows() {
 }
 
 #[test]
-fn the_terrain_in_the_fog_is_the_terrain_now() {
-    let (w, me, _) = game();
-    let v = View::new(&w, me);
-    let fog: Vec<SquareId> = (0..v.square_count() as u32)
-        .map(SquareId)
-        .filter(|s| !w.player(me).observed_squares.contains(s))
-        .filter(|&s| w.square(s).type_name == "_forest")
-        .collect();
-    assert!(!fog.is_empty());
-    for s in fog {
-        assert_eq!(v.leaks().unobserved_terrain(s), "_forest");
-        assert_eq!(v.terrain(s), "_forest");
-    }
-}
-
-#[test]
 fn a_recallable_group_holds_every_players_units() {
     let (mut w, me, them) = game();
     let peasant = unit(&w, them, "peasant");
@@ -440,4 +424,20 @@ fn a_requirement_of_another_players_unit_is_a_leak() {
     );
     assert!(v.leaks().unit_owner_has(theirs, "farm"));
     assert!(!v.leaks().unit_owner_has(theirs, "barracks"));
+}
+
+#[test]
+fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
+    let (mut w, me, _) = game();
+    let v = View::new(&w, me);
+    let pl = w.player(me);
+    // Seen from the next square: not observed, but observed before.
+    let partly = v.partly_observed_squares();
+    assert!(!partly.is_empty());
+    assert!(partly.is_disjoint(&pl.observed_squares));
+    assert!(partly.is_subset(&pl.observed_before_squares));
+    // In cheat mode every square is observed, none partly.
+    w.player_mut(me).cheatmode = true;
+    w.update();
+    assert!(View::new(&w, me).partly_observed_squares().is_empty());
 }

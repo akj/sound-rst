@@ -887,12 +887,7 @@ impl GameInterface {
     fn terrain_footstep(&self, cx: &Client, v: &EntityView) -> Option<Vec<String>> {
         let style = cx.res.style();
         let s = v.place()?.square()?;
-        let view = self.view();
-        let t = if self.scouted_squares.contains(&s) {
-            view.terrain(s)
-        } else {
-            view.leaks().unobserved_terrain(s)
-        };
+        let t = self.known_terrain(s);
         if t.is_empty() {
             return None;
         }
@@ -1072,7 +1067,7 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{enemy, said, training, unit};
+    use super::super::testing::{cheat, enemy, go, run_until, said, training, unit};
     use super::*;
 
     /// A copy of the player's peasant whose first order, a real one, aims
@@ -1192,34 +1187,6 @@ mod tests {
             direction_msg(c, 12.0, 2.0, 2.0),
             [msg(mp::TO_THE), msg(mp::SOUTHWEST)].concat()
         );
-    }
-
-    /// Gives `p` a command in the map language, as the console does.
-    fn cheat(g: &mut crate::testkit::TestGame, p: PlayerId, line: &str) {
-        g.game.host.queue_line(p, &format!("cmd {line}"));
-    }
-
-    /// Orders `unit` of `p` to go to the center of `square`.
-    fn go(g: &mut crate::testkit::TestGame, p: PlayerId, unit: EntityId, square: SquareId) {
-        let to = g.game.view().square(square).protocol_id();
-        g.game.host.queue_line(p, &format!("control {}", unit.0));
-        g.game.host.queue_line(p, &format!("order 0 0 go {to}"));
-    }
-
-    /// Runs the game a turn at a time until `done`, at most 400 turns.
-    fn run_until(
-        h: &mut crate::testkit::Harness,
-        g: &mut crate::testkit::TestGame,
-        done: impl Fn(&GameInterface) -> bool,
-    ) {
-        for _ in 0..400 {
-            if done(&g.game) {
-                return;
-            }
-            let next = g.game.view().turn() + 1;
-            h.run_until_turn(g, next);
-        }
-        panic!("not done after 400 turns");
     }
 
     #[test]

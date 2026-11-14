@@ -247,6 +247,11 @@ pub struct Player {
     pub observed_before_squares: BTreeSet<SquareId>,
     pub strictly_observed_before_squares: BTreeSet<SquareId>,
     pub observed_squares: BTreeSet<SquareId>,
+    /// The squares seen only partly at the last perception update, from a
+    /// unit on the next square: not observed, but their neutral objects in
+    /// sight are seen. Made anew from the units each update, so it is not
+    /// part of the digest.
+    pub partly_observed_squares: BTreeSet<SquareId>,
     /// Entities revealed by their actions, until a time.
     pub observed_objects: BTreeMap<EntityId, i64>,
     pub detected_units: BTreeSet<EntityId>,
@@ -307,6 +312,7 @@ impl Hash for Player {
             observed_before_squares,
             strictly_observed_before_squares,
             observed_squares,
+            partly_observed_squares: _,
             observed_objects,
             detected_units,
             allied_control,
@@ -421,6 +427,7 @@ impl Player {
             observed_before_squares: BTreeSet::new(),
             strictly_observed_before_squares: BTreeSet::new(),
             observed_squares: BTreeSet::new(),
+            partly_observed_squares: BTreeSet::new(),
             observed_objects: BTreeMap::new(),
             detected_units: BTreeSet::new(),
             allied_control: Vec::new(),

@@ -37,6 +37,8 @@
 //! answer is the player's knowledge; a read outside that belongs in
 //! group 6.
 
+use std::collections::BTreeSet;
+
 use crate::command::OrderTarget;
 use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::msg::Msg;
@@ -186,8 +188,8 @@ impl<'a> View<'a> {
     /// The terrain style of a square: the map's `terrain`, or for a square
     /// without one, `_meadows`, `_forest`, `_dense_forest` or nothing,
     /// from the woods and meadows on it now. The player knows it for a
-    /// square it observes now; for another square the interface reads
-    /// [`Leaks::unobserved_terrain`].
+    /// square it observes now: the interface keeps the terrain of a square
+    /// in the fog as it last observed it.
     pub fn terrain(&self, square: SquareId) -> &'a str {
         &self.world.square(square).type_name
     }
@@ -254,6 +256,14 @@ impl<'a> View<'a> {
             .iter()
             .flat_map(move |&p| w.player(p).units.iter())
             .filter_map(move |&u| w.entity(u))
+    }
+
+    /// The squares the player sees only partly at the end of the turn,
+    /// from a unit on the next square: not observed, but seen enough to
+    /// know their terrain. The squares it observes come with each turn's
+    /// report.
+    pub fn partly_observed_squares(&self) -> &'a BTreeSet<SquareId> {
+        &self.world.player(self.player).partly_observed_squares
     }
 
     /// Whether `p` is the player or one of its allies.
@@ -501,17 +511,6 @@ impl<'a> Leaks<'a> {
     /// that target in the unit's orders.
     pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
         self.world.player(owner).memory.get(&id)
-    }
-
-    /// The terrain of a square the player does not observe now, as it is
-    /// now, not as the player last saw it: forests are cut while nobody
-    /// watches.
-    ///
-    /// Used to say a square in the fog ("a 2, forest, in the fog"), for its
-    /// ambient noise, and for the footsteps of a unit the player perceives
-    /// on a square it does not observe (an attacker it sees from afar).
-    pub fn unobserved_terrain(&self, square: SquareId) -> &'a str {
-        &self.world.square(square).type_name
     }
 
     /// Whether the owner of a unit has a type, built or researched, when

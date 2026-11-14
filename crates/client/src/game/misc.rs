@@ -275,6 +275,7 @@ impl GameInterface {
             self.cheat_at_once(Cheat::PlayAs(new));
             self.me = new;
             self.seen_upgrades.clear();
+            self.seen_terrain.clear();
         }
         // Upstream refreshes the fog of war here from the previous player's
         // last perception: nothing changes until the next turn.

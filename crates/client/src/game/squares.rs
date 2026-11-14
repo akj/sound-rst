@@ -112,15 +112,32 @@ impl GameInterface {
         cx.audio.stop(false);
     }
 
-    /// The terrain of a square observed now, or in the fog.
-    fn square_terrain(&self, cx: &Client, place: SquareId, in_fog: bool) -> Msg {
+    /// Notes the terrain of every square the player observes, fully or
+    /// partly from the next square, at the end of a turn: forests are cut,
+    /// and a square in the fog keeps the terrain the player last saw.
+    pub(crate) fn note_terrain(&mut self) {
+        let view = self.host.view(self.me);
+        let seen = self.scouted_squares.iter();
+        for &s in seen.chain(view.partly_observed_squares()) {
+            let t = view.terrain(s);
+            if self.seen_terrain.get(&s).is_none_or(|k| k != t) {
+                self.seen_terrain.insert(s, t.to_owned());
+            }
+        }
+    }
+
+    /// The terrain of a square as the player knows it: as it was at the
+    /// end of the last turn the player observed it, none if never.
+    pub fn known_terrain(&self, square: SquareId) -> &str {
+        self.seen_terrain.get(&square).map_or("", String::as_str)
+    }
+
+    /// The terrain of a square as the player knows it, and whether it is
+    /// high ground.
+    fn square_terrain(&self, cx: &Client, place: SquareId) -> Msg {
         let mut result = Vec::new();
         let view = self.view();
-        let terrain = if in_fog {
-            view.leaks().unobserved_terrain(place)
-        } else {
-            view.terrain(place)
-        };
+        let terrain = self.known_terrain(place);
         if !terrain.is_empty() {
             let title = style_msg(cx.res.style(), terrain, "title");
             if !title.is_empty() {
@@ -139,9 +156,9 @@ impl GameInterface {
     pub fn square_postfix(&self, cx: &Client, place: SquareId) -> Msg {
         let mut postfix = Vec::new();
         if self.scouted_squares.contains(&place) {
-            postfix.extend(self.square_terrain(cx, place, false));
+            postfix.extend(self.square_terrain(cx, place));
         } else if self.scouted_before_squares.contains(&place) {
-            postfix.extend(self.square_terrain(cx, place, true));
+            postfix.extend(self.square_terrain(cx, place));
             postfix.extend(msg(mp::COMMA));
             postfix.extend(msg(mp::IN_THE_FOG));
         } else {
@@ -668,12 +685,7 @@ impl GameInterface {
             if kept.iter().any(|(k, _)| *k == s) {
                 continue;
             }
-            let view = self.view();
-            let t = if self.scouted_squares.contains(&s) {
-                view.terrain(s)
-            } else {
-                view.leaks().unobserved_terrain(s)
-            };
+            let t = self.known_terrain(s);
             if t.is_empty() {
                 continue;
             }
@@ -688,8 +700,126 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
+    use super::super::GameInterface;
+    use super::super::testing::{cheat, enemy, go, run_until, said, training, training_on, unit};
     use super::*;
+    use soundrts_world::EntityId;
     use soundrts_world::msg::MsgPart;
+
+    #[test]
+    fn a_square_in_the_fog_has_the_terrain_last_observed() {
+        let (mut h, mut g) = training();
+        let townhall = unit(&g, g.game.me, "townhall");
+        let game = &mut g.game;
+        let home = game.host.world().entity(townhall).unwrap().square();
+        let home = home.unwrap();
+        // Observed: the terrain noted at the end of each turn.
+        assert!(game.scouted_squares.contains(&home));
+        assert_eq!(game.seen_terrain[&home], "_meadows");
+        let m = game.square_postfix(&h.client, home);
+        assert_eq!(said(&mut h, &m), ", meadows");
+        // Glimpsed from the next square: its terrain too, in the fog.
+        let a1 = game.view().square_at(0, 0).unwrap();
+        assert!(!game.scouted_squares.contains(&a1));
+        assert!(game.view().partly_observed_squares().contains(&a1));
+        let m = game.square_postfix(&h.client, a1);
+        assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
+        // Never observed nor glimpsed: unknown, with no terrain.
+        let b3 = game.view().square_at(1, 2).unwrap();
+        assert_eq!(game.view().terrain(b3), "_meadows");
+        assert!(!game.seen_terrain.contains_key(&b3));
+        assert_eq!(game.known_terrain(b3), "");
+        let m = game.square_postfix(&h.client, b3);
+        assert_eq!(said(&mut h, &m), ", unknown");
+        // Last noted as a forest: a forest, whatever it is now.
+        game.seen_terrain.insert(a1, "_forest".into());
+        let m = game.square_postfix(&h.client, a1);
+        assert_eq!(said(&mut h, &m), ", forest , in the fog of war");
+        // Observed: as noted at the end of the last turn handled, not as
+        // the game may have changed since.
+        game.seen_terrain.insert(home, "_forest".into());
+        let m = game.square_postfix(&h.client, home);
+        assert_eq!(said(&mut h, &m), ", forest");
+    }
+
+    #[test]
+    fn a_glimpsed_square_says_its_terrain_and_plays_its_noise() {
+        let (mut h, g) = training_on("jl5");
+        // On jl5, the sea of b 1 is glimpsed from the start square.
+        let b1 = g.game.view().square_at(1, 0).unwrap();
+        assert!(!g.game.scouted_squares.contains(&b1));
+        assert!(g.game.view().partly_observed_squares().contains(&b1));
+        let m = g.game.square_postfix(&h.client, b1);
+        assert_eq!(said(&mut h, &m), ", sea , in the fog of war");
+        // The game's animation plays the terrain noise of the selected
+        // square and of those around it: the sea of b 1 among them.
+        assert!(g.game.terrain_noises.iter().any(|(s, _)| *s == b1));
+        assert!(h.audio.played().iter().any(|(_, s)| s == "1342"));
+    }
+
+    #[test]
+    fn a_forest_cut_out_of_sight_stays_a_forest_until_seen_again() {
+        let (mut h, mut g) = training();
+        let (me, them) = (g.game.me, enemy(&g));
+        let peasant = unit(&g, me, "peasant");
+        let (home, a3, a4) = {
+            let v = g.game.view();
+            let home = v.square_at(1, 0).unwrap();
+            (home, v.square_at(0, 2).unwrap(), v.square_at(0, 3).unwrap())
+        };
+        let glimpsed = |g: &GameInterface, s| {
+            g.scouted_squares.contains(&s) || g.view().partly_observed_squares().contains(&s)
+        };
+        // The player's peasant glimpses the forest of a 4 from a 3, then
+        // goes home, out of sight of it.
+        go(&mut g, me, peasant, a3);
+        run_until(&mut h, &mut g, |g| glimpsed(g, a4));
+        let turn = g.game.view().turn() + 1;
+        h.run_until_turn(&mut g, turn);
+        assert_eq!(g.game.seen_terrain[&a4], "_forest");
+        go(&mut g, me, peasant, home);
+        run_until(&mut h, &mut g, |g| !glimpsed(g, a4));
+        // The computer cuts the only wood of a 4, out of the player's sight.
+        cheat(&mut g, them, "add_units a4 10 peasant");
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        let w = g.game.host.world();
+        let on_a4 = |t: &str| -> Vec<EntityId> {
+            w.square(a4)
+                .objects
+                .iter()
+                .copied()
+                .filter(|&o| &*w.entity(o).unwrap().type_name == t)
+                .collect()
+        };
+        // The computer's own peasant may be there too.
+        let (wood, cutters) = (on_a4("wood"), on_a4("peasant"));
+        assert_eq!(wood.len(), 1);
+        assert!(cutters.len() >= 10);
+        let ids: Vec<String> = cutters.iter().map(|u| u.0.to_string()).collect();
+        let host = &mut g.game.host;
+        host.queue_line(them, &format!("control {}", ids.join(" ")));
+        host.queue_line(them, &format!("order 0 0 gather {}", wood[0].0));
+        for _ in 0..3000 {
+            if g.game.host.world().square(a4).type_name != "_forest" {
+                break;
+            }
+            assert!(!glimpsed(&g.game, a4));
+            let next = g.game.view().turn() + 1;
+            h.run_until_turn(&mut g, next);
+        }
+        assert_eq!(g.game.view().terrain(a4), "_meadows");
+        assert!(!glimpsed(&g.game, a4));
+        let m = g.game.square_postfix(&h.client, a4);
+        assert_eq!(said(&mut h, &m), ", forest , in the fog of war");
+        // Seen again: meadows.
+        go(&mut g, me, peasant, a3);
+        run_until(&mut h, &mut g, |g| glimpsed(g, a4));
+        let turn = g.game.view().turn() + 1;
+        h.run_until_turn(&mut g, turn);
+        let m = g.game.square_postfix(&h.client, a4);
+        assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
+    }
 
     fn t(n: u64) -> Msg {
         vec![MsgPart::Num(n)]
