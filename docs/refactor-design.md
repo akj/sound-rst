@@ -466,7 +466,7 @@ The point is not realism. It is that each of these is information you now get fr
 - **Front and back**, properly. In map mode that is north and south of where you stand.
 - **Distance**, from more than loudness: a far sound is duller and has more of the place's echo in it. Loudness alone cannot tell "far" from "quiet".
 - **Height.** Dragons and flying machines overhead; a unit up on high ground. Today an air unit sounds like a ground unit.
-- **Terrain you can hear without asking.** A forest, an open meadow, a mountain pass and the inside of a town each have a different echo. The square's character would be audible the moment you arrive, under whatever else is playing.
+- **Terrain you can hear without asking.** My first idea was a different echo for a forest, a meadow, a mountain pass and a town. The first listening session rejected it outright (see below). Terrain is told by a distinct ambient sound for each kind of place and a distinct footstep for each kind of ground, which needs new sounds, not a renderer.
 - **Which neighbours you can reach.** Sound from the next square arrives clear through an open exit and muffled where there is no path or the exit is blocked. You would hear the shape of the map around you. This has to follow what the player knows: phase 1 takes away the client's knowledge of blockers it has not seen, so an exit sounds open or closed as the seat last observed it, and an exit never observed needs a sound of its own for "unknown".
 - **First-person mode worth using.** Standing on a unit and turning becomes a real way to look around.
 
@@ -503,6 +503,28 @@ So the rule for the design: **never rely on the three-dimensional cue alone for 
 
 **A sound check you run yourself.** An item in the options menu plays a sound in front, behind, left, right, above and far, and asks which you heard. It picks the head model that you get right most often, and tells you plainly if none works well, in which case the stereo renderer is the better choice for you. This is the equivalent of a graphics settings screen.
 
+### What the first listening session found
+
+Andrew ran the listening room on 14 November 2026, with headphones, through all three renderers: the game's sound as it is (`current`), the improved stereo (`stereo-plus`), and Steam Audio (`binaural`). Ratings are out of 5.
+
+- **A footstep circling:** current 3, stereo-plus 4, binaural 5.
+- **In front or behind, 8 trials each:** stereo-plus 7 right, current 5, binaural 1.
+- **A sound passing overhead:** current 3, stereo-plus 4, binaural 5.
+- **A sound moving away:** current 4, stereo-plus 5, binaural 4.
+- **A neighbour through an open and a closed exit:** current 2, stereo-plus 4, binaural 3.
+- **The echo of the place:** 1 for every renderer. "This is the wrong way to distinguish terrains. We probably need ambient sounds per terrain, plus different footstep sounds entirely."
+- **His note on binaural:** hard to place a plain sound with nothing around it; movement from the right, round the back, to the left was clearer; "with ambient sound I think binaural still sounds better". And: "we need better footstep sounds."
+
+What I take from it:
+
+1. **The improved stereo is worth building into the game now.** It beat the current sound on every step, and the duller tone behind took front-or-behind from 5 of 8 to 7 of 8.
+2. **The terrain echo is dropped**, with the reverb it needed.
+3. **Binaural is promising and not ready.** It was the best at movement around and above the listener and the worst at telling front from behind in a still sound.
+4. **The front-or-behind failure has a cause that can be fixed.** I rendered that step to files and measured them. The game's footstep has about 97 percent of its energy below 3 kHz and none above 6 kHz, and the cues that separate front from behind over headphones are mostly above 4 to 5 kHz, so the head model had nothing to work with. In those takes the sound behind also came out about half a decibel louder than the sound in front, and a listener who takes louder to mean in front then answers backwards, which fits 1 of 8. The renderer's axes are not swapped: with broadband noise the front takes have about twice the share of energy above 6 kHz that the behind takes have.
+5. **So two things follow.** Replacement sounds must be bright and broadband, footsteps above all; that is now a requirement of the search for new sounds. And the binaural renderer must double its cues with plain ones, as the rule above says and the first version did not: behind also duller, and never louder.
+
+A second session tests exactly that: a `binaural-plus` renderer with the doubled cues, a bright test sound beside the game's footstep, and front-or-behind with movement.
+
 ### The simplest alternative
 
 Only the stereo renderer's two fixes: smooth volume and a duller tone behind. That is perhaps a fifth of the work and gives front and back by tone. It gives no height, no terrain, no sense of which neighbours are open, and distance stays loudness. I would do it first in any case, because the scene needs it.
@@ -515,7 +537,8 @@ Before any of this is built into the game, a small separate program, the listeni
 
 1. The sound scene, channel ownership, smooth volume, the duller tone behind. Medium. Changes the recorded sound stream once, when the tests move from volumes to scenes.
 2. The listening room and a trial binaural renderer. Small to medium. Your ears decide whether to go on.
-3. If yes: the binaural renderer in the game, the sound check, then height, open and closed neighbours, and terrain echo, each tried in the listening room first.
+3. If the second session says yes: the binaural renderer in the game, the sound check, then height and open and closed neighbours, each tried in the listening room first.
+4. Terrain by ambient sound and by footstep, when the new sounds exist.
 
 ## 11. Game features, by how fundamental they are
 
@@ -610,7 +633,8 @@ The recordings are why a change this size is safe to attempt, so the tests are p
 **Phase 5. Sound.** Medium, then as far as your ears say.
 
 - The sound scene, channel ownership, smooth volume, the duller tone behind. After phase 1, because it changes the files that place sounds.
-- If the listening room said yes: the binaural renderer, the sound check, then height, open and closed neighbours, and terrain echo, each tried in the listening room first.
+- If the second listening session says yes: the binaural renderer, the sound check, then height and open and closed neighbours, each tried in the listening room first.
+- Terrain by ambient sound and by footstep, when the new sounds exist.
 
 **Phase 6. Features.** As wanted, each small to medium: stances, pings, automatic abilities, the map checker, then the experiments.
 
