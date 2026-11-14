@@ -146,17 +146,16 @@ impl GameInterface {
         }
         self.previous_resources = Some(previous);
         let (available, used) = (self.available_food(), self.used_food());
-        let changed = available != self.previous_available_food || used != self.previous_used_food;
-        let mut short = false;
-        if available != self.previous_available_food
-            || used > self.previous_used_food
-            || used < self.previous_used_food && self.previous_used_food == available
-        {
-            short = 0 <= available - used && (available - used) as f64 <= available as f64 * 0.20;
-            self.previous_available_food = available;
-            self.previous_used_food = used;
-        }
-        if short || changed && cx.voice.is_unheard(&Subject::Food) {
+        let (previous_available, previous_used) =
+            (self.previous_available_food, self.previous_used_food);
+        let changed = available != previous_available || used != previous_used;
+        let worth = available != previous_available
+            || used > previous_used
+            || used < previous_used && previous_used == available;
+        let short = 0 <= available - used && (available - used) as f64 <= available as f64 * 0.20;
+        self.previous_available_food = available;
+        self.previous_used_food = used;
+        if worth && short || changed && cx.voice.is_unheard(&Subject::Food) {
             let m = self.food_msg(cx);
             self.economy_news(cx, m, Subject::Food);
         }
@@ -586,6 +585,22 @@ mod tests {
         // ...when the food changes, even to no shortage.
         g.game.previous_used_food += 1;
         g.game.send_resource_alerts_if_needed(&mut h.client);
+        assert_eq!(said_until_idle(&mut h), ["9 food to 1"]);
+    }
+
+    #[test]
+    fn food_news_waiting_follows_usage_that_goes_down_then_up() {
+        let (mut h, mut g) = training();
+        drain(&mut h);
+        g.game.last_virtual_time = 1.0;
+        cx_news(&mut h, "a long message of news");
+        let old = News::new(Category::Economy, msg(mp::NOTHING)).about(Subject::Food);
+        h.client.news(old);
+        // The usage goes down: the news follows, and so does the usage
+        // seen, so that going back up is seen too.
+        g.game.previous_used_food += 1;
+        g.game.send_resource_alerts_if_needed(&mut h.client);
+        assert_eq!(g.game.previous_used_food, g.game.used_food());
         assert_eq!(said_until_idle(&mut h), ["9 food to 1"]);
     }
 

@@ -194,6 +194,24 @@ fn the_log_drops_only_its_oldest_message_past_its_limit() {
 }
 
 #[test]
+fn the_log_is_trimmed_once_its_oldest_message_has_been_said() {
+    let mut h = Harness::new("en", Script::new());
+    info(&mut h.client.voice, "the oldest");
+    for i in 0..LOG_LIMIT {
+        h.client.voice.news(
+            News::new(Category::Production, t(&format!("m{i}"))),
+            Policy::Log,
+        );
+    }
+    // Being said, the oldest message stays for now.
+    assert_eq!(log(&h).len(), LOG_LIMIT + 1);
+    run(&mut h, 2.0);
+    let log = log(&h);
+    assert_eq!(log.len(), LOG_LIMIT);
+    assert_eq!(log[0].0, "m0");
+}
+
+#[test]
 fn chat_comes_after_the_message_being_said_and_before_the_unsaid_ones() {
     let mut h = Harness::new("en", Script::new());
     let v = &mut h.client.voice;
@@ -451,6 +469,18 @@ fn a_story_message_not_spoken_does_not_stop_the_game() {
         log(&h),
         [(LONG.to_owned(), Heard::No), (LONG.to_owned(), Heard::Yes)]
     );
+}
+
+#[test]
+fn news_given_up_with_the_queue_is_not_replaced_by_later_news() {
+    let mut h = Harness::new("en", Script::new());
+    let gold = |s: &str| News::new(Category::Economy, t(s)).about(Subject::Resource(0));
+    h.client.voice.news(gold("10 gold"), Policy::Log);
+    // A game ends, another starts.
+    h.client.voice.silent_flush();
+    h.client.voice.news(gold("20 gold"), Policy::Log);
+    let texts: Vec<String> = log(&h).into_iter().map(|(s, _)| s).collect();
+    assert_eq!(texts, ["10 gold", "20 gold"]);
 }
 
 #[test]

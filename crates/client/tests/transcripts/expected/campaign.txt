@@ -61,7 +61,6 @@ length 6106 1050703
 length 6107 1346757
 length 6108 1117460
 length 6109 1497687
-length 6110 412154
 length 6115 6871
 length 6116 3719
 length 9999 208980
@@ -178,60 +177,57 @@ length 9999 208980
 @216144 step 31 key RETURN
 @216144 voice confirmation "continue"
 @216954 voice important "chapter 2"
-@218054 voice info "17 food to 5"
+@218055 sounds 1 79d5c79907c4dcb5
+@218055 step 32 key F9
 @218154 voice item "b 1 , 1 town hall , 1 farm , 2 peasant , 2 footman and 1 archer"
 @219254 voice confirmation "new objective resist ennemy attacks"
-@222754 voice info "17 food to 5"
-@224554 voice info ", 1 gold mine at a 1"
-@226954 voice info ", 1 wood at c 1"
-@228855 sounds 20 c9a7fc0b50cf2801
-@228855 step 32 key F9
-@228855 voice item "objective: , resist ennemy attacks ,"
-@232455 sounds 8 6ddd3767bc443330
-@232455 step 33 key SPACE
-@232455 voice item "b 1 , you are not controlling any unit"
-@322356 sounds 158 9c63f8ded7ccd09e
-@322356 step 34 wait_turns 300
-@322357 step 35 key SPACE
-@322357 voice item "b 1 , you are not controlling any unit"
+@222754 voice info ", 1 gold mine at a 1"
+@225154 voice info ", 1 wood at c 1"
+@227055 sounds 17 318305b2bb7b8914
+@227055 step 33 key SPACE
+@227055 voice item "b 1 , you are not controlling any unit"
+@316956 sounds 158 606ac0495351e407
+@316956 step 34 wait_turns 300
+@316957 step 35 key SPACE
+@316957 voice item "b 1 , you are not controlling any unit"
 @384456 voice info "1 footman enemy at a 1"
 @388357 voice info "alert at b 1"
 @389757 voice info "1 footman neutralized at b 1"
-@412356 sounds 220 20e15a95d29943a4
-@412356 step 36 wait_turns 300
-@412357 step 37 key z
-@412357 voice item "10 gold"
-@413457 sounds 4 b6f80b9d102e3603
-@413457 step 38 key F10
-@413457 voice menu "Menu"
-@413857 step 39 key DOWN
-@413857 voice item "cancel game ,"
-@415157 sounds 1 fe720c1b49047d54
-@415157 step 40 key RETURN
-@415157 voice confirmation "cancel game"
-@416269 voice info "Defeat at 3 minutes 12 seconds"
-@419869 voice info "5 units produced , 0 lost , 1 neutralized"
-@424569 voice info "3 building produced , 0 lost , 0 neutralized"
-@429569 voice info "10 gold gathered , 0 consumed"
-@433069 voice info "10 wood gathered , 0 consumed"
-@436569 voice info "score 29 press F5 to listen again"
-@440469 voice menu "please make a selection"
-@442769 sounds 9 074906cc41bf3339
-@442769 step 41 key DOWN
-@442769 voice item "restart ,"
-@443669 sounds 1 d0b2b636d024851e
-@443669 step 42 key DOWN
-@443669 voice item "Quit ,"
-@444269 sounds 1 5f9cb812a0a16db0
-@444269 step 43 key RETURN
-@444269 voice confirmation "Quit"
-@444679 voice menu "please make a selection"
-@446979 sounds 1 849fa4f4014767e6
-@446979 step 44 key ESCAPE
-@446979 voice confirmation "go back to the previous menu"
-@449789 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@454889 sounds 1 d5f2e6dfd169ad44
-@454889 step 45 key ESCAPE
-@454889 voice confirmation "quit,"
-@455399 sounds 1 ab94c246687454b1
-@455399 end
+@406956 sounds 217 630795ac20ed0e83
+@406956 step 36 wait_turns 300
+@406957 step 37 key z
+@406957 voice item "10 gold"
+@408057 sounds 1 4c034d0c33b62114
+@408057 step 38 key F10
+@408057 voice menu "Menu"
+@408457 step 39 key DOWN
+@408457 voice item "cancel game ,"
+@409757 sounds 1 f9c2c4e0550774a0
+@409757 step 40 key RETURN
+@409757 voice confirmation "cancel game"
+@410869 voice info "Defeat at 3 minutes 6 seconds"
+@414169 voice info "5 units produced , 0 lost , 1 neutralized"
+@418869 voice info "3 building produced , 0 lost , 0 neutralized"
+@423869 voice info "10 gold gathered , 0 consumed"
+@427369 voice info "10 wood gathered , 0 consumed"
+@430869 voice info "score 29 press F5 to listen again"
+@434769 voice menu "please make a selection"
+@437069 sounds 10 30313652ce81e10f
+@437069 step 41 key DOWN
+@437069 voice item "restart ,"
+@437969 sounds 1 98179f8f2afa13db
+@437969 step 42 key DOWN
+@437969 voice item "Quit ,"
+@438569 sounds 1 e42e1e15fe1e2b48
+@438569 step 43 key RETURN
+@438569 voice confirmation "Quit"
+@438979 voice menu "please make a selection"
+@441279 sounds 1 bf45e6477cd80d12
+@441279 step 44 key ESCAPE
+@441279 voice confirmation "go back to the previous menu"
+@444089 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@449189 sounds 1 d2ba29a57d312896
+@449189 step 45 key ESCAPE
+@449189 voice confirmation "quit,"
+@449699 sounds 1 7e4e447e73211724
+@449699 end
