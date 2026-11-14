@@ -45,6 +45,13 @@ struct ZipData {
     depth: u32,
 }
 
+/// The number of entries the central directory of a zip file states, read
+/// before an index of them is built. Entries that share a name count each.
+fn entry_count(bytes: &[u8]) -> zip::result::ZipResult<usize> {
+    let zip = zip::unstable::read::ZipIterable::try_new(Cursor::new(bytes), Default::default())?;
+    Ok(zip.len())
+}
+
 fn too_large(what: &str, limit: u64) -> std::io::Error {
     std::io::Error::other(format!("{what} holds more than {limit} bytes"))
 }
@@ -75,12 +82,12 @@ impl ZipData {
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_PACKAGE_BYTES {
             return Err(too_large(&filename, MAX_PACKAGE_BYTES));
         }
-        let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(std::io::Error::other)?;
-        if archive.len() > MAX_ENTRIES {
+        if entry_count(&bytes).map_err(std::io::Error::other)? > MAX_ENTRIES {
             return Err(std::io::Error::other(format!(
                 "{filename} has more than {MAX_ENTRIES} entries"
             )));
         }
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(std::io::Error::other)?;
         let mut stated: u64 = 0;
         for i in 0..archive.len() {
             let size = archive
@@ -532,10 +539,10 @@ fn check_zip(
     if depth > MAX_ZIP_DEPTH {
         return Err("zip files nested too deep".into());
     }
-    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
-    if archive.len() > MAX_ENTRIES {
+    if entry_count(bytes).map_err(|e| e.to_string())? > MAX_ENTRIES {
         return Err(format!("more than {MAX_ENTRIES} entries"));
     }
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
         let name = file.name().map(|n| n.into_owned()).unwrap_or_default();
@@ -804,6 +811,29 @@ mod tests {
         assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
         let z = zipped(&entries[1..]);
         assert!(Package::from_zip_bytes("enough.zip".into(), z).is_ok());
+    }
+
+    #[test]
+    fn entries_that_share_a_name_count_each() {
+        // The writer refuses a name twice: write distinct names of the same
+        // length, then give them one name in the central directory, which
+        // comes after the entries.
+        let names: Vec<String> = (0..=MAX_ENTRIES).map(|i| format!("{i:05}")).collect();
+        let entries: Vec<(&str, Vec<u8>)> =
+            names.iter().map(|n| (n.as_str(), Vec::new())).collect();
+        let mut z = zipped(&entries);
+        let mut at = z.windows(4).position(|w| w == b"PK\x01\x02").unwrap();
+        for name in &names {
+            at += z[at..]
+                .windows(5)
+                .position(|w| w == name.as_bytes())
+                .unwrap();
+            z[at..at + 5].copy_from_slice(b"same.");
+        }
+        let archive = ZipArchive::new(Cursor::new(z.clone())).unwrap();
+        assert!(archive.len() < 10);
+        assert!(Package::from_zip_bytes("same.zip".into(), z.clone()).is_err());
+        assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
     }
 
     #[test]
