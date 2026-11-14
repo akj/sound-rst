@@ -225,3 +225,67 @@ fn a_message_cancelled_at_the_screen_reader_is_dismissed_and_not_repeated() {
     let said: Vec<_> = h.client.voice.history().map(|(_, said)| said).collect();
     assert_eq!(said, [true, true]);
 }
+
+/// Says a 3 s item, queues news with `queue` half a second in, then says
+/// another item 1.5 s in (as arrowing to the next square does), and lets
+/// the voice run. Returns everything spoken.
+fn item_then_queued_then_item(queue: impl FnOnce(&mut soundrts::voice::Voice)) -> Vec<String> {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    h.client.voice.item(&t("a long description of 30 chars"));
+    clock.advance(0.5);
+    h.client.voice.update();
+    queue(&mut h.client.voice);
+    clock.advance(1.0);
+    h.client.voice.update();
+    h.client.voice.item(&t("next"));
+    for _ in 0..100 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    h.spoken()
+}
+
+#[test]
+fn chat_queued_while_an_item_is_said_is_said_after_the_next_item() {
+    let spoken = item_then_queued_then_item(|v| v.chat(&t("chat line")));
+    assert_eq!(
+        spoken,
+        ["a long description of 30 chars", "next", "chat line"]
+    );
+}
+
+#[test]
+fn news_queued_while_an_item_is_said_is_said_after_the_next_item() {
+    let spoken = item_then_queued_then_item(|v| v.info(&t("alert line")));
+    assert_eq!(
+        spoken,
+        ["a long description of 30 chars", "next", "alert line"]
+    );
+}
+
+#[test]
+fn news_cut_off_after_more_than_a_second_is_said_again() {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    h.client.voice.info(&t("news of thirty characters, 3 s"));
+    h.client.voice.info(&t("more"));
+    for _ in 0..15 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    h.client.voice.item(&t("x"));
+    for _ in 0..100 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(
+        h.spoken(),
+        [
+            "news of thirty characters, 3 s",
+            "x",
+            "news of thirty characters, 3 s",
+            "more"
+        ]
+    );
+}

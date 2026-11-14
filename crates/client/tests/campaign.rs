@@ -67,21 +67,27 @@ fn the_prologue_then_chapter_one_won_with_cheats_moves_the_bookmark() {
             "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby.",
             "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood",
             "new objective build 1 farm",
-            ", 1 wood at c 1",
+            ", 1 gold mine and 1 wood at a 1",
             "new objective build 1 barracks",
-            ", 1 wood at c 1",
+            ", 1 gold mine and 1 wood at a 1",
         ]
     );
     assert_eq!(
         p.said_at("objectives"),
         ["objective: , build 1 farm , build 1 barracks ,"]
     );
-    // A cheat adds a farm: the first objective is complete.
+    // A cheat adds a farm: the first objective is complete. Its news, cut
+    // off by the objective, is said again.
     let farm = p.said_at("farm");
     assert_eq!(farm[..3], ["Enter a command.", "a . a", "  . a "]);
     assert_eq!(
         farm[7..],
-        ["a farm", "objective complete build 1 farm", "farm 2 at a 1"]
+        [
+            "a farm",
+            "farm 2 at a 1",
+            "objective complete build 1 farm",
+            "farm 2 at a 1"
+        ]
     );
     // A barracks: the cut scene, the second objective, the mission, the
     // score, then the victory menu (Escape: quit) and the menus.
@@ -97,7 +103,7 @@ fn the_prologue_then_chapter_one_won_with_cheats_moves_the_bookmark() {
             "barracks 1 at a 1",
             "mission complete",
             "barracks 1 at a 1",
-            "Victory! at 0 minutes 11 seconds",
+            "Victory! at 0 minutes 16 seconds",
             "2 units produced , 0 lost , 0 neutralized",
             "4 building produced , 0 lost , 0 neutralized",
             "5 gold gathered , 0 consumed",

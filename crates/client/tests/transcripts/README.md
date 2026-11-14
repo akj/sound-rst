@@ -68,8 +68,9 @@ keyboard and the window with its own. The rest is the client's own code.
 
 ### Speech
 
-The speech device records the text and says nothing. The client's own
-estimate (`src/tts.rs`) decides when speech ends:
+The speech device records the text and says nothing. Like most screen
+readers, it never reports when speech ends, so the client's own estimate
+(`src/tts.rs`) decides:
 
 - Saying `text` speaks until
   `now + round(len(text) × d × 10^6) + round(n × (c − 1) × d × 10^6)` µs.
@@ -342,10 +343,10 @@ again.
   every later message of the history, until the end (`training_jl1`: two
   quick F5 say "7 wood" again, then "1 footman enemy at c 2" follows by
   itself).
-- An `info` message cut by a blocking message (`confirmation`,
-  `important`) is said again afterwards, unless it had been playing for
-  more than 1 s. Several blocking messages in a row repeat it several times
-  (`campaign`: "barracks 1 at b 1" three times).
+- An `info` message cut by another message (`item`, `confirmation`,
+  `important`) is said again afterwards, from the start, however long it
+  had been playing. Several blocking messages in a row repeat it several
+  times (`campaign`: "barracks 1 at b 1" three times).
 - An empty login says an `item` message with one empty text part (it ends
   at once), then the "bad login" alert (`menus_options`).
 - Stopping the sounds (volume keys, cut scenes, the game menu) stops the
