@@ -367,13 +367,19 @@ impl Menu {
     /// Handles at most one event; runs the choice if one was confirmed.
     /// For menus that must not block.
     pub fn step(&mut self, cx: &mut Client) -> Result<(), Exit> {
-        self.choice_done = false;
         let e = Self::poll(cx);
+        self.handle(cx, e).map(|_| ())
+    }
+
+    /// As [`Menu::step`], for an event the caller has read: true when a
+    /// choice was confirmed and run.
+    pub fn handle(&mut self, cx: &mut Client, e: Option<Event>) -> Result<bool, Exit> {
+        self.choice_done = false;
         self.try_to_get_choice(cx, e)?;
         if self.choice_done {
             self.execute_choice(cx)?;
         }
-        Ok(())
+        Ok(self.choice_done)
     }
 
     /// Says the title, or asks for a selection if there is none.

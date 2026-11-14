@@ -1593,7 +1593,6 @@ mod test_world {
         let w2 = world("soundrts/tests/jl2.txt");
         assert_eq!(w.get_digest(), w.get_digest());
         assert_ne!(w.get_digest(), w2.get_digest());
-        assert!(!w.get_objects_string().is_empty());
     }
 }
 

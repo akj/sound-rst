@@ -474,14 +474,19 @@ impl Resources {
     }
 
     /// What decides whether two players can play together: the SHA-256 of
-    /// the rules and the computer players' scripts, mods included, without
-    /// any map's.
+    /// the simulation version, the rules and the computer players' scripts,
+    /// mods included, without any map's.
     pub fn content_hash(&mut self) -> soundrts_protocol::ContentHash {
         let map = self.map.take();
         if map.is_some() {
             self.reload();
         }
-        let text = format!("{}\n{}", self.rules_text(), self.ai_text());
+        let text = format!(
+            "{}\n{}\n{}",
+            soundrts_world::SIM_VERSION,
+            self.rules_text(),
+            self.ai_text()
+        );
         if map.is_some() {
             self.map = map;
             self.reload();

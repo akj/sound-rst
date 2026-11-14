@@ -170,7 +170,7 @@ impl Keyword {
 }
 
 /// The step an order is at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Mode {
     None,
     /// Gather: carrying the cargo to a warehouse.
@@ -192,7 +192,7 @@ pub enum Mode {
 }
 
 /// An order in a unit's queue.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Order {
     /// Unique in the world; tells two orders apart.
     pub uid: u64,

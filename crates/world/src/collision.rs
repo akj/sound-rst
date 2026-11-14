@@ -18,6 +18,19 @@ pub struct CollisionMatrix {
     amax: i64,
 }
 
+/// The occupied cells in ascending order, so that two matrices with the
+/// same cells hash alike.
+impl std::hash::Hash for CollisionMatrix {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let CollisionMatrix { cells, res, amax } = self;
+        let mut cells: Vec<i64> = cells.iter().copied().collect();
+        cells.sort_unstable();
+        cells.hash(state);
+        res.hash(state);
+        amax.hash(state);
+    }
+}
+
 impl CollisionMatrix {
     pub fn new(xmax: i64, res: i64) -> Self {
         CollisionMatrix {
@@ -78,6 +91,27 @@ mod tests {
         assert!(!m.would_collide(12, 6));
         m.remove(6, 6);
         assert!(!m.would_collide(6, 6));
+    }
+
+    fn hash_of(m: &CollisionMatrix) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::hash::DefaultHasher::new();
+        m.hash(&mut h);
+        h.finish()
+    }
+
+    #[test]
+    fn the_hash_depends_on_the_cells_and_not_on_their_history() {
+        let mut a = CollisionMatrix::new(200, 2);
+        let mut b = CollisionMatrix::new(200, 2);
+        a.add(6, 6);
+        a.add(60, 6);
+        b.add(60, 6);
+        b.add(20, 20);
+        b.add(6, 6);
+        assert_ne!(hash_of(&a), hash_of(&b));
+        b.remove(20, 20);
+        assert_eq!(hash_of(&a), hash_of(&b));
     }
 
     #[test]

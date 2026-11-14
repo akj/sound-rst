@@ -79,6 +79,8 @@ fn make_world(case: &Case) -> World {
         Vec::new()
     };
     let mut w = World::new(rules, ai, triggers, case.seed);
+    // The scenarios add units with `cmd add_units`.
+    w.allow_cheatmode = true;
     w.load_and_build_map(&common::read(&case.map))
         .unwrap_or_else(|e| panic!("{}: {e}", case.map));
     w

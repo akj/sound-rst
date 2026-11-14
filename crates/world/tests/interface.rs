@@ -76,16 +76,42 @@ fn the_menu_lists_what_the_townhall_can_do() {
 }
 
 #[test]
-fn saying_something_reaches_the_other_players() {
-    let (mut w, me, you) = game();
-    w.queue_command(you, "say hello there");
+fn add_units_adds_at_most_as_many_units_as_the_starts_of_a_map() {
+    let (mut w, me, _) = game();
+    w.allow_cheatmode = true;
+    w.queue_command(me, "cmd add_units a1 999999999999 footman");
     w.update();
-    let events = w.drain_events(me);
-    let said = events.iter().any(|e| match e {
-        Event::VoiceImportant(m) => m.last().map(|p| p.key()) == Some("hello there".into()),
-        _ => false,
-    });
-    assert!(said, "{events:?}");
+    let added = w.entities().filter(|e| &*e.type_name == "footman").count();
+    let refused = w
+        .drain_warnings()
+        .iter()
+        .filter(|m| *m == "not enough space")
+        .count();
+    assert!(added > 0 && refused > 0, "{added} added, {refused} refused");
+    assert_eq!(added + refused, 10_000);
+}
+
+#[test]
+fn cheats_are_ignored_unless_allowed() {
+    let (mut w, _, you) = game();
+    w.queue_command(you, "toggle_cheatmode");
+    w.queue_command(you, "cmd victory");
+    w.update();
+    assert!(!w.player(you).cheatmode);
+    assert!(!w.player(you).has_victory);
+    assert_eq!(
+        w.drain_warnings(),
+        [
+            "cheat mode is not allowed: toggle_cheatmode",
+            "cheat mode is not allowed: cmd victory",
+        ]
+    );
+    w.allow_cheatmode = true;
+    w.queue_command(you, "toggle_cheatmode");
+    w.queue_command(you, "cmd victory");
+    w.update();
+    assert!(w.player(you).cheatmode);
+    assert!(w.player(you).has_victory);
 }
 
 #[test]

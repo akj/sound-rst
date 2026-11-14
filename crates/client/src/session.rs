@@ -188,6 +188,7 @@ impl Session {
         let rules = Rules::load(&[cx.res.rules_text()]);
         let ai = AiScripts::load(&[cx.res.ai_text()]);
         let mut world = World::new(rules, ai, self.default_triggers(), self.seed);
+        world.allow_cheatmode = self.allow_cheatmode;
         let built = world
             .load_and_build_map(&self.map.definition)
             .map_err(|e| e.0)
@@ -210,7 +211,7 @@ impl Session {
             cx.log.warning(format!("world: {w}"));
         }
         let local = self.net.as_ref().map_or(0, |n| n.you);
-        let mut game = GameInterface::new(cx, world, players[local], self.allow_cheatmode);
+        let mut game = GameInterface::new(cx, world, players[local]);
         if let Some(n) = &self.net {
             game.speed = n.speed.factor();
             game.net = Some(NetDriver {
@@ -220,7 +221,7 @@ impl Session {
                 digests: Vec::new(),
             });
             if let Some(net) = &mut cx.net {
-                net.game = Some(GameLink::default());
+                net.game = Some(GameLink::new(n.you));
             }
         }
         cx.input.set_game(Some(game.progress()));

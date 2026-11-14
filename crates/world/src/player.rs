@@ -3,6 +3,7 @@
 //! `worldclient.py`).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::ai::Computer;
@@ -28,8 +29,21 @@ pub enum ControllerKind {
     Neutral,
 }
 
+/// Every field but `local`, which differs between the machines of one
+/// game.
+impl Hash for ControllerKind {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            ControllerKind::Human { login, local: _ } => login.hash(state),
+            ControllerKind::Computer { ai_type } => ai_type.hash(state),
+            ControllerKind::Neutral => {}
+        }
+    }
+}
+
 /// A controller: who plays, with which alliance and faction.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Controller {
     pub kind: ControllerKind,
     /// Players with the same alliance are allies. `None` means no alliance.
@@ -86,7 +100,7 @@ impl Controller {
 }
 
 /// The kind of player, which decides a few behaviors.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PlayerKind {
     Human,
     /// The scripted computer player; `ai_type` is `timers` for one that
@@ -99,21 +113,21 @@ pub enum PlayerKind {
 }
 
 /// A mission objective.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Objective {
     pub number: String,
     pub description: Vec<i64>,
 }
 
 /// A trigger of the map: when the condition holds, the action runs once.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Trigger {
     pub condition: Expr,
     pub action: Expr,
 }
 
 /// A remembered entity and when it was last seen.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Remembrance {
     pub time_stamp: i64,
     pub snapshot: Arc<Entity>,
@@ -147,7 +161,7 @@ impl From<StatType> for StatTarget {
 
 /// The statistics of a player (`worldplayerstats.Stats`). The client
 /// builds the score messages from them.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct PlayerStats {
     counts: BTreeMap<(StatEvent, StatTarget), i64>,
     game_duration: Option<i64>,
@@ -270,6 +284,105 @@ pub struct Player {
     pub(crate) events: Vec<Event>,
     /// The state of a scripted computer player.
     pub(crate) ai: Option<Box<Computer>>,
+}
+
+/// Every field but the events, which only a local human records.
+impl Hash for Player {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let Player {
+            obj_id,
+            kind,
+            controller,
+            neutral,
+            faction,
+            allied,
+            number,
+            perception,
+            memory,
+            objectives,
+            units,
+            budget,
+            upgrades,
+            forbidden_techs,
+            observed_before_squares,
+            strictly_observed_before_squares,
+            observed_squares,
+            observed_objects,
+            detected_units,
+            allied_control,
+            known_enemies,
+            enemy_menace,
+            enemy_presence,
+            places_with_corpses,
+            places_with_friends,
+            cataclysmic_places,
+            subsquare_threat,
+            counterattack_places,
+            resources,
+            storage_bonus,
+            food,
+            used_food,
+            cheatmode,
+            has_victory,
+            has_been_defeated,
+            observer_if_defeated,
+            group,
+            group_had_enough_mana,
+            stats,
+            triggers,
+            menace,
+            buckets,
+            places_to_explore,
+            cheat_has_all,
+            events: _,
+            ai,
+        } = self;
+        obj_id.hash(state);
+        kind.hash(state);
+        controller.hash(state);
+        neutral.hash(state);
+        faction.hash(state);
+        allied.hash(state);
+        number.hash(state);
+        perception.hash(state);
+        memory.hash(state);
+        objectives.hash(state);
+        units.hash(state);
+        budget.hash(state);
+        upgrades.hash(state);
+        forbidden_techs.hash(state);
+        observed_before_squares.hash(state);
+        strictly_observed_before_squares.hash(state);
+        observed_squares.hash(state);
+        observed_objects.hash(state);
+        detected_units.hash(state);
+        allied_control.hash(state);
+        known_enemies.hash(state);
+        enemy_menace.hash(state);
+        enemy_presence.hash(state);
+        places_with_corpses.hash(state);
+        places_with_friends.hash(state);
+        cataclysmic_places.hash(state);
+        subsquare_threat.hash(state);
+        counterattack_places.hash(state);
+        resources.hash(state);
+        storage_bonus.hash(state);
+        food.hash(state);
+        used_food.hash(state);
+        cheatmode.hash(state);
+        has_victory.hash(state);
+        has_been_defeated.hash(state);
+        observer_if_defeated.hash(state);
+        group.hash(state);
+        group_had_enough_mana.hash(state);
+        stats.hash(state);
+        triggers.hash(state);
+        menace.hash(state);
+        buckets.hash(state);
+        places_to_explore.hash(state);
+        cheat_has_all.hash(state);
+        ai.hash(state);
+    }
 }
 
 impl std::fmt::Debug for Player {

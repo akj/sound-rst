@@ -27,6 +27,19 @@ impl fmt::Display for MapError {
 
 impl std::error::Error for MapError {}
 
+/// The most lines (`nb_lines`) a map may have: square names have at most
+/// two digits.
+pub const MAX_LINES: i64 = 99;
+
+/// The most meadows a map may put on each square (`nb_meadows_by_square`).
+/// The maps of the original put 12 at most.
+pub const MAX_MEADOWS_BY_SQUARE: i64 = 50;
+
+/// The most units that all the starts of a map may give together, counted
+/// before the players are placed, and the most units one count of an
+/// `add_units` action adds. The maps of the original give 1704 at most.
+pub const MAX_START_UNITS: i64 = 10_000;
+
 fn formatted(line: &str, msg: &str) -> String {
     if line.is_empty() {
         msg.to_owned()
@@ -551,6 +564,22 @@ impl World {
         if self.map.nb_players_min > self.map.nb_players_max {
             return Err(MapError("nb_players_min > nb_players_max".into()));
         }
+        let start_units = self
+            .map
+            .players_starts
+            .iter()
+            .chain(&self.map.computers_starts)
+            .flat_map(|s| &s.items)
+            .map(|i| match i {
+                StartItem::Units { count, .. } => *count,
+                StartItem::Forbidden(_) => 0,
+            })
+            .fold(0, i64::saturating_add);
+        if start_units > MAX_START_UNITS {
+            return Err(MapError(format!(
+                "the starts give {start_units} units, more than {MAX_START_UNITS}"
+            )));
+        }
         if (self.map.players_starts.len() as i64) < self.map.nb_players_max {
             return Err(MapError(
                 "not enough starting places for nb_players_max".into(),
@@ -614,6 +643,12 @@ impl World {
             return Err(MapError(
                 "string index out of range: too many columns".into(),
             ));
+        }
+        if self.map.nb_lines > MAX_LINES {
+            return Err(MapError(format!(
+                "{} lines, more than {MAX_LINES}",
+                self.map.nb_lines
+            )));
         }
         for col in 0..self.map.nb_columns {
             for row in 0..self.map.nb_lines {
@@ -690,6 +725,12 @@ impl World {
     }
 
     fn create_resources(&mut self) -> Result<(), MapError> {
+        if self.map.nb_meadows_by_square > MAX_MEADOWS_BY_SQUARE {
+            return Err(MapError(format!(
+                "{} meadows by square, more than {MAX_MEADOWS_BY_SQUARE}",
+                self.map.nb_meadows_by_square
+            )));
+        }
         for (z, cls, n) in self.map.map_objects.clone() {
             let Some(s) = self.square_by_name(&z) else {
                 self.warn(format!("{z} is not a valid coordinate"));

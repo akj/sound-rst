@@ -81,7 +81,7 @@ pub(crate) fn spawn(
             deadline: Instant::now() + settings.lag_timeout,
             loaded: BTreeSet::new(),
         },
-        digests: Digests::Comparing(BTreeMap::new()),
+        digests: BTreeMap::new(),
         settings,
         lobby,
     };
@@ -121,14 +121,6 @@ impl Phase {
     }
 }
 
-enum Digests {
-    /// The digests of the turns some human still in the game has not
-    /// reported.
-    Comparing(BTreeMap<Turn, BTreeMap<SlotIndex, Digest>>),
-    /// The game was found out of sync once; it is not checked again.
-    Reported,
-}
-
 struct Game {
     room: RoomId,
     /// The humans still in the game.
@@ -137,7 +129,9 @@ struct Game {
     /// The orders for `next_turn`, in arrival order for each slot.
     pending: BTreeMap<SlotIndex, Vec<Order>>,
     phase: Phase,
-    digests: Digests,
+    /// The digests of the turns some human still in the game has not
+    /// reported.
+    digests: BTreeMap<Turn, BTreeMap<SlotIndex, Digest>>,
     settings: Settings,
     lobby: LobbyTx,
 }
@@ -307,28 +301,35 @@ impl Game {
         if i64::from(next_turn) - 1 - i64::from(turn) <= max_lead {
             human.holding_since = None;
         }
-        if let Digests::Comparing(by_turn) = &mut self.digests {
-            by_turn.entry(turn).or_default().insert(slot, digest);
-        }
+        self.digests.entry(turn).or_default().insert(slot, digest);
         self.compare_digests();
         self.resume_if_nobody_behind();
     }
 
-    /// Takes a human out of the game: their `quit` goes into the next turn.
+    /// Takes a human out of the game, then does what the game was waiting
+    /// on them for.
     fn leave(&mut self, slot: SlotIndex) {
+        if self.take_out(slot) {
+            self.compare_digests();
+            self.resume_if_nobody_behind();
+            self.start_if_all_loaded();
+        }
+    }
+
+    /// Takes a human out of the game: their `quit` goes into the next turn.
+    /// False if they were not in it.
+    fn take_out(&mut self, slot: SlotIndex) -> bool {
         let Some(human) = self.humans.remove(&slot) else {
-            return;
+            return false;
         };
         info!(room = self.room.0, login = %human.login, "left the game");
         self.pending.entry(slot).or_default().push(Order::quit());
         self.broadcast(&ServerMsg::PlayerLeftGame { slot });
-        self.compare_digests();
-        self.resume_if_nobody_behind();
-        self.start_if_all_loaded();
         let _ = self.lobby.send(LobbyInput::LeftGame {
             room: self.room,
             conn: human.conn,
         });
+        true
     }
 
     fn resume_if_nobody_behind(&mut self) {
@@ -346,15 +347,12 @@ impl Game {
     }
 
     /// Compares the digests of each turn every human still in the game has
-    /// reported, oldest first, until one differs.
+    /// reported, oldest first. The humans whose digest differs are told,
+    /// with the others, and taken out of the game; the others play on.
     fn compare_digests(&mut self) {
-        let Digests::Comparing(by_turn) = &mut self.digests else {
-            return;
-        };
-        let mut out_of_sync = None;
-        while let Some(entry) = by_turn.first_entry() {
+        while let Some(entry) = self.digests.first_entry() {
             if !self.humans.keys().all(|s| entry.get().contains_key(s)) {
-                break;
+                return;
             }
             let turn = *entry.key();
             let digests: BTreeMap<SlotIndex, Digest> = entry
@@ -363,14 +361,17 @@ impl Game {
                 .filter(|(s, _)| self.humans.contains_key(s))
                 .collect();
             if let Some(slots) = odd_slots(&digests) {
-                out_of_sync = Some((turn, slots));
-                break;
+                warn!(room = self.room.0, turn, ?slots, "out of sync");
+                self.broadcast(&ServerMsg::OutOfSync {
+                    turn,
+                    slots: slots.clone(),
+                });
+                // All of them before the next turn is compared: with only
+                // some of them out, the others could look like a majority.
+                for slot in slots {
+                    self.take_out(slot);
+                }
             }
-        }
-        if let Some((turn, slots)) = out_of_sync {
-            warn!(room = self.room.0, turn, ?slots, "out of sync");
-            self.digests = Digests::Reported;
-            self.broadcast(&ServerMsg::OutOfSync { turn, slots });
         }
     }
 

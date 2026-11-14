@@ -3,6 +3,7 @@
 
 use crate::entity::{EntityId, Place, PlayerId, Target};
 use crate::events::{EntityEvent, Event};
+use crate::map::MAX_START_UNITS;
 use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::nofloat::{py_float, py_int};
@@ -10,7 +11,7 @@ use crate::player::{Objective, PlayerKind};
 use crate::world::{Abort, NotEnoughSpace, Res, World};
 
 /// A word or a parenthesized list of a trigger.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Expr {
     Word(String),
     List(Vec<Expr>),
@@ -352,7 +353,7 @@ impl World {
                 square = s;
                 nb = 1;
             } else if is_digits(i) {
-                nb = py_int(i).unwrap_or(1);
+                nb = py_int(i).unwrap_or(1).min(MAX_START_UNITS);
             } else {
                 match self
                     .rules
@@ -476,8 +477,9 @@ impl World {
     // commands
 
     /// Runs a text command of a player now (`execute_command`): `order`,
-    /// `control`, `cmd`, `speed`, `quit`, `neutral_quit`, `say`,
-    /// `toggle_cheatmode`.
+    /// `control`, `cmd`, `speed`, `quit`, `neutral_quit`,
+    /// `toggle_cheatmode`. `cmd` and `toggle_cheatmode` run only if
+    /// [`World::allow_cheatmode`] is set.
     pub fn execute_command(&mut self, p: PlayerId, data: &str) -> Result<(), Abort> {
         let args: Vec<String> = data.split_whitespace().map(str::to_owned).collect();
         let Some(first) = args.first() else {
@@ -486,6 +488,9 @@ impl World {
         let cmd = first.to_lowercase();
         let rest = args[1..].to_vec();
         match cmd.as_str() {
+            "toggle_cheatmode" | "cmd" if !self.allow_cheatmode => {
+                self.warn(format!("cheat mode is not allowed: {data}"));
+            }
             "toggle_cheatmode" => {
                 let c = self.pl(p).cheatmode;
                 self.plm(p).cheatmode = !c;
@@ -523,16 +528,6 @@ impl World {
                 }
             }
             "control" => self.cmd_control(p, &rest)?,
-            "say" => {
-                let mut m = self.pl(p).name();
-                m.extend(msg(mp::SAYS));
-                m.push(MsgPart::Text(rest.join(" ")));
-                for op in self.players.clone() {
-                    if op != p {
-                        self.send_voice_important(op, m.clone());
-                    }
-                }
-            }
             _ => self.warn(format!("unknown command: 'cmd_{cmd}' ({data})")),
         }
         Ok(())

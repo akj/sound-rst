@@ -66,7 +66,7 @@ impl Place {
 
 /// A point of a square given by the player (`zoom-<square>-<x>-<y>`), or one
 /// of the nine subsquares of a square.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ZoomTarget {
     pub place: SquareId,
     pub x: i64,
@@ -77,14 +77,14 @@ pub struct ZoomTarget {
 
 /// A remembered entity: a copy of the entity made when it went out of
 /// sight, owned by one player's memory.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct MemoryRef {
     pub owner: PlayerId,
     pub snapshot: Arc<Entity>,
 }
 
 /// What an order or an action aims at.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum Target {
     Square(SquareId),
     Zoom(ZoomTarget),
@@ -131,7 +131,7 @@ impl Target {
 }
 
 /// What a unit is doing right now (`worldaction.py`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ActionKind {
     /// No movement: the action of a unit told to stop.
     Plain,
@@ -143,7 +143,7 @@ pub enum ActionKind {
     Attack,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Action {
     pub kind: ActionKind,
     pub target: Option<Target>,
@@ -157,7 +157,7 @@ pub enum AiMode {
 }
 
 /// An exit: one side of a path, bridge or portal between two squares.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct ExitData {
     pub other_side: Option<EntityId>,
     pub is_a_portal: bool,
@@ -168,7 +168,7 @@ pub struct ExitData {
 }
 
 /// A building under construction.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SiteData {
     /// The building it will become.
     pub building_type: TypeId,
@@ -180,7 +180,7 @@ pub struct SiteData {
 
 /// Anything placed on the map: deposit, meadow, corpse, exit, unit,
 /// building or building site.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Entity {
     pub id: EntityId,
     pub class: EntityClass,

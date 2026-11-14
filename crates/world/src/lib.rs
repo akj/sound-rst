@@ -47,8 +47,8 @@
 //!   seen before, with the time they were seen), observed squares,
 //!   statistics, objectives, victory, defeat, cheat mode. A player in cheat
 //!   mode has observed every square before.
-//! - [`World::get_objects_string`] and [`World::get_digest`] describe the
-//!   whole state, to compare two runs.
+//! - [`World::digest_u64`] and [`World::get_digest`] sum up the whole
+//!   state, to compare two runs.
 //!
 //! # Computer players
 //!
@@ -91,3 +91,41 @@ pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
+
+/// The version of the simulation. Players can join the same game only with
+/// the same version. Bump it whenever a change makes the simulation compute
+/// a different result from the same inputs, which includes a change to
+/// [`World::digest_u64`].
+pub const SIM_VERSION: u32 = 1;
+
+/// The hash of the recorded traces under `tests/parity/expected` for
+/// [`SIM_VERSION`]. A test fails when the traces change and this does not.
+#[cfg(test)]
+const PARITY_TRACES_HASH: u64 = 0x3d68_f52f_4501_34d6;
+
+#[cfg(test)]
+mod sim_version {
+    use std::hash::{Hash, Hasher};
+
+    #[test]
+    fn the_parity_traces_change_only_with_the_sim_version() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity/expected");
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        let mut h = crate::world::Fnv1a::default();
+        for name in names {
+            let text = std::fs::read_to_string(dir.join(&name)).unwrap();
+            name.hash(&mut h);
+            text.replace('\r', "").hash(&mut h);
+        }
+        assert_eq!(
+            h.finish(),
+            super::PARITY_TRACES_HASH,
+            "the parity traces changed: bump SIM_VERSION and set PARITY_TRACES_HASH to {:#018x}",
+            h.finish()
+        );
+    }
+}

@@ -433,6 +433,88 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
 }
 
 #[test]
+fn turns_keep_running_while_the_game_menu_is_open() {
+    let live = LiveKeys::default();
+    let mut h = Harness::with_config(
+        "en",
+        Script::new().keep_open().with_live(live.clone()),
+        config("andrew"),
+    );
+    let server = h.join_fake_server("andrew", &[]);
+    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let t0 = h.clock.now();
+    for n in 0..60 {
+        server.at(t0 + 0.3 * f64::from(n), turn(n));
+    }
+    live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
+    live.tap_at(t0 + 7.0, Key::Escape, Mods::NONE);
+    live.tap_at(t0 + 9.0, Key::F10, Mods::NONE);
+    h.run_for(&mut g, 1.5);
+    let open_from = g.game.world.turn();
+    let said_from = h.said_since(0).len();
+    h.run_for(&mut g, 5.0);
+    let open_to = g.game.world.turn();
+    assert!(
+        open_to - open_from >= 15,
+        "turns {open_from} to {open_to} with the menu open"
+    );
+    h.run_for(&mut g, 4.0);
+    assert!(live.is_empty(), "every key was read");
+    let done = server
+        .sent()
+        .iter()
+        .filter(|m| matches!(m, ClientMsg::TurnDone { .. }))
+        .count();
+    assert_eq!(done as i64, g.game.world.turn());
+    // The news went on with the menu open; Escape chose to continue, and
+    // F10 then went to the game, which opened the menu again.
+    let said = h.said_since(said_from);
+    let (news, last) = said.split_at(said.len().saturating_sub(2));
+    assert!(!news.is_empty(), "{said:#?}");
+    assert_eq!(last, ["continue game", "Menu"], "{said:#?}");
+}
+
+#[test]
+fn out_of_sync_says_whether_the_player_leaves_the_game() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &["bob"]);
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
+    let t0 = h.clock.now();
+    server.at(
+        t0 + 1.0,
+        ServerMsg::OutOfSync {
+            turn: 0,
+            slots: vec![1],
+        },
+    );
+    server.at(
+        t0 + 10.0,
+        ServerMsg::OutOfSync {
+            turn: 0,
+            slots: vec![0, 1],
+        },
+    );
+    let from = h.said_since(0).len();
+    h.run_for(&mut g, 5.0);
+    let others = h.said_since(from);
+    assert!(
+        others
+            .iter()
+            .any(|s| s.ends_with("other players are out of sync: they leave the game")),
+        "{others:#?}"
+    );
+    let from = h.said_since(0).len();
+    h.run_for(&mut g, 10.0);
+    let you = h.said_since(from);
+    assert!(
+        you.iter().any(|s| s
+            .ends_with("the game is out of sync: you no longer play the same game as the others")),
+        "{you:#?}"
+    );
+}
+
+#[test]
 fn turns_that_come_together_are_spread_out() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let server = h.join_fake_server("andrew", &[]);

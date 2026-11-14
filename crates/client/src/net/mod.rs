@@ -84,15 +84,27 @@ pub struct GameStart {
 }
 
 /// What the server says to a game being played.
-#[derive(Default)]
 pub struct GameLink {
+    /// The player's slot.
+    pub you: SlotIndex,
     /// The turns received and not run yet, in order.
     pub turns: VecDeque<(Turn, Vec<SlotOrders>)>,
     /// The game is over for this player (the server said so).
     pub ended: bool,
     /// Bytes of orders sent since the last turn received.
     sent_since_turn: usize,
-    out_of_sync_said: bool,
+}
+
+impl GameLink {
+    /// The link of a game where the player has slot `you`.
+    pub fn new(you: SlotIndex) -> GameLink {
+        GameLink {
+            you,
+            turns: VecDeque::new(),
+            ended: false,
+            sent_since_turn: 0,
+        }
+    }
 }
 
 /// The connection to a server, and what the client knows of it.
@@ -290,13 +302,15 @@ impl Net {
                 cx.log.info(format!("slot {slot} left the game"));
             }
             ServerMsg::OutOfSync { turn, slots } => {
-                if let Some(g) = &mut self.game
-                    && !g.out_of_sync_said
-                {
-                    g.out_of_sync_said = true;
+                if let Some(g) = &self.game {
                     cx.log
                         .warning(format!("out of sync after turn {turn}: slots {slots:?}"));
-                    cx.voice.chat(&text(words::OUT_OF_SYNC));
+                    let m = if slots.contains(&g.you) {
+                        words::OUT_OF_SYNC
+                    } else {
+                        words::OTHERS_OUT_OF_SYNC
+                    };
+                    cx.voice.chat(&text(m));
                 }
             }
             ServerMsg::GameEnded => {
