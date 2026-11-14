@@ -1,11 +1,9 @@
 //! What the player learns without asking: the fog of war kept up to date,
 //! and the alerts about resources, food, menus, units and attacks.
 
-use std::sync::Arc;
-
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::{EntityId, Place, SquareId};
+use soundrts_world::{EntityId, KnownEntity, Place, SquareId};
 
 use crate::audio::stereo;
 use crate::client::Client;
@@ -144,10 +142,10 @@ impl GameInterface {
         let mut done: Vec<String> = Vec::new();
         for e in self.host.view(self.me).own_units() {
             let u = e.id;
+            let type_name = e.type_name.to_string();
             // A view of each unit, as the original makes one: it draws its
             // footstep offset even when its type is done.
-            let view = EntityView::new(Arc::new(e.clone()), None, &cx.rng);
-            let type_name = e.type_name.to_string();
+            let view = EntityView::new(e, &cx.rng);
             if done.contains(&type_name) {
                 continue;
             }
@@ -330,38 +328,37 @@ impl GameInterface {
     pub(crate) fn update_fog_of_war(
         &mut self,
         cx: &Client,
-        memory: Vec<(Arc<soundrts_world::Entity>, i64)>,
-        perception: Vec<Arc<soundrts_world::Entity>>,
+        memory: Vec<KnownEntity>,
+        perception: Vec<KnownEntity>,
     ) {
-        for (m, ts) in &memory {
+        let known: std::collections::HashSet<EntityId> =
+            memory.iter().chain(&perception).map(|m| m.id).collect();
+        for m in memory {
             if self.dobjets.get(&m.id).is_some_and(|v| !v.is_memory()) {
                 self.delete_object(cx, m.id);
             }
             match self.dobjets.get_mut(&m.id) {
-                Some(v) => {
-                    v.model = m.clone();
-                    v.time_stamp = Some(*ts);
-                }
+                Some(v) => v.model = m,
                 None => {
-                    let v = EntityView::new(m.clone(), Some(*ts), &cx.rng);
-                    self.dobjets.insert(m.id, v);
-                    let is_resource = self.resource_type(m).is_some();
-                    if self.must_report_resource(m.place, is_resource)
-                        && let Some(place) = m.place
+                    let is_resource = self.resource_type(&m).is_some();
+                    let place = m.place;
+                    self.dobjets.insert(m.id, EntityView::new(m, &cx.rng));
+                    if self.must_report_resource(place, is_resource)
+                        && let Some(place) = place
                     {
                         self.scout_info.insert(place);
                     }
                 }
             }
         }
-        for m in &perception {
+        for m in perception {
             if !self.dobjets.contains_key(&m.id) {
-                if self.is_an_enemy(m) {
-                    let v = EntityView::new(m.clone(), None, &cx.rng);
+                if self.is_an_enemy(&m) {
+                    let v = EntityView::new(m.clone(), &cx.rng);
                     let t = self.short_title(cx, &v);
                     self.new_enemy_units.push((t, m.place));
                 }
-                let is_resource = self.resource_type(m).is_some();
+                let is_resource = self.resource_type(&m).is_some();
                 if self.must_report_resource(m.place, is_resource)
                     && let Some(place) = m.place
                 {
@@ -371,18 +368,12 @@ impl GameInterface {
                 self.delete_object(cx, m.id);
             }
             match self.dobjets.get_mut(&m.id) {
-                Some(v) => v.model = m.clone(),
+                Some(v) => v.model = m,
                 None => {
-                    let v = EntityView::new(m.clone(), None, &cx.rng);
-                    self.dobjets.insert(m.id, v);
+                    self.dobjets.insert(m.id, EntityView::new(m, &cx.rng));
                 }
             }
         }
-        let known: std::collections::HashSet<EntityId> = memory
-            .iter()
-            .map(|(m, _)| m.id)
-            .chain(perception.iter().map(|m| m.id))
-            .collect();
         let gone: Vec<EntityId> = self
             .dobjets
             .keys()

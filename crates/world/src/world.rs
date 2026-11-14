@@ -12,6 +12,7 @@ use crate::entity::{
     Target,
 };
 use crate::events::{EntityEvent, Event};
+use crate::known::KnownEntity;
 use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
 use crate::player::Player;
@@ -849,7 +850,7 @@ impl World {
 
     pub(crate) fn send_event(&mut self, p: PlayerId, o: EntityId, event: EntityEvent) {
         if self.pl(p).is_local_human() {
-            let entity = Box::new(self.e(o).clone());
+            let entity = Box::new(KnownEntity::of(self, p, self.e(o), None));
             self.plm(p).events.push(Event::Entity { entity, event });
         }
     }
@@ -862,13 +863,13 @@ impl World {
             memory: pl
                 .memory
                 .values()
-                .map(|r| (r.snapshot.clone(), r.time_stamp))
+                .map(|r| KnownEntity::of(self, p, &r.snapshot, Some(r.time_stamp)))
                 .collect(),
             perception: pl
                 .perception
                 .iter()
                 .filter_map(|&id| self.entity(id))
-                .map(|e| Arc::new(e.clone()))
+                .map(|e| KnownEntity::of(self, p, e, None))
                 .collect(),
             observed_squares: pl.observed_squares.clone(),
             observed_before_squares: if pl.cheatmode {

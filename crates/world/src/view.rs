@@ -4,8 +4,9 @@
 //! from the [`Host`](crate::Host) with [`Host::view`](crate::Host::view)
 //! and borrows the host's world for as long as it is used: it never hands
 //! out the world, a [`Player`](crate::Player), or anything that changes
-//! the game. Its answers are facts: small owned values, ids, or borrowed
-//! data that a copy sent over a network could carry as well.
+//! the game. Its answers are facts: small owned values, ids, borrowed
+//! data that a copy sent over a network could carry as well, and entities
+//! as the player knows them ([`KnownEntity`]).
 //!
 //! The methods come in five groups. The groups are the contract for a view
 //! that is sent rather than borrowed: each says where its answers would
@@ -39,9 +40,10 @@ use std::collections::BTreeSet;
 
 use crate::command::OrderTarget;
 use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
+use crate::known::KnownEntity;
 use crate::msg::Msg;
-use crate::orders::{Keyword, Mode, OrderInfo};
-use crate::player::{Objective, PlayerStats, Remembrance};
+use crate::orders::{Keyword, Mode, OrderInfo, TargetRef};
+use crate::player::{Objective, PlayerStats};
 use crate::rules::{TypeId, UnitType};
 use crate::square::Square;
 use crate::world::{Abort, World};
@@ -231,12 +233,13 @@ impl<'a> View<'a> {
     }
 
     /// The player's units, in the order the player got them.
-    pub fn own_units(&self) -> impl Iterator<Item = &'a Entity> + use<'a> {
-        let w = self.world;
-        w.player(self.player)
+    pub fn own_units(&self) -> impl Iterator<Item = KnownEntity> + use<'a> {
+        let (w, me) = (self.world, self.player);
+        w.player(me)
             .units
             .iter()
             .filter_map(move |&u| w.entity(u))
+            .map(move |e| KnownEntity::of(w, me, e, None))
     }
 
     /// Whether the player may give orders to the units of `p`: its own,
@@ -247,13 +250,14 @@ impl<'a> View<'a> {
 
     /// The units the player may give orders to: each controlled player's
     /// units in turn, the player's own among them.
-    pub fn controlled_units(&self) -> impl Iterator<Item = &'a Entity> + use<'a> {
-        let w = self.world;
-        w.player(self.player)
+    pub fn controlled_units(&self) -> impl Iterator<Item = KnownEntity> + use<'a> {
+        let (w, me) = (self.world, self.player);
+        w.player(me)
             .allied_control
             .iter()
             .flat_map(move |&p| w.player(p).units.iter())
             .filter_map(move |&u| w.entity(u))
+            .map(move |e| KnownEntity::of(w, me, e, None))
     }
 
     /// The units of a recallable group that the player may give orders
@@ -325,7 +329,32 @@ impl<'a> View<'a> {
     // 4. Entities the player perceives or remembers.
 
     /// The entity as it is now, if the player perceives it.
-    pub fn perceived(&self, id: EntityId) -> Option<&'a Entity> {
+    pub fn perceived(&self, id: EntityId) -> Option<KnownEntity> {
+        let e = self.perceived_entity(id)?;
+        Some(KnownEntity::of(self.world, self.player, e, None))
+    }
+
+    /// The player's memory of an entity it does not perceive now: as it
+    /// was last seen, with when.
+    pub fn remembered(&self, id: EntityId) -> Option<KnownEntity> {
+        let r = self.world.player(self.player).memory.get(&id)?;
+        let e = &r.snapshot;
+        Some(KnownEntity::of(
+            self.world,
+            self.player,
+            e,
+            Some(r.time_stamp),
+        ))
+    }
+
+    /// The entity as the player knows it: as it is now if the player
+    /// perceives it, else as it was last seen, with when.
+    pub fn known(&self, id: EntityId) -> Option<KnownEntity> {
+        self.perceived(id).or_else(|| self.remembered(id))
+    }
+
+    /// The world's entity, if the player perceives it.
+    fn perceived_entity(&self, id: EntityId) -> Option<&'a Entity> {
         self.world
             .player(self.player)
             .perception
@@ -334,21 +363,13 @@ impl<'a> View<'a> {
             .flatten()
     }
 
-    /// The player's memory of an entity it does not perceive now: a copy
-    /// as it was last seen, and when.
-    pub fn remembered(&self, id: EntityId) -> Option<&'a Remembrance> {
-        self.world.player(self.player).memory.get(&id)
-    }
-
-    /// The entity as the player knows it: as it is now if the player
-    /// perceives it, else as it was last seen, with when.
-    pub fn known(&self, id: EntityId) -> Option<(&'a Entity, Option<i64>)> {
-        match self.perceived(id) {
-            Some(e) => Some((e, None)),
-            None => self
-                .remembered(id)
-                .map(|r| (&*r.snapshot, Some(r.time_stamp))),
-        }
+    /// The world's entity if the player perceives it, else the player's
+    /// copy of it: what [`View::known`] is made from.
+    fn known_entity(&self, id: EntityId) -> Option<&'a Entity> {
+        self.perceived_entity(id).or_else(|| {
+            let r = self.world.player(self.player).memory.get(&id)?;
+            Some(&*r.snapshot)
+        })
     }
 
     /// The units of `owner` that the player perceives on `place`, `except`
@@ -377,12 +398,13 @@ impl<'a> View<'a> {
     /// remembered copy's first order. What it gathers from is named as the
     /// player knows it: `None` if the player knows nothing of it.
     pub fn remembered_activity(&self, unit: EntityId) -> Option<String> {
-        let o = self.remembered(unit)?.snapshot.orders.first()?;
+        let r = self.world.player(self.player).memory.get(&unit)?;
+        let o = r.snapshot.orders.first()?;
         match o.mode {
             Mode::Build => Some("building".into()),
             Mode::Gather => {
                 let name = match o.target.as_ref()? {
-                    Target::Entity(id) => &self.known(*id)?.0.type_name,
+                    Target::Entity(id) => &self.known_entity(*id)?.type_name,
                     Target::Memory(m) => &m.snapshot.type_name,
                     _ => return None,
                 };
@@ -398,7 +420,7 @@ impl<'a> View<'a> {
     /// gate of the player or an ally does not close it. An exit the player
     /// knows nothing of is open.
     pub fn exit_is_blocked(&self, exit: EntityId, friendly_gates_open: bool) -> bool {
-        let Some(x) = self.known(exit).and_then(|(e, _)| e.exit.as_ref()) else {
+        let Some(x) = self.known_entity(exit).and_then(|e| e.exit.as_ref()) else {
             return false;
         };
         if x.is_blocked_by_forests {
@@ -406,11 +428,11 @@ impl<'a> View<'a> {
         }
         let other = x
             .other_side
-            .and_then(|o| self.known(o))
-            .and_then(|(o, _)| o.exit.as_ref())
+            .and_then(|o| self.known_entity(o))
+            .and_then(|o| o.exit.as_ref())
             .map_or(&[][..], |o| &o.blockers);
         x.blockers.iter().chain(other).any(|&b| {
-            let Some((b, _)) = self.known(b) else {
+            let Some(b) = self.known_entity(b) else {
                 return false;
             };
             let enemy = !friendly_gates_open || b.player.is_some_and(|bp| !self.is_ally(bp));
@@ -458,7 +480,7 @@ impl<'a> View<'a> {
     /// unit the player does not perceive; for a remembered one, see
     /// [`View::remembered_activity`].
     pub fn activity(&self, unit: EntityId) -> Option<String> {
-        self.perceived(unit)?;
+        self.perceived_entity(unit)?;
         self.world.activity(unit)
     }
 
@@ -467,7 +489,7 @@ impl<'a> View<'a> {
     /// perceive: the interface describes a remembered unit with those it
     /// was told when it last perceived the unit.
     pub fn unit_upgrades(&self, unit: EntityId) -> Vec<String> {
-        if self.perceived(unit).is_none() {
+        if self.perceived_entity(unit).is_none() {
             return Vec::new();
         }
         self.world.unit_upgrades(unit)
@@ -482,11 +504,7 @@ impl<'a> View<'a> {
         unit: EntityId,
         target: OrderTarget,
     ) -> Result<Option<Keyword>, Abort> {
-        let id = target.text(self.world);
-        Ok(self
-            .world
-            .get_default_order(unit, &id)?
-            .and_then(Keyword::parse))
+        self.world.default_keyword(unit, &TargetRef::from(target))
     }
 }
 
@@ -501,4 +519,4 @@ pub struct Comrades {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
