@@ -479,3 +479,62 @@ fn changed_maps_load_and_play_or_are_refused() {
         load
     });
 }
+
+/// Plays 30 turns of a human and an `easy` computer on [`PLAYED_MAP`] with
+/// the original's rules and scripts and a layer of each on top, on the stack
+/// of a Windows program's main thread, and returns the warnings.
+fn warnings_of_a_game(rules: &str, ai: &str) -> Vec<String> {
+    let (rules, ai) = (rules.to_owned(), ai.to_owned());
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(move || {
+            let mut w = World::new(
+                Rules::load(&[common::read("res/rules.txt"), rules]),
+                AiScripts::load(&[common::read("res/ai.txt"), ai]),
+                multiplayer_default_triggers(),
+                0,
+            );
+            w.load_and_build_map(&common::read(PLAYED_MAP)).unwrap();
+            w.populate_map(
+                &[Controller::human("me", true), Controller::computer("easy")],
+                true,
+                true,
+            )
+            .unwrap();
+            let mut warnings = Vec::new();
+            for _ in 0..30 {
+                w.update();
+                warnings.extend(w.drain_warnings());
+            }
+            assert_eq!(w.time, 30 * 300);
+            warnings
+        })
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// A farm that costs food sends the computer to build a farm for the food,
+/// which costs food, and so on: this overflowed the stack. Now the
+/// computer's update ends with a warning each turn it plays, as the
+/// original's recursion error ends it, and the game goes on.
+#[test]
+fn a_farm_that_costs_food_ends_the_computers_update_with_a_warning() {
+    assert_eq!(
+        warnings_of_a_game("def farm\nfood_cost 100\n", ""),
+        ["maximum recursion depth exceeded"; 3]
+    );
+}
+
+/// The same recursion within the script's plan is caught there, as in the
+/// original: the plan goes on with its next line.
+#[test]
+fn a_plan_line_that_recurses_is_skipped_with_a_warning() {
+    assert_eq!(
+        warnings_of_a_game(
+            "def farm\nfood_cost 100\ndef peasant\nfood_cost 0\n",
+            "def easy\nget 2 farm\n"
+        ),
+        ["recursion error with easy; current ai.txt line is: get 2 farm"; 3]
+    );
+}
