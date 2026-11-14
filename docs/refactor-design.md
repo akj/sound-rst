@@ -99,7 +99,7 @@ An entity in a view is a deliberate projection, not a copy. Every entity has the
 
 Static data goes once, at the start: the rules a player may know (unit types, costs, requirements) and the map layout (squares, exits, terrain).
 
-**Order menus are an open point.** My first draft had the client compute a unit's menu from the rules and the view. Sol's review showed that is not enough (`crates/world/src/orders.rs:398`): whether an order is offered also depends on technologies the map forbids, research queued in another building, unit counts, and room in a transport. So either the view carries each of the player's units' menus, which costs bytes, or the shared function takes those extra inputs, which widens the view. While the simulation runs in the same process the client simply asks. The choice only has to be made if the game moves to a host, and the measurement in section 5 should include it.
+**Order menus were an open point, now settled: the client computes them from data the view carries, through one function shared with the simulation (section 5, "The wire contract").** My first draft had the client compute a unit's menu from the rules and the view. Sol's review showed that is not enough (`crates/world/src/orders.rs:398`): whether an order is offered also depends on technologies the map forbids, research queued in another building, unit counts, and room in a transport. So either the view carries each of the player's units' menus, which costs bytes, or the shared function takes those extra inputs, which widens the view. While the simulation runs in the same process the client simply asks. The choice only has to be made if the game moves to a host, and the measurement in section 5 should include it.
 
 ### What the client knows today that the player should not
 
@@ -231,6 +231,49 @@ Two runs, both by Opus agents on throwaway tests; appendix B has the method and 
 **A surprise worth fixing whatever is decided.** Each turn the simulation re-stamps the "last seen" time of remembered objects on partly observed squares, though nothing about them changed (`crates/world/src/playerlogic.rs:448`). In the 16-player game that was 73 percent of everything that changed. A protocol should not send it, and "in the fog, 3 minutes" may be reading younger than it should.
 
 **What these numbers are not.** The byte layout is a prototype, not a protocol. The views are computer players' views; a person scouts differently. No seat had an ally, and allies' orders would add bytes. Order menus are not in it. It is one machine and one seed. And, from Sol's second round, the stream measured is smaller than the stream proposed: an event was counted as an id, a position and a small payload, not the observable state section 4 promises; chat and other events not about an entity were given no bytes; zoom and point targets were sent without coordinates; and the catch-up figure leaves out the events that pile up while a client is behind. Phase 3's first task encodes the complete contracts, catch-up events included, before anything is built on these numbers.
+
+### The wire contract
+
+Written 14 November 2026, after phase 1 was complete and a third measurement had inventoried everything the interface reads during a game. Appendix B has that measurement as "The third run". This is what phase 3 builds.
+
+**One message a turn for each seat, and no questions.** Everything the interface reads can arrive as data with the turn. Nothing has to be asked of the host while the game runs, which matters because the interface speaks its answers on a key press and a network round trip would be heard.
+
+**What the message carries:**
+
+1. The time and the turn.
+2. The turn's events, in order. An event about an entity carries that entity's observable projection at the moment it happened.
+3. What changed in the seat's own state: resources and food; upgrades and forbidden technologies; the cheat, has-everything and victory flags; objectives; who is still playing and who is allied with whom; which players' units the seat controls; the recallable groups, cut down to units the seat controls.
+4. What changed in the squares: the observed, observed-before and partly observed sets, and the terrain of squares the seat observes.
+5. What changed in each entity the seat perceives or remembers. The projection gains a few fields the interface reads today by asking: what the unit is visibly busy with; which of its owner's upgrades apply to it; for an exit, whether forest closes it and what blocks it; and for the seat's own units, three inputs to the order menu (idle, gathering by itself, repairing by itself).
+
+Sent once, at the start: the rules, the map, the list of factions, and each seat's place in the game. Sent once, at the end: the statistics and the result.
+
+**The client computes the rest itself**, from that data and the rules: order menus, order costs, the requirements check, the default order for a target, whether an exit is blocked, and the comrades left after a death. The measurement built a client-side order menu from only this data and compared it with the simulation's own in 28 million cases across three games; all matched. So the menu rules move into one function with no access to the world, and the simulation and the client both call it. That is the answer to the open point in section 4. Computing menus on the host instead would cost more than the turn itself in an 8-player game.
+
+**A turn's data is current from the moment the client takes the turn**, not from the later moment its end-of-turn report is handled. The interface handles one queued event per pass, so today it already answers questions from the end of turn N while its copies of entities are from turn N minus 1. Installing the whole message when the turn is taken reproduces that exactly, which is why the recorded transcripts can survive this move. Installing it later would change what is heard: a fight judged on last turn's comrades, a "menu changed" announcement arriving late.
+
+**A seat that fell behind** gets what changed since the view it last had, and of the events it missed only those that are not about an entity. The interface already discards entity events more than 3 seconds old. Measured, the entity events missed over 50 turns are as large as the view change itself, and they would be thrown away on arrival.
+
+**"Last seen" is not sent every turn.** The simulation re-stamps the last-seen time of remembered objects on squares the seat still partly sees, every turn. That is correct, since the seat does see them, and it was half the changed bytes in two of the three games. The message says which remembered entities are still in sight, and the client stamps the time itself.
+
+**The game's description.** The hosting client uploads the texts a world is built from: about 12 kilobytes of rules, 1.5 of computer-player text and 4 of map. The host sends the faction list, which each client derives from its own files today. The content hash stays, with a new job: it is the check, on joining a room, that a client has the sounds and spoken names for that game's unit types. A type the client has never heard of is spoken by its name as text, as a fallback. Folder maps are not offered in multiplayer today and stay that way.
+
+**What it costs, measured** with a fixed-width prototype layout, per seat, median then 99th percentile:
+
+- 2 players: 133 then 574 bytes of changed fields a turn; about half a kilobyte a second.
+- 8 players: 98 then 802 bytes; about half a kilobyte a second.
+- 16 players on the busiest map: 441 then 2,574 bytes; 1.7 then 9.8 kilobytes a second.
+- The full view, sent on joining or returning: about 5 kilobytes with 2 players, 4 to 9 with 8, and 43 to 111 with 16, where remembered entities are three quarters of it.
+- Building, encoding and comparing one seat's message took 0.2 to 0.4 milliseconds in the small games and 1.7 in the 16-player one, with an encoder that was not written for speed, on a machine shared with other work.
+
+These figures now include what the second run left out: events with full projections, the on-demand answers, and catch-up events. They are still computer players' views with no allies, and the layout is a prototype.
+
+**The order phase 3 is built in:**
+
+1. The snapshot. The in-process host builds the turn's message as an owned value; the client installs it when it takes the turn and reads only that, with the menu rules in the shared function. Nothing is sent anywhere yet. Every recording stays byte-identical, which is the proof that the contract is complete.
+2. The encoding. The message and the game's description get a wire form and a change-since-last-turn form, measured on real games before anything is built on them.
+3. The server runs the host: the description uploaded, a stream for each seat, returning with a token, a heartbeat, pause and speed, removing a player, watchers.
+4. The client plays from the stream, and lockstep is deleted.
 
 ### Sol's conclusion, and mine
 
@@ -629,6 +672,7 @@ The recordings are why a change this size is safe to attempt, so the tests are p
 
 **Phase 3. The host on the server.** Large: about six pull requests. One listening session, and a real game with another person.
 
+- The four steps at the end of section 5's "The wire contract": the snapshot, the encoding, the server running the host, and the client playing from the stream.
 - The stream measured with the real types before anything is built on it.
 - The game description sent to the server, the presentation contract, the event stream with a position per seat, the story and end-of-game handshakes.
 - The server runs the host. Reconnect with a token, heartbeat, pause, speed, removing a player, watchers.
@@ -833,6 +877,28 @@ Writing out and comparing one seat's view took a median of about 8 microseconds 
 - No seat had an ally. Allies' orders and cargo would add bytes.
 - Order menus are not included.
 - An event was sized as an id, a position and a small payload, not a full observable state. Events not about an entity were counted and given no bytes. Zoom and point targets were encoded without coordinates. The catch-up comparison covers view changes only, not the events missed.
+
+### The third run: everything the interface reads
+
+Run by an Opus agent on 14 November 2026, on `main` after phase 1, in the thread "Phase 3 spike: what a network view must carry". Its report has the inventory of every read, by file and function, and the test source.
+
+**Method.** The same three games as the second run, to 6,000 turns, two copies of each in one process: one with events and reports for every seat, one without, their digests compared every 500 turns. For each seat each turn the test built the whole message of section 5's wire contract, including the answers the interface asks for on demand today, wrote it in a fixed-width layout (66 bytes for an entity's observable part), and compared it with the previous turn's at the level of fields. Each game was timed twice; the byte figures were identical between runs.
+
+**Order menus computed by the client.** A menu built only from the message's data and the rules matched `World::order_menu` in all 28 million comparisons. No seat controlled an ally's units, so that case was not exercised.
+
+**Bytes for one seat for one turn**, median then 99th percentile:
+
+- The full view: `jl1` 5.0 and 6.2 kilobytes; `jl7` 4.0 and 9.4; `js13` 43 and 111.
+- Changed fields: `jl1` 331 and 782 bytes; `jl7` 98 and 802; `js13` 964 and 5,502. Without the "last seen" re-stamping: `jl1` 133 and 574; `js13` 441 and 2,574.
+- Events, each with the entity's projection: `jl1` 0 and 405 bytes; `jl7` 0 and 516; `js13` 64 and 731.
+
+**Time for one seat for one turn**, median, first run then second: building, encoding and comparing took 230 and 226 microseconds on `jl1`, 384 and 370 on `jl7`, 1,675 and 1,666 on `js13`. Of that, menus computed by the host with today's code: 164, 335 and 514 microseconds, which is why the client computes them.
+
+**A seat that fell 50 turns behind**, median: the view change was 940 bytes on `jl1`, 352 on `jl7` and 5,435 on `js13`; the entity events it missed were 1,187, 1,234 and 3,240 bytes.
+
+**What dominates.** In the full view of the largest game, remembered entities are 73 percent. In the changed bytes, the header of each changed entity (its id and a field mask) is 43 to 51 percent, so a tighter header would roughly halve them.
+
+**What else these numbers could be counting.** The machine was shared, and two worlds shared one process's cache: turn medians on `js13` were 16 to 17 milliseconds here against 11 in the first run, so absolute times are inflated. The encoder allocates per field and is an upper bound. The views are computer players' views with no allies. An event's own part was not encoded.
 
 **Still not measured:** which part of a turn dominates in the 16-player game; anything on a second machine; anything with a person playing.
 
