@@ -129,7 +129,7 @@ fn an_allys_memory_is_read_from_the_ally() {
 }
 
 #[test]
-fn an_exit_is_blocked_by_a_blocker_on_its_other_side_seen_or_not() {
+fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
     let (mut w, me, them) = game();
     let home = square_of(&w, unit(&w, me, "townhall"));
     let exit = w
@@ -156,9 +156,11 @@ fn an_exit_is_blocked_by_a_blocker_on_its_other_side_seen_or_not() {
         .other_side
         .unwrap();
     let blocker = unit(&w, them, "peasant");
-    assert!(!View::new(&w, me).leaks().exit_is_blocked(exit, true));
-    assert!(!View::new(&w, me).leaks().exit_is_blocked(exit, false));
+    assert!(!View::new(&w, me).exit_is_blocked(exit, true));
+    assert!(!View::new(&w, me).exit_is_blocked(exit, false));
 
+    // A blocker on the other side that the player has never seen: the
+    // exit is open for the player, though it is closed.
     w.entity_mut(other_side)
         .unwrap()
         .exit
@@ -167,9 +169,17 @@ fn an_exit_is_blocked_by_a_blocker_on_its_other_side_seen_or_not() {
         .blockers
         .push(blocker);
     let v = View::new(&w, me);
-    assert!(v.perceived(blocker).is_none());
-    assert!(v.leaks().exit_is_blocked(exit, true));
-    assert!(v.leaks().exit_is_blocked(exit, false));
+    assert!(v.known(blocker).is_none());
+    assert!(!v.exit_is_blocked(exit, true));
+    assert!(!v.exit_is_blocked(exit, false));
+
+    // Once the player remembers the blocker and the other side with it,
+    // the exit is closed.
+    remember(&mut w, me, other_side);
+    remember(&mut w, me, blocker);
+    let v = View::new(&w, me);
+    assert!(v.exit_is_blocked(exit, true));
+    assert!(v.exit_is_blocked(exit, false));
     // The exit's place on the other side is part of the map.
     assert_eq!(
         v.other_side_of_exit(exit),
@@ -193,8 +203,9 @@ fn a_friendly_gate_lets_the_player_through() {
         .blockers
         .push(gate);
     let v = View::new(&w, me);
-    assert!(!v.leaks().exit_is_blocked(exit, true));
-    assert!(v.leaks().exit_is_blocked(exit, false));
+    assert!(v.perceived(exit).is_some());
+    assert!(!v.exit_is_blocked(exit, true));
+    assert!(v.exit_is_blocked(exit, false));
 }
 
 #[test]

@@ -325,6 +325,32 @@ impl<'a> View<'a> {
         }
     }
 
+    /// Whether an exit is closed as far as the player knows: by dense
+    /// forests, or by a blocker on either side, as the player perceives or
+    /// remembers the exits and the blockers. With `friendly_gates_open`, a
+    /// gate of the player or an ally does not close it. An exit the player
+    /// knows nothing of is open.
+    pub fn exit_is_blocked(&self, exit: EntityId, friendly_gates_open: bool) -> bool {
+        let Some(x) = self.known(exit).and_then(|(e, _)| e.exit.as_ref()) else {
+            return false;
+        };
+        if x.is_blocked_by_forests {
+            return true;
+        }
+        let other = x
+            .other_side
+            .and_then(|o| self.known(o))
+            .and_then(|(o, _)| o.exit.as_ref())
+            .map_or(&[][..], |o| &o.blockers);
+        x.blockers.iter().chain(other).any(|&b| {
+            let Some((b, _)) = self.known(b) else {
+                return false;
+            };
+            let enemy = !friendly_gates_open || b.player.is_some_and(|bp| !self.is_ally(bp));
+            b.stats.is_a_gate == 0 || enemy
+        })
+    }
+
     // 5. Questions computed on demand.
 
     /// The entries of a unit's order menu for one keyword: `go`, or `train
@@ -396,10 +422,7 @@ impl<'a> View<'a> {
     /// The reads of the interface that go past what the player perceives
     /// or remembers. See [`Leaks`].
     pub fn leaks(&self) -> Leaks<'a> {
-        Leaks {
-            world: self.world,
-            player: self.player,
-        }
+        Leaks { world: self.world }
     }
 }
 
@@ -412,7 +435,6 @@ impl<'a> View<'a> {
 #[derive(Clone, Copy)]
 pub struct Leaks<'a> {
     world: &'a World,
-    player: PlayerId,
 }
 
 /// The units of a player that are on the same place as one of theirs that
@@ -433,38 +455,6 @@ impl<'a> Leaks<'a> {
     /// that target in the unit's orders.
     pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
         self.world.player(owner).memory.get(&id)
-    }
-
-    /// Whether an exit is closed: by dense forests, or by a blocker on
-    /// either side of it, seen or not. With `friendly_gates_open`, a gate
-    /// of the player or an ally does not close it.
-    ///
-    /// Used to hide a closed exit from the targets of a square, to choose
-    /// the sound of moving through an exit, and to say "no path in this
-    /// direction".
-    pub fn exit_is_blocked(&self, exit: EntityId, friendly_gates_open: bool) -> bool {
-        let w = self.world;
-        let Some(x) = w.entity(exit).and_then(|e| e.exit.as_ref()) else {
-            return false;
-        };
-        if x.is_blocked_by_forests {
-            return true;
-        }
-        let other = x
-            .other_side
-            .and_then(|o| w.entity(o))
-            .and_then(|o| o.exit.as_ref())
-            .map(|o| o.blockers.clone())
-            .unwrap_or_default();
-        x.blockers.iter().chain(&other).any(|&b| {
-            let Some(b) = w.entity(b) else {
-                return false;
-            };
-            let enemy = !friendly_gates_open
-                || b.player
-                    .is_some_and(|bp| !w.player(self.player).allied.contains(&bp));
-            b.stats.is_a_gate == 0 || enemy
-        })
     }
 
     /// The other units of `owner` on `place` now, `except` the one that

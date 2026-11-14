@@ -287,7 +287,7 @@ impl GameInterface {
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
             return Ok(a.cos() > 95f64.to_radians().cos());
         }
-        if self.is_an_exit(cx, v) && self.view().leaks().exit_is_blocked(v.id(), false) {
+        if self.is_an_exit(cx, v) && self.view().exit_is_blocked(v.id(), false) {
             return Ok(false);
         }
         Ok(true)
@@ -323,7 +323,7 @@ impl GameInterface {
             if !(self.is_in(v, Some(place))
                 && self.is_visible(cx, v)?
                 && self.is_an_exit(cx, v)
-                && !self.view().leaks().exit_is_blocked(v.id(), true))
+                && !self.view().exit_is_blocked(v.id(), true))
             {
                 continue;
             }
