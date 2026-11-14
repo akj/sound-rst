@@ -26,7 +26,7 @@ length 1063 578571
 length 1064 1551043
 length 1065 3132608
 length 1067 175147
-length 1070 155873
+length 1069 367120
 length 1074 826258
 length 1091 247279
 length 1099 270839
@@ -121,282 +121,282 @@ length 9999 208980
 @42450 voice info ", 1 gold mine at a 1"
 @44850 voice info ", 1 wood at c 1"
 @46750 voice info ", 1 gold mine and 2 wood at c 2"
-@50450 voice info "3 enemy at b 4"
-@52250 voice info ", 1 peasant enemy at a 3"
-@55050 voice info ", 1 wood at a 4"
-@56950 voice info ", 1 gold mine at c 4"
-@59350 voice info "1 peasant enemy at b 4"
-@61950 voice info "1 peasant enemy at b 4"
-@64551 sounds 265 e28293faf29ad29b
-@64551 step 16 key BACKQUOTE
-@64551 voice menu "Enter a command."
-@66152 step 17 key r (type r)
-@66152 voice item "r . r"
-@66652 step 18 key RETURN
-@66652 voice item "r"
-@66752 sounds 14 af2cbd7c265af729
-@66752 step 19 key BACKQUOTE
-@66752 voice menu "Enter a command."
-@68353 step 20 key a (type a blacksmith)
-@68353 voice item "a . a"
-@68853 step 21 key SPACE (type a blacksmith)
-@68853 voice item "  . a "
-@69453 step 22 key b (type a blacksmith)
-@69453 voice item "b . a b"
-@70153 step 23 key l (type a blacksmith)
-@70153 voice item "l . a bl"
-@70953 step 24 key a (type a blacksmith)
-@70953 voice item "a . a bla"
-@71853 step 25 key c (type a blacksmith)
-@71853 voice item "c . a blac"
-@72853 step 26 key k (type a blacksmith)
-@72853 voice item "k . a black"
-@73953 step 27 key s (type a blacksmith)
-@73953 voice item "s . a blacks"
-@75153 step 28 key m (type a blacksmith)
-@75153 voice item "m . a blacksm"
-@76453 step 29 key i (type a blacksmith)
-@76453 voice item "i . a blacksmi"
-@77853 step 30 key t (type a blacksmith)
-@77853 voice item "t . a blacksmit"
-@79353 step 31 key h (type a blacksmith)
-@79353 voice item "h . a blacksmith"
-@80953 step 32 key RETURN
-@80953 voice item "a blacksmith"
-@82153 voice info "blacksmith 1 at b 1"
-@84454 sounds 49 f22110faa73d0c4b
-@84454 step 33 key BACKQUOTE
-@84454 voice menu "Enter a command."
-@86055 step 34 key a (type a 8 peasant)
-@86055 voice item "a . a"
-@86555 step 35 key SPACE (type a 8 peasant)
-@86555 voice item "  . a "
-@87155 step 36 key 8 (type a 8 peasant)
-@87155 voice item "8 . a 8"
-@88255 step 37 key SPACE (type a 8 peasant)
-@88255 voice item "  . a 8 "
-@89255 step 38 key p (type a 8 peasant)
-@89255 voice item "p . a 8 p"
-@90355 step 39 key e (type a 8 peasant)
-@90355 voice item "e . a 8 pe"
-@91555 step 40 key a (type a 8 peasant)
-@91555 voice item "a . a 8 pea"
-@92855 step 41 key s (type a 8 peasant)
-@92855 voice item "s . a 8 peas"
-@94255 step 42 key a (type a 8 peasant)
-@94255 voice item "a . a 8 peasa"
-@95755 step 43 key n (type a 8 peasant)
-@95755 voice item "n . a 8 peasan"
-@97355 step 44 key t (type a 8 peasant)
-@97355 voice item "t . a 8 peasant"
-@99055 step 45 key RETURN
-@99055 voice item "a 8 peasant"
-@100355 voice info "peasant 2 at b 1"
-@102355 voice info "peasant 3 at b 1"
-@104355 voice info "peasant 4 at b 1"
-@106355 voice info "peasant 5 at b 1"
-@108355 voice info "peasant 6 at b 1"
-@110355 voice info "peasant 7 at b 1"
-@112355 voice info "peasant 8 at b 1"
-@114355 voice info "peasant 9 at b 1"
-@116356 sounds 193 8230209dd334c41e
-@116356 step 46 key BACKQUOTE
-@116356 voice menu "Enter a command."
-@117957 step 47 key a (type a priest)
-@117957 voice item "a . a"
-@118457 step 48 key SPACE (type a priest)
-@118457 voice item "  . a "
-@119057 step 49 key p (type a priest)
-@119057 voice item "p . a p"
-@119757 step 50 key r (type a priest)
-@119757 voice item "r . a pr"
-@120557 step 51 key i (type a priest)
-@120557 voice item "i . a pri"
-@121457 step 52 key e (type a priest)
-@121457 voice item "e . a prie"
-@122457 step 53 key s (type a priest)
-@122457 voice item "s . a pries"
-@123557 step 54 key t (type a priest)
-@123557 voice item "t . a priest"
-@124757 step 55 key RETURN
-@124757 voice item "a priest"
-@125358 sounds 18 90b042747474b39c
-@125358 step 56 wait_turns 3
-@125557 voice info "priest 1 at b 1"
-@127460 sounds 12 0865afee0cea7637
-@127460 step 57 key w
-@127460 voice item "town hall 1 at b 1 , awaiting your orders"
-@131960 sounds 44 3d40c872512c8000
-@131960 step 58 key w
-@131960 voice item "blacksmith 1 at b 1 , awaiting your orders"
-@136560 voice info "1 peasant enemy at b 4"
-@139161 sounds 54 7d6c9721cbc2eaf8
-@139161 step 59 key a
-@139161 voice item "research swords , requires 8 gold and 10 wood , press enter to confirm"
-@146761 sounds 62 7aa572c02cad74a8
-@146761 step 60 key RETURN
-@146761 voice item "research swords"
-@148261 voice info "1000 wood"
-@149962 sounds 27 f6cb8743b11c6bb8
-@149962 step 61 key w
-@149962 voice item "town hall 1 at b 1 , awaiting your orders"
-@154462 sounds 33 608d5b75c2010532
-@154462 step 62 key a
-@154462 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@161762 sounds 77 cc2b93d66c9b2510
-@161762 step 63 key RETURN
-@161762 voice item "recruit peasant"
-@163262 voice info "not enough food"
-@164763 sounds 35 d5484aeb8d494d25
-@164763 step 64 key CTRL e
-@164763 voice item ", You control 9 peasant , ,"
-@167663 sounds 28 01d0380e84ae0073
-@167663 step 65 key LEFT
-@167663 voice item [1091] "a 1 , meadows , 1 gold mine"
-@171011 sounds 29 b883f3c557ec0cfd
-@171011 step 66 key TAB
-@171011 voice item [1003] "gold mine to the southwest , contains 75 gold" vol=0.998,0.065
-@175930 voice info "1 peasant enemy at b 4"
-@178531 sounds 51 40be1313061884d4
-@178531 step 67 key BACKSPACE
-@178531 voice item "exploit gold mine ,"
-@180431 sounds 38 b092450eb09501f6
-@180431 step 68 key RIGHT
-@180431 voice item [1091] "b 1 , 1 town hall , 1 farm , 9 peasant , 1 blacksmith and 1 priest"
-@188479 sounds 219 b26b8501c2adecf8
-@188479 step 69 key s
-@188479 voice item "You control priest 1 at b 1 ,"
-@191779 sounds 61 ce30a9b2e802ac04
-@191779 step 70 key a
-@191779 voice item "go to , , press tab to select the target and then press enter to confirm"
-@198979 sounds 159 426b1e309efeb065
-@198979 step 71 key a
-@198979 voice item "patrol to , , press tab to select the target and then press enter to confirm"
-@206579 sounds 207 c306cc824f8e2516
-@206579 step 72 key a
-@206579 voice item "holy vision , , press tab to select the target and then press enter to confirm"
-@214379 voice info "research complete"
-@216079 voice info "1 peasant enemy at b 4"
-@218680 sounds 276 3242ea775ff18cb9
-@218680 step 73 key UP
-@218680 voice item "b 2 , meadows"
-@220180 sounds 44 96b83646318873e3
-@220180 step 74 key RETURN
-@220180 voice item "holy vision b 2"
-@233359 voice info "1 peasant enemy at b 4"
-@248358 voice info "1 peasant enemy at b 4"
-@250158 sounds 894 74560c4bf2a15ce3
-@250158 step 75 wait_turns 100
-@250959 sounds 26 0a5fe26f8f9c947c
-@250959 step 76 key z
-@250959 voice item "1020 gold"
-@272359 voice info "1 peasant enemy at b 4"
-@280758 sounds 888 73ac0c27eb370fbb
-@280758 step 77 wait_turns 100
-@280759 step 78 key z
-@280759 voice item "1033 gold"
-@282560 voice info "1 farm at building enemy at c 4"
-@292758 voice info "1 farm enemy at c 4"
-@310758 sounds 908 c165fc654171b3c4
-@310758 step 79 wait_turns 100
-@310759 step 80 key z
-@310759 voice item "1045 gold"
-@312459 voice info "1 peasant enemy at b 4"
-@340758 sounds 897 510c144dbc5b87b4
-@340758 step 81 wait_turns 100
-@340759 step 82 key z
-@340759 voice item "1056 gold"
-@342459 sounds 50 003f2019c95c4930
-@342459 step 83 key BACKQUOTE
-@342459 voice menu "Enter a command."
-@344060 step 84 key a (type a 10 footman)
-@344060 voice item "a . a"
-@344560 step 85 key SPACE (type a 10 footman)
-@344560 voice item "  . a "
-@345160 step 86 key 1 (type a 10 footman)
-@345160 voice item "1 . a 1"
-@346260 step 87 key 0 (type a 10 footman)
-@346260 voice item "0 . a 10"
-@347660 step 88 key SPACE (type a 10 footman)
-@347660 voice item "  . a 10 "
-@348960 step 89 key f (type a 10 footman)
-@348960 voice item "f . a 10 f"
-@350360 step 90 key o (type a 10 footman)
-@350360 voice item "o . a 10 fo"
-@351860 step 91 key o (type a 10 footman)
-@351860 voice item "o . a 10 foo"
-@353460 step 92 key t (type a 10 footman)
-@353460 voice item "t . a 10 foot"
-@355160 step 93 key m (type a 10 footman)
-@355160 voice item "m . a 10 footm"
-@356960 step 94 key a (type a 10 footman)
-@356960 voice item "a . a 10 footma"
-@358860 step 95 key n (type a 10 footman)
-@358860 voice item "n . a 10 footman"
-@360860 step 96 key RETURN
-@360860 voice item "a 10 footman"
-@361461 sounds 74 3291eb0c8a8081e7
-@361461 step 97 wait_turns 3
-@362460 voice info "footman 1 at b 2"
-@364460 voice info "footman 2 at b 2"
-@366460 voice info "footman 3 at b 2"
-@368460 voice info "footman 4 at b 2"
-@370460 voice info "footman 5 at b 2"
-@372460 voice info "footman 6 at b 2"
-@374460 voice info "footman 7 at b 2"
-@376460 voice info "footman 8 at b 2"
-@378460 voice info "footman 9 at b 2"
-@380460 voice info "footman 10 at b 2"
-@382762 sounds 567 59949c528b1f4686
-@382762 step 98 key f
-@382762 voice item ", You control 10 footman , ,"
-@385962 sounds 92 21a325eb1033de84
-@385962 step 99 key CTRL UP
-@385962 voice item "b 3 , meadows"
-@387462 sounds 53 4eb3c66ad6a7a192
-@387462 step 100 key CTRL UP
-@387462 voice item "b 4 , meadows , 1 town hall , 1 farm and 3 peasant enemy"
-@393862 sounds 161 18d2fb462da9c375
-@393862 step 101 key BACKSPACE
-@393862 voice item "go to b 4 ,"
-@410961 voice info "gold mine exhausted"
-@425975 voice info "1 farm neutralized at b 4"
-@437968 voice info "1 town hall neutralized at b 4"
-@438861 sounds 2307 72ba6061246f85e3
-@438861 step 102 wait_turns 150
-@441369 sounds 55 77c5dcb061ad5675
-@441369 step 103 key c
-@441369 voice item "9 food to 21"
-@443169 sounds 39 bc0fd0506a141e75
-@443169 step 104 key f
-@443169 voice item ", You control 10 footman , ,"
-@446369 sounds 88 afb6f98177e3f231
-@446369 step 105 key CTRL RIGHT
-@446369 voice item "c 4 , meadows , 9 peasant and 1 farm enemy , 1 gold mine"
-@452769 voice info "gold mine exhausted"
-@454670 sounds 177 916e22630c576636
-@454670 step 106 key BACKSPACE
-@454670 voice item "go to c 4 ,"
-@462864 voice info "1 farm neutralized at c 4"
-@463761 voice confirmation "quiet computer has been defeated"
-@466961 voice info "1 farm neutralized at c 4"
-@466962 voice confirmation "quiet computer has just quit the game"
-@470662 voice info "1 farm neutralized at c 4"
-@471265 voice cut queue=0
-@471266 voice info "Victory! at 6 minutes 11 seconds"
-@475066 voice info "20 units produced , 0 lost , 0 neutralized"
-@480066 voice info "3 building produced , 0 lost , 3 neutralized"
-@485066 voice info "85 gold gathered , consumed"
-@488166 voice info "10 wood gathered , consumed"
-@491266 voice info "score press F5 to listen again"
-@494466 voice menu "please make a selection"
-@494466 sounds 489 91ed022dd6381078
-@494466 step 107 wait_game_end
-@496766 step 108 key ESCAPE
-@496766 voice confirmation "go back to the previous menu"
-@499576 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@504676 sounds 1 f3c819ececf3daad
-@504676 step 109 key ESCAPE
-@504676 voice confirmation "quit,"
-@505186 sounds 1 f55bc673f392023f
-@505186 end
+@50450 voice info "4 enemy at b 4"
+@52250 voice info ", 1 gold mine and 2 wood at a 3"
+@55950 voice info ", 1 wood at a 4"
+@57850 voice info ", 1 gold mine at c 4"
+@60250 voice info "1 peasant enemy at b 4"
+@62851 sounds 243 bcdd4dfbc1e31d89
+@62851 step 16 key BACKQUOTE
+@62851 voice menu "Enter a command."
+@64452 step 17 key r (type r)
+@64452 voice item "r . r"
+@64952 step 18 key RETURN
+@64952 voice item "r"
+@65052 sounds 17 4cc4fdbd4ba53aff
+@65052 step 19 key BACKQUOTE
+@65052 voice menu "Enter a command."
+@66653 step 20 key a (type a blacksmith)
+@66653 voice item "a . a"
+@67153 step 21 key SPACE (type a blacksmith)
+@67153 voice item "  . a "
+@67753 step 22 key b (type a blacksmith)
+@67753 voice item "b . a b"
+@68453 step 23 key l (type a blacksmith)
+@68453 voice item "l . a bl"
+@69253 step 24 key a (type a blacksmith)
+@69253 voice item "a . a bla"
+@70153 step 25 key c (type a blacksmith)
+@70153 voice item "c . a blac"
+@71153 step 26 key k (type a blacksmith)
+@71153 voice item "k . a black"
+@72253 step 27 key s (type a blacksmith)
+@72253 voice item "s . a blacks"
+@73453 step 28 key m (type a blacksmith)
+@73453 voice item "m . a blacksm"
+@74753 step 29 key i (type a blacksmith)
+@74753 voice item "i . a blacksmi"
+@76153 step 30 key t (type a blacksmith)
+@76153 voice item "t . a blacksmit"
+@77653 step 31 key h (type a blacksmith)
+@77653 voice item "h . a blacksmith"
+@79253 step 32 key RETURN
+@79253 voice item "a blacksmith"
+@80453 voice info "blacksmith 1 at b 1"
+@82754 sounds 48 36b7fe8fff36d02f
+@82754 step 33 key BACKQUOTE
+@82754 voice menu "Enter a command."
+@84355 step 34 key a (type a 8 peasant)
+@84355 voice item "a . a"
+@84855 step 35 key SPACE (type a 8 peasant)
+@84855 voice item "  . a "
+@85455 step 36 key 8 (type a 8 peasant)
+@85455 voice item "8 . a 8"
+@86555 step 37 key SPACE (type a 8 peasant)
+@86555 voice item "  . a 8 "
+@87555 step 38 key p (type a 8 peasant)
+@87555 voice item "p . a 8 p"
+@88655 step 39 key e (type a 8 peasant)
+@88655 voice item "e . a 8 pe"
+@89855 step 40 key a (type a 8 peasant)
+@89855 voice item "a . a 8 pea"
+@91155 step 41 key s (type a 8 peasant)
+@91155 voice item "s . a 8 peas"
+@92555 step 42 key a (type a 8 peasant)
+@92555 voice item "a . a 8 peasa"
+@94055 step 43 key n (type a 8 peasant)
+@94055 voice item "n . a 8 peasan"
+@95655 step 44 key t (type a 8 peasant)
+@95655 voice item "t . a 8 peasant"
+@97355 step 45 key RETURN
+@97355 voice item "a 8 peasant"
+@98655 voice info "peasant 2 at b 1"
+@100655 voice info "peasant 3 at b 1"
+@102655 voice info "peasant 4 at b 1"
+@104655 voice info "peasant 5 at b 1"
+@106655 voice info "peasant 6 at b 1"
+@108655 voice info "peasant 7 at b 1"
+@110655 voice info "peasant 8 at b 1"
+@112655 voice info "peasant 9 at b 1"
+@114655 voice info "9 food to 9"
+@116156 sounds 206 0fe6e0dde27e4afb
+@116156 step 46 key BACKQUOTE
+@116156 voice menu "Enter a command."
+@117757 step 47 key a (type a priest)
+@117757 voice item "a . a"
+@118257 step 48 key SPACE (type a priest)
+@118257 voice item "  . a "
+@118857 step 49 key p (type a priest)
+@118857 voice item "p . a p"
+@119557 step 50 key r (type a priest)
+@119557 voice item "r . a pr"
+@120357 step 51 key i (type a priest)
+@120357 voice item "i . a pri"
+@121257 step 52 key e (type a priest)
+@121257 voice item "e . a prie"
+@122257 step 53 key s (type a priest)
+@122257 voice item "s . a pries"
+@123357 step 54 key t (type a priest)
+@123357 voice item "t . a priest"
+@124557 step 55 key RETURN
+@124557 voice item "a priest"
+@125158 sounds 18 f3caafa3438d42e4
+@125158 step 56 wait_turns 3
+@125357 voice info "priest 1 at b 1"
+@127259 sounds 10 00253a6e8e275292
+@127259 step 57 key w
+@127259 voice item "town hall 1 at b 1 , awaiting your orders"
+@131759 sounds 49 b350d5e659fbe47d
+@131759 step 58 key w
+@131759 voice item "blacksmith 1 at b 1 , awaiting your orders"
+@136359 voice info "1 peasant enemy at b 4"
+@138960 sounds 61 0345abea9608fd0a
+@138960 step 59 key a
+@138960 voice item "research swords , requires 8 gold and 10 wood , press enter to confirm"
+@146560 sounds 82 cb0a382016f25ad4
+@146560 step 60 key RETURN
+@146560 voice item "research swords"
+@148060 voice info "1000 wood"
+@149761 sounds 33 064dd5f397b05cfb
+@149761 step 61 key w
+@149761 voice item "town hall 1 at b 1 , awaiting your orders"
+@154261 sounds 47 e9cbb3f22bca7853
+@154261 step 62 key a
+@154261 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@161561 sounds 81 1f29c3e96e42003f
+@161561 step 63 key RETURN
+@161561 voice item "recruit peasant"
+@163061 voice info "not enough food"
+@164562 sounds 31 05dfe081c5f39dde
+@164562 step 64 key CTRL e
+@164562 voice item ", You control 9 peasant , ,"
+@167462 sounds 30 27a65ec4d47f629b
+@167462 step 65 key LEFT
+@167462 voice item [1091] "a 1 , meadows , 1 gold mine"
+@170810 sounds 27 f87a23047a8c714c
+@170810 step 66 key TAB
+@170810 voice item [1003] "gold mine to the southwest , contains 75 gold" vol=0.998,0.065
+@175729 voice info "1 peasant enemy at b 4"
+@178330 sounds 43 675b0c3cace5aaaf
+@178330 step 67 key BACKSPACE
+@178330 voice item "exploit gold mine ,"
+@180230 sounds 47 ad2b3d427b1ca36a
+@180230 step 68 key RIGHT
+@180230 voice item [1091] "b 1 , 1 town hall , 1 farm , 9 peasant , 1 blacksmith and 1 priest"
+@188278 sounds 249 a6f65f2f71254b8a
+@188278 step 69 key s
+@188278 voice item "You control priest 1 at b 1 ,"
+@191578 sounds 76 09e9c562e8544326
+@191578 step 70 key a
+@191578 voice item "go to , , press tab to select the target and then press enter to confirm"
+@198778 sounds 171 b8faab5b5f4ad1ad
+@198778 step 71 key a
+@198778 voice item "patrol to , , press tab to select the target and then press enter to confirm"
+@206378 sounds 213 2c01d57ff65c372c
+@206378 step 72 key a
+@206378 voice item "holy vision , , press tab to select the target and then press enter to confirm"
+@214178 voice info "research complete"
+@215878 voice info "1 peasant enemy at b 4"
+@218479 sounds 306 63d8cda2c53c7a4e
+@218479 step 73 key UP
+@218479 voice item "b 2 , meadows"
+@219979 sounds 47 6470a8394dd89bd1
+@219979 step 74 key RETURN
+@219979 voice item "holy vision b 2"
+@233460 voice info "1 peasant enemy at b 4"
+@248458 voice info "1 peasant enemy at b 4"
+@249958 sounds 949 fee0153b2535f6c6
+@249958 step 75 wait_turns 100
+@251059 sounds 35 d91a0eeeb5192592
+@251059 step 76 key z
+@251059 voice item "1021 gold"
+@272459 voice info "1 peasant enemy at b 4"
+@276958 voice info "1 farm at building enemy at c 4"
+@280858 sounds 941 fdba37a0e584dfc2
+@280858 step 77 wait_turns 100
+@280859 step 78 key z
+@280859 voice item "1034 gold"
+@290758 voice info "1 farm enemy at c 4"
+@310858 sounds 951 08f4065c8c59d51f
+@310858 step 79 wait_turns 100
+@310859 step 80 key z
+@310859 voice item "1046 gold"
+@312559 voice info "1 peasant enemy at b 4"
+@340858 sounds 948 a32a57a02ae15592
+@340858 step 81 wait_turns 100
+@340859 step 82 key z
+@340859 voice item "1056 gold"
+@342559 sounds 51 fef960080ebf6af8
+@342559 step 83 key BACKQUOTE
+@342559 voice menu "Enter a command."
+@344160 step 84 key a (type a 10 footman)
+@344160 voice item "a . a"
+@344660 step 85 key SPACE (type a 10 footman)
+@344660 voice item "  . a "
+@345260 step 86 key 1 (type a 10 footman)
+@345260 voice item "1 . a 1"
+@346360 step 87 key 0 (type a 10 footman)
+@346360 voice item "0 . a 10"
+@347760 step 88 key SPACE (type a 10 footman)
+@347760 voice item "  . a 10 "
+@349060 step 89 key f (type a 10 footman)
+@349060 voice item "f . a 10 f"
+@350460 step 90 key o (type a 10 footman)
+@350460 voice item "o . a 10 fo"
+@351960 step 91 key o (type a 10 footman)
+@351960 voice item "o . a 10 foo"
+@353560 step 92 key t (type a 10 footman)
+@353560 voice item "t . a 10 foot"
+@355260 step 93 key m (type a 10 footman)
+@355260 voice item "m . a 10 footm"
+@357060 step 94 key a (type a 10 footman)
+@357060 voice item "a . a 10 footma"
+@358960 step 95 key n (type a 10 footman)
+@358960 voice item "n . a 10 footman"
+@360960 step 96 key RETURN
+@360960 voice item "a 10 footman"
+@361561 sounds 63 34ae1577a1b9ca5e
+@361561 step 97 wait_turns 3
+@362560 voice info "footman 1 at b 2"
+@364560 voice info "footman 2 at b 2"
+@366560 voice info "footman 3 at b 2"
+@368560 voice info "footman 4 at b 2"
+@370560 voice info "footman 5 at b 2"
+@372560 voice info "footman 6 at b 2"
+@374560 voice info "footman 7 at b 2"
+@376560 voice info "footman 8 at b 2"
+@378560 voice info "footman 9 at b 2"
+@380560 voice info "footman 10 at b 2"
+@382862 sounds 600 d0d5b9dcb98a18eb
+@382862 step 98 key f
+@382862 voice item ", You control 10 footman , ,"
+@386062 sounds 102 5f19068d89fe87d8
+@386062 step 99 key CTRL UP
+@386062 voice item "b 3 , meadows"
+@387562 sounds 49 2d9d2b85b2810241
+@387562 step 100 key CTRL UP
+@387562 voice item "b 4 , meadows , 1 town hall , 1 farm and 3 peasant enemy"
+@393962 sounds 164 524dd86f59e7e906
+@393962 step 101 key BACKSPACE
+@393962 voice item "go to b 4 ,"
+@410761 voice info "gold mine exhausted"
+@433876 voice info "1 farm neutralized at b 4"
+@438671 voice info "1 town hall neutralized at b 4"
+@438961 sounds 2265 a74779eb6b2b0a3b
+@438961 step 102 wait_turns 150
+@442072 sounds 100 323026e5f71561e7
+@442072 step 103 key c
+@442072 voice item "9 food to 21"
+@443872 sounds 28 7dafb4b98e9ce897
+@443872 step 104 key f
+@443872 voice item ", You control 10 footman , ,"
+@447072 sounds 76 b058f10ac0db7450
+@447072 step 105 key CTRL RIGHT
+@447072 voice item "c 4 , meadows , 9 peasant and 1 farm enemy , 1 gold mine"
+@453472 voice info "gold mine exhausted"
+@455373 sounds 194 619389943208c6c0
+@455373 step 106 key BACKSPACE
+@455373 voice item "go to c 4 ,"
+@463566 voice info "1 farm neutralized at c 4"
+@463861 voice confirmation "quiet computer has been defeated"
+@467061 voice info "1 farm neutralized at c 4"
+@467062 voice confirmation "quiet computer has just quit the game"
+@470762 voice info "1 farm neutralized at c 4"
+@471365 voice cut queue=0
+@471366 voice info "Victory! at 6 minutes 11 seconds"
+@475166 voice info "20 units produced , 0 lost , 0 neutralized"
+@480166 voice info "3 building produced , 0 lost , 3 neutralized"
+@485166 voice info "85 gold gathered , consumed"
+@488266 voice info "10 wood gathered , consumed"
+@491366 voice info "score press F5 to listen again"
+@494566 voice menu "please make a selection"
+@494566 sounds 420 ede1c9cf000545dc
+@494566 step 107 wait_game_end
+@496866 step 108 key ESCAPE
+@496866 voice confirmation "go back to the previous menu"
+@499676 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@504776 sounds 1 6c60d3bb6881a9f8
+@504776 step 109 key ESCAPE
+@504776 voice confirmation "quit,"
+@505286 sounds 1 8d1134334f99a518
+@505286 end
