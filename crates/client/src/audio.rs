@@ -184,7 +184,9 @@ impl Channel {
 pub trait AudioOutput {
     /// Starts `sound` on `channel`, replacing what played there.
     fn play(&mut self, channel: Channel, sound: &Sound, looping: bool);
-    fn set_gains(&mut self, channel: Channel, left: f32, right: f32);
+    /// Sets the channel's gains, and how far behind the listener its sound
+    /// is (see [`behind`]): 0 plays the sound as recorded, 1 at its dullest.
+    fn set_gains(&mut self, channel: Channel, left: f32, right: f32, behind: f32);
     fn stop(&mut self, channel: Channel);
     /// Whether the channel is still playing.
     fn is_busy(&self, channel: Channel) -> bool;
@@ -195,7 +197,7 @@ pub struct NullOutput;
 
 impl AudioOutput for NullOutput {
     fn play(&mut self, _: Channel, _: &Sound, _: bool) {}
-    fn set_gains(&mut self, _: Channel, _: f32, _: f32) {}
+    fn set_gains(&mut self, _: Channel, _: f32, _: f32, _: f32) {}
     fn stop(&mut self, _: Channel) {}
     fn is_busy(&self, _: Channel) -> bool {
         false
@@ -226,8 +228,9 @@ impl Mixer {
         self.output.play(channel, sound, looping);
     }
 
-    pub fn set_gains(&mut self, channel: Channel, left: f64, right: f64) {
-        self.output.set_gains(channel, left as f32, right as f32);
+    pub fn set_gains(&mut self, channel: Channel, left: f64, right: f64, behind: f64) {
+        self.output
+            .set_gains(channel, left as f32, right as f32, behind as f32);
     }
 
     pub fn stop(&mut self, channel: Channel) {
@@ -324,6 +327,50 @@ pub fn stereo(
     ((vg * volume / d).min(1.0), (vd * volume / d).min(1.0))
 }
 
+/// How far behind the listener a sound at (xo, yo) is, for the arguments
+/// [`stereo`] takes: 0 in front or beside, rising smoothly to 1 straight
+/// behind.
+pub fn behind(x: f64, y: f64, xo: f64, yo: f64, o: f64) -> f64 {
+    (-angle(x, y, xo, yo, o).cos()).max(0.0)
+}
+
+/// The cutoff of the duller tone behind, in Hz: a sound straight behind is
+/// low-passed here.
+pub const BEHIND_CUTOFF: f32 = 2_500.0;
+
+/// Two one-pole low-pass filters in a row (12 dB an octave).
+#[derive(Clone, Copy)]
+pub struct LowPass {
+    a: f32,
+    z1: f32,
+    z2: f32,
+}
+
+impl LowPass {
+    /// A filter at `cutoff` Hz for samples at `sample_rate`.
+    pub fn new(cutoff: f32, sample_rate: u32) -> LowPass {
+        let a = 1.0 - (-2.0 * std::f32::consts::PI * cutoff / sample_rate as f32).exp();
+        LowPass {
+            a,
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
+    pub fn process(&mut self, x: f32) -> f32 {
+        self.z1 += self.a * (x - self.z1);
+        self.z2 += self.a * (self.z1 - self.z2);
+        self.z2
+    }
+
+    /// `x` blended towards its low-passed self by `amount`, from 0 (`x`
+    /// itself, exactly) to 1 (low-passed). The filter runs either way, so
+    /// the amount can change smoothly.
+    pub fn blend(&mut self, x: f32, amount: f32) -> f32 {
+        x + amount * (self.process(x) - x)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,6 +432,32 @@ mod tests {
         assert!((angle(0.0, 0.0, -3.0, 4.0, 90.0) - 0.6435011087932843).abs() < 1e-12);
         assert_eq!(angle(1.0, 1.0, 1.0, 1.0, 0.0), 0.0);
         assert_eq!(DEFAULT_VOLUME, 0.7071067811865476);
+    }
+
+    #[test]
+    fn behind_rises_smoothly_from_beside_to_straight_behind() {
+        // A listener at the origin facing north; `deg` is the direction of
+        // the sound, 0 east, 90 north.
+        let at = |deg: f64| {
+            let a = deg.to_radians();
+            behind(0.0, 0.0, a.cos(), a.sin(), 90.0)
+        };
+        assert_eq!(at(90.0), 0.0);
+        assert!(at(0.0) < 1e-15 && at(180.0) < 1e-15, "beside");
+        assert!((at(-90.0) - 1.0).abs() < 1e-12);
+        assert!((at(-45.0) - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+        let degree = 1f64.to_radians();
+        for d in -180..180 {
+            let d = f64::from(d);
+            assert!((at(d + 1.0) - at(d)).abs() <= degree, "at {d}");
+        }
+        // Behind is where `stereo` halves the volume.
+        for d in [-170.0_f64, -90.0, -10.0] {
+            let a = d.to_radians();
+            let (l, r) = stereo(0.0, 0.0, a.cos(), a.sin(), 90.0, 1.0, true);
+            let (fl, fr) = stereo(0.0, 0.0, a.cos(), -a.sin(), 90.0, 1.0, true);
+            assert!(at(d) > 0.0 && l < fl && r < fr, "at {d}");
+        }
     }
 
     #[test]

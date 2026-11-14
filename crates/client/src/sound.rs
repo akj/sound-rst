@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::audio::{AudioOutput, Channel, EffectChannel, Mixer, Sound, stereo};
+use crate::audio::{AudioOutput, Channel, EffectChannel, Mixer, Sound, behind, stereo};
 use crate::clock::ClockRef;
 use crate::rng::ClientRng;
 
@@ -126,6 +126,7 @@ struct Source {
     looping: bool,
     channel: Option<EffectChannel>,
     previous_vol: (f64, f64),
+    previous_behind: f64,
     ended: bool,
 }
 
@@ -174,15 +175,28 @@ impl AudioState {
         self.rng.random()
     }
 
-    fn stereo_volume(&mut self, x: f64, y: f64, v: f64) -> (f64, f64) {
+    /// The listener, and what divides distances along y. Out of immersion
+    /// mode the listener faces north and those distances are flattened.
+    fn flattened_listener(&mut self) -> (Listener, f64) {
         let flattening = if self.listener.immersion {
             1.0
         } else {
             self.listener.o = 90.0;
             self.flattening_factor
         };
-        let l = self.listener;
+        (self.listener, flattening)
+    }
+
+    fn stereo_volume(&mut self, x: f64, y: f64, v: f64) -> (f64, f64) {
+        let (l, flattening) = self.flattened_listener();
         stereo(l.x, l.y / flattening, x, y / flattening, l.o, v, false)
+    }
+
+    /// How far behind the listener (x, y) is, placed as [`Self::stereo_volume`]
+    /// places it.
+    fn behind(&mut self, x: f64, y: f64) -> f64 {
+        let (l, flattening) = self.flattened_listener();
+        behind(l.x, l.y / flattening, x, y / flattening, l.o)
     }
 
     fn is_playing(&self, i: usize) -> bool {
@@ -209,21 +223,25 @@ impl AudioState {
             self.sources[i].channel = None;
             return;
         }
-        let vol = if self.sources[i].ambient {
+        // Ambient volumes do not follow the position, and neither does
+        // their tone.
+        let (vol, behind) = if self.sources[i].ambient {
             if self.sources[i].looping {
-                (1.0, 1.0)
+                ((1.0, 1.0), 0.0)
             } else {
-                (self.random(), self.random())
+                ((self.random(), self.random()), 0.0)
             }
         } else {
             let (x, y, v) = (self.sources[i].x, self.sources[i].y, self.sources[i].v);
-            self.stereo_volume(x, y, v)
+            (self.stereo_volume(x, y, v), self.behind(x, y))
         };
-        if force || vol != self.sources[i].previous_vol {
+        let s = &self.sources[i];
+        if force || vol != s.previous_vol || behind != s.previous_behind {
             let m = self.main_volume;
             self.mixer
-                .set_gains(Channel::Effect(c), vol.0 * m, vol.1 * m);
+                .set_gains(Channel::Effect(c), vol.0 * m, vol.1 * m, behind);
             self.sources[i].previous_vol = vol;
+            self.sources[i].previous_behind = behind;
         }
     }
 
@@ -303,6 +321,7 @@ impl AudioState {
             looping,
             channel: None,
             previous_vol: (0.0, 0.0),
+            previous_behind: 0.0,
             ended: false,
         });
         let i = self.sources.len() - 1;
@@ -426,7 +445,7 @@ impl Audio {
                 StereoVolume::Both(v) => (v, v),
                 StereoVolume::Split(l, r) => (l, r),
             };
-            a.mixer.set_gains(Channel::Effect(c), l * m, r * m);
+            a.mixer.set_gains(Channel::Effect(c), l * m, r * m, 0.0);
             a.remember_start_time(&sound);
             started = true;
         }
@@ -514,7 +533,7 @@ impl Audio {
     pub fn voice_play(&self, sound: &Sound, lv: f64, rv: f64) {
         let mut a = self.0.borrow_mut();
         let v = a.main_volume * a.voice_volume;
-        a.mixer.set_gains(Channel::Voice, lv * v, rv * v);
+        a.mixer.set_gains(Channel::Voice, lv * v, rv * v, 0.0);
         a.mixer.play(Channel::Voice, sound, false);
     }
 
@@ -524,5 +543,87 @@ impl Audio {
 
     pub fn voice_busy(&self) -> bool {
         self.0.borrow().mixer.is_busy(Channel::Voice)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::SoundBuffer;
+    use crate::clock::ManualClock;
+    use crate::testkit::{AudioEvent, AudioLog, RecordingAudio};
+
+    /// An engine whose listener is at the origin, facing north, with
+    /// distances north and south halved.
+    fn audio() -> (Audio, AudioLog) {
+        let clock = Rc::new(ManualClock::new());
+        let (output, log) = RecordingAudio::new(clock.clone());
+        let audio = Audio::new(Box::new(output), 16, clock, 2.0, ClientRng::new(1));
+        (audio, log)
+    }
+
+    fn sound(key: &str) -> Option<Sound> {
+        let samples = vec![0.0; 88_200];
+        Some(Arc::new(SoundBuffer::new(
+            key, "default", samples, 44_100, 1.0,
+        )))
+    }
+
+    /// The channel and the measure of behind of every change of gains.
+    fn behind_sent(log: &AudioLog) -> Vec<(usize, f32)> {
+        log.events()
+            .into_iter()
+            .filter_map(|e| match e {
+                AudioEvent::Gains {
+                    channel, behind, ..
+                } => Some((channel, behind)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_positional_sound_tells_the_output_how_far_behind_it_is() {
+        let (a, log) = audio();
+        for (key, x, y) in [
+            ("ahead", 0.0, 2.0),
+            ("right", 2.0, 0.0),
+            ("behind", 0.0, -2.0),
+            // Flattened, 2 m west and 1 m south.
+            ("behind left", -2.0, -2.0),
+        ] {
+            assert!(a.play(sound(key), Placement::new(1.0, x, y, 0)).is_some());
+        }
+        let sent = behind_sent(&log);
+        assert_eq!(sent[..3], [(1, 0.0), (2, 0.0), (3, 1.0)]);
+        assert_eq!(sent[3].0, 4);
+        assert!(
+            (sent[3].1 - 1.0 / 5f32.sqrt()).abs() < 1e-6,
+            "{}",
+            sent[3].1
+        );
+    }
+
+    #[test]
+    fn a_source_that_moves_behind_sends_its_new_measure() {
+        let (a, log) = audio();
+        let id = a.play_loop(sound("loop"), Placement::new(1.0, 0.0, 2.0, 0));
+        a.move_source(id.unwrap(), 0.0, -2.0);
+        assert_eq!(behind_sent(&log), [(1, 0.0), (1, 1.0)]);
+    }
+
+    #[test]
+    fn sounds_that_are_not_positional_are_never_duller() {
+        let (a, log) = audio();
+        // Behind the listener, but ambient: its volume does not follow
+        // where it is, and neither does its tone.
+        let ambient = Placement {
+            ambient: true,
+            ..Placement::new(1.0, 0.0, -2.0, 0)
+        };
+        a.play(sound("ambient"), ambient);
+        a.play_stereo(sound("click"), StereoVolume::Split(1.0, 0.5), 0.0);
+        a.voice_play(&sound("voice").unwrap(), 1.0, 1.0);
+        assert_eq!(behind_sent(&log), [(1, 0.0), (2, 0.0), (0, 0.0)]);
     }
 }
