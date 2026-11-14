@@ -217,7 +217,7 @@ Two runs, both by Opus agents on throwaway tests; appendix B has the method and 
 
 **A surprise worth fixing whatever is decided.** Each turn the simulation re-stamps the "last seen" time of remembered objects on partly observed squares, though nothing about them changed (`crates/world/src/playerlogic.rs:448`). In the 16-player game that was 73 percent of everything that changed. A protocol should not send it, and "in the fog, 3 minutes" may be reading younger than it should.
 
-**What these numbers are not.** The byte layout is a prototype, not a protocol. The views are computer players' views; a person scouts differently. No seat had an ally, and allies' orders would add bytes. Order menus are not in it. It is one machine and one seed.
+**What these numbers are not.** The byte layout is a prototype, not a protocol. The views are computer players' views; a person scouts differently. No seat had an ally, and allies' orders would add bytes. Order menus are not in it. It is one machine and one seed. And, from Sol's second round, the stream measured is smaller than the stream proposed: an event was counted as an id, a position and a small payload, not the observable state section 4 promises; chat and other events not about an entity were given no bytes; zoom and point targets were sent without coordinates; and the catch-up figure leaves out the events that pile up while a client is behind. Phase 3's first task encodes the complete contracts, catch-up events included, before anything is built on these numbers.
 
 ### Sol's conclusion, and mine
 
@@ -295,7 +295,7 @@ Alerts get one more thing: every alert is tied to a place, and one key jumps the
 
 **The stop key always reaches the screen reader.**
 
-**The screen reader is called from its own thread.** The NVDA call above blocks until speech ends, so it must be; and it means a slow call never delays a key or a sound.
+**The screen reader is called from its own thread.** The NVDA call above blocks until speech ends, so it must be; and it means a slow call never delays a key or a sound. A thread blocked in that call cannot hear a request to stop, so stopping goes by its own path, and each utterance has an identity so that a call returning late cannot end a newer one.
 
 **What I would not do:** speak through UI Automation notifications or an accessibility tree in the window. Researched: those are hints to the screen reader with no way to cancel and no report of when speech ends. They are a fallback for Narrator at most.
 
@@ -348,7 +348,7 @@ From the reviews, counts read today:
 
 This is not a rewrite. The work goes module by module behind the seam from move 1, checked by the traces.
 
-**What the traces do and do not prove.** I first wrote that they hash the whole world every turn. Sol showed that is wrong, and I checked (`crates/world/tests/traces.rs:184`). Each turn they hash a text dump of: the time, the random generator's state, each player's resources, food and counts, and for each thing on the map its position, hit points, mana, owner, the names of its queued orders and the kind of action it is doing. They leave out what each player remembers, what an order is aimed at, timers, and the computer players' own state. The random generator's state catches a great deal indirectly, because almost any change in behaviour changes a later draw. But "the traces are unchanged" is evidence, not proof. So the first task of this move is to widen them: add `World::digest_u64`, which does cover the whole state, to each turn's line. That is one re-recording with no behaviour change, and it makes the safety claim true before anything leans on it.
+**What the traces do and do not prove.** I first wrote that they hash the whole world every turn. Sol showed that is wrong, and I checked (`crates/world/tests/traces.rs:184`). Each turn they hash a text dump of: the time, the random generator's state, each player's resources, food and counts, and for each thing on the map its position, hit points, mana, owner, the names of its queued orders and the kind of action it is doing. They leave out what each player remembers, what an order is aimed at, timers, and the computer players' own state. The random generator's state catches a great deal indirectly, because almost any change in behaviour changes a later draw. But "the traces are unchanged" is evidence, not proof. So the first task is to widen them: record `World::digest_u64` for each turn beside the dump. The digest covers the contents of the whole state. It does not cover one thing, as Sol's second round pointed out: whether two remembered copies are the same copy. The simulation decides that by address (`crates/world/src/world.rs:482`), and it decides whether an order's target is still valid. Two equal copies hash the same. So memory identity gets regression tests of its own, and even widened, the traces are strong evidence and not proof.
 
 ### Python habits, and the type that replaces each
 
@@ -467,7 +467,7 @@ The point is not realism. It is that each of these is information you now get fr
 - **Distance**, from more than loudness: a far sound is duller and has more of the place's echo in it. Loudness alone cannot tell "far" from "quiet".
 - **Height.** Dragons and flying machines overhead; a unit up on high ground. Today an air unit sounds like a ground unit.
 - **Terrain you can hear without asking.** A forest, an open meadow, a mountain pass and the inside of a town each have a different echo. The square's character would be audible the moment you arrive, under whatever else is playing.
-- **Which neighbours you can reach.** Sound from the next square arrives clear through an open exit and muffled where there is no path or the exit is blocked. You would hear the shape of the map around you.
+- **Which neighbours you can reach.** Sound from the next square arrives clear through an open exit and muffled where there is no path or the exit is blocked. You would hear the shape of the map around you. This has to follow what the player knows: phase 1 takes away the client's knowledge of blockers it has not seen, so an exit sounds open or closed as the seat last observed it, and an exit never observed needs a sound of its own for "unknown".
 - **First-person mode worth using.** Standing on a unit and turning becomes a real way to look around.
 
 ### What it cannot do, honestly
@@ -495,7 +495,7 @@ So the rule for the design: **never rely on the three-dimensional cue alone for 
   - It places each source with a model of the head, and can blend smoothly as a source moves.
   - The head model can be loaded from a standard file (SOFA), so the game can offer several and you choose the one that fits your ears.
   - Distance, air absorption and how muffled a source is can be set directly by the game, with no simulation. That is what the map needs: the game already knows whether an exit is open.
-  - Its reverb is computed from scene geometry, at a real processing cost, and I found no simple "this room echoes this much" control in its guide. So terrain echo is either a small reverb of our own with a preset per terrain, or simple box-shaped geometry per square handed to Steam Audio. That is for the trial to settle.
+  - Its full reverb is computed from scene geometry, at a real processing cost. It also has a parametric reverb that takes three decay times from the game and needs no geometry. Sol pointed this out and I checked the reference page. That is the first thing to try for terrain echo: a preset for each kind of terrain. The page does not say outright that hand-supplied times are supported, so the listening room is where it is proved.
   - It only processes sound; it does not play it. So rodio keeps the output device, and Steam Audio sits between the scene and rodio.
   - It is Apache-licensed, version 4.8.1, with a Rust binding (audionimbus 0.17.0, 9 November 2026) that says of itself it is "subject to breaking changes". It adds one file to ship beside the program, `phonon.dll`, as Tolk's files are shipped now. The binding's build downloads about 180 megabytes once.
 
@@ -574,17 +574,19 @@ The recordings are why a change this size is safe to attempt, so the tests are p
 **Phase 1. The seam, with everything still running locally.** Large: about six pull requests. One listening session, for step three.
 
 1. **The contracts and a host stepped by hand.** `Command`, `View`, `Event`, and the description of a game's set-up, as types. A host that owns the world and is stepped directly by the game loop and by the test harness. Session set-up, the record check and the score screen move behind it. Lockstep multiplayer is untouched: each client runs its own stepped host, as it runs its own world now.
-2. **The neutral move.** The client's reads go to the view, file by file. Commands become typed end to end. The four cheats go through commands. The view carries exactly what the client reads today, including the five things the player should not know, marked by name. Done when the client no longer names `World` and every recording is byte-identical, checked in CI.
+2. **The neutral move.** The client's reads go to the view, file by file. Commands are typed in the client and at the host, and the four cheats go through commands. While lockstep remains, the wire and the record still carry today's text, produced from the typed command by one function. That adapter is deleted in phase 3, with lockstep. The view carries exactly what the client reads today, including the five things the player should not know, marked by name. Done when the client no longer names `World` and every recording is byte-identical, checked in CI.
 3. **The corrections.** Each of the five leaks is closed, one pull request each, with a decision about what you should hear instead and a transcript difference that is expected and read. You listen to these.
 
 **Speech track A. The speech backend.** Medium: about two pull requests. One listening session. Runs alongside phase 1, in `voice.rs` and `tts.rs` only.
 
-- NVDA's synchronous call on its own thread, with the current client file. The end of speech from NVDA; the measured rate and its calibration for everything else. The stop key always reaches the screen reader. A news message that is cut off goes back in the queue.
+- NVDA's synchronous call on its own thread, with the current client file, switched on by a setting until you have heard it. The end of speech from NVDA; the estimate, as now, for everything else. The stop key always reaches the screen reader. A news message that is cut off goes back in the queue.
+- Stopping has its own path. A thread blocked in the synchronous call cannot hear a request to stop, and a call that returns late must not end a newer message, so each utterance has an identity.
+- The calibration is not in this track. It needs an options-menu item and a saved setting, which are phase 2's files.
 - Done when: at your normal speech rate nothing is cut off early and there are no silences between queued messages. Only you can check that.
 
 **Phase 2. The announcer and the event-driven client.** Large: about six pull requests. Two listening sessions. After phase 1, because it changes the same files.
 
-- Categories, subject keys, the log by category, "what did I miss", jump to the last alert.
+- Categories, subject keys, the log by category, "what did I miss", jump to the last alert, and the speech-rate calibration.
 - The client as one loop waiting on events: modes as one enum, non-blocking menus, keys on release, rebinding, key help, typed settings saved when changed, the new questions, the window.
 - The new transcript form is designed first and recorded once.
 - Done when: you have played a full game and nothing was lost or late, and the "what did I miss" key has nothing surprising in it.
@@ -599,7 +601,8 @@ The recordings are why a change this size is safe to attempt, so the tests are p
 
 **Phase 4. Rust, not Python.** Large, but in small independent pieces: about ten pull requests. No listening; playing against the computers.
 
-- The loader with its limits and fuzzing, and rules resolved to ids at load. This piece touches only the simulation's loading code, so it can start during phase 1.
+- The loader with its limits, cycle checks and fuzzing. This piece touches only the simulation's loading code, so it can start during phase 1.
+- Rules resolved to ids. This is a separate piece: the ids replace strings in order state, in the orders code and in the computer player, so it changes those files and waits for phase 1.
 - Quantities with units; orders, actions and entity kinds as enums; the imitated errors removed function by function; the lints and ratchets.
 - The inherited bugs in one batch; entities freed; computer players moved behind the view and into their own crate.
 - Each piece ends with unchanged traces, or one re-recording that is read.
@@ -792,6 +795,7 @@ Writing out and comparing one seat's view took a median of about 8 microseconds 
 - The views are computer players' views. A person scouts and fights differently.
 - No seat had an ally. Allies' orders and cargo would add bytes.
 - Order menus are not included.
+- An event was sized as an id, a position and a small payload, not a full observable state. Events not about an entity were counted and given no bytes. Zoom and point targets were encoded without coordinates. The catch-up comparison covers view changes only, not the events missed.
 
 **Still not measured:** which part of a turn dominates in the 16-player game; anything on a second machine; anything with a person playing.
 
