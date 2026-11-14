@@ -2115,14 +2115,6 @@ impl World {
         Ok(())
     }
 
-    /// The keyword of the default order of a unit on a target, written as
-    /// text (`get_default_order`). For the interface's view, which asks
-    /// with the text of an [`crate::OrderTarget`].
-    pub fn get_default_order(&self, id: EntityId, target_id: &str) -> Res<Option<&'static str>> {
-        let target = TargetRef::parse(self, target_id)?;
-        Ok(self.default_keyword(id, &target)?.map(Keyword::as_str))
-    }
-
     /// The keyword of the default order of a unit on a target, resolved
     /// through what the unit's owner perceives or remembers now.
     pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Res<Option<Keyword>> {

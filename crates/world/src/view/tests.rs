@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::player::Controller;
+use crate::player::{Controller, Remembrance};
 use crate::setup::GameSetup;
 use crate::world::multiplayer_default_triggers;
 
@@ -17,7 +17,7 @@ fn read(relative: &str) -> String {
 /// A game on jl1 between the local human and another human, who gives no
 /// order unless a test does, after a few turns. Returns the world, the
 /// local human and the other.
-fn game() -> (World, PlayerId, PlayerId) {
+pub(crate) fn game() -> (World, PlayerId, PlayerId) {
     let mut me = Controller::human("me", true);
     me.alliance = Some("1".into());
     let mut them = Controller::human("them", false);
@@ -41,7 +41,7 @@ fn game() -> (World, PlayerId, PlayerId) {
 }
 
 /// The first unit of `p` of this type.
-fn unit(w: &World, p: PlayerId, type_name: &str) -> EntityId {
+pub(crate) fn unit(w: &World, p: PlayerId, type_name: &str) -> EntityId {
     w.player(p)
         .units
         .iter()
@@ -55,7 +55,7 @@ fn square_of(w: &World, id: EntityId) -> SquareId {
 }
 
 /// Makes `p` remember an entity as it is now.
-fn remember(w: &mut World, p: PlayerId, id: EntityId) {
+pub(crate) fn remember(w: &mut World, p: PlayerId, id: EntityId) {
     let r = Remembrance {
         time_stamp: w.time,
         snapshot: Arc::new(w.entity(id).unwrap().clone()),
@@ -64,7 +64,7 @@ fn remember(w: &mut World, p: PlayerId, id: EntityId) {
 }
 
 /// Runs the commands of `p` in the next turn.
-fn command(w: &mut World, p: PlayerId, lines: &[String]) {
+pub(crate) fn command(w: &mut World, p: PlayerId, lines: &[String]) {
     for l in lines {
         w.queue_command(p, l);
     }
@@ -87,9 +87,8 @@ fn the_view_returns_no_entity_the_player_neither_perceives_nor_remembers() {
     let v = View::new(&w, me);
     assert!(v.perceived(townhall).is_none());
     assert_eq!(
-        v.remembered(townhall)
-            .map(|r| (r.snapshot.id, r.time_stamp)),
-        Some((townhall, 1500))
+        v.remembered(townhall).map(|r| (r.id, r.last_seen)),
+        Some((townhall, Some(1500)))
     );
 }
 
@@ -108,12 +107,12 @@ fn an_entity_is_known_as_perceived_else_as_remembered() {
     w.entity_mut(townhall).unwrap().hp = 1000;
     assert_ne!(seen_hp, 1000);
     let v = View::new(&w, me);
-    let (e, ts) = v.known(townhall).unwrap();
-    assert_eq!((e.id, e.hp, ts), (townhall, seen_hp, Some(1500)));
+    let e = v.known(townhall).unwrap();
+    assert_eq!((e.id, e.hp, e.last_seen), (townhall, seen_hp, Some(1500)));
 
     // Perceived: as it is now.
-    let (e, ts) = v.known(peasant).unwrap();
-    assert_eq!((e.id, ts), (peasant, None));
+    let e = v.known(peasant).unwrap();
+    assert_eq!((e.id, e.last_seen), (peasant, None));
 }
 
 #[test]
@@ -383,19 +382,16 @@ fn the_default_order_is_the_worlds() {
     let townhall = unit(&w, them, "townhall");
     let b2 = w.square_by_name("b2").unwrap();
     let v = View::new(&w, me);
-    let old = |target: &str| {
-        w.get_default_order(peasant, target)
-            .map(|k| k.and_then(Keyword::parse))
-    };
+    let (x, y) = v.square(b2).center();
     let cases = [
-        (OrderTarget::Square(b2), w.square(b2).id, Some(Keyword::Go)),
-        (OrderTarget::Entity(farm), farm.0, Some(Keyword::Repair)),
+        (OrderTarget::Square(b2), Some(Keyword::Go)),
+        (OrderTarget::Point { square: b2, x, y }, Some(Keyword::Go)),
+        (OrderTarget::Entity(farm), Some(Keyword::Repair)),
         // Not perceived nor remembered: the target is unknown.
-        (OrderTarget::Entity(townhall), townhall.0, None),
+        (OrderTarget::Entity(townhall), None),
     ];
-    for (target, id, expected) in cases {
+    for (target, expected) in cases {
         assert_eq!(v.default_order(peasant, target), Ok(expected));
-        assert_eq!(v.default_order(peasant, target), old(&id.to_string()));
     }
 }
 

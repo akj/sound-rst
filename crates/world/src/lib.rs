@@ -36,17 +36,19 @@
 //! # Reading the state
 //!
 //! An interface reads what one player knows through [`Host::view`]: see
-//! [`view`]. The world itself has the whole state:
+//! [`view`]. It is told about an entity as that player knows it, a
+//! [`KnownEntity`]: see [`known`]. The world itself has the whole state:
 //!
 //! - The map: [`World::squares`] (grid, names, neighbors, exits, terrain),
 //!   [`World::map`] (title, objective, sizes, starts), [`World::time`],
 //!   [`World::turn`].
-//! - Entities: [`World::entity`] by id. An [`Entity`] has its type, place,
+//! - Entities: [`World::entity`] by id. An entity has its type, place,
 //!   position, hit points, mana, owner, orders (keyword, type, target) and
-//!   the units inside it. [`World::order_menu`] and
-//!   [`World::full_order_menu`] list the orders a unit may receive,
-//!   [`World::order_info`] their costs, [`World::activity`] what it is busy
-//!   with.
+//!   the units inside it. Only the `truth` feature can name its type,
+//!   `entity::Entity`: an interface is built without it.
+//!   [`World::order_menu`] and [`World::full_order_menu`] list the orders
+//!   a unit may receive, [`World::order_info`] their costs,
+//!   [`World::activity`] what it is busy with.
 //! - Players: [`World::players`] (in the game), [`World::player`]: resources,
 //!   food, units, upgrades, allies, perception, memory (copies of entities
 //!   seen before, with the time they were seen), observed squares,
@@ -72,10 +74,16 @@ pub mod defs;
 mod ai;
 pub mod collision;
 pub mod command;
+// The simulation's entity, whole. The interface is built without `truth`
+// and so cannot name it: it is told about entities as `KnownEntity`.
+#[cfg(feature = "truth")]
 pub mod entity;
+#[cfg(not(feature = "truth"))]
+mod entity;
 pub mod events;
 pub mod group;
 pub mod host;
+pub mod known;
 pub mod map;
 pub mod nofloat;
 pub mod orders;
@@ -95,9 +103,12 @@ pub mod view;
 pub mod world;
 
 pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
-pub use entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
+#[cfg(feature = "truth")]
+pub use entity::Entity;
+pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
 pub use events::{EntityEvent, Event, Reason, Voila};
 pub use host::{Host, TurnReport};
+pub use known::{KnownEntity, KnownOrder, KnownTarget, OwnPart};
 pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
