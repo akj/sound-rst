@@ -227,9 +227,24 @@ async fn connections_that_have_not_said_hello_are_limited() {
 async fn a_connection_cannot_send_much_before_its_hello() {
     let server = server(|_| {});
     let mut c = Client::connect(server.local_addr()).await;
-    // Far more than a hello: the server stops reading and hangs up, where
+    // Far more than a hello: the server refuses it and hangs up, where
     // it would otherwise read it all and answer that it is no hello.
     c.send_text_lossy(&"x".repeat(1024 * 1024)).await;
+    c.expect_closed().await;
+}
+
+#[tokio::test]
+async fn a_first_frame_larger_than_a_hello_is_refused_before_it_comes() {
+    use tokio::io::AsyncWriteExt;
+    // Long enough that only refusing the frame closes the connection in
+    // time.
+    let server = server(|c| c.hello_timeout = Duration::from_secs(60));
+    let mut c = Client::connect(server.local_addr()).await;
+    // The header of a masked text frame of 20 MB, then nothing.
+    let mut header = vec![0x81, 0xFF];
+    header.extend_from_slice(&20_000_000u64.to_be_bytes());
+    header.extend_from_slice(&[1, 2, 3, 4]);
+    c.tcp().write_all(&header).await.unwrap();
     c.expect_closed().await;
 }
 
@@ -338,19 +353,21 @@ async fn discovery_answers_are_rate_limited() {
     for _ in 0..100 {
         socket.send_to(DISCOVERY_REQUEST, addr).await.unwrap();
     }
-    // The answers come at once; a quiet second means no more are coming.
-    let mut answers = 0;
+    // The first answer may be slow on a busy machine; the others follow at
+    // once, and a quiet second means no more are coming.
     let mut buf = [0u8; 1024];
+    tokio::time::timeout(TIMEOUT, socket.recv_from(&mut buf))
+        .await
+        .expect("an answer in time")
+        .unwrap();
+    let mut answers = 1;
     while let Ok(Ok(_)) =
         tokio::time::timeout(Duration::from_secs(1), socket.recv_from(&mut buf)).await
     {
         answers += 1;
     }
-    // A burst of 20, and 5 a second after it.
-    assert!(
-        (1..50).contains(&answers),
-        "{answers} answers to 100 requests"
-    );
+    // A burst of 20, then 5 a second: 50 would take 6 seconds to answer.
+    assert!(answers < 50, "{answers} answers to 100 requests");
 }
 
 #[tokio::test]

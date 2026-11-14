@@ -697,7 +697,8 @@ pub type Digest = u64;
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum ClientMsg {
     /// The first message. Answered by [`ServerMsg::Welcome`] or
-    /// [`ServerMsg::Rejected`].
+    /// [`ServerMsg::Rejected`]; send nothing else before the answer, as a
+    /// server may drop it.
     Hello {
         protocol: u32,
         login: Login,

@@ -162,6 +162,15 @@ impl Client {
             .expect("sends");
     }
 
+    /// The TCP socket under the WebSocket, to send what a WebSocket would
+    /// not.
+    pub fn tcp(&mut self) -> &mut TcpStream {
+        match self.ws.get_mut() {
+            MaybeTlsStream::Plain(tcp) => tcp,
+            _ => unreachable!("tests use plain TCP"),
+        }
+    }
+
     /// Sends, whether or not the server still reads.
     pub async fn send_text_lossy(&mut self, text: &str) {
         let _ = self.ws.send(Message::Text(text.into())).await;

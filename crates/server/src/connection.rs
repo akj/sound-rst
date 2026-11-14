@@ -13,14 +13,12 @@ use soundrts_protocol::{
     ClientMsg, ContentHash, Login, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, Refusal, Rejection,
     ServerMsg, Wire,
 };
-use tokio::io::{AsyncReadExt, Join, Take};
 use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Notify, OwnedSemaphorePermit, mpsc, watch};
 use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use tokio_tungstenite::tungstenite::protocol::{CloseFrame, WebSocketConfig};
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role, WebSocketConfig};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 use tracing::{debug, warn};
 
@@ -57,10 +55,9 @@ const INVITATION_WINDOW: Duration = Duration::from_secs(60);
 const MAP_TRANSFERS: usize = 10;
 const MAP_WINDOW: Duration = Duration::from_secs(60);
 
-/// The most bytes a connection may send before its hello is read: the
-/// WebSocket handshake (a few hundred bytes from our client) and the hello
-/// (under 200 bytes).
-const PRE_HELLO_BYTES: u64 = 16 * 1024;
+/// The largest hello, and the largest frame before it. A hello is under
+/// 200 bytes. (The WebSocket handshake before it has its own limit, 64 KB.)
+const MAX_HELLO_BYTES: usize = 16 * 1024;
 
 /// The most bytes of messages other than maps that one connection can
 /// have handed to the lobby or its game and they have not handled yet.
@@ -117,9 +114,7 @@ pub(crate) fn encode(msg: &ServerMsg) -> Utf8Bytes {
     msg.to_json().into()
 }
 
-/// The socket, reading at most [`PRE_HELLO_BYTES`] until the hello is
-/// read, then as much as the WebSocket's own limits allow.
-type Ws = WebSocketStream<Join<Take<OwnedReadHalf>, OwnedWriteHalf>>;
+type Ws = WebSocketStream<TcpStream>;
 
 /// `pending` is this connection's place among those that have not said
 /// hello; it is given back once the hello is read.
@@ -135,15 +130,15 @@ pub(crate) async fn serve(
     if let Err(e) = stream.set_nodelay(true) {
         debug!(%peer, error = %e, "cannot set TCP_NODELAY");
     }
-    let (read, write) = stream.into_split();
-    let stream = tokio::io::join(read.take(PRE_HELLO_BYTES), write);
     let deadline = Instant::now() + hello_timeout;
-    let config = WebSocketConfig::default()
-        .max_message_size(Some(MAX_MESSAGE_BYTES))
-        .max_frame_size(Some(MAX_MESSAGE_BYTES));
+    // The WebSocket reserves room for a whole frame as soon as its header
+    // comes, so the hello is read with frames no larger than a hello.
+    let hello_config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_HELLO_BYTES))
+        .max_frame_size(Some(MAX_HELLO_BYTES));
     let mut ws = match tokio::time::timeout_at(
         deadline,
-        tokio_tungstenite::accept_async_with_config(stream, Some(config)),
+        tokio_tungstenite::accept_async_with_config(stream, Some(hello_config)),
     )
     .await
     {
@@ -180,7 +175,13 @@ pub(crate) async fn serve(
             return;
         }
     };
-    ws.get_mut().reader_mut().set_limit(u64::MAX);
+    // A client sends nothing between its hello and the answer, so nothing
+    // read past the hello is lost when the socket gets its full limits.
+    let stream = ws.into_inner();
+    let config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_MESSAGE_BYTES))
+        .max_frame_size(Some(MAX_MESSAGE_BYTES));
+    let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, Some(config)).await;
     drop(pending);
 
     let (tx, mut rx) = mpsc::channel(OUTBOX_CAPACITY);

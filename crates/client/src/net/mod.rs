@@ -86,13 +86,24 @@ pub struct GameStart {
 
 /// The most turns received and not run yet. A server stops its clock when
 /// a player is 10 turns behind.
-pub const MAX_QUEUED_TURNS: usize = 100;
+pub const MAX_QUEUED_TURNS: usize = 32;
 
-/// The most bytes of orders in one turn: 16 players, the most of any map
-/// shipped with the game, each at the server's limit for a turn
-/// ([`MAX_TURN_ORDER_BYTES`]), with room for the `quit` of those who
-/// leave. A human gives a few hundred bytes of orders a turn at most.
-pub const MAX_TURN_BYTES: usize = 16 * MAX_TURN_ORDER_BYTES + 1024;
+/// The most memory the orders of one turn may take ([`turn_bytes`]). A
+/// server passes on at most [`MAX_TURN_ORDER_BYTES`] of orders a player in
+/// a turn: with orders of 20 characters, about 70 KB in memory, and 1.1 MB
+/// for 16 players, the most of any map shipped with the game. A human
+/// gives a few hundred bytes of orders a turn.
+pub const MAX_TURN_BYTES: usize = 2 * 1024 * 1024;
+
+/// The memory the orders of a turn take: each list of orders and each
+/// order, with its text.
+fn turn_bytes(orders: &[SlotOrders]) -> usize {
+    let order = |o: &Order| size_of::<Order>() + o.as_str().len();
+    orders
+        .iter()
+        .map(|o| size_of::<SlotOrders>() + o.orders.as_slice().iter().map(order).sum::<usize>())
+        .sum()
+}
 
 /// What the server says to a game being played.
 pub struct GameLink {
@@ -421,13 +432,8 @@ impl Net {
                 Err(TooMany("players waited for"))
             }
             ServerMsg::Turn { orders, .. } if self.game.is_some() => {
-                let bytes: usize = orders
-                    .iter()
-                    .flat_map(|o| o.orders.as_slice())
-                    .map(|o| o.as_str().len())
-                    .sum();
                 let queued = self.game.as_ref().map_or(0, |g| g.turns.len());
-                if bytes > MAX_TURN_BYTES {
+                if turn_bytes(orders) > MAX_TURN_BYTES {
                     Err(TooMany("orders in a turn"))
                 } else if queued >= MAX_QUEUED_TURNS {
                     Err(TooMany("turns ahead"))

@@ -1287,17 +1287,30 @@ fn a_server_that_sends_turns_far_ahead_of_the_game_is_left() {
 
 #[test]
 fn a_turn_with_more_orders_than_a_game_can_have_is_left() {
-    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
-    // 17 slots' worth of orders at the server's limit for a turn.
+    // 64 slots' worth of orders at the server's limit for a turn, and a
+    // turn of lists of no orders, which cost memory all the same.
     let order = Order::new("x".repeat(MAX_TURN_ORDER_BYTES / MAX_ORDERS_PER_MESSAGE)).unwrap();
-    let orders = (0..17)
+    let full = (0..64)
         .map(|slot| SlotOrders {
             slot,
             orders: Orders::new(vec![order.clone(); MAX_ORDERS_PER_MESSAGE]).unwrap(),
         })
         .collect();
+    let empty = (0..100_000)
+        .map(|_| SlotOrders {
+            slot: 0,
+            orders: Orders::default(),
+        })
+        .collect();
+    for orders in [full, empty] {
+        a_turn_is_left(orders);
+    }
+}
+
+fn a_turn_is_left(orders: Vec<SlotOrders>) {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &[]);
+    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
     server.at(h.clock.now(), ServerMsg::Turn { turn: 0, orders });
     h.run_for(&mut g, 1.0);
     assert!(g.game.end_loop, "the game went on");
