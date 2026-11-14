@@ -1842,4 +1842,46 @@ starting_squares a1 b1 c1
         assert!(w.players.is_empty(), "still in the game: {:?}", w.players);
         assert_eq!(w.ex_players, ps);
     }
+
+    #[test]
+    fn every_abandoned_building_project_gives_its_money_back() {
+        let mut w = world_text(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 3
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+starting_units townhall peasant peasant
+starting_resources 100 100
+",
+        );
+        let p = w
+            .populate_map(&[Controller::human("a", false)], false, false)
+            .unwrap()[0];
+        w.update();
+        let start = w.player(p).resources.clone();
+        let a1 = sq(&w, "a1");
+        let meadows: Vec<EntityId> = w
+            .square(a1)
+            .objects
+            .iter()
+            .copied()
+            .filter(|&o| w.e(o).class == crate::rules::EntityClass::Meadow)
+            .collect();
+        let peasants = [0, 1].map(|i| find(&w, p, "peasant", i).unwrap());
+        for (&peasant, &meadow) in peasants.iter().zip(&meadows) {
+            take(&mut w, peasant, &format!("build farm {meadow}"));
+        }
+        assert_eq!(w.player(p).budget.len(), 2);
+        assert_ne!(w.player(p).resources, start);
+        for peasant in peasants {
+            w.em(peasant).orders.clear();
+        }
+        w.player_slow_update(p).unwrap();
+        assert!(w.player(p).budget.is_empty());
+        assert_eq!(w.player(p).resources, start);
+    }
 }

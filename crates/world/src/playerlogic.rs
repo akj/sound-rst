@@ -815,11 +815,8 @@ impl World {
     }
 
     fn free_project_resources_if_no_worker_on_project(&mut self, p: PlayerId) -> Res {
-        // The budget shrinks while it is walked, so the project after a freed
-        // one is skipped, as in the original.
-        let mut i = 0;
-        while i < self.pl(p).budget.len() {
-            let project = self.pl(p).budget[i].clone();
+        // Freeing a project removes it from the budget, so walk a copy.
+        for project in self.pl(p).budget.clone() {
             let worker = self
                 .pl(p)
                 .units
@@ -828,7 +825,6 @@ impl World {
             if !worker {
                 self.free_resources(p, &project)?;
             }
-            i += 1;
         }
         Ok(())
     }
