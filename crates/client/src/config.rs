@@ -6,6 +6,7 @@ use std::fmt;
 use std::path::Path;
 
 use crate::log::Log;
+use crate::message::{Category, Policies, Policy};
 
 /// A login: 1 to 20 ASCII letters and digits.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +48,8 @@ pub struct Config {
     pub soundpacks: String,
     pub num_channels: i64,
     pub speed: i64,
-    pub verbosity: String,
+    /// What the player hears of each category of news (`[news]`).
+    pub news: Policies,
     pub debug_mode: i64,
     pub timeout: f64,
     pub fpct_coef: f64,
@@ -69,9 +71,7 @@ impl Default for Config {
             soundpacks: String::new(),
             num_channels: 16,
             speed: 1,
-            verbosity:
-                "menu_changed,unit_added,unit_complete,scout_info,food,resources,resource_exhausted"
-                    .to_owned(),
+            news: Policies::default(),
             debug_mode: 0,
             timeout: 60.0,
             fpct_coef: 2.3,
@@ -144,6 +144,44 @@ fn parse_ini(text: &str) -> Result<Ini, String> {
     Ok(ini)
 }
 
+/// What reading the file found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reading {
+    Clean,
+    /// An option this version replaced: the file is rewritten without it.
+    Outdated,
+    /// Missing or invalid values, which take their defaults: the file is
+    /// copied to `<path>.old`, then rewritten.
+    Errors,
+}
+
+/// The policies an old `verbosity` line chooses: a category whose words it
+/// names is spoken, and the others play only their sounds, as the original
+/// game did. Categories it does not cover are spoken.
+fn policies_from_verbosity(verbosity: &str) -> Policies {
+    let words: Vec<&str> = verbosity
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|w| !w.is_empty())
+        .collect();
+    let mut p = Policies::default();
+    for (category, names) in [
+        (
+            Category::Production,
+            &["unit_complete", "unit_added", "menu_changed"][..],
+        ),
+        (
+            Category::Economy,
+            &["resources", "food", "resource_exhausted"][..],
+        ),
+        (Category::Scouting, &["scout_info"][..]),
+    ] {
+        if !names.iter().any(|n| words.contains(n)) {
+            p.set(category, Policy::Sound);
+        }
+    }
+    p
+}
+
 /// What a value of the file became.
 enum Read<T> {
     Value(T),
@@ -174,14 +212,13 @@ fn text(s: &str) -> Option<String> {
 }
 
 impl Config {
-    fn rows(&self) -> [(&'static str, &'static str, String); 14] {
-        [
+    fn rows(&self) -> Vec<(&'static str, &'static str, String)> {
+        let mut rows = vec![
             ("general", "login", self.login.to_string()),
             ("general", "mods", self.mods.clone()),
             ("general", "soundpacks", self.soundpacks.clone()),
             ("general", "num_channels", self.num_channels.to_string()),
             ("general", "speed", self.speed.to_string()),
-            ("general", "verbosity", self.verbosity.clone()),
             ("general", "debug_mode", self.debug_mode.to_string()),
             (
                 "general",
@@ -198,7 +235,11 @@ impl Config {
                 py_float(self.wait_delay_per_character),
             ),
             ("tts", "nvda_direct", self.nvda_direct.to_string()),
-        ]
+        ];
+        for c in Category::ALL {
+            rows.push(("news", c.name(), self.news.of(c).name().to_owned()));
+        }
+        rows
     }
 
     /// The file content, as configparser writes it.
@@ -220,13 +261,13 @@ impl Config {
     }
 
     /// Reads the settings from an ini text. Each missing or invalid value
-    /// takes its default; the flag says whether that happened.
-    pub fn from_ini(text_: &str, log: &Log) -> (Config, bool) {
+    /// takes its default.
+    pub fn from_ini(text_: &str, log: &Log) -> (Config, Reading) {
         let ini = match parse_ini(text_) {
             Ok(ini) => ini,
             Err(e) => {
                 log.warning(format!("cannot read the configuration: {e}"));
-                return (Config::default(), true);
+                return (Config::default(), Reading::Errors);
             }
         };
         let mut c = Config::default();
@@ -260,7 +301,6 @@ impl Config {
         field!("general", soundpacks, text);
         field!("general", num_channels, int);
         field!("general", speed, int);
-        field!("general", verbosity, text);
         field!("general", debug_mode, int);
         field!("server", timeout, float);
         field!("server", fpct_coef, float);
@@ -287,7 +327,42 @@ impl Config {
                 error = true;
             }
         }
-        (c, error)
+        // The original's `verbosity` chooses the policies once: the file is
+        // then rewritten with a `[news]` section instead.
+        let mut outdated = false;
+        if let Some(verbosity) = ini.get("general").and_then(|o| o.get("verbosity")) {
+            outdated = true;
+            if ini.contains_key("news") {
+                log.info("verbosity is ignored: the [news] section replaces it");
+            } else {
+                c.news = policies_from_verbosity(verbosity);
+                log.info(format!(
+                    "verbosity {verbosity:?} becomes the [news] section"
+                ));
+            }
+        }
+        for category in Category::ALL {
+            match read(&ini, "news", category.name(), Policy::parse) {
+                Read::Value(p) => c.news.set(category, p),
+                Read::Missing => {}
+                Read::Invalid(raw) => {
+                    log.warning(format!(
+                        "news {} will be {:?} instead of {raw:?}",
+                        category.name(),
+                        c.news.of(category).name()
+                    ));
+                    error = true;
+                }
+            }
+        }
+        let reading = if error {
+            Reading::Errors
+        } else if outdated {
+            Reading::Outdated
+        } else {
+            Reading::Clean
+        };
+        (c, reading)
     }
 
     /// Reads `path`. A missing file is created with the defaults. A file
@@ -306,8 +381,11 @@ impl Config {
                 return c;
             }
         };
-        let (c, error) = Config::from_ini(&String::from_utf8_lossy(&bytes), log);
-        if error {
+        let (c, reading) = Config::from_ini(&String::from_utf8_lossy(&bytes), log);
+        if reading == Reading::Outdated {
+            c.save(path, log);
+        }
+        if reading == Reading::Errors {
             log.warning(format!("Error in {}.", path.display()));
             let mut old = path.as_os_str().to_owned();
             old.push(".old");

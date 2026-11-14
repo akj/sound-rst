@@ -121,6 +121,8 @@ length 9999 208980
 @90099 sounds 9 ebd2923cd8a03f68
 @90099 step 15 key RETURN
 @90099 voice item "build farm on a meadow"
+@92299 voice info "0 gold"
+@93099 voice info "7 wood"
 @140833 voice info "farm 2 complete"
 @140834 voice confirmation "objective complete build 1 farm"
 @144134 voice info "farm 2 complete"
@@ -190,7 +192,7 @@ length 9999 208980
 @316957 voice item "b 1 , you are not controlling any unit"
 @384456 voice info "1 footman enemy at a 1"
 @388357 voice info "alert at b 1"
-@394656 voice info "1 footman neutralized at b 1"
+@389757 voice info "1 footman neutralized at b 1"
 @406956 sounds 217 630795ac20ed0e83
 @406956 step 36 wait_turns 300
 @406957 step 37 key z

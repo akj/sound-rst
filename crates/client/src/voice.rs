@@ -1,31 +1,37 @@
 //! The voice: what the player hears said, in which order, and when a key
 //! press cuts it short.
 //!
-//! Messages said "now" (menus, alerts) interrupt the queue; messages said
-//! "sooner or later" (game information) wait in the queue and may expire.
-//! Every message is kept in a history the player can walk back through.
+//! Answers to keys and messages said "now" (menus, cut scenes) interrupt
+//! the queue. News the game volunteers waits in the queue, as the policy
+//! of its category says, and is never lost: a message cut off goes back in
+//! the queue, newer news about a subject replaces the unheard news about
+//! it, and every message but answers is kept in a log. The player can walk
+//! back through the log, one category at a time, or through what they
+//! have not heard.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use soundrts_world::msg::Msg;
+use soundrts_world::SquareId;
+use soundrts_world::msg::{Msg, msg, nb2msg};
+use soundrts_world::msgparts as mp;
 
 use crate::audio::DEFAULT_VOLUME;
 use crate::clock::ClockRef;
 use crate::input::{Input, InputPoint};
 use crate::log::Log;
-use crate::message::{InfoOptions, Message};
+use crate::message::{Category, News, Parts, Policy, Subject, translate_and_collapse};
+use crate::net::words::{self, text};
 use crate::sound::Audio;
 use crate::sound_cache::{Sounds, Spoken};
 use crate::tts::Tts;
 
-/// The history keeps at most this many messages...
-const HISTORY_LIMIT: usize = 200;
-/// ...dropping this many of the oldest when it is full.
-const HISTORY_DROP: usize = 100;
-/// Seconds a chat line may wait unsaid.
-const CHAT_EXPIRATION: f64 = 3600.0;
+/// The log keeps at most this many messages; past it, the oldest goes.
+pub const LOG_LIMIT: usize = 1000;
+
+/// Speaker volumes of a message that is not placed.
+const CENTERED: (f64, f64) = (DEFAULT_VOLUME, DEFAULT_VOLUME);
 
 /// One part of an utterance as it started: words, or a recorded sound by
 /// its name.
@@ -179,10 +185,11 @@ impl VoiceChannel {
         }
     }
 
-    pub fn play(&mut self, msg: &Message, kind: VoiceKind) {
-        if self.debug_mode {
-            let texts: Vec<String> = msg
-                .translate_and_collapse(&self.sounds, true)
+    /// Starts saying `parts` at these speaker volumes, or only their
+    /// recorded sounds, instead of what was being said.
+    pub fn play(&mut self, parts: &Msg, (lv, rv): (f64, f64), kind: VoiceKind, which: Parts) {
+        if self.debug_mode && which != Parts::Sounds {
+            let texts: Vec<String> = translate_and_collapse(parts, &self.sounds, Parts::Texts)
                 .into_iter()
                 .filter_map(|s| match s {
                     Spoken::Text(t) => Some(t),
@@ -191,28 +198,33 @@ impl VoiceChannel {
                 .collect();
             self.log.said(&texts.join(" "));
         }
-        let parts = msg.translate_and_collapse(&self.sounds, false);
+        let spoken = translate_and_collapse(parts, &self.sounds, which);
         if let Some(record) = &self.record {
             record.push(VoiceEvent::Started {
                 time: self.clock.now(),
                 kind,
-                parts: parts
+                parts: spoken
                     .iter()
                     .map(|p| match p {
                         Spoken::Text(t) => UtterancePart::Text(t.clone()),
                         Spoken::Sound(s) => UtterancePart::Sound(s.key.clone()),
                     })
                     .collect(),
-                lv: msg.lv,
-                rv: msg.rv,
+                lv,
+                rv,
             });
         }
         self.silence();
         self.queue.clear();
-        for part in parts {
-            self.queue.push_back((part, msg.lv, msg.rv));
+        for part in spoken {
+            self.queue.push_back((part, lv, rv));
         }
         self.update();
+    }
+
+    /// Whether a message has recorded sounds among its parts.
+    pub fn has_sounds(&self, parts: &Msg) -> bool {
+        !translate_and_collapse(parts, &self.sounds, Parts::Sounds).is_empty()
     }
 
     /// Stops the current message and forgets the rest of it.
@@ -271,16 +283,122 @@ impl VoiceChannel {
     }
 }
 
-/// The voice: the message queue and history.
+/// Whether the player has heard a message of the log.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Heard {
+    /// Waits in the queue to be said, or with `sounds_only`, for its
+    /// recorded sounds to be played.
+    Waiting {
+        sounds_only: bool,
+    },
+    /// Kept without its words being said.
+    No,
+    Yes,
+}
+
+/// What a message of the log is.
+#[derive(Clone, Debug, PartialEq)]
+enum Content {
+    /// Said at once: a menu title, a message that stops the game.
+    Now(Msg),
+    News(News),
+}
+
+/// A message's place in the log, which neither replacing other messages
+/// nor dropping the oldest changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EntryId(u64);
+
+/// A message of the log.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Entry {
+    id: EntryId,
+    content: Content,
+    heard: Heard,
+}
+
+impl Entry {
+    pub fn parts(&self) -> &Msg {
+        match &self.content {
+            Content::Now(m) => m,
+            Content::News(n) => &n.parts,
+        }
+    }
+
+    /// The category of news, `None` for what was said at once.
+    pub fn category(&self) -> Option<Category> {
+        match &self.content {
+            Content::Now(_) => None,
+            Content::News(n) => Some(n.category),
+        }
+    }
+
+    pub fn heard(&self) -> Heard {
+        self.heard
+    }
+
+    fn subject(&self) -> Option<&Subject> {
+        match &self.content {
+            Content::Now(_) => None,
+            Content::News(n) => n.subject.as_ref(),
+        }
+    }
+
+    fn is_waiting(&self) -> bool {
+        matches!(self.heard, Heard::Waiting { .. })
+    }
+
+    /// News the player has not heard.
+    fn is_unheard_news(&self) -> bool {
+        self.category().is_some() && self.heard != Heard::Yes
+    }
+}
+
+/// What "what did I miss" says next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Missed {
+    /// How many unheard messages wait in each category.
+    Count,
+    /// An unheard message: the newest alert if `first`, else the oldest.
+    Steps { first: bool },
+}
+
+/// The category the player reviews, and the message of it said last.
+#[derive(Clone, Copy, Debug)]
+struct Review {
+    category: Category,
+    at: Option<EntryId>,
+}
+
+/// The words for a category.
+pub fn category_title(c: Category) -> Msg {
+    match c {
+        Category::Alert => msg(mp::ALERT),
+        Category::Production => text(words::PRODUCTION),
+        Category::Economy => text(words::ECONOMY),
+        Category::Scouting => text(words::SCOUTING),
+        Category::Chat => text(words::CHAT),
+        Category::System => text(words::SYSTEM),
+        Category::Story => text(words::STORY),
+    }
+}
+
+/// The voice: the message queue and the log.
 pub struct Voice {
-    /// Said and unsaid messages, oldest first.
-    msgs: Vec<Message>,
-    /// A message from the queue is being said (not just an item).
+    /// Said and unsaid messages, in the order they came.
+    log: VecDeque<Entry>,
+    next_id: u64,
+    /// The first message of the game being played, or of the log.
+    game_start: EntryId,
+    /// A message of the log is being said (not an answer).
     active: bool,
-    /// The player is walking through the history.
+    /// The player is walking through the log.
     history: bool,
-    /// The index of the message being said; `msgs.len()` if none.
+    /// The index of the message being said; the next to say, or
+    /// `log.len()`, when none is.
     current: usize,
+    missed: Missed,
+    review: Review,
     channel: VoiceChannel,
     input: Input,
     clock: ClockRef,
@@ -289,48 +407,60 @@ pub struct Voice {
 impl Voice {
     pub fn new(channel: VoiceChannel, input: Input, clock: ClockRef) -> Voice {
         Voice {
-            msgs: Vec::new(),
+            log: VecDeque::new(),
+            next_id: 0,
+            game_start: EntryId(0),
             active: false,
             history: false,
             current: 0,
+            missed: Missed::Count,
+            review: Review {
+                category: Category::Alert,
+                at: None,
+            },
             channel,
             input,
             clock,
         }
     }
 
-    fn now(&self) -> f64 {
-        self.clock.now()
-    }
-
-    /// The index of the first message never said, or `msgs.len()`.
-    fn unsaid(&self) -> usize {
-        self.msgs
+    /// The index of the next message waiting to be said, or `log.len()`:
+    /// the first one of the first category of [`Category::AHEAD`] that has
+    /// one, else the first.
+    fn next_waiting(&self) -> usize {
+        Category::AHEAD
             .iter()
-            .position(|m| !m.said)
-            .unwrap_or(self.msgs.len())
+            .find_map(|&c| {
+                self.log
+                    .iter()
+                    .position(|e| e.is_waiting() && e.category() == Some(c))
+            })
+            .or_else(|| self.log.iter().position(Entry::is_waiting))
+            .unwrap_or(self.log.len())
     }
 
-    fn exists(&self, index: usize) -> bool {
-        index < self.msgs.len()
+    fn waiting_exists(&self) -> bool {
+        self.log.iter().any(Entry::is_waiting)
     }
 
-    fn unsaid_exists(&self) -> bool {
-        self.exists(self.unsaid())
+    fn current_message_is_waiting(&self) -> bool {
+        self.log.get(self.current).is_some_and(Entry::is_waiting)
     }
 
-    fn current_message_is_unsaid(&self) -> bool {
-        self.msgs.get(self.current).is_some_and(|m| !m.said)
-    }
-
+    /// The message being said is over. Under the sound policy, outside the
+    /// history, only its sounds were played: its words stay unheard.
     fn mark_current_as_said(&mut self) {
-        if let Some(m) = self.msgs.get_mut(self.current) {
-            m.said = true;
+        let history = self.history;
+        if let Some(e) = self.log.get_mut(self.current) {
+            e.heard = match e.heard {
+                Heard::Waiting { sounds_only: true } if !history => Heard::No,
+                _ => Heard::Yes,
+            };
         }
     }
 
     fn go_to_next_unsaid(&mut self) {
-        self.current = self.unsaid();
+        self.current = self.next_waiting();
     }
 
     /// The queued message on the voice channel counts as said if the
@@ -338,7 +468,7 @@ impl Voice {
     /// stays unsaid and is said again when the voice is free. A message
     /// still waiting is not touched.
     fn dismiss_current_if_cancelled(&mut self) {
-        if self.active && self.current_message_is_unsaid() && self.channel.was_cancelled() {
+        if self.active && self.current_message_is_waiting() && self.channel.was_cancelled() {
             self.mark_current_as_said();
         }
     }
@@ -349,8 +479,47 @@ impl Voice {
         self.update();
     }
 
-    /// Says the previous message of the history.
+    /// Adds a message to the log.
+    fn push(&mut self, content: Content, heard: Heard) {
+        self.log.push_back(Entry {
+            id: EntryId(self.next_id),
+            content,
+            heard,
+        });
+        self.next_id += 1;
+        self.trim();
+    }
+
+    /// Drops the oldest messages past [`LOG_LIMIT`], unless the oldest is
+    /// being said.
+    fn trim(&mut self) {
+        while self.log.len() > LOG_LIMIT && !(self.active && self.current == 0) {
+            self.log.pop_front();
+            self.current = self.current.saturating_sub(1);
+        }
+    }
+
+    /// The index of the newest news about `subject` since the game
+    /// started, if the player has not heard it and it is not being said.
+    fn unheard_about(&self, subject: &Subject) -> Option<usize> {
+        let i = self
+            .log
+            .iter()
+            .rposition(|e| e.subject() == Some(subject))?;
+        let being_said = self.active && self.current == i;
+        let replaceable = self.log[i].heard != Heard::Yes && self.log[i].id >= self.game_start;
+        (replaceable && !being_said).then_some(i)
+    }
+
+    /// Whether the newest news about `subject` waits unheard, so that newer
+    /// news about it would replace it.
+    pub fn is_unheard(&self, subject: &Subject) -> bool {
+        self.unheard_about(subject).is_some()
+    }
+
+    /// Says the previous message of the log.
     pub fn previous(&mut self) {
+        self.missed = Missed::Count;
         self.history = true;
         if self.current > 0 {
             self.current -= 1;
@@ -362,7 +531,7 @@ impl Voice {
     /// is not skipped.
     pub fn say_next(&mut self, history_only: bool) {
         if self.active {
-            if self.current_message_is_unsaid() {
+            if self.current_message_is_waiting() {
                 if history_only {
                     return;
                 }
@@ -376,82 +545,81 @@ impl Voice {
     /// Says now, and waits until the end; a key press does not interrupt.
     /// Key presses made meanwhile are dropped.
     pub fn alert(&mut self, msg: &Msg) {
-        self.say_now(msg, VoiceKind::Alert);
+        self.say_now(msg, VoiceKind::Alert, Content::Now(msg.clone()));
     }
 
     /// Says now, and waits until the end or a key press, which is used up.
     pub fn important(&mut self, msg: &Msg) {
-        self.say_now(msg, VoiceKind::Important);
+        self.say_now(msg, VoiceKind::Important, Content::Now(msg.clone()));
     }
 
     /// Says now, and waits until the end or a key press, which stays in the
     /// queue for the caller.
     pub fn confirmation(&mut self, msg: &Msg) {
-        self.say_now(msg, VoiceKind::Confirmation);
+        self.say_now(msg, VoiceKind::Confirmation, Content::Now(msg.clone()));
     }
 
     /// Says a menu title: as [`Voice::confirmation`].
     pub fn menu(&mut self, msg: &Msg) {
-        self.say_now(msg, VoiceKind::Menu);
+        self.say_now(msg, VoiceKind::Menu, Content::Now(msg.clone()));
     }
 
-    /// Queues a message to say sooner or later.
-    pub fn info(&mut self, msg: &Msg) {
-        self.info_with(msg, InfoOptions::default());
+    /// News the game says now, as its policy says: spoken as
+    /// [`Voice::important`], or else taken as other news.
+    pub fn important_news(&mut self, news: News, policy: Policy) {
+        self.news_now(news, policy, VoiceKind::Important);
     }
 
-    pub fn info_with(&mut self, msg: &Msg, options: InfoOptions) {
-        if !msg.is_empty() {
-            let now = self.now();
-            let message = Message::new(msg.clone(), options, false, now);
-            if message.priority {
-                // After the message being said and the unsaid priority
-                // messages, before any unsaid ordinary message.
-                let base = if self.active { self.current + 1 } else { 0 };
-                let at = (base..self.msgs.len())
-                    .find(|&i| !self.msgs[i].said && !self.msgs[i].priority)
-                    .unwrap_or(self.msgs.len());
-                self.msgs.insert(at, message);
-                if at <= self.current && self.current < self.msgs.len() - 1 {
-                    self.current += 1;
-                }
-            } else {
-                self.msgs.push(message);
-            }
-            self.update();
+    /// News the game says now, as its policy says: spoken as
+    /// [`Voice::confirmation`], or else taken as other news.
+    pub fn confirmation_news(&mut self, news: News, policy: Policy) {
+        self.news_now(news, policy, VoiceKind::Confirmation);
+    }
+
+    fn news_now(&mut self, news: News, policy: Policy, kind: VoiceKind) {
+        match policy {
+            Policy::Speak => self.say_now(&news.parts.clone(), kind, Content::News(news)),
+            other => self.news(news, other),
         }
     }
 
-    /// Queues a chat line or another message from a player or the server:
-    /// it is said once the message being said ends, before the other
-    /// unsaid messages, and is kept for a long time.
-    pub fn chat(&mut self, msg: &Msg) {
-        self.info_with(
-            msg,
-            InfoOptions {
-                priority: true,
-                expiration_delay: CHAT_EXPIRATION,
-                ..InfoOptions::default()
-            },
-        );
+    /// Takes news as `policy` says: queued to be said (or for its recorded
+    /// sounds only), kept unheard, or dropped. It replaces the unheard
+    /// news about the same subject, in its turn.
+    pub fn news(&mut self, news: News, policy: Policy) {
+        if news.parts.is_empty() {
+            return;
+        }
+        let heard = match policy {
+            Policy::Drop => return,
+            Policy::Speak => Heard::Waiting { sounds_only: false },
+            Policy::Sound if self.channel.has_sounds(&news.parts) => {
+                Heard::Waiting { sounds_only: true }
+            }
+            Policy::Sound | Policy::Log => Heard::No,
+        };
+        match news.subject.as_ref().and_then(|s| self.unheard_about(s)) {
+            Some(i) => {
+                let e = &mut self.log[i];
+                e.content = Content::News(news);
+                e.heard = heard;
+            }
+            None => self.push(Content::News(news), heard),
+        }
+        self.update();
     }
 
     /// Says now (giving up the unsaid queue) until the end, or until a key
     /// press unless it is an alert. The key press stays queued after a
     /// confirmation or a menu title.
-    fn say_now(&mut self, msg: &Msg, kind: VoiceKind) {
+    fn say_now(&mut self, msg: &Msg, kind: VoiceKind, content: Content) {
         if msg.is_empty() {
             return;
         }
         let interruptible = kind != VoiceKind::Alert;
         let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
-        let options = InfoOptions::default();
         self.dismiss_current_if_cancelled();
-        let now = self.now();
-        self.channel.play(
-            &Message::new(msg.clone(), options.clone(), false, now),
-            kind,
-        );
+        self.channel.play(msg, CENTERED, kind, Parts::All);
         while self.channel.get_busy() {
             if interruptible && self.key_hit(keep_key) {
                 break;
@@ -462,62 +630,162 @@ impl Voice {
         if !interruptible {
             self.input.clear_keydowns();
         }
-        let now = self.now();
-        self.msgs
-            .push(Message::new(msg.clone(), options, true, now));
+        self.push(content, Heard::Yes);
         self.go_to_next_unsaid();
         self.active = false;
     }
 
-    /// Says now without recording in the history: a menu item, a typed
-    /// letter.
+    /// Says now without recording in the log: a menu item, a typed
+    /// letter, an answer to a key.
     pub fn item(&mut self, msg: &Msg) {
         self.item_stereo(msg, DEFAULT_VOLUME, DEFAULT_VOLUME);
     }
 
     pub fn item_stereo(&mut self, msg: &Msg, lv: f64, rv: f64) {
+        self.missed = Missed::Count;
+        self.answer(msg, (lv, rv));
+    }
+
+    fn answer(&mut self, msg: &Msg, volumes: (f64, f64)) {
         if !msg.is_empty() {
             self.dismiss_current_if_cancelled();
             self.go_to_next_unsaid();
-            let now = self.now();
-            let options = InfoOptions {
-                lv,
-                rv,
-                ..InfoOptions::default()
-            };
-            self.channel.play(
-                &Message::new(msg.clone(), options, false, now),
-                VoiceKind::Item,
-            );
+            self.channel.play(msg, volumes, VoiceKind::Item, Parts::All);
             self.active = false;
             self.history = false;
         }
     }
 
-    fn expired(&self, index: usize) -> bool {
-        let msg = &self.msgs[index];
-        if msg.has_expired(self.now()) {
-            return true;
-        }
-        if msg.priority {
-            return false;
-        }
-        let mut newer = self.msgs[index + 1..].iter().filter(|m| !m.priority);
-        newer.any(|m| {
-            (msg.update_type.is_some() && m.update_type == msg.update_type) || m.parts == msg.parts
-        })
+    /// Says a message of the log again, now, and counts it as heard.
+    fn say_entry(&mut self, i: usize) {
+        self.dismiss_current_if_cancelled();
+        let e = &mut self.log[i];
+        e.heard = Heard::Yes;
+        let parts = e.parts().clone();
+        self.go_to_next_unsaid();
+        self.channel
+            .play(&parts, CENTERED, VoiceKind::History, Parts::All);
+        self.active = false;
+        self.history = false;
     }
 
-    fn mark_expired_messages_as_said(&mut self) {
-        for i in 0..self.msgs.len() {
-            if !self.msgs[i].said && self.expired(i) {
-                self.msgs[i].said = true;
+    /// What did I miss: says how many unheard messages wait in each
+    /// category that has any. Pressed again, with no other answer between,
+    /// says them one at a time: the newest alert first, then the others
+    /// oldest first.
+    pub fn unheard(&mut self) {
+        match self.missed {
+            Missed::Count => {
+                let mut m = Msg::new();
+                for c in Category::ALL {
+                    let n = self
+                        .log
+                        .iter()
+                        .filter(|e| e.category() == Some(c) && e.is_unheard_news())
+                        .count();
+                    if n > 0 {
+                        if !m.is_empty() {
+                            m.extend(msg(mp::COMMA));
+                        }
+                        m.extend(category_title(c));
+                        m.extend(nb2msg(n as i64));
+                    }
+                }
+                if m.is_empty() {
+                    self.answer(&msg(mp::NOTHING), CENTERED);
+                } else {
+                    self.answer(&m, CENTERED);
+                    self.missed = Missed::Steps { first: true };
+                }
+            }
+            Missed::Steps { first } => {
+                let newest_alert = || {
+                    self.log
+                        .iter()
+                        .rposition(|e| e.is_unheard_news() && e.category() == Some(Category::Alert))
+                };
+                let next = first
+                    .then(newest_alert)
+                    .flatten()
+                    .or_else(|| self.log.iter().position(Entry::is_unheard_news));
+                match next {
+                    Some(i) => {
+                        self.say_entry(i);
+                        self.missed = Missed::Steps { first: false };
+                    }
+                    None => {
+                        self.answer(&msg(mp::NOTHING), CENTERED);
+                        self.missed = Missed::Count;
+                    }
+                }
             }
         }
-        if self.msgs.len() > HISTORY_LIMIT {
-            self.msgs.drain(..HISTORY_DROP);
-            self.current = self.current.saturating_sub(HISTORY_DROP);
-        }
+    }
+
+    /// Says the message of the reviewed category before the one said last
+    /// (the newest at first); the oldest one stays.
+    pub fn review_previous(&mut self) {
+        self.review(true);
+    }
+
+    /// Says the message of the reviewed category after the one said last
+    /// (the newest at first); the newest one stays.
+    pub fn review_next(&mut self) {
+        self.review(false);
+    }
+
+    fn review(&mut self, back: bool) {
+        self.missed = Missed::Count;
+        let c = self.review.category;
+        let in_category: Vec<usize> = (0..self.log.len())
+            .filter(|&i| self.log[i].category() == Some(c))
+            .collect();
+        let Some(last) = in_category.len().checked_sub(1) else {
+            self.answer(&[category_title(c), msg(mp::NOTHING)].concat(), CENTERED);
+            return;
+        };
+        let at = self
+            .review
+            .at
+            .and_then(|id| in_category.iter().position(|&i| self.log[i].id == id));
+        let k = match at {
+            None => last,
+            Some(k) if back => k.saturating_sub(1),
+            Some(k) => (k + 1).min(last),
+        };
+        let i = in_category[k];
+        self.review.at = Some(self.log[i].id);
+        self.say_entry(i);
+    }
+
+    /// Reviews the next category, and says which.
+    pub fn review_category(&mut self) {
+        self.missed = Missed::Count;
+        self.review = Review {
+            category: self.review.category.next(),
+            at: None,
+        };
+        self.answer(&category_title(self.review.category), CENTERED);
+    }
+
+    /// A game starts: news from now on does not replace the news of the
+    /// log so far. The place in the log of the game's first message.
+    pub fn start_game(&mut self) -> EntryId {
+        self.game_start = EntryId(self.next_id);
+        self.game_start
+    }
+
+    /// The newest alert tied to a square, older than the alert `before`
+    /// if given.
+    pub fn alert_before(&self, before: Option<EntryId>) -> Option<(EntryId, SquareId)> {
+        self.log
+            .iter()
+            .rev()
+            .filter(|e| before.is_none_or(|b| e.id < b))
+            .find_map(|e| match &e.content {
+                Content::News(n) if n.category == Category::Alert => n.square.map(|s| (e.id, s)),
+                _ => None,
+            })
     }
 
     /// Moves the queue along: starts the next unsaid message when the
@@ -527,37 +795,48 @@ impl Voice {
             self.channel.update();
             return;
         }
-        self.mark_expired_messages_as_said();
         if self.active {
             // A message from the queue has just finished.
             self.mark_current_as_said();
             self.current += 1;
+            self.active = false;
         }
+        self.trim();
         if !self.history {
             self.go_to_next_unsaid();
         }
-        if self.exists(self.current) {
-            let msg = self.msgs[self.current].clone();
-            let kind = if self.history {
-                VoiceKind::History
-            } else {
-                VoiceKind::Info
-            };
-            self.channel.play(&msg, kind);
-            self.active = true;
-        } else {
-            self.active = false;
-            self.history = false;
+        match self.log.get(self.current) {
+            Some(e) => {
+                let which = match e.heard {
+                    Heard::Waiting { sounds_only: true } if !self.history => Parts::Sounds,
+                    _ => Parts::All,
+                };
+                let kind = if self.history {
+                    VoiceKind::History
+                } else {
+                    VoiceKind::Info
+                };
+                let parts = e.parts().clone();
+                self.channel.play(&parts, CENTERED, kind, which);
+                self.active = true;
+            }
+            None => {
+                self.active = false;
+                self.history = false;
+            }
         }
     }
 
-    /// Stops talking and marks every message as said.
+    /// Stops talking and gives up the queue: the messages waiting stay in
+    /// the log, unheard.
     pub fn silent_flush(&mut self) {
         self.channel.stop();
         self.active = false;
-        self.current = self.msgs.len();
-        for m in &mut self.msgs {
-            m.said = true;
+        self.current = self.log.len();
+        for e in &mut self.log {
+            if e.is_waiting() {
+                e.heard = Heard::No;
+            }
         }
     }
 
@@ -566,10 +845,10 @@ impl Voice {
     pub fn flush(&mut self, interruptible: bool) {
         loop {
             self.update();
-            if !(self.unsaid_exists() || self.channel.get_busy()) {
+            if !(self.waiting_exists() || self.channel.get_busy()) {
                 break;
             } else if interruptible && self.key_hit(true) {
-                if self.unsaid_exists() {
+                if self.waiting_exists() {
                     self.say_next(false);
                     self.input.clear_keydowns();
                 } else {
@@ -609,11 +888,11 @@ impl Voice {
 
     /// Whether the voice says nothing and has nothing left to say.
     pub fn is_idle(&self) -> bool {
-        !self.channel.get_busy() && !self.unsaid_exists()
+        !self.channel.get_busy() && !self.waiting_exists()
     }
 
-    /// The history, oldest first, with whether each message has been said.
-    pub fn history(&self) -> impl Iterator<Item = (&Msg, bool)> {
-        self.msgs.iter().map(|m| (&m.parts, m.said))
+    /// The log, oldest first.
+    pub fn log(&self) -> impl Iterator<Item = &Entry> {
+        self.log.iter()
     }
 }

@@ -136,6 +136,16 @@ pub enum GameCommand {
     HistoryPrevious,
     HistoryNext,
     HistoryStop,
+    /// What did I miss: the unheard news by category, then each of it.
+    Unheard,
+    /// The previous message of the category under review.
+    ReviewPrevious,
+    ReviewNext,
+    /// Reviews the next category.
+    ReviewCategory,
+    /// Moves the cursor to the square of the last alert, then the one
+    /// before.
+    JumpToAlert,
     Objectives,
     GameMenu,
     SayPlayers,
@@ -197,6 +207,11 @@ pub const COMMAND_NAMES: &[&str] = &[
     "history_previous",
     "history_next",
     "history_stop",
+    "unheard",
+    "review_previous",
+    "review_next",
+    "review_category",
+    "jump_to_alert",
     "objectives",
     "gamemenu",
     "say_players",
@@ -347,6 +362,11 @@ impl GameCommand {
             "history_previous" => none(C::HistoryPrevious)?,
             "history_next" => none(C::HistoryNext)?,
             "history_stop" => none(C::HistoryStop)?,
+            "unheard" => none(C::Unheard)?,
+            "review_previous" => none(C::ReviewPrevious)?,
+            "review_next" => none(C::ReviewNext)?,
+            "review_category" => none(C::ReviewCategory)?,
+            "jump_to_alert" => none(C::JumpToAlert)?,
             "objectives" => none(C::Objectives)?,
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,

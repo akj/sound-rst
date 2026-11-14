@@ -13,6 +13,7 @@ use soundrts_world::msgparts as mp;
 use super::words::{self, text};
 use crate::game::style_msg;
 use crate::mapfile::{Map, title_of};
+use crate::message::RoomTopic;
 use crate::sound_cache::literal;
 use crate::style::Style;
 
@@ -238,9 +239,9 @@ impl RoomModel {
         m
     }
 
-    /// What to say of a change, and its kind: a newer message of the same
-    /// kind replaces an unsaid older one.
-    pub fn announce(&self, change: &RoomChange, style: &Style) -> Option<(Msg, String)> {
+    /// What to say of a change, and what it is about: newer news about
+    /// the same topic replaces the unheard older one.
+    pub fn announce(&self, change: &RoomChange, style: &Style) -> Option<(Msg, RoomTopic)> {
         let slot_name = |slot: SlotIndex| {
             self.state
                 .slots
@@ -252,7 +253,7 @@ impl RoomModel {
             RoomChange::Entered => return None,
             RoomChange::Joined { player } => (
                 [player_name(player), msg(mp::HAS_JUST_JOINED), self.status()].concat(),
-                "room players".to_owned(),
+                RoomTopic::Players,
             ),
             RoomChange::Left { player } => (
                 [
@@ -262,7 +263,7 @@ impl RoomModel {
                     self.status(),
                 ]
                 .concat(),
-                "room players".to_owned(),
+                RoomTopic::Players,
             ),
             RoomChange::Faction { slot } => {
                 let s = self.state.slots.get(*slot)?;
@@ -272,7 +273,7 @@ impl RoomModel {
                         style_msg(style, s.faction.as_str(), "title"),
                     ]
                     .concat(),
-                    format!("room faction {slot}"),
+                    RoomTopic::Faction(*slot),
                 )
             }
             RoomChange::Alliance { slot } => {
@@ -285,7 +286,7 @@ impl RoomModel {
                         nb2msg(i64::from(s.alliance)),
                     ]
                     .concat(),
-                    format!("room alliance {slot}"),
+                    RoomTopic::Alliance(*slot),
                 )
             }
             RoomChange::Ready { slot } => {
@@ -297,7 +298,7 @@ impl RoomModel {
                 };
                 (
                     [slot_name(*slot), text(word)].concat(),
-                    format!("room ready {slot}"),
+                    RoomTopic::Ready(*slot),
                 )
             }
             RoomChange::Host { host } => (
@@ -306,7 +307,7 @@ impl RoomModel {
                     text(words::IS_NOW_THE_ORGANIZER),
                 ]
                 .concat(),
-                "room host".to_owned(),
+                RoomTopic::Host,
             ),
         })
     }

@@ -216,18 +216,23 @@ fn a_training_game_on_jl1_through_the_menus() {
         ["exploit gold mine in the fog of war ,"]
     );
     assert_eq!(p.note("gathering"), "gather;");
-    // Building a farm on a meadow.
+    // Building a farm on a meadow. The gold the peasant brought back is
+    // news that waited for the menu to be said.
     assert_eq!(
         p.said_at("order build 3"),
         [
-            "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+            "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm",
+            "7 gold"
         ]
     );
     assert_eq!(
         p.said_at("meadow"),
         ["<1003> a meadow to the northwest , build farm on"]
     );
-    assert_eq!(p.said_at("build"), ["build farm on a meadow"]);
+    assert_eq!(
+        p.said_at("build"),
+        ["build farm on a meadow", "2 gold", "5 wood"]
+    );
     assert_eq!(p.note("building"), "build;");
     assert_eq!(
         p.said_at("units"),

@@ -28,14 +28,14 @@ use soundrts_protocol::{
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
-use self::chat::{CHAT_SOUND, ChatLog, line_msg};
+use self::chat::{ChatLog, line_msg, line_news};
 use self::conn::{Connection, NetEvent};
 use self::lobby::{LobbyModel, MAX_ROOM_SLOTS, MapState, RoomModel, TooMany, check_room};
 use self::words::text;
 use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
 use crate::menu::{Exit, input_string};
-use crate::message::InfoOptions;
+use crate::message::{Category, News, Subject};
 use crate::package::{NETWORK_MAP_LIMITS, check_expansion};
 use crate::sound_cache::literal;
 
@@ -250,14 +250,13 @@ impl Net {
                 if let Some(said) = said
                     && self.game.is_none()
                 {
-                    cx.voice.info(&said);
+                    cx.news(News::new(Category::System, said));
                 }
                 self.changed();
             }
             ServerMsg::Chat { line } => {
-                let m = [msg(&[CHAT_SOUND]), line_msg(&line)].concat();
+                cx.news(line_news(&line));
                 self.chat.push(line);
-                cx.voice.chat(&m);
             }
             ServerMsg::Invited { room, by } => {
                 // A server tells of a room before inviting to it.
@@ -266,8 +265,8 @@ impl Net {
                         .warning(format!("invited to an unknown room: {}", room.0));
                     return;
                 };
-                cx.voice
-                    .chat(&[vec![literal(by.as_str())], msg(mp::INVITES_YOU), title].concat());
+                let m = [vec![literal(by.as_str())], msg(mp::INVITES_YOU), title].concat();
+                cx.news(News::new(Category::System, m));
                 self.invitations.retain(|i| i.room != room);
                 self.invitations.push(Invitation { room, by });
                 self.changed();
@@ -285,7 +284,7 @@ impl Net {
                             self.send(ClientMsg::GetMap {
                                 hash: room.map.hash.clone(),
                             });
-                            cx.voice.info(&msg(words::DOWNLOADING));
+                            cx.news(News::new(Category::System, msg(words::DOWNLOADING)));
                             MapState::Downloading
                         }
                     };
@@ -294,14 +293,8 @@ impl Net {
                     && r.state.id == room.id
                 {
                     r.state = room;
-                    if let Some((said, kind)) = r.announce(&change, cx.res.style()) {
-                        cx.voice.info_with(
-                            &said,
-                            InfoOptions {
-                                update_type: Some(kind),
-                                ..InfoOptions::default()
-                            },
-                        );
+                    if let Some((said, topic)) = r.announce(&change, cx.res.style()) {
+                        cx.news(News::new(Category::System, said).about(Subject::Room(topic)));
                     }
                 }
                 self.changed();
@@ -309,7 +302,10 @@ impl Net {
             ServerMsg::RoomExited { reason } => {
                 self.room = None;
                 if reason == RoomExit::Removed {
-                    cx.voice.chat(&text(words::YOU_HAVE_BEEN_REMOVED));
+                    cx.news(News::new(
+                        Category::System,
+                        text(words::YOU_HAVE_BEEN_REMOVED),
+                    ));
                     self.interrupts += 1;
                 }
                 self.changed();
@@ -356,12 +352,13 @@ impl Net {
                         }
                         m.push(literal(p.as_str()));
                     }
-                    cx.voice.chat(&m);
+                    cx.news(News::new(Category::System, m).about(Subject::Waiting));
                 }
             }
             ServerMsg::Resumed => {
                 if self.game.is_some() {
-                    cx.voice.info(&text(words::GAME_RESUMES));
+                    let m = text(words::GAME_RESUMES);
+                    cx.news(News::new(Category::System, m).about(Subject::Waiting));
                 }
             }
             ServerMsg::PlayerLeftGame { slot } => {
@@ -380,7 +377,7 @@ impl Net {
                     } else {
                         words::OTHERS_OUT_OF_SYNC
                     };
-                    cx.voice.chat(&text(m));
+                    cx.news(News::new(Category::System, text(m)));
                 }
             }
             ServerMsg::GameEnded => {
@@ -414,7 +411,7 @@ impl Net {
                     }
                     _ => msg(mp::BEEP),
                 };
-                cx.voice.info(&m);
+                cx.news(News::new(Category::System, m));
             }
             ServerMsg::Welcome { .. } | ServerMsg::Rejected { .. } => {
                 cx.log.warning("unexpected welcome or rejection");
@@ -462,8 +459,8 @@ impl Net {
             && let Err(e) = check_expansion(&bytes, NETWORK_MAP_LIMITS)
         {
             cx.log.warning(format!("refused the map received: {e}"));
-            cx.voice
-                .chat(&[msg(mp::BEEP), text(words::MAP_REFUSED)].concat());
+            let m = [msg(mp::BEEP), text(words::MAP_REFUSED)].concat();
+            cx.news(News::new(Category::System, m));
             room.map = MapState::Refused;
             return;
         }
@@ -471,8 +468,8 @@ impl Net {
             Ok(m) => Arc::new(m),
             Err(e) => {
                 cx.log.warning(format!("cannot read the map received: {e}"));
-                cx.voice
-                    .chat(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat());
+                let m = [msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat();
+                cx.news(News::new(Category::System, m));
                 room.map = MapState::Refused;
                 return;
             }
