@@ -376,11 +376,15 @@ impl GameInterface {
             }
         } else if let Some(t) = &order.target {
             if order.keyword == Keyword::BuildPhaseTwo {
-                let e = self
-                    .target_entity(t)
-                    .ok_or_else(|| Oops::new("'Square' object has no attribute 'type'"))?;
-                let tn = self.site_type_name(&e).unwrap_or_default();
-                result.extend(style_msg(style, &tn, "title"));
+                match self.target_entity(t) {
+                    Some(e) => {
+                        let tn = self.site_type_name(&e).unwrap_or_default();
+                        result.extend(style_msg(style, &tn, "title"));
+                    }
+                    // A site the player does not know: no building said.
+                    None if matches!(t, Target::Entity(_)) => {}
+                    None => return Err(Oops::new("'Square' object has no attribute 'type'")),
+                }
             } else {
                 result.extend(self.target_title(cx, t)?);
             }
@@ -388,15 +392,11 @@ impl GameInterface {
         Ok([msg(mp::COMMA), result].concat())
     }
 
-    /// The entity an order's target shows: the live one or the remembered
-    /// copy.
+    /// The entity an order's target shows: as the player perceives or
+    /// remembers it, or the order's remembered copy.
     fn target_entity(&self, t: &Target) -> Option<Arc<Entity>> {
         match t {
-            Target::Entity(id) => self
-                .view()
-                .leaks()
-                .order_target(*id)
-                .map(|e| Arc::new(e.clone())),
+            Target::Entity(id) => self.view().known(*id).map(|(e, _)| Arc::new(e.clone())),
             Target::Memory(m) => Some(m.snapshot.clone()),
             _ => None,
         }
@@ -415,20 +415,23 @@ impl GameInterface {
     }
 
     /// The title of an order's target, made as the original makes a view
-    /// of it (the view draws its footstep offset first). A square or a
-    /// subsquare gives the square's title (see
-    /// [`GameInterface::place_view_title`]); a point has no title.
+    /// of it (the view draws its footstep offset first). An entity is
+    /// described as the player perceives or remembers it, and has no title
+    /// if the player knows nothing of it. A square or a subsquare gives the
+    /// square's title (see [`GameInterface::place_view_title`]); a point
+    /// has no title.
     fn target_title(&self, cx: &Client, t: &Target) -> R<Msg> {
         match t {
-            Target::Entity(id) => {
-                let e = self
-                    .view()
-                    .leaks()
-                    .order_target(*id)
-                    .ok_or_else(|| Oops::new("unknown target"))?;
-                let v = EntityView::new(Arc::new(e.clone()), None, &cx.rng);
-                self.title(cx, &v)
-            }
+            Target::Entity(id) => match self.view().known(*id) {
+                Some((e, ts)) => {
+                    let v = EntityView::new(Arc::new(e.clone()), ts, &cx.rng);
+                    self.title(cx, &v)
+                }
+                None => {
+                    EntityView::footstep_offset(&cx.rng);
+                    Ok(Vec::new())
+                }
+            },
             Target::Memory(m) => {
                 // The target as the order's owner remembers it.
                 let view = self.view();
@@ -1048,7 +1051,45 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testing::{enemy, said, training, unit};
     use super::*;
+
+    /// A copy of the player's peasant whose first order, a real one, aims
+    /// at `target`.
+    fn peasant_aiming_at(g: &mut crate::testkit::TestGame, target: Target) -> EntityView {
+        let me = g.game.me;
+        let peasant = unit(g, me, "peasant");
+        let farm = unit(g, me, "farm");
+        g.game
+            .host
+            .queue_line(me, &format!("control {}", peasant.0));
+        g.game
+            .host
+            .queue_line(me, &format!("order 0 0 go {}", farm.0));
+        g.game.host.step(me);
+        let mut model = g.game.host.world().entity(peasant).unwrap().clone();
+        model.orders[0].target = Some(target);
+        EntityView {
+            model: Arc::new(model),
+            time_stamp: None,
+            o_override: None,
+            footstep_random: 0.0,
+            anim: AnimState::default(),
+        }
+    }
+
+    #[test]
+    fn an_order_names_its_target_as_the_player_knows_it() {
+        let (mut h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        let v = peasant_aiming_at(&mut g, Target::Entity(townhall));
+        // The computer's town hall is there, unseen: the order has no
+        // target title.
+        assert!(g.game.view().known(townhall).is_none());
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", go to ,");
+    }
 
     #[test]
     fn directions_round_to_the_nearest_compass_point_as_python_does() {

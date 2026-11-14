@@ -94,17 +94,26 @@ fn the_view_returns_no_entity_the_player_neither_perceives_nor_remembers() {
 }
 
 #[test]
-fn an_order_target_is_the_live_entity() {
-    let (w, me, them) = game();
+fn an_entity_is_known_as_perceived_else_as_remembered() {
+    let (mut w, me, them) = game();
     let townhall = unit(&w, them, "townhall");
+    let peasant = unit(&w, me, "peasant");
+    // Neither perceived nor remembered: unknown, though it is there.
+    assert!(w.entity(townhall).is_some());
+    assert!(View::new(&w, me).known(townhall).is_none());
+
+    // Remembered: the copy as last seen, not the town hall now.
+    remember(&mut w, me, townhall);
+    let seen_hp = w.entity(townhall).unwrap().hp;
+    w.entity_mut(townhall).unwrap().hp = 1000;
+    assert_ne!(seen_hp, 1000);
     let v = View::new(&w, me);
-    assert!(v.perceived(townhall).is_none());
-    let old = w.entity(townhall).map(|e| e.id);
-    assert_eq!(v.leaks().order_target(townhall).map(|e| e.id), old);
-    assert_eq!(
-        v.leaks().order_target(townhall).map(|e| &*e.type_name),
-        Some("townhall")
-    );
+    let (e, ts) = v.known(townhall).unwrap();
+    assert_eq!((e.id, e.hp, ts), (townhall, seen_hp, Some(1500)));
+
+    // Perceived: as it is now.
+    let (e, ts) = v.known(peasant).unwrap();
+    assert_eq!((e.id, ts), (peasant, None));
 }
 
 #[test]

@@ -30,6 +30,8 @@ pub mod order;
 pub mod selection;
 pub mod squares;
 pub mod stats;
+#[cfg(test)]
+mod testing;
 
 use std::collections::{BTreeSet, HashSet, VecDeque};
 

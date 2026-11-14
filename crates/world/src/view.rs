@@ -314,6 +314,17 @@ impl<'a> View<'a> {
         self.world.player(self.player).memory.get(&id)
     }
 
+    /// The entity as the player knows it: as it is now if the player
+    /// perceives it, else as it was last seen, with when.
+    pub fn known(&self, id: EntityId) -> Option<(&'a Entity, Option<i64>)> {
+        match self.perceived(id) {
+            Some(e) => Some((e, None)),
+            None => self
+                .remembered(id)
+                .map(|r| (&*r.snapshot, Some(r.time_stamp))),
+        }
+    }
+
     // 5. Questions computed on demand.
 
     /// The entries of a unit's order menu for one keyword: `go`, or `train
@@ -415,15 +426,6 @@ pub struct Comrades {
 }
 
 impl<'a> Leaks<'a> {
-    /// The entity an order's target names, as it is now, perceived or not.
-    ///
-    /// Used to say a unit's orders ("go to footman, enemy, ...") and the
-    /// building a second build phase makes: the target's title is read from
-    /// the live entity.
-    pub fn order_target(&self, id: EntityId) -> Option<&'a Entity> {
-        self.world.entity(id)
-    }
-
     /// The memory of another player: when `owner` last saw an entity.
     ///
     /// An order of an ally's unit that the player controls names its target
