@@ -15,6 +15,12 @@ use crate::events::Event;
 use crate::known::{KnownEntity, KnownTarget};
 use crate::message::{GameStart, StartMessage, TurnMessage};
 
+/// The largest food cost, transport capacity or volume, either side of 0,
+/// in thousandths. The rules give far smaller ones; within it, a cost less
+/// another, or a capacity less the volumes of every unit a message could
+/// name, cannot overflow.
+const MAX_OWN_NUMBER: u64 = 1 << 32;
+
 fn malformed(why: impl Into<String>) -> Result<(), Malformed> {
     Err(Malformed(why.into()))
 }
@@ -113,9 +119,17 @@ impl GameStart {
         }
     }
 
-    /// Fails unless every square and type the entity names is the game's.
+    /// Fails unless every square and type the entity names is the game's,
+    /// and the numbers of its own part that the order menus and costs
+    /// compute with are within [`MAX_OWN_NUMBER`].
     fn entity(&self, e: &KnownEntity) -> Result<(), Malformed> {
         self.place(e.place)?;
+        if let Some(own) = &e.own {
+            let numbers = [own.food_cost, own.transport_capacity, own.transport_volume];
+            if numbers.iter().any(|n| n.unsigned_abs() > MAX_OWN_NUMBER) {
+                return malformed(format!("entity {} has a number out of range", e.id));
+            }
+        }
         if e.site_type
             .is_some_and(|t| self.rules.types().get(t.0 as usize).is_none())
         {

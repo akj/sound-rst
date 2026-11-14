@@ -46,6 +46,8 @@ fn commands() -> Vec<Command> {
         order(Order::JoinGroup("1".into()), Queue::Replace, false),
         order(Order::ResetGroup("é".into()), Queue::Replace, false),
         Command::Speed(1.5),
+        // JSON reads this back one bit off without `float_roundtrip`.
+        Command::Speed(1.012_615_265_993_759_7),
         Command::Quit,
         Command::Cheat(Cheat::AddUnits {
             square: Some(SquareId(1)),
@@ -292,4 +294,41 @@ fn remembered_entities_nest_only_so_deep() {
         let decoded = decode::<TurnMessage>(&bytes);
         assert_eq!(decoded.is_ok(), depth <= 8, "{depth} levels");
     }
+}
+
+/// A cost the order menus subtract from: one out of range would overflow
+/// there, so it is refused before a seat's view sees it.
+#[test]
+fn an_own_number_out_of_range_is_refused() {
+    let start = GameStart::from_message(
+        StartMessage {
+            map: soundrts_world::GameMap {
+                square_width: 12_000,
+                squares: Vec::new(),
+                exits: Vec::new(),
+                objective: Vec::new(),
+                intro: Vec::new(),
+            },
+            player_names: Vec::new(),
+            cheats_allowed: false,
+        },
+        soundrts_world::Rules::default(),
+    );
+    let mut unit = aiming_at(1, entity(2, "footman"));
+    unit.place = None;
+    if let Some(KnownTarget::Remembered(inner)) =
+        unit.own.as_mut().unwrap().orders[0].target.as_mut()
+    {
+        inner.place = None;
+    }
+    let fine = message(vec![unit.clone()], Vec::new());
+    assert_eq!(
+        decode_turn(&encode_turn(&fine).unwrap(), &start),
+        Ok(fine.clone())
+    );
+    unit.own.as_mut().unwrap().food_cost = i64::MIN;
+    let hostile = message(vec![unit], Vec::new());
+    assert!(decode_turn(&encode_turn(&hostile).unwrap(), &start).is_err());
+    let change = TurnChange::between(&fine, &hostile);
+    assert!(apply_change(&encode_change(&change).unwrap(), &fine, &start).is_err());
 }

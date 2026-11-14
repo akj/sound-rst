@@ -108,6 +108,25 @@ fn mutate(rng: &mut Rng, bytes: &mut Vec<u8>) -> bool {
     false
 }
 
+/// What passes the checks, a seat's view answers from: asks it the
+/// questions that read the message's places and numbers.
+fn ask(start: &Arc<GameStart>, m: TurnMessage) {
+    let v = SeatView::new(Arc::clone(start), m);
+    for e in v.message().perceived.iter().chain(&v.message().remembered) {
+        let _ = (
+            v.known(e.id),
+            e.place.and_then(|p| p.square()).map(|q| v.square(q)),
+        );
+    }
+    for u in v.controlled_units() {
+        for &k in Keyword::ALL {
+            let _ = (v.order_menu(u.id, k, false), v.order_info(u.id, k, None));
+        }
+        let _ = v.order_info(u.id, Keyword::UpgradeTo, Some("keep"));
+        let _ = v.default_order(u.id, OrderTarget::Entity(u.id));
+    }
+}
+
 /// What a sample is, and how a receiver reads it.
 enum Kind {
     Start,
@@ -198,17 +217,8 @@ fn hostile_game_messages_are_refused_without_a_panic() {
                 Kind::Setup => decode_setup(&b).map(drop),
                 Kind::Command => decode_command(&b).map(drop),
                 Kind::End => decode_end(&b).map(drop),
-                Kind::Whole => decode_turn(&b, &start).map(|m| {
-                    // What passes the checks, a seat's view can answer from.
-                    let v = SeatView::new(Arc::clone(&start), m);
-                    for e in v.message().perceived.iter().chain(&v.message().remembered) {
-                        let _ = (
-                            v.known(e.id),
-                            e.place.and_then(|p| p.square()).map(|q| v.square(q)),
-                        );
-                    }
-                }),
-                Kind::Change(last) => apply_change(&b, last, &start).map(drop),
+                Kind::Whole => decode_turn(&b, &start).map(|m| ask(&start, m)),
+                Kind::Change(last) => apply_change(&b, last, &start).map(|m| ask(&start, m)),
             }));
             let Ok(result) = read else {
                 panic!("a panic: seed {seed:#x}, {label}, case {case}");
