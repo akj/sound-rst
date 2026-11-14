@@ -9,5 +9,11 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# `Host::world`: the whole world, for tests that check a game's results.
+# The interface is built without it (see the CI workflow), so it reads the
+# game only through what its player knows.
+truth = []
+
 [dependencies]
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }

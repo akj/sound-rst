@@ -33,6 +33,9 @@
 //!
 //! # Reading the state
 //!
+//! An interface reads what one player knows through [`Host::view`]: see
+//! [`view`]. The world itself has the whole state:
+//!
 //! - The map: [`World::squares`] (grid, names, neighbors, exits, terrain),
 //!   [`World::map`] (title, objective, sizes, starts), [`World::time`],
 //!   [`World::turn`].
@@ -86,6 +89,7 @@ pub mod triggers;
 mod unit;
 #[cfg(test)]
 mod upstream_tests;
+pub mod view;
 pub mod world;
 
 pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
@@ -96,6 +100,7 @@ pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use setup::GameSetup;
+pub use view::{Comrades, Leaks, MapSquare, View};
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with

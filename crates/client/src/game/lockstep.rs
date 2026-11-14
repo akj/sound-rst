@@ -63,7 +63,7 @@ impl GameInterface {
                 continue;
             };
             // As the original: a player out of the game gets no order.
-            if !self.host.world_until_view().players.contains(&p) {
+            if !self.view().players().contains(&p) {
                 continue;
             }
             for order in so.orders.as_slice() {
@@ -76,7 +76,7 @@ impl GameInterface {
         }
         self.next_update = now + interval / (1 + backlog) as f64;
         self.run_turn(cx);
-        let digest = self.host.world_until_view().digest_u64();
+        let digest = self.host.digest();
         if let Some(driver) = &mut self.net {
             driver.record.turns.push(RecordedTurn {
                 turn,
@@ -90,13 +90,12 @@ impl GameInterface {
     /// Sends the commands given since the last call as orders, as many as
     /// the server takes for one turn; the others wait.
     fn send_pending(&mut self, cx: &mut Client) {
-        let world = self.host.world_until_view();
         // Every pending command has a line: `send_command` keeps no other
         // in a game on a server.
         let mut lines: Vec<String> = self
             .pending_commands
             .iter()
-            .filter_map(|c| c.line(world))
+            .filter_map(|c| self.host.line(c))
             .collect();
         let before = lines.len();
         crate::net::send_orders(cx, &mut lines);

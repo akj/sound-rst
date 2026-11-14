@@ -72,31 +72,15 @@ pub fn wrapped_coords(
 impl GameInterface {
     /// The last column and row.
     pub fn grid_max(&self) -> (i64, i64) {
-        let xcmax = self
-            .host
-            .world_until_view()
-            .squares
-            .iter()
-            .map(|s| s.col)
-            .max()
-            .unwrap_or(0);
-        let ycmax = self
-            .host
-            .world_until_view()
-            .squares
-            .iter()
-            .map(|s| s.row)
-            .max()
-            .unwrap_or(0);
-        (xcmax, ycmax)
+        self.view().grid_max()
     }
 
     /// The column and row of a square, or (-1, -1).
     pub fn coords_in_map(&self, square: Option<SquareId>) -> (i64, i64) {
         match square {
             Some(s) => {
-                let s = self.host.world_until_view().square(s);
-                (s.col, s.row)
+                let s = self.view().square(s);
+                (s.col(), s.row())
             }
             None => (-1, -1),
         }
@@ -104,8 +88,7 @@ impl GameInterface {
 
     pub(crate) fn compute_move(&self, dxc: i64, dyc: i64) -> R<SquareId> {
         let (xc, yc) = wrapped_coords(self.coords_in_map(self.place), (dxc, dyc), self.grid_max());
-        self.host
-            .world_until_view()
+        self.view()
             .square_at(xc, yc)
             .ok_or_else(|| Oops::missing(format!("({xc}, {yc})")))
     }
@@ -129,17 +112,23 @@ impl GameInterface {
         cx.audio.stop(false);
     }
 
-    fn square_terrain(&self, cx: &Client, place: SquareId) -> Msg {
+    /// The terrain of a square observed now, or in the fog.
+    fn square_terrain(&self, cx: &Client, place: SquareId, in_fog: bool) -> Msg {
         let mut result = Vec::new();
-        let sq = self.host.world_until_view().square(place);
-        if !sq.type_name.is_empty() {
-            let title = style_msg(cx.res.style(), &sq.type_name, "title");
+        let view = self.view();
+        let terrain = if in_fog {
+            view.leaks().unobserved_terrain(place)
+        } else {
+            view.terrain(place)
+        };
+        if !terrain.is_empty() {
+            let title = style_msg(cx.res.style(), terrain, "title");
             if !title.is_empty() {
                 result.extend(msg(mp::COMMA));
                 result.extend(title);
             }
         }
-        if sq.high_ground {
+        if view.square(place).high_ground() {
             result.extend(msg(mp::COMMA));
             result.extend(msg(mp::PLATEAU));
         }
@@ -150,9 +139,9 @@ impl GameInterface {
     pub fn square_postfix(&self, cx: &Client, place: SquareId) -> Msg {
         let mut postfix = Vec::new();
         if self.scouted_squares.contains(&place) {
-            postfix.extend(self.square_terrain(cx, place));
+            postfix.extend(self.square_terrain(cx, place, false));
         } else if self.scouted_before_squares.contains(&place) {
-            postfix.extend(self.square_terrain(cx, place));
+            postfix.extend(self.square_terrain(cx, place, true));
             postfix.extend(msg(mp::COMMA));
             postfix.extend(msg(mp::IN_THE_FOG));
         } else {
@@ -176,7 +165,7 @@ impl GameInterface {
         let mut allies = Vec::new();
         let mut units = Vec::new();
         let mut resources = Vec::new();
-        let allied = &self.host.world_until_view().player(self.me).allied;
+        let view = self.view();
         for v in self.dobjets.values() {
             if !self.is_in(v, place) {
                 continue;
@@ -192,7 +181,7 @@ impl GameInterface {
                 enemies.push(t.clone());
             }
             if let Some(p) = v.player() {
-                if allied.contains(&p) && p != self.me {
+                if view.is_ally(p) && p != self.me {
                     allies.push(t.clone());
                 }
                 if p == self.me {
@@ -230,7 +219,7 @@ impl GameInterface {
         let Some(p) = place else { return };
         let m = [
             prefix.clone(),
-            self.host.world_until_view().square(p).title.clone(),
+            self.view().square(p).title().clone(),
             self.square_postfix(cx, p),
             self.place_summary(cx, Some(p), true, None, false),
         ]
@@ -246,7 +235,7 @@ impl GameInterface {
         };
         let m = [
             prefix.clone(),
-            z.title(self.host.world_until_view().square(p)),
+            z.title(self.view().square(p)),
             self.square_postfix(cx, p),
             self.place_summary(cx, Some(p), true, Some(z), false),
         ]
@@ -273,9 +262,10 @@ impl GameInterface {
             self.dobjets
                 .get(x)
                 .is_some_and(|v| v.model.airground_type == AirGround::Air)
-        }) || self.order.as_ref().is_some_and(|o| {
-            o.nb_args != 0 && o.target_shouldnt_collide(self.host.world_until_view())
-        })
+        }) || self
+            .order
+            .as_ref()
+            .is_some_and(|o| o.nb_args != 0 && o.target_shouldnt_collide(self.view()))
     }
 
     /// Whether the player may see the object now: in the zoom, on the
@@ -297,7 +287,7 @@ impl GameInterface {
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
             return Ok(a.cos() > 95f64.to_radians().cos());
         }
-        if self.is_an_exit(cx, v) && self.exit_is_blocked(v.id(), None) {
+        if self.is_an_exit(cx, v) && self.view().leaks().exit_is_blocked(v.id(), false) {
             return Ok(false);
         }
         Ok(true)
@@ -319,12 +309,9 @@ impl GameInterface {
         if new_square == place {
             return Ok((no_path, true));
         }
-        let (p, n) = (
-            self.host.world_until_view().square(place),
-            self.host.world_until_view().square(new_square),
-        );
+        let (p, n) = (self.view().square(place), self.view().square(new_square));
         if !self.scouted_before_squares.contains(&place)
-            || (p.is_water || n.is_water) && p.height() == n.height()
+            || (p.is_water() || n.is_water()) && p.high_ground() == n.high_ground()
             || self.shouldnt_collide()
         {
             return Ok((Vec::new(), false));
@@ -336,7 +323,7 @@ impl GameInterface {
             if !(self.is_in(v, Some(place))
                 && self.is_visible(cx, v)?
                 && self.is_an_exit(cx, v)
-                && !self.exit_is_blocked(v.id(), Some(self.me)))
+                && !self.view().leaks().exit_is_blocked(v.id(), true))
             {
                 continue;
             }
@@ -432,7 +419,7 @@ impl GameInterface {
             None => Ok(()),
         };
         if let Some(p) = self.place {
-            z.update_coords(self.host.world_until_view().square(p));
+            z.update_coords(self.view().square(p));
         }
         self.zoom = Some(z);
         r?;
@@ -461,17 +448,13 @@ impl GameInterface {
         {
             squares.push(p);
         }
-        if let Some(&u) = self.host.world_until_view().player(self.me).units.first()
-            && let Some(u) = self.host.world_until_view().entity(u)
-        {
+        let view = self.view();
+        if let Some(u) = view.own_units().next() {
             let (ux, uy) = (u.x as f64, u.y as f64);
             squares.sort_by(|a, b| {
-                let (a, b) = (
-                    self.host.world_until_view().square(*a),
-                    self.host.world_until_view().square(*b),
-                );
-                distance(a.x as f64, a.y as f64, ux, uy)
-                    .total_cmp(&distance(b.x as f64, b.y as f64, ux, uy))
+                let (a, b) = (view.square(*a).center(), view.square(*b).center());
+                distance(a.0 as f64, a.1 as f64, ux, uy)
+                    .total_cmp(&distance(b.0 as f64, b.1 as f64, ux, uy))
             });
         }
         let len = squares.len() as i64;
@@ -502,14 +485,7 @@ impl GameInterface {
     pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) -> R {
         let mut squares: Vec<Option<Place>> = Vec::new();
         for v in self.dobjets.values() {
-            let enemy = v.player().is_some_and(|p| {
-                !self
-                    .host
-                    .world_until_view()
-                    .player(p)
-                    .allied
-                    .contains(&self.me)
-            });
+            let enemy = v.player().is_some_and(|p| !self.view().allied(p, self.me));
             if enemy && !squares.contains(&v.place()) {
                 squares.push(v.place());
             }
@@ -519,7 +495,7 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) -> R {
-        let squares = (0..self.host.world_until_view().squares.len() as u32)
+        let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
             .filter(|s| !self.scouted_before_squares.contains(s))
             .collect();
@@ -540,7 +516,7 @@ impl GameInterface {
     pub(crate) fn cmd_toggle_zoom(&mut self, cx: &mut Client) {
         let Some(p) = self.place else { return };
         if self.zoom.is_none() {
-            self.zoom = Some(Zoom::new(self.host.world_until_view().square(p)));
+            self.zoom = Some(Zoom::new(self.view().square(p)));
             self.target = None;
             let prefix = [msg(mp::ZOOM), msg(mp::IS_NOW_ON), msg(mp::COMMA)].concat();
             self.say_zoom(cx, &prefix);
@@ -584,7 +560,7 @@ impl GameInterface {
                     .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'xmin'"))?;
                 self.place = Some(s);
                 let mut z = z.clone();
-                let found = z.move_to(self.host.world_until_view().square(s), hx, hy);
+                let found = z.move_to(self.view().square(s), hx, hy);
                 self.zoom = Some(z);
                 if found {
                     self.set_obs_pos(cx)?;
@@ -602,7 +578,7 @@ impl GameInterface {
             if !cx.voice.is_busy()
                 && let Some(p) = self.place
             {
-                let t = self.host.world_until_view().square(p).title.clone();
+                let t = self.view().square(p).title().clone();
                 cx.voice.item(&t);
             }
             if self.immersion {
@@ -659,14 +635,7 @@ impl GameInterface {
         let Some(p) = self.place else { return };
         let mut squares = vec![p];
         if cx.params.flag_or("render_nearby_land", false) {
-            squares.extend(
-                self.host
-                    .world_until_view()
-                    .square(p)
-                    .neighbors
-                    .iter()
-                    .copied(),
-            );
+            squares.extend(self.view().square(p).neighbors().iter().copied());
         }
         squares.retain(|s| {
             self.scouted_squares.contains(s) || self.scouted_before_squares.contains(s)
@@ -683,12 +652,12 @@ impl GameInterface {
             if !squares.contains(&s) {
                 n.stop(&cx.audio);
             } else {
-                let sq = self.host.world_until_view().square(s);
+                let (x, y) = self.view().square(s).center();
                 n.update(
                     &player,
                     NoiseSite {
-                        x: sq.x as f64 / 1000.0,
-                        y: sq.y as f64 / 1000.0,
+                        x: x as f64 / 1000.0,
+                        y: y as f64 / 1000.0,
                         fow: !self.scouted_squares.contains(&s),
                     },
                 );
@@ -699,7 +668,12 @@ impl GameInterface {
             if kept.iter().any(|(k, _)| *k == s) {
                 continue;
             }
-            let t = &self.host.world_until_view().square(s).type_name;
+            let view = self.view();
+            let t = if self.scouted_squares.contains(&s) {
+                view.terrain(s)
+            } else {
+                view.leaks().unobserved_terrain(s)
+            };
             if t.is_empty() {
                 continue;
             }
