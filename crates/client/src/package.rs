@@ -45,11 +45,17 @@ struct ZipData {
     depth: u32,
 }
 
-/// The number of entries the central directory of a zip file states, read
-/// before an index of them is built. Entries that share a name count each.
-fn entry_count(bytes: &[u8]) -> zip::result::ZipResult<usize> {
-    let zip = zip::unstable::read::ZipIterable::try_new(Cursor::new(bytes), Default::default())?;
-    Ok(zip.len())
+/// Whether a zip file can have more than [`MAX_ENTRIES`] entries, counted
+/// before an index of them is built. Each entry of a central directory
+/// starts with its signature, so the signatures anywhere in the file are at
+/// least the entries of whichever directory is read, those that share a
+/// name included.
+fn too_many_entries(bytes: &[u8]) -> bool {
+    bytes
+        .windows(4)
+        .filter(|w| w == b"PK\x01\x02")
+        .nth(MAX_ENTRIES)
+        .is_some()
 }
 
 fn too_large(what: &str, limit: u64) -> std::io::Error {
@@ -82,7 +88,7 @@ impl ZipData {
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_PACKAGE_BYTES {
             return Err(too_large(&filename, MAX_PACKAGE_BYTES));
         }
-        if entry_count(&bytes).map_err(std::io::Error::other)? > MAX_ENTRIES {
+        if too_many_entries(&bytes) {
             return Err(std::io::Error::other(format!(
                 "{filename} has more than {MAX_ENTRIES} entries"
             )));
@@ -539,7 +545,7 @@ fn check_zip(
     if depth > MAX_ZIP_DEPTH {
         return Err("zip files nested too deep".into());
     }
-    if entry_count(bytes).map_err(|e| e.to_string())? > MAX_ENTRIES {
+    if too_many_entries(bytes) {
         return Err(format!("more than {MAX_ENTRIES} entries"));
     }
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
@@ -832,6 +838,15 @@ mod tests {
         }
         let archive = ZipArchive::new(Cursor::new(z.clone())).unwrap();
         assert!(archive.len() < 10);
+        assert!(Package::from_zip_bytes("same.zip".into(), z.clone()).is_err());
+        assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
+        // The same, followed by an end record of one entry that points at
+        // nothing valid, so that readers may disagree on the directory.
+        let end = z.windows(4).rposition(|w| w == b"PK\x05\x06").unwrap();
+        let mut trailing = z[end..end + 22].to_vec();
+        trailing[8..10].copy_from_slice(&1_u16.to_le_bytes());
+        trailing[10..12].copy_from_slice(&1_u16.to_le_bytes());
+        z.extend(trailing);
         assert!(Package::from_zip_bytes("same.zip".into(), z.clone()).is_err());
         assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
     }
