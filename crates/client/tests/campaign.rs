@@ -1,7 +1,7 @@
 //! The first campaign through the real menus: the prologue cut scene, then
-//! chapter 1 won with console cheats, and the bookmark moving on. This
-//! checks what the client sends to its voice, not what a screen reader
-//! says.
+//! chapter 1 won with console cheats, and the bookmark moving on; and a
+//! mission's resources unloaded after it. This checks what the client
+//! sends to its voice, not what a screen reader says.
 
 mod common;
 
@@ -117,4 +117,52 @@ fn the_prologue_then_chapter_one_won_with_cheats_moves_the_bookmark() {
         "[campaign]\nchapter = 2\n\n"
     );
     assert_eq!(h.log_text(), "", "nothing logged");
+}
+
+#[test]
+fn a_mission_packages_resources_are_unloaded_when_it_ends() {
+    use std::io::Write;
+    // A campaign whose only chapter is a map package (chapter 1 of the
+    // first campaign): its resources are a layer while it is played.
+    let dir = tempfile::tempdir().unwrap();
+    let campaign = dir.path().join("packaged");
+    std::fs::create_dir(&campaign).unwrap();
+    let mut w = zip::ZipWriter::new(std::fs::File::create(campaign.join("0.zip")).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    w.start_file("map.txt", options).unwrap();
+    let map = soundrts::testkit::upstream_root().join("single/campaign/1.txt");
+    w.write_all(&std::fs::read(map).unwrap()).unwrap();
+    w.finish().unwrap();
+    let package = soundrts::package::Package::from_path(&campaign).unwrap();
+    let campaign = std::rc::Rc::new(soundrts::campaign::Campaign::new(package, "packaged"));
+    // The game menu, "cancel game", then "quit" after the defeat.
+    let script = Script::new()
+        .keep_open()
+        .deadline(2000.0)
+        .at(100.0)
+        .tap(Key::F10)
+        .at(105.0)
+        .tap(Key::Down)
+        .at(110.0)
+        .tap(Key::Return)
+        .at(300.0)
+        .tap(Key::Escape);
+    let mut h = Harness::new("en", script);
+    h.client.res.set_campaign(Some(&campaign));
+    assert_eq!(
+        soundrts::campaign::run_chapter(&mut h.client, &campaign, 0),
+        Ok(())
+    );
+    assert!(
+        h.said_since(0).contains(&"Quit".to_owned()),
+        "the mission ended"
+    );
+    let layers: Vec<&str> = h
+        .client
+        .res
+        .layers()
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(layers, ["default", "packaged"]);
 }

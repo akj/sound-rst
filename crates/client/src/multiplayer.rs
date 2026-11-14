@@ -26,7 +26,7 @@ use crate::mainmenu::modify_login;
 use crate::mapfile::{Map, title_of};
 use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, string_to_msg};
 use crate::net::conn::{self, ConnectError, Connection};
-use crate::net::lobby::{computer_name, player_name};
+use crate::net::lobby::{MapState, computer_name, player_name};
 use crate::net::servers::{self, ListedServer};
 use crate::net::words::{self, text};
 use crate::net::{self, Net, discovery};
@@ -370,7 +370,6 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
             n.closed.is_some() || n.room.is_some() || n.started.is_some()
         };
         let left = run_live(cx, &build, &stop)?;
-        net_mut(cx).interrupt = false;
         if closed(cx) {
             cx.voice.alert(&msg(mp::CONNECTION_INTERRUPTED));
             return Ok(());
@@ -386,7 +385,6 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
             return Ok(());
         }
         say_title = !room(cx)?;
-        net_mut(cx).interrupt = false;
         if closed(cx) {
             cx.voice.alert(&msg(mp::CONNECTION_INTERRUPTED));
             return Ok(());
@@ -549,7 +547,6 @@ fn room(cx: &mut Client) -> Result<bool, Exit> {
         n.closed.is_some() || n.room.is_none() || n.started.is_some()
     };
     let left = run_live(cx, &build, &stop)?;
-    net_mut(cx).interrupt = false;
     // A game that starts wins over a leave the server has not heard of.
     net::pump(cx);
     if left && net_ref(cx).started.is_none() {
@@ -713,19 +710,18 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                 slot.faction.as_str(),
                 factions,
             ));
-            if room.map().is_none() {
-                choices.push(Choice::new(msg(words::DOWNLOADING), Action::Nothing));
-            } else if slot.ready {
-                choices.push(Choice::new(
+            choices.push(match room.map {
+                MapState::Downloading => Choice::new(msg(words::DOWNLOADING), Action::Nothing),
+                MapState::Refused => Choice::new(text(words::GAME_CANNOT_START), Action::Nothing),
+                MapState::Ready(_) if slot.ready => Choice::new(
                     text(words::I_AM_NOT_READY),
                     send_action(ClientMsg::SetReady { ready: false }),
-                ));
-            } else {
-                choices.push(Choice::new(
+                ),
+                MapState::Ready(_) => Choice::new(
                     text(words::I_AM_READY),
                     send_action(ClientMsg::SetReady { ready: true }),
-                ));
-            }
+                ),
+            });
         }
     }
     choices.push(Choice::new(
@@ -767,7 +763,6 @@ fn play(cx: &mut Client, start: net::GameStart) -> Result<(), Exit> {
             Ok(())
         }
     };
-    cx.res.set_map(None);
     let n = net_mut(cx);
     n.room = None;
     n.game = None;
