@@ -13,10 +13,10 @@ Use headphones. Answers are saved in listening-room-results.txt.
 
 Options:
   --root <folder>        The game's data folder, as for the game.
-  --step <n>             Run only step n, from 1 to 6.
-  --renderers <names>    Renderers to compare, separated by commas:
-                         current, stereo-plus, binaural. All by default.
-  --sofa <file>          A head model (SOFA file) for the binaural renderer.
+  --step <n>             Run only step n, from 1 to 7.
+  --renderers <names>    Renderers to compare, separated by commas: current,
+                         stereo-plus, binaural, binaural-plus. All by default.
+  --sofa <file>          A head model (SOFA file) for the binaural renderers.
   --render-to <folder>   Write each sound to a WAV file there and play nothing.
                          The answers file goes there too.
   --seed <n>             Repeat the random order of an earlier session.
@@ -71,11 +71,11 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Option<Options>, Stri
             }
         }
     }
-    if opts.sofa.is_some() && !opts.kinds.contains(&Kind::Binaural) {
+    if opts.sofa.is_some() && !opts.kinds.iter().any(|k| k.is_binaural()) {
         return Err(if Kind::Binaural.is_built() {
-            "--sofa is for the binaural renderer, which is not chosen.".to_owned()
+            "--sofa is for the binaural renderers, and neither is chosen.".to_owned()
         } else {
-            "--sofa is for the binaural renderer, which this build does not have. Build with --features binaural.".to_owned()
+            "--sofa is for the binaural renderers, which this build does not have. Build with --features binaural.".to_owned()
         });
     }
     Ok(Some(opts))

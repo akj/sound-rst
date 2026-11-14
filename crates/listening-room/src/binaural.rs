@@ -1,8 +1,11 @@
-//! The binaural renderer, on Steam Audio: each source goes through a
+//! The binaural renderers, on Steam Audio: each source goes through a
 //! direct effect (distance, air absorption, closed exits) and then a
-//! binaural effect (the head model). The place's echo is Steam Audio's
-//! parametric reverb, with decay times from the scene. Nothing is
-//! simulated: every value comes from the scene, and there is no geometry.
+//! binaural effect (the head model). Nothing is simulated: every value
+//! comes from the scene, and there is no geometry.
+//!
+//! [`Binaural::plus`] doubles the head model's front-behind cue with plain
+//! ones before the direct effect: a sound behind is duller, with the same
+//! filter as `stereo-plus`, and a little quieter.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,24 +14,27 @@ use audionimbus::{
     AirAbsorptionModel, AudioBufferMut, AudioBufferRef, AudioSettings, BinauralEffect,
     BinauralEffectParams, BinauralEffectSettings, Context, ContextSettings, DirectEffect,
     DirectEffectParams, DirectEffectSettings, DistanceAttenuationModel, Equalizer, Hrtf,
-    HrtfInterpolation, HrtfSettings, Parametric, ReflectionEffect, ReflectionEffectParams,
-    ReflectionEffectSettings, Sofa, Transmission, Vector3, air_absorption, distance_attenuation,
+    HrtfInterpolation, HrtfSettings, Sofa, Transmission, Vector3, air_absorption,
+    distance_attenuation,
 };
 
-use crate::render::{BLOCK, Renderer, block_of};
+use crate::render::{BEHIND_CUTOFF, BLOCK, LowPass, Renderer, block_of, lerp};
 use crate::scene::{RATE, Scene};
 
 /// How much of a closed exit's sound gets through, in Steam Audio's low,
 /// middle and high bands.
 const BLOCKED_TRANSMISSION: [f32; 3] = [0.7, 0.3, 0.1];
-/// How loud the place's reverb is against the direct sound.
-const REVERB_WET: f32 = 1.5;
-/// The longest reverb the effect is made for, in samples.
-const REVERB_LENGTH: u32 = 4 * RATE;
+/// With plain cues, a sound straight behind plays at this fraction of its
+/// volume (about 3 dB down).
+const BEHIND_GAIN: f32 = 0.7;
 
 struct Voice {
     direct: DirectEffect,
     binaural: BinauralEffect,
+    /// With plain cues: 0 beside or in front, 1 straight behind, as of the
+    /// last block.
+    behind: f32,
+    behind_filter: LowPass,
 }
 
 pub struct Binaural {
@@ -36,10 +42,8 @@ pub struct Binaural {
     settings: AudioSettings,
     hrtf: Hrtf,
     voices: HashMap<u32, Voice>,
-    reverb: ReflectionEffect<Parametric>,
-    /// The decay times the reverb runs with; kept after the listener
-    /// leaves a place, so its echo dies away as it would.
-    reverb_times: Option<[f32; 3]>,
+    /// Whether a sound behind is also duller and quieter.
+    plain_cues: bool,
 }
 
 fn steam(e: impl std::fmt::Display) -> String {
@@ -47,9 +51,18 @@ fn steam(e: impl std::fmt::Display) -> String {
 }
 
 impl Binaural {
-    /// Starts Steam Audio with its default head model, or the one in the
-    /// SOFA file `sofa`.
+    /// The head model alone: Steam Audio's default, or the one in the SOFA
+    /// file `sofa`.
     pub fn new(sofa: Option<&Path>) -> Result<Binaural, String> {
+        Binaural::with(sofa, false)
+    }
+
+    /// The head model, with a sound behind also duller and quieter.
+    pub fn plus(sofa: Option<&Path>) -> Result<Binaural, String> {
+        Binaural::with(sofa, true)
+    }
+
+    fn with(sofa: Option<&Path>, plain_cues: bool) -> Result<Binaural, String> {
         let context = Context::try_new(&ContextSettings::default()).map_err(steam)?;
         let settings = AudioSettings {
             sampling_rate: RATE,
@@ -63,26 +76,16 @@ impl Binaural {
             Some(p) => format!("Steam Audio cannot use the head model {}: {e}", p.display()),
             None => steam(e),
         })?;
-        let reverb = ReflectionEffect::<Parametric>::try_new(
-            &context,
-            &settings,
-            &ReflectionEffectSettings {
-                impulse_response_size: REVERB_LENGTH,
-                num_channels: 1,
-            },
-        )
-        .map_err(steam)?;
         Ok(Binaural {
             context,
             settings,
             hrtf,
             voices: HashMap::new(),
-            reverb,
-            reverb_times: None,
+            plain_cues,
         })
     }
 
-    fn voice(&mut self, id: u32) -> &mut Voice {
+    fn voice(&mut self, id: u32, behind: f32) -> &mut Voice {
         let (context, settings, hrtf) = (&self.context, &self.settings, &self.hrtf);
         self.voices.entry(id).or_insert_with(|| Voice {
             direct: DirectEffect::try_new(
@@ -97,6 +100,8 @@ impl Binaural {
                 &BinauralEffectSettings { hrtf: hrtf.clone() },
             )
             .expect("a binaural effect"),
+            behind,
+            behind_filter: LowPass::new(BEHIND_CUTOFF),
         })
     }
 }
@@ -106,7 +111,6 @@ impl Renderer for Binaural {
         self.voices
             .retain(|id, _| scene.sources.iter().any(|s| s.id == *id));
         let origin = Vector3::new(0.0, 0.0, 0.0);
-        let mut reverb_in = [0.0f32; BLOCK];
         for s in &scene.sources {
             // Steam Audio's listener space: x right, y up, z behind.
             let (right, ahead, up) = scene.listener.relative(s.position);
@@ -138,14 +142,24 @@ impl Renderer for Binaural {
                         BLOCKED_TRANSMISSION,
                     ))),
             };
+            let behind = direction.z.max(0.0);
+            let plain_cues = self.plain_cues;
+            let hrtf = self.hrtf.clone();
+            let voice = self.voice(s.id, behind);
             let mut input = block_of(&s.sound, start);
-            for x in &mut input {
+            for (i, x) in input.iter_mut().enumerate() {
                 *x *= s.loudness as f32;
+                if plain_cues {
+                    // Spread over the block, as stereo-plus does, so a
+                    // moving source cannot click.
+                    let w = lerp(voice.behind, behind, (i + 1) as f32 / BLOCK as f32);
+                    *x += w * (voice.behind_filter.process(*x) - *x);
+                    *x *= 1.0 - w * (1.0 - BEHIND_GAIN);
+                }
             }
+            voice.behind = behind;
             let mut direct = [0.0f32; BLOCK];
             let mut ears = [0.0f32; 2 * BLOCK];
-            let hrtf = self.hrtf.clone();
-            let voice = self.voice(s.id);
             voice
                 .direct
                 .apply(
@@ -171,29 +185,6 @@ impl Renderer for Binaural {
             for (i, frame) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                 frame[0] += ears[i];
                 frame[1] += ears[BLOCK + i];
-            }
-            for (r, d) in reverb_in.iter_mut().zip(direct) {
-                *r += d;
-            }
-        }
-        let feeding = scene.place.decay_times();
-        if feeding.is_some() {
-            self.reverb_times = feeding;
-        } else {
-            reverb_in = [0.0; BLOCK];
-        }
-        if let Some(times) = self.reverb_times {
-            let mut wet = [0.0f32; 2 * BLOCK];
-            self.reverb
-                .apply(
-                    &ReflectionEffectParams::<Parametric>::new(times, 1, REVERB_LENGTH),
-                    &AudioBufferRef::try_from(&reverb_in[..]).expect("a mono block"),
-                    &mut AudioBufferMut::try_new(&mut wet[..], 2).expect("a stereo block"),
-                )
-                .expect("the parametric reverb takes one channel in");
-            for (i, frame) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
-                frame[0] += REVERB_WET * wet[i];
-                frame[1] += REVERB_WET * wet[BLOCK + i];
             }
         }
     }

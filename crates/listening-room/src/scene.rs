@@ -64,48 +64,11 @@ pub struct Source {
     pub blocked: bool,
 }
 
-/// The terrain the listener stands in, which a renderer may give an echo.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Place {
-    /// No echo at all.
-    #[default]
-    Dry,
-    Meadow,
-    Forest,
-    MountainPass,
-    Town,
-}
-
-impl Place {
-    pub fn name(self) -> &'static str {
-        match self {
-            Place::Dry => "no echo",
-            Place::Meadow => "an open meadow",
-            Place::Forest => "a forest",
-            Place::MountainPass => "a mountain pass",
-            Place::Town => "inside a town",
-        }
-    }
-
-    /// How long the place's echo takes to die away by 60 dB, in seconds,
-    /// in a low, a middle and a high band. `None` for [`Place::Dry`].
-    pub fn decay_times(self) -> Option<[f32; 3]> {
-        match self {
-            Place::Dry => None,
-            Place::Meadow => Some([0.4, 0.3, 0.2]),
-            Place::Forest => Some([1.0, 0.8, 0.4]),
-            Place::MountainPass => Some([3.0, 2.5, 1.5]),
-            Place::Town => Some([1.4, 1.2, 0.8]),
-        }
-    }
-}
-
 /// Everything that sounds at one moment.
 #[derive(Clone, Debug)]
 pub struct Scene {
     pub listener: Listener,
     pub sources: Vec<Source>,
-    pub place: Place,
 }
 
 #[cfg(test)]

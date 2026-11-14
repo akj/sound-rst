@@ -63,7 +63,7 @@ fn the_front_or_behind_step_keeps_score() {
     let mut answers = Vec::new();
     for _ in 0..2 {
         answers.push("");
-        answers.extend(["f"; 8]);
+        answers.extend(["f"; 4]);
     }
     answers.push("");
     let stdout = run(
@@ -81,11 +81,11 @@ fn the_front_or_behind_step_keeps_score() {
         ],
         &answers,
     );
-    assert!(stdout.contains("Step 2 of 6: in front or behind."));
+    assert!(stdout.contains("Step 2 of 7: in front or behind."));
     assert!(stdout.contains("Sounds: the game's own, from"));
     // Half the trials are in front, so answering "in front" every time
-    // scores 4 of 8 for each version.
-    assert_eq!(stdout.matches(": 4 of 8 right.").count(), 2, "{stdout}");
+    // scores 2 of 4 for each version.
+    assert_eq!(stdout.matches(": 2 of 4 right.").count(), 2, "{stdout}");
     assert!(
         stdout.contains("Version 1 was current, version 2 was stereo-plus.")
             || stdout.contains("Version 1 was stereo-plus, version 2 was current."),
@@ -93,7 +93,7 @@ fn the_front_or_behind_step_keeps_score() {
     );
 
     let files = wav_files(dir.path());
-    assert_eq!(files.len(), 16, "{files:?}");
+    assert_eq!(files.len(), 8, "{files:?}");
     for kind in ["current", "stereo-plus"] {
         let front = files
             .iter()
@@ -102,7 +102,7 @@ fn the_front_or_behind_step_keeps_score() {
                     && f.ends_with("-front.wav")
             })
             .count();
-        assert_eq!(front, 4, "{kind}: {files:?}");
+        assert_eq!(front, 2, "{kind}: {files:?}");
     }
     let wav = std::fs::read(dir.path().join(&files[0])).unwrap();
     assert_eq!(&wav[..4], b"RIFF");
@@ -111,11 +111,28 @@ fn the_front_or_behind_step_keeps_score() {
     let results = std::fs::read_to_string(dir.path().join("listening-room-results.txt")).unwrap();
     assert!(results.contains("Seed: 7."), "{results}");
     assert!(
-        results.contains("  current: 4 of 8 right (in front 4 of 4, behind 0 of 4)"),
+        results.contains("  current: 2 of 4 right (in front 2 of 2, behind 0 of 2)"),
+        "{results}"
+    );
+    // Each trial is recorded: what it was, and what was answered.
+    for kind in ["current", "stereo-plus"] {
+        for t in 1..=4 {
+            let trial = format!("  {kind}, trial {t}: ");
+            assert_eq!(results.matches(&trial).count(), 1, "{trial} in:\n{results}");
+        }
+    }
+    assert_eq!(
+        results.matches(": in front, answered in front\n").count(),
+        4,
+        "{results}"
+    );
+    assert_eq!(
+        results.matches(": behind, answered in front\n").count(),
+        4,
         "{results}"
     );
     assert!(
-        results.contains("current: in front or behind, 4 of 8 right."),
+        results.contains("current: in front or behind: footsteps 2 of 4 right."),
         "{results}"
     );
 }
@@ -128,18 +145,19 @@ fn the_whole_script_runs_and_writes_the_answers() {
     let mut answers: Vec<&str> = Vec::new();
     // Step 1: a bad answer, a replay, then a rating; a comment.
     answers.extend(["", "7", "r", "3", "", "3", "Smooth enough"]);
-    // Step 2: "behind" every time.
-    for _ in 0..2 {
+    // Step 2: "behind" every time. Step 3 is for the binaural renderers
+    // only, so it asks nothing. Step 4: "in front" every time.
+    for answer in ["b", "f"] {
+        for _ in 0..2 {
+            answers.push("");
+            answers.extend([answer; 4]);
+        }
         answers.push("");
-        answers.extend(["b"; 8]);
     }
-    answers.push("");
-    // Steps 3 and 4.
+    // Steps 5, 6 and 7.
     answers.extend(["", "4", "", "4", ""]);
     answers.extend(["", "5", "", "5", ""]);
-    // Steps 5 and 6.
     answers.extend(["", "2", "", "2", ""]);
-    answers.extend(["", "1", "", "1", ""]);
     let stdout = run(
         &[
             "--root",
@@ -152,35 +170,45 @@ fn the_whole_script_runs_and_writes_the_answers() {
         &answers,
     );
     assert!(stdout.contains("Please type a number from 1 to 5, or r."));
-    assert!(stdout.contains("The game today has no echo"));
+    assert!(stdout.contains(
+        "Step 3 of 7: in front or behind, with a bright sound. This step is only for the binaural and binaural-plus renderers, and none of them is chosen, so it is skipped."
+    ));
+    assert!(stdout.contains("The game today cannot muffle a sound"));
     assert!(stdout.contains("That is the end of the script."));
-    assert!(stdout.contains(
-        "current: average rating 3.0 out of 5 over 5 steps; in front or behind, 4 of 8 right."
-    ));
-    assert!(stdout.contains(
-        "stereo-plus: average rating 3.0 out of 5 over 5 steps; in front or behind, 4 of 8 right."
-    ));
+    for kind in ["current", "stereo-plus"] {
+        let summary = format!(
+            "{kind}: average rating 3.5 out of 5 over 4 steps; in front or behind: footsteps 2 of 4 right, walking past 2 of 4 right."
+        );
+        assert!(stdout.contains(&summary), "{summary} in:\n{stdout}");
+    }
 
     let files = wav_files(dir.path());
     for name in [
         "step1-circling-current.wav",
         "step1-circling-stereo-plus.wav",
-        "step3-overhead-current.wav",
-        "step4-receding-stereo-plus.wav",
-        "step5-neighbour-stereo-plus.wav",
-        "step6-terrain-stereo-plus.wav",
+        "step5-overhead-current.wav",
+        "step6-receding-stereo-plus.wav",
+        "step7-neighbour-stereo-plus.wav",
     ] {
         assert!(files.iter().any(|f| f == name), "{name} in {files:?}");
     }
-    assert!(files.iter().any(|f| f == "step6-terrain-current.wav"));
+    let walking = files
+        .iter()
+        .filter(|f| f.starts_with("step4-walking-past-"))
+        .count();
+    assert_eq!(walking, 8, "{files:?}");
+    assert!(!files.iter().any(|f| f.starts_with("step3-")), "{files:?}");
 
     let results = std::fs::read_to_string(dir.path().join("listening-room-results.txt")).unwrap();
+    assert!(!results.contains("Step 3"), "{results}");
     for line in [
         "Step 1: a footstep circling you",
         "  current: 3 out of 5",
         "  Comment: Smooth enough",
-        "Step 6: the echo of the place",
-        "  stereo-plus: 1 out of 5",
+        "Step 4: footsteps walking past, in front or behind",
+        "  stereo-plus: 2 of 4 right (in front 2 of 2, behind 0 of 2)",
+        "Step 7: a neighbour through an open exit and a closed one",
+        "  stereo-plus: 2 out of 5",
         "Summary",
     ] {
         assert!(results.contains(line), "{line} in:\n{results}");
@@ -257,6 +285,49 @@ fn a_head_model_needs_the_binaural_build() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("Build with --features binaural."));
+}
+
+#[cfg(feature = "binaural")]
+#[test]
+fn the_bright_sound_step_compares_the_two_binaural_renderers() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = game_root();
+    let mut answers = Vec::new();
+    for _ in 0..2 {
+        answers.push("");
+        answers.extend(["b"; 4]);
+    }
+    answers.push("");
+    let stdout = run(
+        &[
+            "--root",
+            root.to_str().unwrap(),
+            "--render-to",
+            dir.path().to_str().unwrap(),
+            "--step",
+            "3",
+            "--seed",
+            "7",
+        ],
+        &answers,
+    );
+    assert!(stdout.contains("Step 3 of 7: in front or behind, with a bright sound."));
+    assert!(
+        stdout.contains("You hear 2 versions, one for each renderer"),
+        "{stdout}"
+    );
+    let files = wav_files(dir.path());
+    assert_eq!(files.len(), 8, "{files:?}");
+    for kind in ["binaural", "binaural-plus"] {
+        let prefix = format!("step3-front-or-behind-bright-{kind}-trial");
+        let count = files.iter().filter(|f| f.starts_with(&prefix)).count();
+        assert_eq!(count, 4, "{kind}: {files:?}");
+    }
+    let results = std::fs::read_to_string(dir.path().join("listening-room-results.txt")).unwrap();
+    assert!(
+        results.contains("binaural-plus: in front or behind: bright sound 2 of 4 right."),
+        "{results}"
+    );
 }
 
 #[cfg(feature = "binaural")]

@@ -4,9 +4,10 @@
 //!
 //! A renderer takes a [`scene::Scene`] (a listener and sources placed in
 //! metres) and produces what each ear hears. [`render::Current`] is the
-//! game's maths as it is now; [`render::StereoPlus`] adds smooth volume, a
-//! duller tone behind and an echo; `binaural::Binaural` (feature
-//! `binaural`) uses Steam Audio. [`script`] is the numbered script.
+//! game's maths as it is now; [`render::StereoPlus`] adds smooth volume and
+//! a duller tone behind; `binaural::Binaural` (feature `binaural`) uses
+//! Steam Audio's head model, alone or with the plain cues of `stereo-plus`
+//! for behind. [`script`] is the numbered script.
 
 #[cfg(feature = "binaural")]
 pub mod binaural;
