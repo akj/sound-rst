@@ -9,6 +9,7 @@ use crate::world::{DefaultTrigger, World};
 /// world on any machine: a game, the replay of its record and every
 /// client of a game on a server build their world from one.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GameSetup {
     /// Every `rules.txt` of the layers (the game, a mod, a campaign, the
     /// map), joined in order.

@@ -767,6 +767,7 @@ stats! {
 
 /// The kind of Python class an entity is an instance of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum EntityClass {
     Deposit,
     Meadow,
@@ -866,6 +867,7 @@ impl EntityClass {
 
 /// `"ground"`, `"air"` or `"water"`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AirGround {
     #[default]
     Ground,
@@ -1021,6 +1023,7 @@ impl UnitType {
 
 /// An index into [`Rules`] unit types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TypeId(pub u32);
 
 /// The game rules: `rules.txt`, then the mods' and the map's rules.

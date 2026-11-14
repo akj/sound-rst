@@ -21,6 +21,7 @@ use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 /// The identifier of an entity, also used for squares and players in the
 /// text protocol: all of them share one counter, as in the original.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EntityId(pub u32);
 
 impl fmt::Display for EntityId {
@@ -31,15 +32,18 @@ impl fmt::Display for EntityId {
 
 /// An index into [`crate::World::squares`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SquareId(pub u32);
 
 /// An index into the players of a [`crate::World`]. A player keeps its id
 /// after quitting the game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlayerId(pub u32);
 
 /// Where an entity is: on a square, or inside a transport or a building.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Place {
     Square(SquareId),
     /// Inside the entity with this id.
@@ -140,6 +144,7 @@ pub struct Action {
 
 /// `"offensive"` or `"defensive"`: whether a unit flees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AiMode {
     Offensive,
     Defensive,

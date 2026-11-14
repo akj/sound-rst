@@ -49,6 +49,7 @@ pub struct NotEnoughSpace;
 /// A default trigger of a game type: owners (`players`, `computers`,
 /// `all`, `player1`...), condition and action.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DefaultTrigger {
     pub owners: String,
     pub condition: Vec<String>,

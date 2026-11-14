@@ -76,6 +76,7 @@ pub mod msgparts;
 pub mod defs;
 
 mod ai;
+pub mod change;
 pub mod collision;
 pub mod command;
 // The simulation's entity, whole. The interface is built without `truth`
@@ -97,18 +98,27 @@ pub mod player;
 mod playerlogic;
 pub mod pyrandom;
 mod questions;
+mod received;
 pub mod rules;
 pub mod seat_view;
 pub mod setup;
 pub mod square;
 mod squarelogic;
+#[cfg(feature = "truth")]
+pub mod test_games;
 pub mod triggers;
 mod unit;
 #[cfg(test)]
 mod upstream_tests;
 pub mod view;
+#[cfg(feature = "serde")]
+mod wire;
 pub mod world;
 
+pub use change::{
+    ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
+    StateChange, TurnChange,
+};
 pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
 #[cfg(feature = "truth")]
 pub use entity::Entity;
@@ -119,7 +129,7 @@ pub use known::{Activity, KnownEntity, KnownExit, KnownOrder, KnownTarget, OwnPa
 pub use map::MapError;
 pub use message::{
     ControlledPlayer, GameEnd, GameMap, GameStart, KnownSquares, MapExit, SeatState, SquareInfo,
-    TurnMessage,
+    StartMessage, TurnMessage,
 };
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};

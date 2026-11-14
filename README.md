@@ -257,9 +257,9 @@ These tests show what text the port sends to the speech device. They cannot show
 
 ## Layout
 
-- `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world.
+- `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world. After a seat's first message, what changed since its last one is enough to make the next.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
-- `crates/protocol` is the messages between a client and a server.
+- `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a host sends and receives, in a compact binary form. Nothing sends it yet.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game.

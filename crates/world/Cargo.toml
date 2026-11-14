@@ -15,9 +15,14 @@ workspace = true
 # CI workflow), so it reads the game only through what its player knows,
 # and is told about entities only as `KnownEntity`.
 truth = []
+# The sendable form of what a seat is sent, and of a command and a game's
+# set-up: `serde` traits on those types. The simulation builds without it.
+serde = ["dep:serde"]
 
 [dependencies]
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
+# `rc` sends the `Arc<str>` type names of `KnownEntity`.
+serde = { version = "1", features = ["derive", "rc"], optional = true }
 
 [dev-dependencies]
 # The tests read the whole world.

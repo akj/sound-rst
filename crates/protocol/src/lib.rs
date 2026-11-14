@@ -9,11 +9,16 @@
 //! Each message is one WebSocket text frame holding one JSON object. Every
 //! type that crosses the wire checks its own limits when it is read, so a
 //! value of these types is always valid.
+//!
+//! The [`game`] module is the encoding of a game that a host runs and
+//! streams to each seat, in place of lockstep. Nothing sends it yet.
 
 use std::fmt;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
 pub const PROTOCOL_VERSION: u32 = 1;

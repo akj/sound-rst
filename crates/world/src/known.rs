@@ -34,6 +34,7 @@ use crate::world::World;
 ///
 /// [`own`]: KnownEntity::own
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KnownEntity {
     pub id: EntityId,
     /// What kind of thing it is: a deposit, a meadow, an exit, a unit, a
@@ -119,6 +120,7 @@ pub struct KnownEntity {
 /// its other side are part of the map, sent once
 /// ([`MapExit`](crate::MapExit)).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KnownExit {
     /// A dense forest closes the path.
     pub is_blocked_by_forests: bool,
@@ -128,6 +130,7 @@ pub struct KnownExit {
 
 /// What a unit is visibly busy with: the noise it makes.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Activity {
     /// Building or repairing.
     Building,
@@ -149,6 +152,7 @@ impl Activity {
 /// What only a player who controls an entity knows of it: see
 /// [`KnownEntity::own`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OwnPart {
     /// Its orders, the one it carries out first.
     pub orders: Vec<KnownOrder>,
@@ -191,6 +195,7 @@ pub struct OwnPart {
 /// An order of an entity the player controls, as its interface describes
 /// it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KnownOrder {
     pub keyword: Keyword,
     /// The type of an order that takes one: `footman` in `train footman`.
@@ -210,6 +215,7 @@ pub struct KnownOrder {
 
 /// What an order aims at, as the player who controls the unit may know it.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum KnownTarget {
     /// A square, or a point of a square given by the player: the square.
     Square(SquareId),
@@ -221,7 +227,9 @@ pub enum KnownTarget {
     /// given. Its `last_seen` is when the player last perceived the
     /// entity, by the player's memory when the projection was made, or the
     /// time then if the player no longer remembers it.
-    Remembered(Box<KnownEntity>),
+    Remembered(
+        #[cfg_attr(feature = "serde", serde(with = "crate::wire::nested_entity"))] Box<KnownEntity>,
+    ),
     /// A point that is not given as a square: the interface has no name
     /// for it.
     Point,
