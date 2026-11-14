@@ -37,7 +37,11 @@
 //!
 //! An interface reads what one player knows through [`Host::view`]: see
 //! [`view`]. It is told about an entity as that player knows it, a
-//! [`KnownEntity`]: see [`known`]. The world itself has the whole state:
+//! [`KnownEntity`]: see [`known`]. The host also tells each player what it
+//! knows as plain data, made to be sent: a [`GameStart`] once, a
+//! [`TurnMessage`] with each step and a [`GameEnd`] at the end (see
+//! [`message`]). A [`SeatView`] answers the view's questions from those
+//! alone (see [`seat_view`]). The world itself has the whole state:
 //!
 //! - The map: [`World::squares`] (grid, names, neighbors, exits, terrain),
 //!   [`World::map`] (title, objective, sizes, starts), [`World::time`],
@@ -85,13 +89,16 @@ pub mod group;
 pub mod host;
 pub mod known;
 pub mod map;
+pub mod message;
 pub mod nofloat;
 pub mod orders;
 pub mod pathfinding;
 pub mod player;
 mod playerlogic;
 pub mod pyrandom;
+mod questions;
 pub mod rules;
+pub mod seat_view;
 pub mod setup;
 pub mod square;
 mod squarelogic;
@@ -108,10 +115,15 @@ pub use entity::Entity;
 pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
 pub use events::{EntityEvent, Event, Reason, Voila};
 pub use host::{Host, TurnReport};
-pub use known::{KnownEntity, KnownOrder, KnownTarget, OwnPart};
+pub use known::{Activity, KnownEntity, KnownExit, KnownOrder, KnownTarget, OwnPart};
 pub use map::MapError;
+pub use message::{
+    ControlledPlayer, GameEnd, GameMap, GameStart, KnownSquares, MapExit, SeatState, SquareInfo,
+    TurnMessage,
+};
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
+pub use seat_view::SeatView;
 pub use setup::GameSetup;
 pub use view::{Comrades, MapSquare, View};
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};

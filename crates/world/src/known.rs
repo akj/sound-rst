@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, Order};
+use crate::questions;
 use crate::rules::{AirGround, EntityClass, TypeId};
 use crate::world::World;
 
@@ -88,15 +89,61 @@ pub struct KnownEntity {
     pub is_a_building_land: bool,
     pub is_repairable: bool,
     pub is_healable: bool,
+    /// Whether it is a gate: one of the player or an ally lets the player
+    /// through the exit it blocks.
+    pub is_a_gate: bool,
     /// Whether it is a creature that can harm or carry others: one that
     /// counts as a soldier when a fight is lost or won.
     pub is_a_threat: bool,
+    /// For an exit, what closes it.
+    pub exit: Option<KnownExit>,
+    /// What it is visibly busy with: for a perceived unit, as it is now;
+    /// for a remembered one, as it was when last seen, with what it
+    /// gathers from named as the player knows it when the projection is
+    /// made.
+    pub activity: Option<Activity>,
+    /// The upgrades of its owner that apply to it, for a perceived entity
+    /// with an owner. Empty for a remembered entity: its owner's upgrades
+    /// now are not what the player saw, and the interface keeps those it
+    /// was told when it last perceived the entity.
+    pub upgrades: Vec<String>,
     /// When the player last perceived it, for a remembered entity. `None`
     /// for an entity the player perceives now.
     pub last_seen: Option<i64>,
     /// What only a player who controls the entity knows: `None` for any
     /// other entity.
     pub own: Option<OwnPart>,
+}
+
+/// An exit as a player knows it: what closes it. The square it is on and
+/// its other side are part of the map, sent once
+/// ([`MapExit`](crate::MapExit)).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KnownExit {
+    /// A dense forest closes the path.
+    pub is_blocked_by_forests: bool,
+    /// The units and buildings blocking this side, in the order they came.
+    pub blockers: Vec<EntityId>,
+}
+
+/// What a unit is visibly busy with: the noise it makes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Activity {
+    /// Building or repairing.
+    Building,
+    /// Gathering from a deposit or the woods of a square: the deposit's
+    /// type (`goldmine`), or the square's terrain (`_forest`).
+    Exploiting(String),
+}
+
+impl Activity {
+    /// The style key of its noise: `building`, `exploiting_goldmine`...
+    pub fn name(&self) -> String {
+        match self {
+            Activity::Building => "building".into(),
+            Activity::Exploiting(t) => format!("exploiting_{t}"),
+        }
+    }
 }
 
 /// What only a player who controls an entity knows of it: see
@@ -124,6 +171,21 @@ pub struct OwnPart {
     pub rallying_point: Option<String>,
     /// The name of the group it joined.
     pub group: Option<String>,
+    /// Whether it is doing nothing: it has no target for an action. A unit
+    /// that is not idle may be stopped.
+    pub is_idle: bool,
+    /// For a worker, whether it gathers by itself when idle.
+    pub auto_gather: Option<bool>,
+    /// For a worker, whether it repairs by itself when idle.
+    pub auto_repair: Option<bool>,
+    /// The room it has for other units, as a transport or a shelter. The
+    /// units inside take some of it.
+    pub transport_capacity: i64,
+    /// The room it takes in a transport or a shelter.
+    pub transport_volume: i64,
+    /// The food it uses: upgrading it to another type costs the
+    /// difference.
+    pub food_cost: i64,
 }
 
 /// An order of an entity the player controls, as its interface describes
@@ -135,6 +197,8 @@ pub struct KnownOrder {
     pub type_name: Option<String>,
     /// Production waiting for food.
     pub is_deferred: bool,
+    /// Given as imperative: the unit carries it out whatever it meets.
+    pub is_imperative: bool,
     pub target: Option<KnownTarget>,
     /// For a patrol, the places patrolled, in order.
     pub patrol: Option<Vec<Option<Place>>>,
@@ -195,7 +259,23 @@ impl KnownEntity {
             is_a_building_land: e.is_a_building_land(),
             is_repairable: s.is_repairable != 0,
             is_healable: s.is_healable != 0,
+            is_a_gate: s.is_a_gate != 0,
             is_a_threat: e.menace() != 0,
+            exit: e.exit.as_ref().map(|x| KnownExit {
+                is_blocked_by_forests: x.is_blocked_by_forests,
+                blockers: x.blockers.clone(),
+            }),
+            activity: match last_seen {
+                None => w.activity_of(e),
+                Some(_) => remembered_activity(w, viewer, e),
+            },
+            upgrades: match (last_seen, e.player) {
+                (None, Some(p)) => questions::upgrades_applying(
+                    e.type_id.map(|t| w.rules.ty(t)),
+                    &w.player(p).upgrades,
+                ),
+                _ => Vec::new(),
+            },
             last_seen,
             own: controlled.then(|| OwnPart::of(w, viewer, e)),
         }
@@ -231,19 +311,26 @@ impl KnownEntity {
 
 impl OwnPart {
     fn of(w: &World, viewer: PlayerId, e: &Entity) -> OwnPart {
+        let upgrading = e.orders.iter().any(|o| o.keyword == Keyword::UpgradeTo);
         OwnPart {
             orders: e
                 .orders
                 .iter()
                 .map(|o| KnownOrder::of(w, viewer, o))
                 .collect(),
-            has_basic_abilities: !e.basic_abilities().is_empty(),
+            has_basic_abilities: !questions::basic_abilities(e.class, upgrading).is_empty(),
             distance_to_goal: e.distance_to_goal,
             cargo: e.cargo,
             inside: e.inside.clone(),
             stance: e.ai_mode,
             rallying_point: e.rallying_point.clone(),
             group: e.group.clone(),
+            is_idle: e.is_idle(),
+            auto_gather: e.auto_gather,
+            auto_repair: e.auto_repair,
+            transport_capacity: e.stats.transport_capacity,
+            transport_volume: e.stats.transport_volume,
+            food_cost: e.stats.food_cost,
         }
     }
 }
@@ -254,6 +341,7 @@ impl KnownOrder {
             keyword: o.keyword,
             type_name: o.type_name.clone(),
             is_deferred: o.is_deferred,
+            is_imperative: o.is_imperative,
             target: o.target.as_ref().map(|t| KnownTarget::of(w, viewer, t)),
             patrol: o.patrol_targets.clone(),
         }
@@ -276,6 +364,22 @@ impl KnownTarget {
             Target::Xy(..) => KnownTarget::Point,
         }
     }
+}
+
+/// What a remembered entity was busy with when `viewer` last saw it, from
+/// the remembered copy's first order. What it gathers from is named as
+/// `viewer` knows it now: perceived, else remembered.
+pub(crate) fn remembered_activity(w: &World, viewer: PlayerId, e: &Entity) -> Option<Activity> {
+    questions::activity(e.orders.first(), |t| match t {
+        Target::Entity(id) => {
+            let pl = w.player(viewer);
+            let perceived = pl.perception.contains(id).then(|| w.entity(*id)).flatten();
+            let known = perceived.or_else(|| pl.memory.get(id).map(|r| &*r.snapshot))?;
+            Some(&*known.type_name)
+        }
+        Target::Memory(m) => Some(&*m.snapshot.type_name),
+        _ => None,
+    })
 }
 
 #[cfg(test)]

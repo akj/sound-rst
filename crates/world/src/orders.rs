@@ -8,6 +8,7 @@ use crate::command::{KeywordOrder, OrderTarget};
 use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
+use crate::questions;
 use crate::rules::{AirGround, VIRTUAL_TIME_INTERVAL};
 use crate::world::{Abort, Res, TPlace, World};
 
@@ -131,7 +132,7 @@ impl Keyword {
         }
     }
 
-    fn can_be_followed(self) -> bool {
+    pub(crate) fn can_be_followed(self) -> bool {
         self != Keyword::UpgradeTo
     }
 
@@ -420,7 +421,7 @@ impl Request {
     }
 
     /// The order as a menu lists it: `go`, `train footman`.
-    fn menu_entry(&self) -> String {
+    pub(crate) fn menu_entry(&self) -> String {
         match &self.type_name {
             Some(t) => format!("{} {t}", self.keyword.as_str()),
             None => self.keyword.as_str().to_owned(),
@@ -536,15 +537,6 @@ pub struct OrderInfo {
     pub nb_args: usize,
 }
 
-const EFFECTS: &[&str] = &[
-    "teleportation",
-    "recall",
-    "conversion",
-    "summon",
-    "raise_dead",
-    "resurrection",
-];
-
 impl World {
     fn find_order(&self, unit: EntityId, uid: u64) -> Option<usize> {
         self.entity(unit)?.orders.iter().position(|o| o.uid == uid)
@@ -590,38 +582,25 @@ impl World {
     // costs
 
     fn complex_type(&self, o: &Order) -> Res<&crate::rules::UnitType> {
-        o.type_name
-            .as_deref()
-            .and_then(|n| self.rules.unit_type(n))
-            .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
+        questions::complex_type(&self.rules, o.type_name.as_deref())
     }
 
     pub(crate) fn order_cost(&self, unit: EntityId, o: &Order) -> Res<Vec<i64>> {
-        if !o.keyword.is_complex() {
-            return Ok(vec![0; crate::rules::MAX_NB_OF_RESOURCE_TYPES]);
-        }
-        let t = self.complex_type(o)?;
-        if o.keyword == Keyword::UpgradeTo {
-            let uc = self.entity_cost(unit);
-            return Ok(t
-                .cost
-                .iter()
-                .enumerate()
-                .map(|(i, &c)| c - uc.get(i).copied().unwrap_or(0))
-                .collect());
-        }
-        Ok(t.cost.clone())
+        questions::order_cost(
+            &self.rules,
+            &self.e(unit),
+            o.keyword,
+            o.type_name.as_deref(),
+        )
     }
 
     pub(crate) fn order_food_cost(&self, unit: EntityId, o: &Order) -> Res<i64> {
-        if !o.keyword.is_complex() {
-            return Ok(0);
-        }
-        let t = self.complex_type(o)?;
-        if o.keyword == Keyword::UpgradeTo {
-            return Ok(t.stats.food_cost - self.e(unit).stats.food_cost);
-        }
-        Ok(t.stats.food_cost)
+        questions::order_food_cost(
+            &self.rules,
+            &self.e(unit),
+            o.keyword,
+            o.type_name.as_deref(),
+        )
     }
 
     fn order_time_cost(&self, unit: EntityId, o: &Order) -> Res<i64> {
@@ -647,81 +626,10 @@ impl World {
         keyword: Keyword,
         type_name: Option<&str>,
     ) -> Option<OrderInfo> {
-        let o = Order::new(0, keyword, type_name.map(str::to_owned), Vec::new());
-        let nb_args = if keyword == Keyword::Use {
-            let t = self.complex_type(&o).ok()?;
-            usize::from(t.effect_target == ["ask"])
-        } else {
-            keyword.nb_args()
-        };
-        Some(OrderInfo {
-            cost: self.order_cost(unit, &o).ok()?,
-            food_cost: self.order_food_cost(unit, &o).ok()?,
-            nb_args,
-        })
+        questions::order_info(&self.rules, &self.entity(unit)?, keyword, type_name)
     }
 
     // permissions and menus
-
-    fn additional_condition(&self, unit: EntityId, kw: Keyword, type_name: &str) -> bool {
-        match kw {
-            Keyword::Research => {
-                let Some(p) = self.e(unit).player else {
-                    return false;
-                };
-                if self.pl(p).upgrades.iter().any(|u| u == type_name) {
-                    return false;
-                }
-                for &u in &self.pl(p).units {
-                    for w in &self.e(u).orders {
-                        if w.keyword == Keyword::Research
-                            && w.type_name.as_deref() == Some(type_name)
-                        {
-                            return false;
-                        }
-                    }
-                }
-                true
-            }
-            Keyword::UpgradeTo => self.e(unit).orders.is_empty(),
-            Keyword::Use => self
-                .rules
-                .get_words(type_name, "effect")
-                .and_then(|e| e.first().cloned())
-                .is_some_and(|e| EFFECTS.contains(&e.as_str())),
-            _ => true,
-        }
-    }
-
-    fn is_almost_allowed(&self, unit: EntityId, kw: Keyword, type_name: &str) -> bool {
-        let Some(attr) = kw.menu_attribute() else {
-            return false;
-        };
-        let e = self.e(unit);
-        if !self.type_list(unit, attr).iter().any(|t| t == type_name) {
-            return false;
-        }
-        let Some(p) = e.player else { return false };
-        !self.pl(p).forbidden_techs.iter().any(|t| t == type_name)
-            && e.orders.last().is_none_or(|o| o.keyword.can_be_followed())
-            && self.additional_condition(unit, kw, type_name)
-            && self.check_count_limit(p, type_name)
-    }
-
-    fn complex_is_allowed(&self, unit: EntityId, kw: Keyword, type_name: &str) -> bool {
-        if !self.is_almost_allowed(unit, kw, type_name) {
-            return false;
-        }
-        let Some(p) = self.e(unit).player else {
-            return false;
-        };
-        let req = self
-            .rules
-            .unit_type(type_name)
-            .map(|t| t.requirements.clone())
-            .unwrap_or_default();
-        self.has_all(p, &req)
-    }
 
     /// Whether a unit may receive an order now (`cls.is_allowed(unit,
     /// *args)`), with its type for `train`, `build`... A complex order
@@ -732,75 +640,20 @@ impl World {
         kw: Keyword,
         type_name: Option<&str>,
     ) -> Res<bool> {
-        if kw.is_complex() {
-            let t = type_name.ok_or_else(|| {
-                Abort::new("is_allowed() missing 1 required positional argument: 'type_name'")
-            })?;
-            return Ok(self.complex_is_allowed(unit, kw, t));
-        }
-        Ok(self.order_is_allowed(unit, kw))
-    }
-
-    /// Whether a unit may receive an order without a type.
-    pub(crate) fn order_is_allowed(&self, unit: EntityId, kw: Keyword) -> bool {
-        let e = self.e(unit);
-        match kw {
-            Keyword::Stop => !e.is_idle() || !e.orders.is_empty(),
-            Keyword::CancelTraining | Keyword::CancelUpgrading => e
-                .orders
-                .last()
-                .is_some_and(|o| o.keyword.cancel_order() == kw.as_str()),
-            Keyword::EnableAutoGather => e.auto_gather == Some(false),
-            Keyword::DisableAutoGather => e.auto_gather == Some(true),
-            Keyword::EnableAutoRepair => e.auto_repair == Some(false),
-            Keyword::DisableAutoRepair => e.auto_repair == Some(true),
-            Keyword::ModeOffensive => {
-                e.can_switch_ai_mode() && e.ai_mode == Some(crate::entity::AiMode::Defensive)
-            }
-            Keyword::ModeDefensive => {
-                e.can_switch_ai_mode() && e.ai_mode == Some(crate::entity::AiMode::Offensive)
-            }
-            Keyword::RallyingPoint => !self.order_menu(unit, Keyword::Train, false).is_empty(),
-            Keyword::AutoAttack | Keyword::AutoExplore | Keyword::Wait => {
-                e.player.is_some_and(|p| !self.pl(p).is_human())
-            }
-            Keyword::Load | Keyword::LoadAll | Keyword::UnloadAll => e.stats.transport_capacity > 0,
-            Keyword::Enter => true,
-            k if k.is_complex() => false,
-            k => e.basic_abilities().contains(&k.as_str()),
-        }
+        questions::is_order_allowed(self, self.e(unit), kw, type_name)
     }
 
     /// The menu entries of one kind of order for a unit: `go`, or
     /// `train footman`, `train archer`... With `strict`, the requirements
     /// must be met too.
     pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<String> {
-        self.menu_requests(unit, kw, strict)
-            .iter()
-            .map(Request::menu_entry)
-            .collect()
+        questions::order_menu(self, self.e(unit), kw, strict)
     }
 
     /// The orders of one kind that [`World::order_menu`] lists, without
     /// their target.
     pub(crate) fn menu_requests(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<Request> {
-        let Some(attr) = kw.menu_attribute() else {
-            return Request::plain(kw)
-                .filter(|_| self.order_is_allowed(unit, kw))
-                .into_iter()
-                .collect();
-        };
-        self.type_list(unit, attr)
-            .into_iter()
-            .filter(|t| {
-                if strict {
-                    self.complex_is_allowed(unit, kw, t)
-                } else {
-                    self.is_almost_allowed(unit, kw, t)
-                }
-            })
-            .filter_map(|t| Request::typed(kw, t))
-            .collect()
+        questions::menu_requests(self, self.e(unit), kw, strict)
     }
 
     /// Every menu entry of a unit, in the original's order of order kinds.

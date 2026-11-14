@@ -5,6 +5,7 @@ use crate::entity::{
     Action, ActionKind, AiMode, Entity, EntityId, Place, PlayerId, SiteData, SquareId, Target,
 };
 use crate::events::{EntityEvent, Reason};
+use crate::known::Activity;
 use crate::nofloat::{
     PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, py_int,
     square_of_distance,
@@ -12,6 +13,7 @@ use crate::nofloat::{
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
+use crate::questions;
 use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{Abort, NotEnoughSpace, Res, TPlace, World};
 
@@ -351,25 +353,12 @@ impl World {
 
     /// The list of a type attribute (`can_train`...) of an entity.
     pub(crate) fn type_list(&self, id: EntityId, attr: &str) -> Vec<String> {
-        let Some(t) = self.type_of(id) else {
-            return Vec::new();
-        };
-        match attr {
-            "can_build" => t.can_build.clone(),
-            "can_train" => t.can_train.clone(),
-            "can_use" => t.can_use.clone(),
-            "can_research" => t.can_research.clone(),
-            "can_upgrade_to" => t.can_upgrade_to.clone(),
-            _ => Vec::new(),
-        }
+        questions::type_list(self.type_of(id), attr).to_vec()
     }
 
     /// The cost of an entity's type: zeros for building sites and others.
     pub(crate) fn entity_cost(&self, id: EntityId) -> Vec<i64> {
-        match self.type_of(id) {
-            Some(t) if !t.cost.is_empty() => t.cost.clone(),
-            _ => vec![0; crate::rules::MAX_NB_OF_RESOURCE_TYPES],
-        }
+        questions::entity_cost(&self.rules, &self.e(id))
     }
 
     pub(crate) fn expanded_is_a(&self, e: &Entity) -> Vec<String> {
@@ -381,29 +370,25 @@ impl World {
     /// What a unit is busy with, for its noise: `building`, or
     /// `exploiting_<deposit type>`, or nothing.
     pub fn activity(&self, id: EntityId) -> Option<String> {
-        let o = self.e(id).orders.first()?;
-        match o.mode {
-            crate::orders::Mode::Build => Some("building".into()),
-            crate::orders::Mode::Gather => {
-                let name = match o.target.as_ref()? {
-                    Target::Square(s) => self.square(*s).type_name.clone(),
-                    t => self.t_entity(t)?.type_name.to_string(),
-                };
-                Some(format!("exploiting_{name}"))
-            }
-            _ => None,
-        }
+        self.activity_of(self.e(id)).map(|a| a.name())
+    }
+
+    /// What an entity of the world is busy with: what it gathers from is
+    /// named as the world has it.
+    pub(crate) fn activity_of(&self, e: &Entity) -> Option<Activity> {
+        questions::activity(e.orders.first(), |t| match t {
+            Target::Square(s) => Some(self.square(*s).type_name.as_str()),
+            t => self.t_entity(t).map(|e| &*e.type_name),
+        })
     }
 
     /// The upgrades of the unit's player that apply to it.
     pub fn unit_upgrades(&self, id: EntityId) -> Vec<String> {
-        let Some(p) = self.e(id).player else {
+        let e = self.e(id);
+        let Some(p) = e.player else {
             return Vec::new();
         };
-        self.can_use(id)
-            .into_iter()
-            .filter(|u| self.pl(p).upgrades.contains(u))
-            .collect()
+        questions::upgrades_applying(self.type_of(id), &self.pl(p).upgrades)
     }
 
     // geometry
@@ -1284,23 +1269,7 @@ impl World {
     /// `Creature.is_an_enemy`: a creature of an enemy player, or the target
     /// of the unit's imperative `go` order.
     pub(crate) fn is_an_enemy(&self, id: EntityId, c: &Target) -> bool {
-        let Some(ce) = self.t_entity(c) else {
-            return false;
-        };
-        if !ce.is_creature() {
-            return false;
-        }
-        let e = self.e(id);
-        if e.has_imperative_orders()
-            && e.orders[0].keyword == Keyword::Go
-            && e.orders[0].target.as_ref().is_some_and(|t| t.same(c))
-        {
-            return true;
-        }
-        match e.player {
-            Some(p) => !self.pl(p).allied.contains_opt(ce.player),
-            None => false,
-        }
+        questions::is_an_enemy(self, self.e(id), c, self.t_entity(c))
     }
 
     fn can_attack_if_in_range(&self, id: EntityId, other: &Target) -> bool {
@@ -1826,15 +1795,7 @@ impl World {
 
     /// `have_enough_space`: whether the transport can take `target`.
     pub(crate) fn have_enough_space(&self, id: EntityId, target: &Entity) -> bool {
-        let e = self.e(id);
-        let Some(inside) = &e.inside else {
-            return false;
-        };
-        let mut capacity = e.stats.transport_capacity;
-        for &o in inside {
-            capacity -= self.e(o).stats.transport_volume;
-        }
-        capacity >= target.stats.transport_volume
+        questions::have_enough_space(self, self.e(id), &target)
     }
 
     pub(crate) fn load(&mut self, id: EntityId, target: EntityId) {
@@ -2117,62 +2078,6 @@ impl World {
     /// The keyword of the default order of a unit on a target, resolved
     /// through what the unit's owner perceives or remembers now.
     pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Res<Option<Keyword>> {
-        let Some(p) = self.e(id).player else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'get_object_by_id'",
-            ));
-        };
-        let Some(target) = self.resolve_target(p, target)? else {
-            return Ok(None);
-        };
-        let te = self.t_entity(&target).cloned();
-        if te.as_ref().is_some_and(Entity::is_exit) {
-            return Ok(Some(Keyword::Block));
-        }
-        let mine = te.as_ref().is_some_and(|t| t.player == Some(p));
-        if mine && self.have_enough_space(id, te.as_ref().expect("mine")) {
-            return Ok(Some(Keyword::Load));
-        }
-        if mine {
-            let tid = te.as_ref().expect("mine").id;
-            if self.e(tid).inside.is_some() && self.have_enough_space(tid, self.e(id)) {
-                return Ok(Some(Keyword::Enter));
-            }
-        }
-        if self.e(id).basic_abilities().contains(&"gather")
-            && te.as_ref().is_some_and(Entity::is_deposit)
-        {
-            return Ok(Some(Keyword::Gather));
-        }
-        if let Some(t) = &te {
-            let can_build = self.type_list(id, "can_build");
-            let site_ok = t
-                .site
-                .as_ref()
-                .is_some_and(|s| can_build.contains(&self.rules.ty(s.building_type).name));
-            let repair_ok =
-                t.stats.is_repairable != 0 && t.hp < t.stats.hp_max && !can_build.is_empty();
-            if (site_ok || repair_ok) && !self.is_an_enemy(id, &target) {
-                return Ok(Some(Keyword::Repair));
-            }
-        }
-        if self.order_is_allowed(id, Keyword::RallyingPoint) {
-            return Ok(Some(Keyword::RallyingPoint));
-        }
-        if self.order_is_allowed(id, Keyword::Go) {
-            return Ok(Some(Keyword::Go));
-        }
-        Ok(None)
-    }
-}
-
-/// `x in list` for an optional player, where `None` is never in the list.
-pub(crate) trait ContainsOpt {
-    fn contains_opt(&self, p: Option<PlayerId>) -> bool;
-}
-
-impl ContainsOpt for Vec<PlayerId> {
-    fn contains_opt(&self, p: Option<PlayerId>) -> bool {
-        p.is_some_and(|p| self.contains(&p))
+        questions::default_keyword(self, self.e(id), target)
     }
 }

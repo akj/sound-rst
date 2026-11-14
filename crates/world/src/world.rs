@@ -872,11 +872,7 @@ impl World {
                 .map(|e| KnownEntity::of(self, p, e, None))
                 .collect(),
             observed_squares: pl.observed_squares.clone(),
-            observed_before_squares: if pl.cheatmode {
-                (0..self.squares.len() as u32).map(SquareId).collect()
-            } else {
-                pl.observed_before_squares.clone()
-            },
+            observed_before_squares: self.observed_before_squares(p),
         }
     }
 

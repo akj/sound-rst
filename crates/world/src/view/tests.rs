@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use super::*;
+use crate::message::GameStart;
 use crate::player::{Controller, Remembrance};
 use crate::setup::GameSetup;
 use crate::world::multiplayer_default_triggers;
 
-fn read(relative: &str) -> String {
+pub(crate) fn read(relative: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../vendor/soundrts-upstream")
         .join(relative);
@@ -77,14 +78,16 @@ fn the_view_returns_no_entity_the_player_neither_perceives_nor_remembers() {
     let townhall = unit(&w, them, "townhall");
     let peasant = unit(&w, me, "peasant");
     assert!(!w.player(me).perception.contains(&townhall));
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.perceived(townhall).is_none());
     assert!(v.remembered(townhall).is_none());
     assert_eq!(v.perceived(peasant).map(|e| e.id), Some(peasant));
     assert!(v.remembered(peasant).is_none());
 
     remember(&mut w, me, townhall);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.perceived(townhall).is_none());
     assert_eq!(
         v.remembered(townhall).map(|r| (r.id, r.last_seen)),
@@ -99,14 +102,19 @@ fn an_entity_is_known_as_perceived_else_as_remembered() {
     let peasant = unit(&w, me, "peasant");
     // Neither perceived nor remembered: unknown, though it is there.
     assert!(w.entity(townhall).is_some());
-    assert!(View::new(&w, me).known(townhall).is_none());
+    assert!(
+        View::new(&w, &GameStart::of(&w), me)
+            .known(townhall)
+            .is_none()
+    );
 
     // Remembered: the copy as last seen, not the town hall now.
     remember(&mut w, me, townhall);
     let seen_hp = w.entity(townhall).unwrap().hp;
     w.entity_mut(townhall).unwrap().hp = 1000;
     assert_ne!(seen_hp, 1000);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     let e = v.known(townhall).unwrap();
     assert_eq!((e.id, e.hp, e.last_seen), (townhall, seen_hp, Some(1500)));
 
@@ -143,8 +151,8 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
         .other_side
         .unwrap();
     let blocker = unit(&w, them, "peasant");
-    assert!(!View::new(&w, me).exit_is_blocked(exit, true));
-    assert!(!View::new(&w, me).exit_is_blocked(exit, false));
+    assert!(!View::new(&w, &GameStart::of(&w), me).exit_is_blocked(exit, true));
+    assert!(!View::new(&w, &GameStart::of(&w), me).exit_is_blocked(exit, false));
 
     // A blocker on the other side that the player has never seen: the
     // exit is open for the player, though it is closed.
@@ -155,7 +163,8 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
         .unwrap()
         .blockers
         .push(blocker);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.known(blocker).is_none());
     assert!(!v.exit_is_blocked(exit, true));
     assert!(!v.exit_is_blocked(exit, false));
@@ -164,7 +173,8 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
     // the exit is closed.
     remember(&mut w, me, other_side);
     remember(&mut w, me, blocker);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.exit_is_blocked(exit, true));
     assert!(v.exit_is_blocked(exit, false));
     // The exit's place on the other side is part of the map.
@@ -189,7 +199,8 @@ fn a_friendly_gate_lets_the_player_through() {
         .unwrap()
         .blockers
         .push(gate);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.perceived(exit).is_some());
     assert!(!v.exit_is_blocked(exit, true));
     assert!(v.exit_is_blocked(exit, false));
@@ -198,7 +209,8 @@ fn a_friendly_gate_lets_the_player_through() {
 #[test]
 fn the_comrades_of_a_unit_are_its_owners_units_the_player_sees_beside_it() {
     let (w, me, them) = game();
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     // The computer's peasant has a town hall and a farm beside it, unseen.
     let peasant = unit(&w, them, "peasant");
     let place = w.entity(peasant).unwrap().place;
@@ -243,7 +255,8 @@ fn only_a_perceived_unit_has_upgrades() {
     let theirs = unit(&w, them, "footman");
     let mine = unit(&w, me, "footman");
     remember(&mut w, me, theirs);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     // The computer's footman, remembered: its owner's upgrades now are
     // not the player's to know (the interface keeps those it saw).
     assert!(v.perceived(theirs).is_none());
@@ -272,7 +285,8 @@ fn a_remembered_unit_is_busy_with_what_it_did_when_last_seen() {
     for _ in 0..30 {
         w.update();
     }
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert!(v.perceived(peasant).is_none());
     assert_eq!(w.activity(peasant).as_deref(), Some("building"));
     assert_eq!(v.activity(peasant), None);
@@ -280,7 +294,8 @@ fn a_remembered_unit_is_busy_with_what_it_did_when_last_seen() {
 
     // Last seen repairing.
     remember(&mut w, me, peasant);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert_eq!(v.remembered_activity(peasant).as_deref(), Some("building"));
 }
 
@@ -296,7 +311,7 @@ fn a_remembered_unit_gathers_from_what_the_player_knows() {
         .keys()
         .find(|&&o| &*w.entity(o).unwrap().type_name == "goldmine")
         .unwrap();
-    assert!(View::new(&w, me).known(mine).is_none());
+    assert!(View::new(&w, &GameStart::of(&w), me).known(mine).is_none());
     w.player_mut(them).perception.insert(mine);
     command(
         &mut w,
@@ -316,10 +331,15 @@ fn a_remembered_unit_gathers_from_what_the_player_knows() {
     // Last seen gathering from a mine the player knows nothing of: no
     // activity; once the player remembers the mine, it is named.
     remember(&mut w, me, peasant);
-    assert_eq!(View::new(&w, me).remembered_activity(peasant), None);
+    assert_eq!(
+        View::new(&w, &GameStart::of(&w), me).remembered_activity(peasant),
+        None
+    );
     remember(&mut w, me, mine);
     assert_eq!(
-        View::new(&w, me).remembered_activity(peasant).as_deref(),
+        View::new(&w, &GameStart::of(&w), me)
+            .remembered_activity(peasant)
+            .as_deref(),
         Some("exploiting_goldmine")
     );
 }
@@ -338,16 +358,21 @@ fn a_recallable_group_holds_only_the_players_units() {
     }
     // The game's group 1 holds both peasants; the player recalls its own.
     assert_eq!(w.group_list("1").unwrap(), &[theirs, mine]);
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert_eq!(v.recallable_group("1"), [mine]);
     assert_eq!(v.recallable_group("2"), []);
-    assert_eq!(View::new(&w, them).recallable_group("1"), [theirs]);
+    assert_eq!(
+        View::new(&w, &GameStart::of(&w), them).recallable_group("1"),
+        [theirs]
+    );
 }
 
 #[test]
 fn the_order_menus_are_the_worlds() {
     let (w, me, _) = game();
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     for u in w.player(me).units.clone() {
         for &k in Keyword::ALL {
             for strict in [true, false] {
@@ -381,7 +406,8 @@ fn the_default_order_is_the_worlds() {
     w.entity_mut(farm).unwrap().hp = 1000;
     let townhall = unit(&w, them, "townhall");
     let b2 = w.square_by_name("b2").unwrap();
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     let (x, y) = v.square(b2).center();
     let cases = [
         (OrderTarget::Square(b2), Some(Keyword::Go)),
@@ -400,7 +426,8 @@ fn a_requirement_is_known_only_for_a_controlled_owner() {
     let (w, me, them) = game();
     let mine = unit(&w, me, "peasant");
     let theirs = unit(&w, them, "peasant");
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     assert_eq!(v.owner_has(mine, "farm"), Some(true));
     assert_eq!(v.owner_has(mine, "barracks"), Some(false));
     // The other player has a farm: not the player's to know.
@@ -411,7 +438,8 @@ fn a_requirement_is_known_only_for_a_controlled_owner() {
 #[test]
 fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
     let (mut w, me, _) = game();
-    let v = View::new(&w, me);
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
     let pl = w.player(me);
     // Seen from the next square: not observed, but observed before.
     let partly = v.partly_observed_squares();
@@ -421,5 +449,9 @@ fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
     // In cheat mode every square is observed, none partly.
     w.player_mut(me).cheatmode = true;
     w.update();
-    assert!(View::new(&w, me).partly_observed_squares().is_empty());
+    assert!(
+        View::new(&w, &GameStart::of(&w), me)
+            .partly_observed_squares()
+            .is_empty()
+    );
 }

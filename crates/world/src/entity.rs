@@ -386,34 +386,6 @@ impl Entity {
         }
     }
 
-    pub fn can_switch_ai_mode(&self) -> bool {
-        matches!(self.class, EntityClass::Worker | EntityClass::Soldier)
-    }
-
-    /// The orders a unit can always receive, by keyword.
-    pub fn basic_abilities(&self) -> &'static [&'static str] {
-        match self.class {
-            EntityClass::Worker | EntityClass::Soldier | EntityClass::Effect => {
-                if self
-                    .orders
-                    .iter()
-                    .any(|o| o.keyword == crate::orders::Keyword::UpgradeTo)
-                {
-                    return &[];
-                }
-                match self.class {
-                    EntityClass::Worker => {
-                        &["go", "attack", "gather", "repair", "block", "join_group"]
-                    }
-                    EntityClass::Soldier => &["go", "attack", "patrol", "block", "join_group"],
-                    _ => &[],
-                }
-            }
-            EntityClass::BuildingSite => &["cancel_building"],
-            _ => &[],
-        }
-    }
-
     /// `is_idle`: no action target.
     pub fn is_idle(&self) -> bool {
         self.action_target().is_none()
