@@ -53,7 +53,11 @@ fn a_key_press_cuts_an_important_message_short_and_is_used_up() {
     h.client.voice.important(&t(LONG));
     assert!(h.clock.now() < 1.0);
     assert!(h.client.input.get_keydowns().is_empty());
-    assert_eq!(h.speech.events(), [SpeechEvent::Speak(LONG.into())]);
+    // The message first stops whatever was being said.
+    assert_eq!(
+        h.speech.events(),
+        [SpeechEvent::Stop, SpeechEvent::Speak(LONG.into())]
+    );
 }
 
 #[test]

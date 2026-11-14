@@ -125,12 +125,11 @@ impl Tts {
         });
     }
 
-    /// Silences speech.
+    /// Silences speech. The stop always reaches the screen reader: the
+    /// estimate may say speech has ended when it has not.
     pub fn stop(&mut self) {
-        if self.is_speaking() {
-            // An error here shows again at the next speak.
-            let _ = self.backend.stop();
-        }
+        // An error here shows again at the next speak.
+        let _ = self.backend.stop();
         self.said = None;
     }
 
@@ -348,7 +347,7 @@ mod tests {
     #[test]
     fn the_end_of_speech_is_estimated_from_characters_and_digits() {
         let clock = Rc::new(ManualClock::new());
-        let (backend, log) = RecordingSpeech::new();
+        let (backend, _) = RecordingSpeech::new();
         let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
         assert!((tts.estimate("ab12") - 0.8).abs() < 1e-9);
         tts.speak("ab12");
@@ -356,18 +355,20 @@ mod tests {
         assert!(tts.is_speaking());
         clock.advance(0.02);
         assert!(!tts.is_speaking());
-        // Past the estimate, stop does not reach the screen reader.
-        tts.stop();
-        assert_eq!(log.events(), vec![SpeechEvent::Speak("ab12".into())]);
-        tts.speak("x");
+    }
+
+    #[test]
+    fn stop_reaches_the_screen_reader_when_the_estimate_says_speech_is_over() {
+        let clock = Rc::new(ManualClock::new());
+        let (backend, log) = RecordingSpeech::new();
+        let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
+        tts.speak("ab");
+        clock.advance(1.0);
+        assert!(!tts.is_speaking());
         tts.stop();
         assert_eq!(
             log.events(),
-            vec![
-                SpeechEvent::Speak("ab12".into()),
-                SpeechEvent::Speak("x".into()),
-                SpeechEvent::Stop
-            ]
+            vec![SpeechEvent::Speak("ab".into()), SpeechEvent::Stop]
         );
     }
 

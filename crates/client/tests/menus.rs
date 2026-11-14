@@ -73,6 +73,8 @@ fn a_key_cuts_the_title_short_and_escape_confirms_quit() {
     assert_eq!(
         h.speech.events(),
         [
+            // Each message stops the speech before it, said or not.
+            SpeechEvent::Stop,
             SpeechEvent::Speak(TITLE.into()),
             SpeechEvent::Stop,
             SpeechEvent::Speak("quit,".into()),
