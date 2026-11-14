@@ -29,7 +29,10 @@ pub const MAX_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The most entries a zip file may have, and the most files a folder map
-/// is packed with. The whole original game has 1,101 files.
+/// is packed with. The whole original game has 1,101 files. A 32-bit end
+/// record that states 65,535 entries, the count that defers to a 64-bit
+/// record, is not held to this limit, so the room a reader reserves before
+/// it refuses such a file is bounded by 65,535 entries rather than by this.
 pub const MAX_ENTRIES: usize = 20_000;
 
 /// How deep folders inside a package are looked into. The original's
@@ -45,39 +48,81 @@ struct ZipData {
     depth: u32,
 }
 
+/// Where the fields of a zip end record lie: its size, the offsets of its
+/// two disk numbers and of its two entry counts (on this disk, in all), and
+/// the size of each.
+struct EndRecord {
+    size: usize,
+    disks: [usize; 2],
+    disk_len: usize,
+    counts: [usize; 2],
+    count_len: usize,
+}
+
+const END_32: EndRecord = EndRecord {
+    size: 22,
+    disks: [4, 6],
+    disk_len: 2,
+    counts: [8, 10],
+    count_len: 2,
+};
+
+const END_64: EndRecord = EndRecord {
+    size: 56,
+    disks: [16, 20],
+    disk_len: 4,
+    counts: [24, 32],
+    count_len: 8,
+};
+
+/// The entries an end record at `at` states, if a reader could use it: the
+/// whole record is in the file, both disk numbers are 0 and both counts
+/// agree. A reader skips any other record before it reserves room for its
+/// entries (zip 9.5.1, `find_central_directory_end` and
+/// `read_central_header`).
+fn stated_entries(bytes: &[u8], at: usize, record: &EndRecord) -> Option<u64> {
+    let field = |offset: usize, len: usize| -> Option<u64> {
+        let start = at.checked_add(offset)?;
+        let b = bytes.get(start..start.checked_add(len)?)?;
+        Some(b.iter().rev().fold(0, |n, &x| (n << 8) | u64::from(x)))
+    };
+    bytes.get(at..at.checked_add(record.size)?)?;
+    let [d1, d2] = record.disks;
+    if field(d1, record.disk_len)? != 0 || field(d2, record.disk_len)? != 0 {
+        return None;
+    }
+    let [c1, c2] = record.counts;
+    let on_this_disk = field(c1, record.count_len)?;
+    (on_this_disk == field(c2, record.count_len)?).then_some(on_this_disk)
+}
+
 /// Whether a zip file can have more than [`MAX_ENTRIES`] entries, checked
 /// before an index of them is built, whichever directory a reader picks:
 /// - each entry of a central directory starts with its signature, so the
 ///   signatures anywhere in the file are at least the entries read, those
 ///   that share a name included;
 /// - a reader reserves room for the count an end record states, so no end
-///   record anywhere in the file may state more. A count of 0xFFFF in a
-///   32-bit record defers to a 64-bit record.
+///   record a reader could use, anywhere in the file, may state more. A
+///   32-bit record stating 0xFFFF defers to a 64-bit record and is let
+///   through, which bounds what a reader reserves at 65,535 entries.
+///
+/// The signature of an end record can also turn up inside an entry's data
+/// or the file's comment; there it is held to the limit only if it reads
+/// as a record a reader could use.
 fn too_many_entries(bytes: &[u8]) -> bool {
     let limit = u64::try_from(MAX_ENTRIES).unwrap_or(u64::MAX);
-    let field = |at: Option<usize>, len: usize| -> u64 {
-        at.and_then(|at| bytes.get(at..at.checked_add(len)?))
-            .map_or(0, |b| {
-                b.iter().rev().fold(0, |n, &x| (n << 8) | u64::from(x))
-            })
-    };
     let mut entries = 0_usize;
     for (at, w) in bytes.windows(4).enumerate() {
         let stated = match w {
             b"PK\x01\x02" => {
                 entries = entries.saturating_add(1);
-                0
+                None
             }
-            b"PK\x05\x06" => [8, 10]
-                .iter()
-                .map(|&o| field(at.checked_add(o), 2))
-                .filter(|&n| n != 0xFFFF)
-                .max()
-                .unwrap_or(0),
-            b"PK\x06\x06" => field(at.checked_add(24), 8).max(field(at.checked_add(32), 8)),
-            _ => 0,
+            b"PK\x05\x06" => stated_entries(bytes, at, &END_32).filter(|&n| n != 0xFFFF),
+            b"PK\x06\x06" => stated_entries(bytes, at, &END_64),
+            _ => None,
         };
-        if entries > MAX_ENTRIES || stated > limit {
+        if entries > MAX_ENTRIES || stated.is_some_and(|n| n > limit) {
             return true;
         }
     }
@@ -888,6 +933,136 @@ mod tests {
         z[end + 10..end + 12].copy_from_slice(&stated);
         assert!(Package::from_zip_bytes("one.zip".into(), z.clone()).is_err());
         assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
+    }
+
+    /// A zip file of one entry whose end records are 64-bit ones stating
+    /// `entries`.
+    fn zip64_stating(entries: u64) -> Vec<u8> {
+        let z = zipped(&[("map.txt", b"title 1".to_vec())]);
+        let end = z.windows(4).rposition(|w| w == b"PK\x05\x06").unwrap();
+        let mut out = z[..end].to_vec();
+        out.extend(b"PK\x06\x06");
+        out.extend(44_u64.to_le_bytes());
+        out.extend([45, 0, 45, 0]);
+        out.extend([0; 8]);
+        out.extend(entries.to_le_bytes());
+        out.extend(entries.to_le_bytes());
+        out.extend(
+            u64::from(u32::from_le_bytes(
+                z[end + 12..end + 16].try_into().unwrap(),
+            ))
+            .to_le_bytes(),
+        );
+        out.extend(
+            u64::from(u32::from_le_bytes(
+                z[end + 16..end + 20].try_into().unwrap(),
+            ))
+            .to_le_bytes(),
+        );
+        out.extend(b"PK\x06\x07");
+        out.extend([0; 4]);
+        out.extend(u64::try_from(end).unwrap().to_le_bytes());
+        out.extend(1_u32.to_le_bytes());
+        out.extend(b"PK\x05\x06");
+        out.extend([0; 4]);
+        out.extend([0xff; 12]);
+        out.extend([0; 2]);
+        out
+    }
+
+    #[test]
+    fn a_zip64_file_that_states_too_many_entries_is_refused() {
+        let z = zip64_stating(1);
+        let p = Package::from_zip_bytes("one.zip".into(), z).unwrap();
+        assert_eq!(p.read_text("map.txt").unwrap(), "title 1");
+        let z = zip64_stating(u64::try_from(MAX_ENTRIES + 1).unwrap());
+        assert!(too_many_entries(&z));
+        assert!(Package::from_zip_bytes("one.zip".into(), z.clone()).is_err());
+        assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
+    }
+
+    /// Bytes that start like an end record whose counts are large, as
+    /// they can by chance in any data.
+    fn record_lookalike(signature: &[u8]) -> Vec<u8> {
+        let mut bytes = b"data ".to_vec();
+        bytes.extend(signature);
+        bytes.extend(b"z".repeat(60));
+        bytes
+    }
+
+    #[test]
+    fn data_that_looks_like_an_end_record_does_not_count() {
+        for signature in [b"PK\x05\x06", b"PK\x06\x06"] {
+            let data = record_lookalike(signature);
+            for z in [stored(&data), deflated_as_is(&data)] {
+                assert!(z.windows(4).any(|w| w == signature.as_slice()));
+                let p = Package::from_zip_bytes("map.zip".into(), z.clone()).unwrap();
+                assert_eq!(p.open_binary("map.txt").unwrap(), data);
+                assert_eq!(check_expansion(&z, NETWORK_MAP_LIMITS), Ok(()));
+            }
+        }
+    }
+
+    /// A zip file of `map.txt` holding `data`, stored.
+    fn stored(data: &[u8]) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        w.start_file("map.txt", options).unwrap();
+        w.write_all(data).unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    /// A zip file of `map.txt` holding `data`, deflated as one stored
+    /// block, so that `data` appears as it is in the file. The zip writer
+    /// makes no such block, so the stored file's headers are changed.
+    fn deflated_as_is(data: &[u8]) -> Vec<u8> {
+        let len = u16::try_from(data.len()).unwrap();
+        let mut stream = vec![1];
+        stream.extend(len.to_le_bytes());
+        stream.extend((!len).to_le_bytes());
+        stream.extend(data);
+        let mut z = stored(&stream);
+        let crc = crc32(data).to_le_bytes();
+        let size = u32::from(len).to_le_bytes();
+        for (signature, method, crc_at, size_at) in
+            [(b"PK\x03\x04", 8, 14, 22), (b"PK\x01\x02", 10, 16, 24)]
+        {
+            let at = z.windows(4).position(|w| w == signature).unwrap();
+            z[at + method..at + method + 2].copy_from_slice(&8_u16.to_le_bytes());
+            z[at + crc_at..at + crc_at + 4].copy_from_slice(&crc);
+            z[at + size_at..at + size_at + 4].copy_from_slice(&size);
+        }
+        z
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0_u32;
+        for &byte in data {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xedb8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
+    #[test]
+    fn a_comment_that_looks_like_an_end_record_does_not_count() {
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        w.set_comment(String::from_utf8(record_lookalike(b"PK\x05\x06")).unwrap())
+            .unwrap();
+        w.start_file("map.txt", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        w.write_all(b"title 1").unwrap();
+        let z = w.finish().unwrap().into_inner();
+        let p = Package::from_zip_bytes("map.zip".into(), z.clone()).unwrap();
+        assert_eq!(p.read_text("map.txt").unwrap(), "title 1");
+        assert_eq!(check_expansion(&z, NETWORK_MAP_LIMITS), Ok(()));
     }
 
     #[test]
