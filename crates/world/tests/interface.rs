@@ -102,8 +102,8 @@ fn cheats_are_ignored_unless_allowed() {
     assert_eq!(
         w.drain_warnings(),
         [
-            "cheat mode is not allowed: toggle_cheatmode",
-            "cheat mode is not allowed: cmd victory",
+            "cheat mode is not allowed: ToggleMode",
+            "cheat mode is not allowed: Trigger(\"victory\")",
         ]
     );
     w.allow_cheatmode = true;

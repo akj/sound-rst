@@ -17,7 +17,7 @@
 //!     .populate_map(&[Controller::human("me", true), Controller::computer("easy")], true, true)
 //!     .expect("enough starting places")[0];
 //! loop {
-//!     world.queue_command(me, "order 0 0 go 12"); // from the interface
+//!     world.queue_command(me, "order 0 0 go 12"); // from a server or a record
 //!     world.update(); // one turn: 300 ms of game time
 //!     for _event in world.drain_events(me) { /* speak, play sounds */ }
 //!     # break;
@@ -26,9 +26,11 @@
 //!
 //! The rules and scripts of a mod, a campaign or a map are more layers of
 //! the same files: pass them all, in order, to [`Rules::load`] and
-//! [`AiScripts::load`]. Commands are the original's text lines (`control 4
-//! 7-9`, `order 0 1 go 12`, `cmd add_units a1 footman`, `quit`...); they run
-//! at the start of the next [`World::update`]. Only a local human
+//! [`AiScripts::load`]. A command is a [`Command`], given with
+//! [`World::queue`], or the original's text line (`control 4 7-9`, `order 0
+//! 1 go 12`, `cmd add_units a1 footman`, `quit`...), given with
+//! [`World::queue_command`]; it runs at the start of the next
+//! [`World::update`]. Only a local human
 //! ([`Controller::human`] with `local`) receives events.
 //!
 //! # Reading the state
@@ -107,7 +109,7 @@ pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers}
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
 /// [`World::digest_u64`].
-pub const SIM_VERSION: u32 = 3;
+pub const SIM_VERSION: u32 = 4;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.

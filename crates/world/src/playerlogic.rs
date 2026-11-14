@@ -8,8 +8,8 @@ use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Targ
 use crate::events::Event;
 use crate::msg::{Msg, msg};
 use crate::msgparts as mp;
-use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance, to_int};
-use crate::orders::{Keyword, Order};
+use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
+use crate::orders::{Keyword, Order, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES};
 use crate::world::{Abort, INF, Res, World};
@@ -696,58 +696,51 @@ impl World {
         type_names.iter().all(|t| self.has(p, t))
     }
 
-    /// `get_object_by_id`: what an id given in a command means to a player:
-    /// a subsquare (`zoom-<square>-<x>-<y>`), a square (by name or id), a
-    /// perceived entity, or a remembered one.
+    /// What a target means to a player now: a subsquare, a square, a
+    /// perceived entity, or a remembered one. The error is a point outside
+    /// its square.
+    pub(crate) fn resolve_target(&self, p: PlayerId, t: &TargetRef) -> Res<Option<Target>> {
+        match *t {
+            TargetRef::Square(s) | TargetRef::SquareNamed(s) => Ok(Some(Target::Square(s))),
+            TargetRef::Point { square, x, y } => {
+                // The interface sends the center of a subsquare of the square.
+                if !self.square(square).contains(x, y) {
+                    return Err(Abort::new("the zoom is outside its square"));
+                }
+                Ok(Some(Target::Zoom(ZoomTarget {
+                    place: square,
+                    x,
+                    y,
+                    id: Some(t.text(self)),
+                })))
+            }
+            TargetRef::Entity(id) => {
+                if let Some(s) = self.square_by_obj_id(id.0) {
+                    return Ok(Some(Target::Square(s)));
+                }
+                if let Some(e) = self.entity(id)
+                    && e.place.is_some()
+                    && self.pl(p).perception.contains(&id)
+                {
+                    return Ok(Some(Target::Entity(id)));
+                }
+                Ok(self.pl(p).memory.get(&id).map(|r| {
+                    Target::Memory(MemoryRef {
+                        owner: p,
+                        snapshot: r.snapshot.clone(),
+                    })
+                }))
+            }
+            TargetRef::Nothing => Ok(None),
+        }
+    }
+
+    /// `get_object_by_id`: what the text of a target means to a player now
+    /// (see [`TargetRef::parse`] and [`World::resolve_target`]). Stored
+    /// orders keep their targets as text.
     pub fn get_object_by_id(&self, p: PlayerId, i: &str) -> Result<Option<Target>, Abort> {
-        if i.starts_with("zoom") {
-            let parts: Vec<&str> = i.split('-').collect();
-            if parts.len() != 4 {
-                return Err(Abort::new("not enough values to unpack"));
-            }
-            let place = self.get_object_by_id(p, parts[1])?;
-            let Some(Target::Square(s)) = place else {
-                return Err(Abort::new("object has no attribute 'title'"));
-            };
-            let x = py_int(parts[2]).map_err(|_| Abort::new("invalid literal for int()"))?;
-            let y = py_int(parts[3]).map_err(|_| Abort::new("invalid literal for int()"))?;
-            // The interface sends the center of a subsquare of the square.
-            if !self.square(s).contains(x, y) {
-                return Err(Abort::new("the zoom is outside its square"));
-            }
-            return Ok(Some(Target::Zoom(ZoomTarget {
-                place: s,
-                x,
-                y,
-                id: Some(i.to_owned()),
-            })));
-        }
-        if let Some(s) = self.square_by_name(i) {
-            return Ok(Some(Target::Square(s)));
-        }
-        let Ok(n) = i.parse::<u32>() else {
-            return Ok(None);
-        };
-        if n.to_string() != i {
-            return Ok(None);
-        }
-        if let Some(s) = self.square_by_obj_id(n) {
-            return Ok(Some(Target::Square(s)));
-        }
-        let id = EntityId(n);
-        if let Some(e) = self.entity(id)
-            && e.place.is_some()
-            && self.pl(p).perception.contains(&id)
-        {
-            return Ok(Some(Target::Entity(id)));
-        }
-        if let Some(r) = self.pl(p).memory.get(&id) {
-            return Ok(Some(Target::Memory(MemoryRef {
-                owner: p,
-                snapshot: r.snapshot.clone(),
-            })));
-        }
-        Ok(None)
+        let t = TargetRef::parse(self, i)?;
+        self.resolve_target(p, &t)
     }
 
     /// `updated_target`: the target if still perceived or remembered, else
@@ -768,7 +761,7 @@ impl World {
             Target::Xy(..) => return Err(Abort::new("'tuple' object has no attribute 'id'")),
         }
         let id = t.entity_id().expect("an entity");
-        self.get_object_by_id(p, &id.to_string())
+        self.resolve_target(p, &TargetRef::Entity(id))
     }
 
     // resources

@@ -9,6 +9,7 @@ use crate::nofloat::{
     PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, py_int,
     square_of_distance,
 };
+use crate::orders::{Keyword, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
@@ -1291,7 +1292,7 @@ impl World {
         }
         let e = self.e(id);
         if e.has_imperative_orders()
-            && e.orders[0].keyword == crate::orders::Keyword::Go
+            && e.orders[0].keyword == Keyword::Go
             && e.orders[0].target.as_ref().is_some_and(|t| t.same(c))
         {
             return true;
@@ -1410,20 +1411,20 @@ impl World {
                 > self.balance(p, &[Some(here)], None, 100)
             {
                 self.notify(id, EntityEvent::Flee, false);
-                let sid = self.place_id_text(s);
-                self.take_order(id, vec!["go".into(), sid], true, true, None)?;
+                let t = self.place_target(s);
+                self.take_order(id, Request::go(t), true, true, None)?;
                 break;
             }
         }
         Ok(())
     }
 
-    /// The protocol id of a place: a square's id, or nothing for an
-    /// interior (whose id is `None` in the original).
-    pub(crate) fn place_id_text(&self, p: Place) -> String {
+    /// A place as a target: a square, or nothing for the inside of a unit
+    /// (whose id is `None` in the original).
+    pub(crate) fn place_target(&self, p: Place) -> TargetRef {
         match p {
-            Place::Square(s) => self.square(s).id.to_string(),
-            Place::Inside(_) => "None".into(),
+            Place::Square(s) => TargetRef::Square(s),
+            Place::Inside(_) => TargetRef::Nothing,
         }
     }
 
@@ -1444,7 +1445,7 @@ impl World {
             .e(id)
             .orders
             .first()
-            .is_some_and(|o| o.keyword != crate::orders::Keyword::Gather)
+            .is_some_and(|o| o.keyword != Keyword::Gather)
         {
             return Ok(());
         }
@@ -1460,13 +1461,8 @@ impl World {
                     {
                         let cost = self.repair_cost(u);
                         if self.check_if_enough_resources(id, &cost, 0).is_none() {
-                            self.take_order(
-                                id,
-                                vec!["repair".into(), u.to_string()],
-                                true,
-                                false,
-                                None,
-                            )?;
+                            let repair = Request::repair(TargetRef::Entity(u));
+                            self.take_order(id, repair, true, false, None)?;
                             return Ok(());
                         }
                     }
@@ -1513,7 +1509,8 @@ impl World {
                     }
                     let i = self.random.choice_index(deposits.len()).expect("not empty");
                     let o = deposits[i];
-                    self.take_order(id, vec!["gather".into(), o.to_string()], true, false, None)?;
+                    let gather = Request::gather(TargetRef::Entity(o));
+                    self.take_order(id, gather, true, false, None)?;
                 }
             }
         }
@@ -1887,11 +1884,14 @@ impl World {
             && !e.is_attacking()
             && self.can_go(id, Some(Place::Square(place)), false, false)
         {
-            let pid = self.square(place).id.to_string();
-            self.take_order(id, vec!["go".into(), pid], true, false, None)?;
+            self.take_order(id, Request::go(TargetRef::Square(place)), true, false, None)?;
             let e = self.e(id);
-            let zoom = format!("zoom-{}-{}-{}", self.square(here).id, e.x, e.y);
-            self.take_order(id, vec!["go".into(), zoom], false, false, None)?;
+            let back = TargetRef::Point {
+                square: here,
+                x: e.x,
+                y: e.y,
+            };
+            self.take_order(id, Request::go(back), false, false, None)?;
         }
         Ok(())
     }
@@ -2115,34 +2115,43 @@ impl World {
         Ok(())
     }
 
-    /// The default order of a unit on a target (`get_default_order`).
+    /// The keyword of the default order of a unit on a target, written as
+    /// text (`get_default_order`). For the interface's view, which asks
+    /// with the text of an [`crate::OrderTarget`].
     pub fn get_default_order(&self, id: EntityId, target_id: &str) -> Res<Option<&'static str>> {
+        let target = TargetRef::parse(self, target_id)?;
+        Ok(self.default_keyword(id, &target)?.map(Keyword::as_str))
+    }
+
+    /// The keyword of the default order of a unit on a target, resolved
+    /// through what the unit's owner perceives or remembers now.
+    pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Res<Option<Keyword>> {
         let Some(p) = self.e(id).player else {
             return Err(Abort::new(
                 "'NoneType' object has no attribute 'get_object_by_id'",
             ));
         };
-        let Some(target) = self.get_object_by_id(p, target_id)? else {
+        let Some(target) = self.resolve_target(p, target)? else {
             return Ok(None);
         };
         let te = self.t_entity(&target).cloned();
         if te.as_ref().is_some_and(Entity::is_exit) {
-            return Ok(Some("block"));
+            return Ok(Some(Keyword::Block));
         }
         let mine = te.as_ref().is_some_and(|t| t.player == Some(p));
         if mine && self.have_enough_space(id, te.as_ref().expect("mine")) {
-            return Ok(Some("load"));
+            return Ok(Some(Keyword::Load));
         }
         if mine {
             let tid = te.as_ref().expect("mine").id;
             if self.e(tid).inside.is_some() && self.have_enough_space(tid, self.e(id)) {
-                return Ok(Some("enter"));
+                return Ok(Some(Keyword::Enter));
             }
         }
         if self.e(id).basic_abilities().contains(&"gather")
             && te.as_ref().is_some_and(Entity::is_deposit)
         {
-            return Ok(Some("gather"));
+            return Ok(Some(Keyword::Gather));
         }
         if let Some(t) = &te {
             let can_build = self.type_list(id, "can_build");
@@ -2153,14 +2162,14 @@ impl World {
             let repair_ok =
                 t.stats.is_repairable != 0 && t.hp < t.stats.hp_max && !can_build.is_empty();
             if (site_ok || repair_ok) && !self.is_an_enemy(id, &target) {
-                return Ok(Some("repair"));
+                return Ok(Some(Keyword::Repair));
             }
         }
-        if self.order_is_allowed(id, crate::orders::Keyword::RallyingPoint, &[]) {
-            return Ok(Some("rallying_point"));
+        if self.order_is_allowed(id, Keyword::RallyingPoint) {
+            return Ok(Some(Keyword::RallyingPoint));
         }
-        if self.order_is_allowed(id, crate::orders::Keyword::Go, &[]) {
-            return Ok(Some("go"));
+        if self.order_is_allowed(id, Keyword::Go) {
+            return Ok(Some(Keyword::Go));
         }
         Ok(None)
     }

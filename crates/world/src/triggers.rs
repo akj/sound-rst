@@ -1,12 +1,14 @@
 //! Map triggers, the trigger language (`lang_*`) and the text commands of
 //! players (`cmd_*`), from `worldplayerbase.py` and `worldplayercomputer.py`.
 
+use crate::command::{Cheat, Command, Order, Queue};
 use crate::entity::{EntityId, Place, PlayerId, Target};
 use crate::events::{EntityEvent, Event};
 use crate::map::MAX_START_UNITS;
 use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::nofloat::{py_float, py_int};
+use crate::orders::{Request, TargetRef};
 use crate::player::{Objective, PlayerKind};
 use crate::world::{Abort, NotEnoughSpace, Res, World};
 
@@ -322,8 +324,16 @@ impl World {
             return Err(Abort::new("not enough values to unpack"));
         };
         let select = select.list()?;
-        let orders: Vec<Vec<String>> =
-            orders.list()?.iter().map(Expr::words).collect::<Res<_>>()?;
+        let words: Vec<Vec<String>> = orders.list()?.iter().map(Expr::words).collect::<Res<_>>()?;
+        // An order the map writes wrong is left out with a warning, before
+        // any unit receives one.
+        let mut orders = Vec::new();
+        for w in &words {
+            match Request::parse(self, w) {
+                Ok(r) => orders.push(r),
+                Err(m) => self.warn(format!("problem with order: {m}")),
+            }
+        }
         let mut default_square = "a1".to_owned();
         let mut n: i64 = 1;
         for x in select {
@@ -503,37 +513,18 @@ impl World {
 
     // commands
 
-    /// Runs a text command of a player now (`execute_command`): `order`,
-    /// `control`, `cmd`, `speed`, `quit`, `neutral_quit`,
-    /// `toggle_cheatmode`. `cmd` and `toggle_cheatmode` run only if
-    /// [`World::allow_cheatmode`] is set.
-    pub fn execute_command(&mut self, p: PlayerId, data: &str) -> Result<(), Abort> {
-        let args: Vec<String> = data.split_whitespace().map(str::to_owned).collect();
-        let Some(first) = args.first() else {
-            return Err(Abort::new("list index out of range"));
-        };
-        let cmd = first.to_lowercase();
-        let rest = args[1..].to_vec();
-        match cmd.as_str() {
-            "toggle_cheatmode" | "cmd" if !self.allow_cheatmode => {
-                self.warn(format!("cheat mode is not allowed: {data}"));
-            }
-            "toggle_cheatmode" => {
-                let c = self.pl(p).cheatmode;
-                self.plm(p).cheatmode = !c;
-            }
-            "cmd" => {
-                let e = Expr::List(rest.into_iter().map(Expr::Word).collect());
-                self.my_eval(p, &e)?;
-            }
-            "speed" => {
+    /// Runs a command of a player now (`execute_command`). Cheats run only
+    /// if [`World::allow_cheatmode`] is set.
+    pub(crate) fn execute_command(&mut self, p: PlayerId, command: &Command) -> Res {
+        match command {
+            Command::Control(units) => self.cmd_control(p, units),
+            Command::Order {
+                order,
+                queue,
+                imperative,
+            } => self.cmd_order(p, order, *queue, *imperative),
+            &Command::Speed(f) => {
                 if self.players.first() == Some(&p) {
-                    let s = rest
-                        .first()
-                        .ok_or_else(|| Abort::new("list index out of range"))?;
-                    let f = py_float(s).map_err(|_| {
-                        Abort::new(format!("could not convert string to float: {s:?}"))
-                    })?;
                     for op in self.players.clone() {
                         self.push(op, Event::Speed(f));
                     }
@@ -543,19 +534,36 @@ impl World {
                     self.warn("non admin client tried to change game speed");
                 }
             }
-            "quit" => self.defeat(p, true),
-            "neutral_quit" => {
-                if self.players.contains(&p) {
-                    self.quit_game(p);
-                }
+            Command::Quit => self.defeat(p, true),
+            Command::Cheat(cheat) if !self.allow_cheatmode => {
+                self.warn(format!("cheat mode is not allowed: {cheat:?}"));
             }
-            "order" => {
-                if let Err(Abort(m)) = self.cmd_order(p, rest.clone()) {
-                    self.warn(format!("problem with order: {rest:?}: {m}"));
-                }
+            Command::Cheat(Cheat::ToggleMode) => {
+                let c = self.pl(p).cheatmode;
+                self.plm(p).cheatmode = !c;
             }
-            "control" => self.cmd_control(p, &rest)?,
-            _ => self.warn(format!("unknown command: 'cmd_{cmd}' ({data})")),
+            Command::Cheat(Cheat::Victory) => self.victory(p),
+            Command::Cheat(Cheat::AddUnits { square, units }) => {
+                let name = square.map(|s| self.square(s).name.clone());
+                let items: Vec<String> = name
+                    .into_iter()
+                    .chain(units.split_whitespace().map(str::to_owned))
+                    .collect();
+                self.lang_add_units(p, &items, None, 0, None, true);
+            }
+            Command::Cheat(Cheat::Trigger(text)) => {
+                let words = text.split_whitespace();
+                let e = Expr::List(words.map(|w| Expr::Word(w.to_owned())).collect());
+                self.my_eval(p, &e)?;
+            }
+            Command::Cheat(
+                cheat @ (Cheat::Resources
+                | Cheat::AllTechs
+                | Cheat::InfiniteMana
+                | Cheat::PlayAs(_)),
+            ) => {
+                self.warn(format!("the host carries out this cheat: {cheat:?}"));
+            }
         }
         Ok(())
     }
@@ -569,29 +577,19 @@ impl World {
         }
     }
 
-    fn cmd_order(&mut self, p: PlayerId, mut args: Vec<String>) -> Res {
+    fn cmd_order(&mut self, p: PlayerId, order: &Order, queue: Queue, imperative: bool) {
         self.plm(p).group_had_enough_mana = false;
         let order_id = self.get_next_order_id();
-        let take = |args: &mut Vec<String>| -> Res<String> {
-            if args.is_empty() {
-                return Err(Abort::new("list index out of range"));
+        let forget_previous = queue == Queue::Replace;
+        let mut given = match order {
+            Order::ResetGroup(name) => {
+                self.reset_group(name);
+                return;
             }
-            Ok(args.remove(0))
+            Order::Default(t) => Given::Default(TargetRef::from(*t)),
+            Order::Keyword(o) => Given::Order(Request::from(o)),
+            Order::JoinGroup(name) => Given::Order(Request::join_group(name.clone())),
         };
-        let forget_previous = take(&mut args)? == "0";
-        let imperative = take(&mut args)? == "1";
-        let first = args
-            .first()
-            .cloned()
-            .ok_or_else(|| Abort::new("list index out of range"))?;
-        if first == "reset_group" {
-            let name = args
-                .get(1)
-                .cloned()
-                .ok_or_else(|| Abort::new("list index out of range"))?;
-            self.reset_group(&name);
-            return Ok(());
-        }
         let selection = self.pl(p).group.clone();
         for u in selection.clone().unwrap_or_default() {
             if let Some(g) = self.e(u).group.clone() {
@@ -610,81 +608,61 @@ impl World {
                 .player
                 .is_some_and(|up| self.pl(p).allied_control.contains(&up))
             {
-                let r = if args[0] == "default" {
-                    match args.get(1).cloned() {
-                        Some(t) => self.take_default_order(
-                            u,
-                            &t,
-                            forget_previous,
-                            imperative,
-                            Some(order_id),
-                        ),
-                        None => Err(Abort::new("list index out of range")),
+                let r = match &mut given {
+                    Given::Default(t) => {
+                        self.take_default_order(u, *t, forget_previous, imperative, Some(order_id))
                     }
-                } else {
-                    self.take_order_shared(
+                    Given::Order(request) => self.take_order_shared(
                         u,
-                        &mut args,
+                        request,
                         forget_previous,
                         imperative,
                         Some(order_id),
-                    )
+                    ),
                 };
                 if let Err(Abort(m)) = r {
-                    self.warn(format!("problem with order: {args:?}: {m}"));
+                    let words = match &given {
+                        Given::Default(t) => vec!["default".to_owned(), t.text(self)],
+                        Given::Order(request) => request.words(self),
+                    };
+                    self.warn(format!("problem with order: {words:?}: {m}"));
                 }
             }
         }
-        Ok(())
     }
 
-    /// `take_order` with the order list shared between the units of a
-    /// group: an imperative `go` that becomes `attack` stays `attack` for
-    /// the next units, as in the original.
+    /// `take_order` with the order shared between the units of a group: an
+    /// imperative `go` that becomes `attack` stays `attack` for the next
+    /// units, as in the original.
     fn take_order_shared(
         &mut self,
         u: EntityId,
-        args: &mut [String],
+        request: &mut Request,
         forget_previous: bool,
         imperative: bool,
         order_id: Option<u64>,
     ) -> Res {
-        if imperative
-            && args.first().map(String::as_str) == Some("go")
-            && let Some(up) = self.e(u).player
-        {
-            let id = args
-                .get(1)
-                .cloned()
-                .ok_or_else(|| Abort::new("list index out of range"))?;
-            let target = self.get_object_by_id(up, &id)?;
-            if target
-                .as_ref()
-                .and_then(|t| self.t_entity(t))
-                .is_some_and(|e| e.player.is_some())
-            {
-                args[0] = "attack".into();
-            }
+        if imperative && let Some(up) = self.e(u).player {
+            self.imperative_go(up, request)?;
         }
-        self.take_order(u, args.to_vec(), forget_previous, imperative, order_id)
+        self.take_order(u, request.clone(), forget_previous, imperative, order_id)
     }
 
-    fn cmd_control(&mut self, p: PlayerId, args: &[String]) -> Res {
-        self.plm(p).group = Some(Vec::new());
-        let ids = crate::group::decode(&args.join(" ")).map_err(Abort::new)?;
+    fn cmd_control(&mut self, p: PlayerId, ids: &[EntityId]) {
         let mut units = Vec::new();
         for ap in self.pl(p).allied_control.clone() {
             units.extend(self.pl(ap).units.iter().copied());
         }
-        let mut group = Vec::new();
-        for id in ids {
-            if let Some(&u) = units.iter().find(|u| u.0.to_string() == id) {
-                group.push(u);
-            }
-        }
+        let group = ids.iter().copied().filter(|u| units.contains(u)).collect();
         self.plm(p).group = Some(group);
-        Ok(())
     }
+}
+
+/// What an `order` command gives each unit chosen.
+enum Given {
+    /// The order each unit chooses for the target.
+    Default(TargetRef),
+    Order(Request),
 }
 
 enum AddUnitError {
