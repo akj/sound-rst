@@ -325,6 +325,27 @@ impl<'a> View<'a> {
         }
     }
 
+    /// The units of `owner` that the player perceives on `place`, `except`
+    /// one that died there: what the player sees left of its side of the
+    /// fight.
+    pub fn comrades(&self, owner: PlayerId, place: Option<Place>, except: EntityId) -> Comrades {
+        let w = self.world;
+        let mut c = Comrades {
+            units: 0,
+            soldiers: 0,
+        };
+        let perceived = w.player(self.player).perception.iter();
+        for u in perceived.filter_map(|&u| w.entity(u)) {
+            if u.player == Some(owner) && u.place == place && u.id != except {
+                c.units += 1;
+                if u.menace() != 0 {
+                    c.soldiers += 1;
+                }
+            }
+        }
+        c
+    }
+
     /// Whether an exit is closed as far as the player knows: by dense
     /// forests, or by a blocker on either side, as the player perceives or
     /// remembers the exits and the blockers. With `friendly_gates_open`, a
@@ -438,7 +459,7 @@ pub struct Leaks<'a> {
 }
 
 /// The units of a player that are on the same place as one of theirs that
-/// died: see [`Leaks::comrades`].
+/// died: see [`View::comrades`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comrades {
     /// How many there are.
@@ -455,30 +476,6 @@ impl<'a> Leaks<'a> {
     /// that target in the unit's orders.
     pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
         self.world.player(owner).memory.get(&id)
-    }
-
-    /// The other units of `owner` on `place` now, `except` the one that
-    /// died there, whoever the owner is.
-    ///
-    /// Used when a unit dies, to say whether a fight was won or lost: the
-    /// "lose fight" and "win fight" sounds and the units alert that follows.
-    /// For the player's own units this is its own state; for another
-    /// player's it reads that player's units.
-    pub fn comrades(&self, owner: PlayerId, place: Option<Place>, except: EntityId) -> Comrades {
-        let w = self.world;
-        let mut c = Comrades {
-            units: 0,
-            soldiers: 0,
-        };
-        for u in w.player(owner).units.iter().filter_map(|&u| w.entity(u)) {
-            if u.place == place && u.id != except {
-                c.units += 1;
-                if u.menace() != 0 {
-                    c.soldiers += 1;
-                }
-            }
-        }
-        c
     }
 
     /// The upgrades of its owner that apply to a remembered unit, as they

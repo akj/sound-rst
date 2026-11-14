@@ -812,7 +812,7 @@ impl GameInterface {
         let owner = v
             .player()
             .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'units'"))?;
-        let friends = self.view().leaks().comrades(owner, v.place(), v.id());
+        let friends = self.view().comrades(owner, v.place(), v.id());
         let friend_soldiers = friends.soldiers > 0;
         if !friend_soldiers && v.model.menace() != 0 || friends.units == 0 {
             if v.player() == Some(self.me) {

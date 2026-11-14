@@ -209,22 +209,32 @@ fn a_friendly_gate_lets_the_player_through() {
 }
 
 #[test]
-fn the_comrades_of_a_unit_are_its_owners_units_beside_it() {
+fn the_comrades_of_a_unit_are_its_owners_units_the_player_sees_beside_it() {
     let (w, me, them) = game();
+    let v = View::new(&w, me);
+    // The computer's peasant has a town hall and a farm beside it, unseen.
     let peasant = unit(&w, them, "peasant");
     let place = w.entity(peasant).unwrap().place;
-    let v = View::new(&w, me);
-    assert!(v.perceived(unit(&w, them, "townhall")).is_none());
-    let old: Vec<&Entity> = w
+    let beside = w
         .player(them)
         .units
         .iter()
         .filter_map(|&u| w.entity(u))
         .filter(|u| u.place == place && u.id != peasant)
-        .collect();
-    assert_eq!(old.len(), 2);
+        .count();
+    assert_eq!(beside, 2);
     assert_eq!(
-        v.leaks().comrades(them, place, peasant),
+        v.comrades(them, place, peasant),
+        Comrades {
+            units: 0,
+            soldiers: 0
+        }
+    );
+    // The player's own peasant: its town hall and farm, seen.
+    let mine = unit(&w, me, "peasant");
+    let place = w.entity(mine).unwrap().place;
+    assert_eq!(
+        v.comrades(me, place, mine),
         Comrades {
             units: 2,
             soldiers: 0
