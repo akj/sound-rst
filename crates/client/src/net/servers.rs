@@ -3,9 +3,12 @@
 //!
 //! Each list is a text file with one server a line: its address, then
 //! optionally a space and its name. Lines starting with `#` are comments.
+//! A name is a [`ServerName`], so it never holds a line break.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use soundrts_protocol::ServerName;
 
 use crate::paths::Paths;
 
@@ -23,11 +26,19 @@ const RECENT_LIMIT: usize = 5;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListedServer {
     pub address: String,
-    /// The name, or the address if the list gives none.
-    pub name: String,
+    pub name: Option<ServerName>,
 }
 
-/// Reads a list of servers.
+impl ListedServer {
+    /// What the player hears: the name, or the address if the list gives
+    /// none.
+    pub fn label(&self) -> &str {
+        self.name.as_ref().map_or(&self.address, ServerName::as_str)
+    }
+}
+
+/// Reads a list of servers. A name with characters a name cannot have is
+/// cleaned of them.
 pub fn parse(text: &str) -> Vec<ListedServer> {
     text.lines()
         .map(str::trim)
@@ -35,11 +46,11 @@ pub fn parse(text: &str) -> Vec<ListedServer> {
         .map(|l| match l.split_once(char::is_whitespace) {
             Some((a, n)) => ListedServer {
                 address: a.to_owned(),
-                name: n.trim().to_owned(),
+                name: ServerName::clean(n),
             },
             None => ListedServer {
                 address: l.to_owned(),
-                name: l.to_owned(),
+                name: None,
             },
         })
         .collect()
@@ -49,9 +60,9 @@ fn write(path: &Path, list: &[ListedServer]) -> std::io::Result<()> {
     let mut text = String::new();
     for s in list {
         text.push_str(&s.address);
-        if s.name != s.address {
+        if let Some(name) = &s.name {
             text.push(' ');
-            text.push_str(&s.name);
+            text.push_str(name.as_str());
         }
         text.push('\n');
     }
@@ -104,10 +115,12 @@ pub fn toggle_favorite(paths: &Paths, server: ListedServer) -> std::io::Result<(
     write(&favorites_path(paths), &list)
 }
 
-/// The public list, or an empty one if it cannot be had in time.
+/// The public list, or an empty one if it cannot be had in time. Only
+/// over HTTPS: a redirect to anything else is refused.
 pub fn public(url: &str) -> Result<Vec<ListedServer>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(PUBLIC_LIST_TIMEOUT))
+        .https_only(true)
         .build()
         .into();
     let text = agent
@@ -132,13 +145,61 @@ mod tests {
             vec![
                 ListedServer {
                     address: "1.2.3.4:2501".into(),
-                    name: "Andrew's server".into()
+                    name: ServerName::new("Andrew's server").ok()
                 },
                 ListedServer {
                     address: "host.example".into(),
-                    name: "host.example".into()
+                    name: None
                 },
             ]
+        );
+        assert_eq!(list[0].label(), "Andrew's server");
+        assert_eq!(list[1].label(), "host.example");
+    }
+
+    #[test]
+    fn a_server_name_cannot_add_a_line_to_a_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            root: dir.path().into(),
+            user: dir.path().into(),
+        };
+        // A server that calls itself this would add the second line, were
+        // its name written as it is.
+        let name = "bad\n6.6.6.6 trap";
+        assert!(ServerName::new(name).is_err());
+        let server = ListedServer {
+            address: "1.2.3.4".into(),
+            name: ServerName::clean(name),
+        };
+        add_recent(&paths, server).unwrap();
+        let list = recent(&paths);
+        assert_eq!(list.len(), 1, "{list:?}");
+        assert_eq!(list[0].label(), "bad6.6.6.6 trap");
+    }
+
+    #[test]
+    fn the_public_list_is_not_fetched_over_plain_http() {
+        // A plain HTTP server on this machine with a list to give.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let body = "6.6.6.6 trap\n";
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        let result = public(&format!("http://{addr}/servers.txt"));
+        assert!(
+            result.as_ref().is_err_and(|e| e.contains("https")),
+            "{result:?}"
         );
     }
 
@@ -151,7 +212,7 @@ mod tests {
         };
         let s = |a: &str| ListedServer {
             address: a.into(),
-            name: a.into(),
+            name: None,
         };
         for a in ["a", "b", "a", "c", "d", "e", "f"] {
             add_recent(&paths, s(a)).unwrap();

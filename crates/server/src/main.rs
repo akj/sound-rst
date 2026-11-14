@@ -3,6 +3,7 @@
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
+use soundrts_protocol::{MAX_SERVER_NAME_CHARS, ServerName};
 use soundrts_server::{ServerConfig, UpnpOutcome};
 use tracing::{error, info};
 
@@ -11,7 +12,7 @@ Usage: soundrts-server [options]
 
 Options:
   --port <port>         TCP port for players and UDP port for local discovery (default 2501)
-  --name <name>         the server's name on the local network (default SoundRTS)
+  --name <name>         the server's name, at most 64 characters (default SoundRTS)
   --max-clients <n>     the most players at once (default 40)
   --max-rooms <n>       the most rooms at once (default 10)
   --upnp                ask the router to forward the port
@@ -69,7 +70,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Option<ServerConfig>,
         let mut value = |name: &str| args.next().ok_or(format!("{name} needs a value"));
         match arg.as_str() {
             "--port" => config.port = number(&arg, value(&arg)?)?,
-            "--name" => config.name = value(&arg)?,
+            "--name" => config.name = server_name(&arg, value(&arg)?)?,
             "--max-clients" => config.max_clients = number(&arg, value(&arg)?)?,
             "--max-rooms" => config.max_rooms = number(&arg, value(&arg)?)?,
             "--upnp" => config.upnp = true,
@@ -78,6 +79,15 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Option<ServerConfig>,
         }
     }
     Ok(Some(config))
+}
+
+fn server_name(name: &str, value: String) -> Result<ServerName, String> {
+    ServerName::new(value).map_err(|_| {
+        format!(
+            "{name} needs 1 to {MAX_SERVER_NAME_CHARS} characters, \
+             with no space at either end and no control character"
+        )
+    })
 }
 
 fn number<T: std::str::FromStr>(name: &str, value: String) -> Result<T, String> {

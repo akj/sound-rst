@@ -110,7 +110,7 @@ impl GameInterface {
         let Some(net) = &mut cx.net else {
             return;
         };
-        let Some(turn) = net.game.as_mut().and_then(|g| g.out_of_sync.take()) else {
+        let Some(turn) = net.game.as_mut().and_then(|g| g.take_out_of_sync()) else {
             return;
         };
         let Some(driver) = &self.net else {

@@ -12,7 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soundrts_protocol::{
-    AiLevel, ClientMsg, Faction, Login, PROTOCOL_VERSION, Rejection, SlotIndex, SlotPlayer, Speed,
+    AiLevel, ClientMsg, Faction, Login, MAX_ALLIANCE, PROTOCOL_VERSION, Rejection, ServerName,
+    SlotIndex, SlotPlayer, Speed,
 };
 use soundrts_server::{ServerConfig, ServerHandle, UpnpOutcome};
 use soundrts_world::Rules;
@@ -100,7 +101,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
     for f in discovery::discover(&config.discovery_targets, DISCOVERY_WAIT) {
         let s = ListedServer {
             address: f.addr.to_string(),
-            name: f.name,
+            name: Some(f.name),
         };
         listed.push((s, words::LOCAL, ""));
     }
@@ -128,7 +129,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
         } else {
             text(phrase)
         };
-        let label = vec![literal(&s.name)];
+        let label = vec![literal(s.label())];
         menu.append(
             label,
             Action::run(move |cx| connect(cx, &s.address, None).map(|()| Flow::Stay)),
@@ -169,7 +170,7 @@ fn enter_address(cx: &mut Client) -> Result<(), Exit> {
 fn host(cx: &mut Client) -> Result<(), Exit> {
     cx.voice.item(&msg(words::PROCESSING));
     let config = ServerConfig {
-        name: cx.config.login.as_str().to_owned(),
+        name: ServerName::new(cx.config.login.as_str()).expect("a login is a server name"),
         ip: cx.net_config.host_ip,
         port: cx.net_config.host_port,
         upnp: cx.net_config.upnp,
@@ -256,7 +257,7 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
     };
     let favorite = hosted.is_none().then(|| ListedServer {
         address: address.to_owned(),
-        name: snapshot.server_name.clone(),
+        name: Some(snapshot.server_name.clone()),
     });
     if let Some(s) = &favorite
         && let Err(e) = servers::add_recent(&cx.paths, s.clone())
@@ -297,7 +298,7 @@ pub fn play_on(
         msg(mp::WELCOME),
         vec![literal(snapshot.you.as_str())],
         msg(mp::ON_THE_SERVER_OF),
-        vec![literal(&snapshot.server_name)],
+        vec![literal(snapshot.server_name.as_str())],
     ]
     .concat();
     cx.net = Some(Net::new(conn, snapshot, content));
@@ -661,8 +662,8 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
         }
         for (i, slot) in slots.iter().enumerate() {
             let name = player_name(&slot.player);
-            for a in 1..=slots.len() {
-                let a = a as u8;
+            let alliances = slots.len().min(usize::from(MAX_ALLIANCE));
+            for a in 1..=alliances as u8 {
                 if a != slot.alliance {
                     let label = [
                         msg(mp::MOVE),

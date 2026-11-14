@@ -44,6 +44,22 @@ impl Connection {
     pub fn poll(&mut self) -> Option<NetEvent> {
         self.0.poll()
     }
+
+    /// Closes the connection: nothing more is sent or received.
+    pub fn close(&mut self) {
+        self.0 = Box::new(ClosedLink);
+    }
+}
+
+/// The link of a connection the client closed.
+struct ClosedLink;
+
+impl Link for ClosedLink {
+    fn send(&mut self, _: ClientMsg) {}
+
+    fn poll(&mut self) -> Option<NetEvent> {
+        None
+    }
 }
 
 /// Why a connection could not be opened.
@@ -126,7 +142,11 @@ pub fn open(
         std::thread::sleep(Duration::from_millis(5));
     };
     match first {
-        NetEvent::Msg(ServerMsg::Welcome { lobby }) => Ok((Connection::new(Box::new(link)), lobby)),
+        NetEvent::Msg(ServerMsg::Welcome { lobby }) => {
+            super::lobby::check_snapshot(&lobby)
+                .map_err(|e| ConnectError::NotAServer(e.to_string()))?;
+            Ok((Connection::new(Box::new(link)), lobby))
+        }
         NetEvent::Msg(ServerMsg::Rejected { reason }) => Err(ConnectError::Rejected(reason)),
         NetEvent::Msg(other) => Err(ConnectError::NotAServer(format!(
             "unexpected first message: {other:?}"

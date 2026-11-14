@@ -219,7 +219,7 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
 #[test]
 fn two_players_play_a_game_in_step_and_leave_it() {
     let server = soundrts_server::start(soundrts_server::ServerConfig {
-        name: "test".into(),
+        name: soundrts_protocol::ServerName::new("test").unwrap(),
         ip: Ipv4Addr::LOCALHOST.into(),
         port: 0,
         ..soundrts_server::ServerConfig::default()
@@ -460,7 +460,7 @@ fn two_players_play_a_game_in_step_and_leave_it() {
 #[test]
 fn a_server_on_the_local_network_answers_the_discovery() {
     let server = soundrts_server::start(soundrts_server::ServerConfig {
-        name: "the test server".into(),
+        name: soundrts_protocol::ServerName::new("the test server").unwrap(),
         ip: Ipv4Addr::LOCALHOST.into(),
         port: 0,
         ..soundrts_server::ServerConfig::default()
@@ -480,7 +480,7 @@ fn a_server_on_the_local_network_answers_the_discovery() {
         found,
         [soundrts::net::discovery::FoundServer {
             addr,
-            name: "the test server".into(),
+            name: soundrts_protocol::ServerName::new("the test server").unwrap(),
             players: 0,
         }]
     );

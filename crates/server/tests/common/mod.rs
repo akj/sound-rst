@@ -20,13 +20,17 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// the defaults.
 pub fn server(tweak: impl FnOnce(&mut ServerConfig)) -> ServerHandle {
     let mut config = ServerConfig {
-        name: "test".into(),
+        name: server_name("test"),
         ip: Ipv4Addr::LOCALHOST.into(),
         port: 0,
         ..ServerConfig::default()
     };
     tweak(&mut config);
     soundrts_server::start(config).expect("server starts")
+}
+
+pub fn server_name(s: &str) -> ServerName {
+    ServerName::new(s).unwrap()
 }
 
 pub fn login(s: &str) -> Login {
@@ -44,6 +48,19 @@ pub fn chat(s: &str) -> ChatText {
 /// A map for `min` to `max` players, and its file.
 pub fn map(min: u8, max: u8) -> (MapInfo, MapData) {
     let bytes = format!("title 1000\nnb_players_min {min}\nnb_players_max {max}\n").into_bytes();
+    map_of(bytes, min, max)
+}
+
+/// A map for 2 to 4 players, with a comment that makes its file `size`
+/// bytes long.
+pub fn large_map(size: usize) -> (MapInfo, MapData) {
+    let mut bytes = b"title 1000\nnb_players_min 2\nnb_players_max 4\n; ".to_vec();
+    bytes.resize(size - 1, b'x');
+    bytes.push(b'\n');
+    map_of(bytes, 2, 4)
+}
+
+fn map_of(bytes: Vec<u8>, min: u8, max: u8) -> (MapInfo, MapData) {
     let file_name = MapFileName::new("test.txt").unwrap();
     let info = MapInfo {
         file_name: file_name.clone(),
@@ -143,6 +160,20 @@ impl Client {
             .send(Message::Text(text.into()))
             .await
             .expect("sends");
+    }
+
+    /// The TCP socket under the WebSocket, to send what a WebSocket would
+    /// not.
+    pub fn tcp(&mut self) -> &mut TcpStream {
+        match self.ws.get_mut() {
+            MaybeTlsStream::Plain(tcp) => tcp,
+            _ => unreachable!("tests use plain TCP"),
+        }
+    }
+
+    /// Sends, whether or not the server still reads.
+    pub async fn send_text_lossy(&mut self, text: &str) {
+        let _ = self.ws.send(Message::Text(text.into())).await;
     }
 
     pub async fn send_binary(&mut self, bytes: &[u8]) {

@@ -26,19 +26,20 @@ use std::sync::atomic::AtomicU32;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use soundrts_protocol::DEFAULT_PORT;
+use soundrts_protocol::{DEFAULT_PORT, ServerName};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::watch;
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub use upnp::UpnpOutcome;
 
 /// How a server runs. [`Default`] gives the values of a server players host.
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
-    /// Said to players who find the server on the local network.
-    pub name: String,
+    /// Said to players when they arrive, and to those who find the server
+    /// on the local network.
+    pub name: ServerName,
     /// The address to listen on: all interfaces by default.
     pub ip: IpAddr,
     /// The TCP port for players, and the UDP port for local discovery.
@@ -63,7 +64,7 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> ServerConfig {
         ServerConfig {
-            name: "SoundRTS".into(),
+            name: ServerName::new("SoundRTS").expect("a valid name"),
             ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: DEFAULT_PORT,
             max_clients: 40,
@@ -165,6 +166,11 @@ pub fn start(config: ServerConfig) -> io::Result<ServerHandle> {
 
 type Ready = std::sync::mpsc::Sender<io::Result<(SocketAddr, UpnpOutcome)>>;
 
+/// The most connections that have not said hello yet. A client says hello
+/// as soon as it connects, so even a crowd arriving at once has only a few
+/// waiting; a new connection beyond this is closed at once.
+pub const MAX_PENDING_HELLOS: usize = 32;
+
 /// How long connections get to close cleanly when the server stops.
 const CLOSE_GRACE: Duration = Duration::from_secs(2);
 
@@ -231,15 +237,21 @@ async fn run(config: ServerConfig, mut stop: watch::Receiver<bool>, ready: Ready
 
     let mut connections = JoinSet::new();
     let mut next_conn: connection::ConnId = 0;
+    let pending = Arc::new(Semaphore::new(MAX_PENDING_HELLOS));
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((stream, peer)) => {
+                    let Ok(pending) = pending.clone().try_acquire_owned() else {
+                        debug!(%peer, "too many connections waiting to say hello; closed");
+                        continue;
+                    };
                     next_conn += 1;
                     connections.spawn(connection::serve(
                         stream,
                         peer,
                         next_conn,
+                        pending,
                         lobby.clone(),
                         stop.clone(),
                         config.hello_timeout,

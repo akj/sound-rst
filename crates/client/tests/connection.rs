@@ -24,7 +24,7 @@ fn hello() -> ClientMsg {
 fn welcome() -> ServerMsg {
     ServerMsg::Welcome {
         lobby: LobbySnapshot {
-            server_name: "bad".into(),
+            server_name: ServerName::new("bad").unwrap(),
             you: Login::new("andrew").unwrap(),
             players: Vec::new(),
             rooms: Vec::new(),
@@ -50,6 +50,15 @@ where
     F: FnOnce(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()>,
 {
+    bad_server_with(welcome(), then)
+}
+
+/// A server as [`bad_server`], with its own welcome.
+fn bad_server_with<F, Fut>(welcome: ServerMsg, then: F) -> SocketAddr
+where
+    F: FnOnce(tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()>,
+{
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     std::thread::spawn(move || {
@@ -63,13 +72,36 @@ where
             let (stream, _) = listener.accept().await.unwrap();
             let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
             ws.next().await;
-            ws.send(Message::Text(welcome().to_json().into()))
+            ws.send(Message::Text(welcome.to_json().into()))
                 .await
                 .unwrap();
             then(ws).await;
         });
     });
     addr
+}
+
+#[test]
+fn a_server_that_welcomes_with_more_players_than_a_client_keeps_is_refused() {
+    let mut welcome = welcome();
+    let ServerMsg::Welcome { lobby } = &mut welcome else {
+        unreachable!()
+    };
+    lobby.players = (0..=soundrts::net::lobby::MAX_LOBBY_PLAYERS)
+        .map(|i| LobbyPlayer {
+            login: Login::new(format!("p{i}")).unwrap(),
+            whereabouts: Whereabouts::Lobby,
+        })
+        .collect();
+    let addr = bad_server_with(welcome, |ws| async move {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        drop(ws);
+    });
+    let opened = conn::open(&addr.to_string(), hello(), Duration::from_secs(5));
+    assert_eq!(
+        opened.err(),
+        Some(conn::ConnectError::NotAServer("too many players".into()))
+    );
 }
 
 #[test]

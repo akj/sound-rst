@@ -30,7 +30,7 @@ use soundrts_world::msgparts as mp;
 
 use self::chat::{CHAT_SOUND, ChatLog, line_msg};
 use self::conn::{Connection, NetEvent};
-use self::lobby::{LobbyModel, MapState, RoomModel};
+use self::lobby::{LobbyModel, MAX_ROOM_SLOTS, MapState, RoomModel, TooMany, check_room};
 use self::words::text;
 use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
@@ -84,19 +84,51 @@ pub struct GameStart {
     pub speed: Speed,
 }
 
+/// The most turns received and not run yet. A server stops its clock when
+/// a player is 10 turns behind.
+pub const MAX_QUEUED_TURNS: usize = 32;
+
+/// The most memory the orders of one turn may take ([`turn_bytes`]). A
+/// server passes on at most [`MAX_TURN_ORDER_BYTES`] of orders a player in
+/// a turn: with orders of 20 characters, about 70 KB in memory, and 1.1 MB
+/// for 16 players, the most of any map shipped with the game. A human
+/// gives a few hundred bytes of orders a turn.
+pub const MAX_TURN_BYTES: usize = 2 * 1024 * 1024;
+
+/// The memory the orders of a turn take: each list of orders and each
+/// order, with its text.
+fn turn_bytes(orders: &[SlotOrders]) -> usize {
+    let order = |o: &Order| size_of::<Order>() + o.as_str().len();
+    orders
+        .iter()
+        .map(|o| size_of::<SlotOrders>() + o.orders.as_slice().iter().map(order).sum::<usize>())
+        .sum()
+}
+
 /// What the server says to a game being played.
 pub struct GameLink {
     /// The player's slot.
     pub you: SlotIndex,
-    /// The turns received and not run yet, in order.
+    /// The turns received and not run yet, in order. At most
+    /// [`MAX_QUEUED_TURNS`].
     pub turns: VecDeque<(Turn, Vec<SlotOrders>)>,
     /// The game is over for this player (the server said so).
     pub ended: bool,
-    /// The turn the server last said the game went out of sync after,
-    /// until the game has saved its record.
-    pub out_of_sync: Option<Turn>,
+    /// The game's record, written once if the server says the game is out
+    /// of sync.
+    record: SyncRecord,
     /// Bytes of orders sent since the last turn received.
     sent_since_turn: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SyncRecord {
+    /// The server has not said the game is out of sync.
+    NotNeeded,
+    /// The server said the game went out of sync after this turn.
+    Due(Turn),
+    /// The game has taken the turn to write its record.
+    Taken,
 }
 
 impl GameLink {
@@ -106,9 +138,20 @@ impl GameLink {
             you,
             turns: VecDeque::new(),
             ended: false,
-            out_of_sync: None,
+            record: SyncRecord::NotNeeded,
             sent_since_turn: 0,
         }
+    }
+
+    /// The turn the server first said the game went out of sync after,
+    /// once: the game writes its record then. A server that says it again
+    /// gets no other record written.
+    pub fn take_out_of_sync(&mut self) -> Option<Turn> {
+        let SyncRecord::Due(turn) = self.record else {
+            return None;
+        };
+        self.record = SyncRecord::Taken;
+        Some(turn)
     }
 }
 
@@ -180,13 +223,30 @@ impl Net {
         }
     }
 
+    /// Closes the connection to a server that sent more than a client
+    /// keeps, and says so.
+    fn give_up(&mut self, cx: &mut Client, too_many: TooMany) {
+        cx.log
+            .warning(format!("the server sent {too_many}; disconnecting"));
+        cx.voice.alert(&msg(mp::UNEXPECTED_REPLY));
+        self.conn.close();
+        self.handle(cx, NetEvent::Closed(too_many.to_string()));
+    }
+
     fn handle_msg(&mut self, cx: &mut Client, m: ServerMsg) {
+        if let Err(too_many) = self.check(&m) {
+            self.give_up(cx, too_many);
+            return;
+        }
         match m {
             ServerMsg::Lobby { change } => {
                 if let soundrts_protocol::LobbyChange::RoomClosed { id } = &change {
                     self.invitations.retain(|i| i.room != *id);
                 }
-                let said = self.lobby.apply(change, cx.config.announce_arrivals != 0);
+                let said = match self.lobby.apply(change, cx.config.announce_arrivals != 0) {
+                    Ok(said) => said,
+                    Err(too_many) => return self.give_up(cx, too_many),
+                };
                 if let Some(said) = said
                     && self.game.is_none()
                 {
@@ -200,11 +260,12 @@ impl Net {
                 cx.voice.chat(&m);
             }
             ServerMsg::Invited { room, by } => {
-                let title = self
-                    .lobby
-                    .room(room)
-                    .map(|r| title_of(&r.map))
-                    .unwrap_or_default();
+                // A server tells of a room before inviting to it.
+                let Some(title) = self.lobby.room(room).map(|r| title_of(&r.map)) else {
+                    cx.log
+                        .warning(format!("invited to an unknown room: {}", room.0));
+                    return;
+                };
                 cx.voice
                     .chat(&[vec![literal(by.as_str())], msg(mp::INVITES_YOU), title].concat());
                 self.invitations.retain(|i| i.room != room);
@@ -311,7 +372,9 @@ impl Net {
                 if let Some(g) = &mut self.game {
                     cx.log
                         .warning(format!("out of sync after turn {turn}: slots {slots:?}"));
-                    g.out_of_sync = Some(turn);
+                    if g.record == SyncRecord::NotNeeded {
+                        g.record = SyncRecord::Due(turn);
+                    }
                     let m = if slots.contains(&g.you) {
                         words::OUT_OF_SYNC
                     } else {
@@ -356,6 +419,29 @@ impl Net {
             ServerMsg::Welcome { .. } | ServerMsg::Rejected { .. } => {
                 cx.log.warning("unexpected welcome or rejection");
             }
+        }
+    }
+
+    /// Whether a message keeps what the client holds within its bounds;
+    /// lobby changes are checked as they are applied.
+    fn check(&self, m: &ServerMsg) -> Result<(), TooMany> {
+        match m {
+            ServerMsg::Room { room, .. } => check_room(&room.map, room.slots.len()),
+            ServerMsg::GameStarted { slots, map, .. } => check_room(map, slots.len()),
+            ServerMsg::Waiting { players } if players.len() > MAX_ROOM_SLOTS => {
+                Err(TooMany("players waited for"))
+            }
+            ServerMsg::Turn { orders, .. } if self.game.is_some() => {
+                let queued = self.game.as_ref().map_or(0, |g| g.turns.len());
+                if turn_bytes(orders) > MAX_TURN_BYTES {
+                    Err(TooMany("orders in a turn"))
+                } else if queued >= MAX_QUEUED_TURNS {
+                    Err(TooMany("turns ahead"))
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
         }
     }
 
