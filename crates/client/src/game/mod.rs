@@ -313,7 +313,7 @@ impl GameInterface {
             scout_info: IndexSet::new(),
             known_resource_places: HashSet::new(),
             told_units: HashMap::new(),
-            log_start: cx.voice.next_entry_id(),
+            log_start: cx.voice.start_game(),
             alert_jump: None,
             previous_resources: None,
             previous_available_food: 0,

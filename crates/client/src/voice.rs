@@ -388,8 +388,8 @@ pub struct Voice {
     /// Said and unsaid messages, in the order they came.
     log: VecDeque<Entry>,
     next_id: u64,
-    /// The first message after the queue was last given up.
-    flushed: EntryId,
+    /// The first message of the game being played, or of the log.
+    game_start: EntryId,
     /// A message of the log is being said (not an answer).
     active: bool,
     /// The player is walking through the log.
@@ -409,7 +409,7 @@ impl Voice {
         Voice {
             log: VecDeque::new(),
             next_id: 0,
-            flushed: EntryId(0),
+            game_start: EntryId(0),
             active: false,
             history: false,
             current: 0,
@@ -499,16 +499,15 @@ impl Voice {
         }
     }
 
-    /// The index of the newest news about `subject` since the queue was
-    /// last given up, if the player has not heard it and it is not being
-    /// said.
+    /// The index of the newest news about `subject` since the game
+    /// started, if the player has not heard it and it is not being said.
     fn unheard_about(&self, subject: &Subject) -> Option<usize> {
         let i = self
             .log
             .iter()
             .rposition(|e| e.subject() == Some(subject))?;
         let being_said = self.active && self.current == i;
-        let replaceable = self.log[i].heard != Heard::Yes && self.log[i].id >= self.flushed;
+        let replaceable = self.log[i].heard != Heard::Yes && self.log[i].id >= self.game_start;
         (replaceable && !being_said).then_some(i)
     }
 
@@ -769,9 +768,11 @@ impl Voice {
         self.answer(&category_title(self.review.category), CENTERED);
     }
 
-    /// The place in the log of the next message.
-    pub fn next_entry_id(&self) -> EntryId {
-        EntryId(self.next_id)
+    /// A game starts: news from now on does not replace the news of the
+    /// log so far. The place in the log of the game's first message.
+    pub fn start_game(&mut self) -> EntryId {
+        self.game_start = EntryId(self.next_id);
+        self.game_start
     }
 
     /// The newest alert tied to a square, older than the alert `before`
@@ -799,8 +800,8 @@ impl Voice {
             self.mark_current_as_said();
             self.current += 1;
             self.active = false;
-            self.trim();
         }
+        self.trim();
         if !self.history {
             self.go_to_next_unsaid();
         }
@@ -826,13 +827,11 @@ impl Voice {
         }
     }
 
-    /// Stops talking and gives up the queue, as a game starts or ends: the
-    /// messages waiting stay in the log, unheard, and later news does not
-    /// replace them.
+    /// Stops talking and gives up the queue: the messages waiting stay in
+    /// the log, unheard.
     pub fn silent_flush(&mut self) {
         self.channel.stop();
         self.active = false;
-        self.flushed = EntryId(self.next_id);
         self.current = self.log.len();
         for e in &mut self.log {
             if e.is_waiting() {
