@@ -199,6 +199,10 @@ pub struct KnownOrder {
     pub is_deferred: bool,
     /// Given as imperative: the unit carries it out whatever it meets.
     pub is_imperative: bool,
+    /// For a training, a research or an upgrade, the game time left before
+    /// it is done, in milliseconds: what the sounds of its progress tell.
+    /// `None` for any other order.
+    pub time_left: Option<i64>,
     pub target: Option<KnownTarget>,
     /// For a patrol, the places patrolled, in order.
     pub patrol: Option<Vec<Option<Place>>>,
@@ -342,6 +346,11 @@ impl KnownOrder {
             type_name: o.type_name.clone(),
             is_deferred: o.is_deferred,
             is_imperative: o.is_imperative,
+            time_left: matches!(
+                o.keyword,
+                Keyword::Train | Keyword::Research | Keyword::UpgradeTo
+            )
+            .then_some(o.time.max(0)),
             target: o.target.as_ref().map(|t| KnownTarget::of(w, viewer, t)),
             patrol: o.patrol_targets.clone(),
         }

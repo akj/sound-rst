@@ -186,6 +186,9 @@ pub struct SeatState {
     pub objectives: Vec<Objective>,
     /// The players still in the game, in seat order.
     pub players: Vec<PlayerId>,
+    /// The players defeated, in id order: those who still watch the game
+    /// and those who left it.
+    pub defeated: Vec<PlayerId>,
     /// Each player's allies, the player among them, by player id: the
     /// allies of `PlayerId(i)` are at `i`. Every player of the game is
     /// here, those who left too.
@@ -384,6 +387,11 @@ impl World {
             has_victory: pl.has_victory,
             objectives: pl.objectives.clone(),
             players: self.players.clone(),
+            defeated: self
+                .all_players()
+                .filter(|(_, p)| p.has_been_defeated)
+                .map(|(id, _)| id)
+                .collect(),
             allies: self.all_players().map(|(_, p)| p.allied.clone()).collect(),
             controlled,
             groups,

@@ -4,16 +4,16 @@
 //! Each is answered in one sentence, the most important word first, from
 //! what the player knows.
 
-use soundrts_world::KnownTarget;
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
+use soundrts_world::{KnownEntity, KnownTarget, View};
 
 use crate::client::Client;
 use crate::net::words::{self, text};
 
 use super::command::UnitFilter;
-use super::order::substitute_args;
+use super::order::{PRECISION, substitute_args};
 use super::selection::TypeFilter;
 use super::squares::summary;
 use super::{GameInterface, R, style_msg};
@@ -56,11 +56,10 @@ impl GameInterface {
     /// comes last.
     pub(crate) fn cmd_production_status(&self, cx: &mut Client) -> R {
         let style = cx.res.style();
-        let view = self.view();
         let mut productions: Vec<((bool, i64), Msg)> = Vec::new();
         for id in self.units(cx, true, false) {
             let v = &self.dobjets[&id];
-            let (Some(left), Some(o)) = (view.production_time_left(id), v.orders().first()) else {
+            let Some((o, left)) = v.orders().first().and_then(|o| Some((o, o.time_left?))) else {
                 continue;
             };
             let mut m = style_msg(style, o.keyword.as_str(), "title");
@@ -157,22 +156,19 @@ impl GameInterface {
     }
 
     /// The other players, each an ally or an enemy, and those defeated:
-    /// the ones still watching, then the ones who left. A player who quit
-    /// undefeated is not said, as F11 does not say them.
+    /// the players in the game, then the defeated who left it.
     pub(crate) fn cmd_players_status(&self, cx: &mut Client) {
         let view = self.view();
-        let defeated_and_gone = view
-            .former_players()
-            .iter()
-            .filter(|&&p| view.is_defeated(p));
+        let defeated = view.defeated();
+        let gone = defeated.iter().filter(|p| !view.players().contains(p));
         let mut players = Vec::new();
-        for &p in view.players().iter().chain(defeated_and_gone) {
+        for &p in view.players().iter().chain(gone) {
             if p == self.me {
                 continue;
             }
             let mut m = view.player_name(p);
             m.extend(msg(if view.is_ally(p) { mp::ALLY } else { mp::ENEMY }));
-            if view.is_defeated(p) {
+            if defeated.contains(&p) {
                 m.extend(msg(mp::HAS_BEEN_DEFEATED));
             }
             players.push(m);
@@ -197,7 +193,7 @@ impl GameInterface {
     /// that the player perceives now, the player's and its allies' against
     /// the enemies', after how the sides compare: "stronger , 3 footman
     /// against 1 archer". The strength of a side is its units' threat, as
-    /// the simulation weighs it.
+    /// the simulation weighs it, from the rules: upgrades are left out.
     pub(crate) fn cmd_fight_status(&self, cx: &mut Client) {
         let view = self.view();
         let (mut ours, mut theirs) = (Vec::new(), Vec::new());
@@ -214,7 +210,7 @@ impl GameInterface {
                 continue;
             }
             let Some(p) = v.player() else { continue };
-            let threat = view.threat(v.id());
+            let threat = threat(view, &v.model);
             let title = self.short_title(cx, v);
             if threat == 0 || title.is_empty() {
                 continue;
@@ -247,6 +243,22 @@ impl GameInterface {
         ]
         .concat();
         cx.voice.item(&m);
+    }
+}
+
+/// The danger a creature represents by the rules of its type, as the
+/// simulation's menace weighs it: its damage, or for a transport, what it
+/// can carry.
+fn threat(view: View, e: &KnownEntity) -> i64 {
+    let Some(s) = view.unit_type(&e.type_name).map(|t| &t.stats) else {
+        return 0;
+    };
+    if !e.is_creature() {
+        0
+    } else if s.damage != 0 {
+        s.damage
+    } else {
+        s.transport_capacity * PRECISION * 2
     }
 }
 

@@ -279,6 +279,10 @@ fn compare(t: &mut Tally, w: &World, v: &View, s: &SeatView, kept: &Kept, label:
 
     // 3. What everyone may know of the other players.
     t.same("players", at(""), v.players(), s.players());
+    if !v.defeated().is_empty() {
+        t.saw("defeated player");
+    }
+    t.same("defeated", at(""), &v.defeated()[..], s.defeated());
 
     // 4. Entities the player perceives or remembers, and every other id.
     let ids: Vec<EntityId> = w
