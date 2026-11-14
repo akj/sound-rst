@@ -12,9 +12,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use soundrts_protocol::{Digest, SlotIndex, Turn};
-use soundrts_world::{Controller, ControllerKind, SIM_VERSION};
+use soundrts_world::{Controller, ControllerKind, GameSetup, Host, SIM_VERSION};
 
-use crate::session::{SessionKind, WorldInputs, build_world};
+use crate::session::SessionKind;
 
 /// What a game's world was built from, and who recorded it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,35 +230,37 @@ impl GameRecord {
                 recorded: s.sim_version,
             };
         }
-        let controllers: Vec<Controller> =
-            s.players.iter().map(RecordedPlayer::controller).collect();
         // As `Session::multiplayer` and `Session::start` build a game on a
         // server.
         let kind = SessionKind::Multiplayer;
-        let built = build_world(WorldInputs {
-            rules: &s.rules,
-            ai: &s.ai,
-            default_triggers: kind.default_triggers(),
+        let setup = GameSetup {
+            rules: s.rules.clone(),
+            ai: s.ai.clone(),
+            map: s.map.clone(),
             seed: s.seed,
+            controllers: s.players.iter().map(RecordedPlayer::controller).collect(),
+            default_triggers: kind.default_triggers(),
             allow_cheatmode: false,
-            map_definition: &s.map,
-            controllers: &controllers,
             random_starts: true,
             equivalents: kind.equivalents(),
-        });
-        let (mut world, players) = match built {
-            Ok(built) => built,
+        };
+        let mut host = match Host::new(&setup) {
+            Ok(host) => host,
             Err(e) => return Check::Invalid(format!("map error: {e}")),
+        };
+        // No player of a replay is local: nobody receives events.
+        let Some(&recorder) = host.seats().get(s.you) else {
+            return Check::Invalid(format!("no slot {}", s.you));
         };
         for (i, t) in self.turns.iter().enumerate() {
             for o in &t.orders {
-                let Some(&p) = players[..controllers.len()].get(o.slot) else {
+                let Some(&p) = host.seats().get(o.slot) else {
                     return Check::Invalid(format!("turn {}: no slot {}", t.turn, o.slot));
                 };
-                world.queue_command(p, &o.order);
+                host.queue_line(p, &o.order);
             }
-            world.update();
-            let replayed = world.digest_u64();
+            host.step(recorder);
+            let replayed = host.world_until_view().digest_u64();
             if replayed != t.digest {
                 return Check::Replayed {
                     turns: i + 1,

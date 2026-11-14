@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::player::ControllerKind;
+use soundrts_world::{Cheat, Command};
 
 use crate::client::Client;
 use crate::input::{Event, KeyDown};
@@ -20,10 +20,10 @@ use super::entity::direction_to_msgpart;
 use super::{GameInterface, Oops, POSITIONAL_BEEP_SOUND, R, Stop, TURN, style_msg};
 
 /// What the game menu's items do.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum GameMenuChoice {
     Quit,
-    Speed(&'static str),
+    Speed(f64),
 }
 
 /// The game menu, open in a game on a server while the game goes on, and
@@ -93,8 +93,8 @@ impl GameInterface {
             C::GameMenu => self.cmd_gamemenu(cx)?,
             C::SayPlayers => {
                 let mut m = Vec::new();
-                for &p in &self.world.players {
-                    m.extend(self.world.player(p).name());
+                for &p in &self.host.world_until_view().players {
+                    m.extend(self.host.world_until_view().player(p).name());
                     m.extend(msg(mp::COMMA));
                 }
                 cx.voice.item(&m);
@@ -114,7 +114,7 @@ impl GameInterface {
             C::Console => self.cmd_console(cx)?,
             C::ReloadParameters => cx.reload_parameters(),
             C::Cmd(cmd) => {
-                if self.world.allow_cheatmode {
+                if self.host.world_until_view().allow_cheatmode {
                     self.execute_command(cx, cmd)?;
                 } else {
                     cx.voice.item(&msg(mp::BEEP));
@@ -160,13 +160,13 @@ impl GameInterface {
 
     fn cmd_objectives(&self, cx: &mut Client) {
         let mut m = Vec::new();
-        let objective = &self.world.map.objective;
+        let objective = &self.host.world_until_view().map.objective;
         if !objective.is_empty() {
             m.extend(msg(mp::OBJECTIVE));
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
             m.extend(msg(mp::PERIOD));
         }
-        let objectives = &self.world.player(self.me).objectives;
+        let objectives = &self.host.world_until_view().player(self.me).objectives;
         if !objectives.is_empty() {
             m.extend(msg(mp::OBJECTIVE));
             m.extend(msg(mp::COMMA));
@@ -179,9 +179,9 @@ impl GameInterface {
     }
 
     fn cmd_toggle_cheatmode(&mut self, cx: &mut Client) {
-        if self.world.allow_cheatmode {
-            self.write_line(cx, "toggle_cheatmode");
-            let state = if self.world.player(self.me).cheatmode {
+        if self.host.world_until_view().allow_cheatmode {
+            self.send_command(cx, Command::Cheat(Cheat::ToggleMode));
+            let state = if self.host.world_until_view().player(self.me).cheatmode {
                 mp::IS_NOW_OFF
             } else {
                 mp::IS_NOW_ON
@@ -208,22 +208,15 @@ impl GameInterface {
                 self.next_update = now;
             }
         } else if cmd == "m" {
-            for u in self.world.player(self.me).units.clone() {
-                if let Some(e) = self.world.entity_mut(u) {
-                    e.stats.mana_regen *= 1000;
-                }
-            }
+            self.cheat_at_once(Cheat::InfiniteMana);
         } else if cmd == "h" {
             cx.voice.item(&vec![MsgPart::from(
                 "p: pause/unpause, s: set speed, r: get 1000 resources, t: get all techs, m: infinite mana, a: add units, v: instant victory",
             )]);
         } else if cmd == "r" {
-            let p = self.world.player_mut(self.me);
-            for r in &mut p.resources {
-                *r += 1000 * super::order::PRECISION;
-            }
+            self.cheat_at_once(Cheat::Resources);
         } else if cmd == "t" {
-            self.world.player_mut(self.me).cheat_has_all = true;
+            self.cheat_at_once(Cheat::AllTechs);
         } else if cmd == "dti" {
             // Shows the target's data on screen: nothing to hear.
         } else if matches!(cmd, "edit" | "sm" | "at")
@@ -233,24 +226,30 @@ impl GameInterface {
             // The map editor is not part of this client.
             cx.voice.item(&msg(mp::BEEP));
         } else if !cmd.is_empty() {
-            let mut cmd = cmd.to_owned();
-            if let Some(rest) = cmd.strip_prefix("a ") {
-                let name = self
-                    .place
-                    .map(|p| self.world.square(p).name.clone())
-                    .unwrap_or_default();
-                cmd = format!("add_units {name} {rest}");
-            }
-            if cmd == "v" {
-                cmd = "victory".into();
-            }
-            self.write_line(cx, &format!("cmd {cmd}"));
+            let cheat = if let Some(rest) = cmd.strip_prefix("a ") {
+                Cheat::AddUnits {
+                    square: self.place,
+                    units: rest.to_owned(),
+                }
+            } else if cmd == "v" {
+                Cheat::Victory
+            } else {
+                Cheat::Trigger(cmd.to_owned())
+            };
+            self.send_command(cx, Command::Cheat(cheat));
         }
         Ok(())
     }
 
+    /// A cheat that changes the game at once. It is the player's even out
+    /// of the game, as the console's always were; the console is open only
+    /// in a game that allows cheats.
+    fn cheat_at_once(&mut self, cheat: Cheat) {
+        self.host.queue(self.me, Command::Cheat(cheat));
+    }
+
     fn cmd_console(&mut self, cx: &mut Client) -> Result<(), Stop> {
-        if !self.world.allow_cheatmode {
+        if !self.host.world_until_view().allow_cheatmode {
             cx.voice.item(&msg(mp::BEEP));
             return Ok(());
         }
@@ -263,32 +262,29 @@ impl GameInterface {
     /// Plays as the next player of the game (a cheat): the logins stay with
     /// the players, the events now come from the new one.
     fn cmd_change_player(&mut self, cx: &mut Client) {
-        if !self.world.allow_cheatmode {
+        if !self.host.world_until_view().allow_cheatmode {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
-        let players = &self.world.players;
+        let players = &self.host.world_until_view().players;
         let i = players.iter().position(|&p| p == self.me).unwrap_or(0);
         let new = players[(i + 1) % players.len()];
         if new != self.me {
-            let login = self.world.player(new).controller.login();
-            self.world.player_mut(new).controller.kind =
-                ControllerKind::Human { login, local: true };
-            if let ControllerKind::Human { local, .. } =
-                &mut self.world.player_mut(self.me).controller.kind
-            {
-                *local = false;
-            }
+            self.cheat_at_once(Cheat::PlayAs(new));
             self.me = new;
         }
         // Upstream refreshes the fog of war here from the previous player's
         // last perception: nothing changes until the next turn.
-        let m = [msg(mp::YOU_ARE), self.world.player(self.me).name()].concat();
+        let m = [
+            msg(mp::YOU_ARE),
+            self.host.world_until_view().player(self.me).name(),
+        ]
+        .concat();
         cx.voice.item(&m);
     }
 
     fn is_admin(&self) -> bool {
-        self.world.players.first() == Some(&self.me)
+        self.host.world_until_view().players.first() == Some(&self.me)
     }
 
     /// The game menu: quit, the speeds, continue. In a game on a server,
@@ -313,22 +309,22 @@ impl GameInterface {
         if self.is_admin() && self.net.is_none() {
             menu.append(
                 msg(mp::SET_SPEED_TO_SLOW),
-                set(GameMenuChoice::Speed("0.5")),
+                set(GameMenuChoice::Speed(0.5)),
                 None,
             );
             menu.append(
                 msg(mp::SET_SPEED_TO_NORMAL),
-                set(GameMenuChoice::Speed("1.0")),
+                set(GameMenuChoice::Speed(1.0)),
                 None,
             );
             menu.append(
                 msg(mp::SET_SPEED_TO_FAST),
-                set(GameMenuChoice::Speed("2.0")),
+                set(GameMenuChoice::Speed(2.0)),
                 None,
             );
             menu.append(
                 [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
-                set(GameMenuChoice::Speed("4.0")),
+                set(GameMenuChoice::Speed(4.0)),
                 None,
             );
         }
@@ -371,7 +367,7 @@ impl GameInterface {
     fn game_menu_chosen(&mut self, cx: &mut Client, choice: Option<GameMenuChoice>) {
         match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
-            Some(GameMenuChoice::Speed(s)) => self.write_line(cx, &format!("speed {s}")),
+            Some(GameMenuChoice::Speed(s)) => self.send_command(cx, Command::Speed(s)),
             None => {}
         }
     }
@@ -380,7 +376,7 @@ impl GameInterface {
     fn gm_quit(&mut self, cx: &mut Client) {
         if !self.already_asked_to_quit {
             self.next_update = cx.clock.now();
-            self.write_line(cx, "quit");
+            self.send_command(cx, Command::Quit);
             cx.input.clear();
             self.already_asked_to_quit = true;
         } else {

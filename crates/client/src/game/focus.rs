@@ -57,11 +57,11 @@ impl Zoom {
         z
     }
 
-    /// The target id the `order` command accepts for this subsquare.
-    pub fn id(&self, sq: &Square) -> String {
+    /// The center of this subsquare, in millimeters.
+    pub fn point(&self, sq: &Square) -> (i64, i64) {
         let x = sq.x as f64 + self.sub_x as f64 * self.xstep;
         let y = sq.y as f64 + self.sub_y as f64 * self.ystep;
-        format!("zoom-{}-{}-{}", sq.id, x.trunc() as i64, y.trunc() as i64)
+        (x.trunc() as i64, y.trunc() as i64)
     }
 
     pub fn title(&self, sq: &Square) -> Msg {
@@ -161,12 +161,12 @@ mod tests {
             z.title(&sq),
             [sq.title.clone(), msg(mp::AT_THE_CENTER)].concat()
         );
-        assert_eq!(z.id(&sq), format!("zoom-{}-18000-30000", sq.id));
+        assert_eq!(z.point(&sq), (18000, 30000));
         assert!(z.contains(16000, 28000) && !z.contains(20000, 30000));
         assert_eq!(z.obs_pos(), (18.0, 28.5));
         assert_eq!(z.step(1, 0), None);
         z.update_coords(&sq);
-        assert_eq!(z.id(&sq), format!("zoom-{}-22000-30000", sq.id));
+        assert_eq!(z.point(&sq), (22000, 30000));
         assert_eq!(z.title(&sq), [sq.title.clone(), msg(mp::EAST)].concat());
         // Past the east edge: the west subsquare of the next square.
         assert_eq!(z.step(1, 0), Some((1, 0)));

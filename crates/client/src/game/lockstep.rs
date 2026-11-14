@@ -1,5 +1,5 @@
 //! A game on a server (`worldclient.Coordinator`): the commands the player
-//! writes go to the server as orders, and a turn runs only when the server
+//! gives go to the server as orders, and a turn runs only when the server
 //! has sent it, with every player's orders, so that every client runs the
 //! same game.
 
@@ -41,7 +41,7 @@ impl GameInterface {
             }
             return;
         }
-        crate::net::send_orders(cx, &mut self.pending_commands);
+        self.send_pending(cx);
         let now = cx.clock.now();
         if self.waiting_for_world_update || now < self.next_update {
             return;
@@ -63,11 +63,11 @@ impl GameInterface {
                 continue;
             };
             // As the original: a player out of the game gets no order.
-            if !self.world.players.contains(&p) {
+            if !self.host.world_until_view().players.contains(&p) {
                 continue;
             }
             for order in so.orders.as_slice() {
-                self.world.queue_command(p, order.as_str());
+                self.host.queue_line(p, order.as_str());
                 queued.push(RecordedOrder {
                     slot: so.slot,
                     order: order.as_str().to_owned(),
@@ -76,7 +76,7 @@ impl GameInterface {
         }
         self.next_update = now + interval / (1 + backlog) as f64;
         self.run_turn(cx);
-        let digest = self.world.digest_u64();
+        let digest = self.host.world_until_view().digest_u64();
         if let Some(driver) = &mut self.net {
             driver.record.turns.push(RecordedTurn {
                 turn,
@@ -85,6 +85,22 @@ impl GameInterface {
             });
         }
         crate::net::send(cx, ClientMsg::TurnDone { turn, digest });
+    }
+
+    /// Sends the commands given since the last call as orders, as many as
+    /// the server takes for one turn; the others wait.
+    fn send_pending(&mut self, cx: &mut Client) {
+        let world = self.host.world_until_view();
+        // Every pending command has a line: `send_command` keeps no other
+        // in a game on a server.
+        let mut lines: Vec<String> = self
+            .pending_commands
+            .iter()
+            .filter_map(|c| c.line(world))
+            .collect();
+        let before = lines.len();
+        crate::net::send_orders(cx, &mut lines);
+        self.pending_commands.drain(..before - lines.len());
     }
 
     /// Writes the record to the replays folder if the server has said the
