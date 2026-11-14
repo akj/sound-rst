@@ -267,10 +267,11 @@ fn only_a_perceived_unit_has_upgrades() {
 }
 
 #[test]
-fn a_remembered_units_activity_is_the_live_ones() {
+fn a_remembered_unit_is_busy_with_what_it_did_when_last_seen() {
     let (mut w, me, them) = game();
     let peasant = unit(&w, them, "peasant");
     let farm = unit(&w, them, "farm");
+    // Last seen idle; repairing now.
     remember(&mut w, me, peasant);
     w.entity_mut(farm).unwrap().hp = 1000;
     command(
@@ -286,11 +287,53 @@ fn a_remembered_units_activity_is_the_live_ones() {
     }
     let v = View::new(&w, me);
     assert!(v.perceived(peasant).is_none());
-    assert!(v.remembered(peasant).unwrap().snapshot.orders.is_empty());
     assert_eq!(w.activity(peasant).as_deref(), Some("building"));
+    assert_eq!(v.activity(peasant), None);
+    assert_eq!(v.remembered_activity(peasant), None);
+
+    // Last seen repairing.
+    remember(&mut w, me, peasant);
+    let v = View::new(&w, me);
+    assert_eq!(v.remembered_activity(peasant).as_deref(), Some("building"));
+}
+
+#[test]
+fn a_remembered_unit_gathers_from_what_the_player_knows() {
+    let (mut w, me, them) = game();
+    let peasant = unit(&w, them, "peasant");
+    // A gold mine the player knows nothing of. The computer is made to
+    // see it, so that its order aims at the mine itself.
+    let mine = *w
+        .player(them)
+        .memory
+        .keys()
+        .find(|&&o| &*w.entity(o).unwrap().type_name == "goldmine")
+        .unwrap();
+    assert!(View::new(&w, me).known(mine).is_none());
+    w.player_mut(them).perception.insert(mine);
+    command(
+        &mut w,
+        them,
+        &[
+            format!("control {}", peasant.0),
+            format!("order 0 0 gather {}", mine.0),
+        ],
+    );
+    for _ in 0..1000 {
+        if w.activity(peasant).is_some() {
+            break;
+        }
+        w.update();
+    }
+    assert_eq!(w.activity(peasant).as_deref(), Some("exploiting_goldmine"));
+    // Last seen gathering from a mine the player knows nothing of: no
+    // activity; once the player remembers the mine, it is named.
+    remember(&mut w, me, peasant);
+    assert_eq!(View::new(&w, me).remembered_activity(peasant), None);
+    remember(&mut w, me, mine);
     assert_eq!(
-        v.leaks().live_activity(peasant).as_deref(),
-        Some("building")
+        View::new(&w, me).remembered_activity(peasant).as_deref(),
+        Some("exploiting_goldmine")
     );
 }
 

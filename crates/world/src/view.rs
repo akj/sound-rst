@@ -38,9 +38,9 @@
 //! group 6.
 
 use crate::command::OrderTarget;
-use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId};
+use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::msg::Msg;
-use crate::orders::{Keyword, OrderInfo};
+use crate::orders::{Keyword, Mode, OrderInfo};
 use crate::player::{Objective, PlayerStats, Remembrance};
 use crate::rules::{TypeId, UnitType};
 use crate::square::Square;
@@ -346,6 +346,26 @@ impl<'a> View<'a> {
         c
     }
 
+    /// What a remembered unit was busy with when the player last saw it,
+    /// as [`View::activity`] says it of a perceived one, from the
+    /// remembered copy's first order. What it gathers from is named as the
+    /// player knows it: `None` if the player knows nothing of it.
+    pub fn remembered_activity(&self, unit: EntityId) -> Option<String> {
+        let o = self.remembered(unit)?.snapshot.orders.first()?;
+        match o.mode {
+            Mode::Build => Some("building".into()),
+            Mode::Gather => {
+                let name = match o.target.as_ref()? {
+                    Target::Entity(id) => &self.known(*id)?.0.type_name,
+                    Target::Memory(m) => &m.snapshot.type_name,
+                    _ => return None,
+                };
+                Some(format!("exploiting_{name}"))
+            }
+            _ => None,
+        }
+    }
+
     /// Whether an exit is closed as far as the player knows: by dense
     /// forests, or by a blocker on either side, as the player perceives or
     /// remembers the exits and the blockers. With `friendly_gates_open`, a
@@ -407,11 +427,12 @@ impl<'a> View<'a> {
             .then(|| self.world.has(owner, type_name))
     }
 
-    /// What a unit is busy with, for its noise: `building`, or
-    /// `exploiting_` and what it gathers from. For a unit the player
-    /// perceives; for a remembered one the interface reads
-    /// [`Leaks::live_activity`].
+    /// What a unit the player perceives is busy with, for its noise:
+    /// `building`, or `exploiting_` and what it gathers from. None for a
+    /// unit the player does not perceive; for a remembered one, see
+    /// [`View::remembered_activity`].
     pub fn activity(&self, unit: EntityId) -> Option<String> {
+        self.perceived(unit)?;
         self.world.activity(unit)
     }
 
@@ -480,15 +501,6 @@ impl<'a> Leaks<'a> {
     /// that target in the unit's orders.
     pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
         self.world.player(owner).memory.get(&id)
-    }
-
-    /// What a remembered unit is busy with now, as [`View::activity`]
-    /// says it of a perceived one.
-    ///
-    /// Used to choose the noise of a remembered unit or building
-    /// (`noise_when_building`, `noise_when_exploiting_...`).
-    pub fn live_activity(&self, unit: EntityId) -> Option<String> {
-        self.world.activity(unit)
     }
 
     /// The terrain of a square the player does not observe now, as it is

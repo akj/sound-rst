@@ -985,7 +985,7 @@ impl GameInterface {
     fn noise_style(&self, cx: &Client, v: &EntityView) -> (String, Noise) {
         let view = self.view();
         let activity = if v.is_memory() {
-            view.leaks().live_activity(v.id())
+            view.remembered_activity(v.id())
         } else {
             view.activity(v.id())
         };
