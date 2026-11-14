@@ -30,6 +30,7 @@ key F2
 key F5
 key F6
 key LALT
+release LALT
 key HOME
 key END
 key BACKSPACE

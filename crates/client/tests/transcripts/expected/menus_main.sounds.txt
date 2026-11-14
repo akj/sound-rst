@@ -39,8 +39,9 @@
 @71710 step 23
 @71720 step 24
 @71730 step 25
-@74530 step 26
-@77330 step 27
-@77340 step 28
-@81740 step 29
-@81740 stereo 6116 vol=1.000 limit=0.000 started
+@71740 step 26
+@74550 step 27
+@77350 step 28
+@77360 step 29
+@81760 step 30
+@81760 stereo 6116 vol=1.000 limit=0.000 started

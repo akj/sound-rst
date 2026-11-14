@@ -103,10 +103,16 @@ not busy, no queued part) and no message is waiting to be said.
 
 ### Input
 
-- Steps add key presses only. No key release is ever added. The keys do
-  not repeat. The modifiers of a chord (`key CTRL SHIFT F2`) are not
-  pressed as keys of their own: only the main key is pressed, with the
-  modifiers held. A modifier alone is a step of its own (`key LCTRL`).
+- A `key` step presses a key and never releases it. A `release` step
+  releases one. The keys do not repeat. The modifiers of a chord
+  (`key CTRL SHIFT F2`) are not pressed as keys of their own: only the
+  main key is pressed, with the modifiers held.
+- A modifier pressed alone acts when it is released, and only if no other
+  key went down while it was held (`src/input.rs`). So a script presses
+  and releases it: `key LCTRL`, then `release LCTRL`.
+- A release is an event of its own in the queue. A menu reads one event
+  per pass, so a release costs it a pass (10 ms). The game loop reads
+  every waiting event in one pass.
 - A key press carries the key, the physical key (the same), the modifiers
   (CTRL, ALT, SHIFT; a modifier key alone holds its own modifier), and the
   text a US layout types. For a letter, the text is the letter, upper case
@@ -152,6 +158,7 @@ no game was running).
 | step | delivered when |
 |---|---|
 | `key K` | at a `menu`, `text` or `game` input point, when settled |
+| `release K` | at the next input point of any kind. Not settled first |
 | `type abc` | one `key` step per character (`A` → `SHIFT a`, space → `SPACE`, `.` → `PERIOD`) |
 | `interrupt_after D key K` | as soon as `now ≥ t_prev + D`: at the end of the sleep that reaches it, or at an input point. Not settled first. The key may interrupt speech, or be dropped (after an alert) |
 | `wait S` | at an input point, when `now ≥ t_prev + S` |
@@ -159,8 +166,9 @@ no game was running).
 | `wait_turns N` | at an input point, when a game runs and its turn is `turn_prev + N` or more |
 | `wait_game_end` | at an input point, when no game runs |
 
-Delivering a key step adds its key press to the queue. At an input point,
-the reading function then reads it in the same call. An `interrupt_after`
+Delivering a `key` or `release` step adds its key press or release to
+the queue. At an input point, the reading function then reads it in the
+same call. An `interrupt_after`
 key delivered at the end of a sleep waits in the queue for the next read,
 which may be one that drops it (after an alert).
 
@@ -169,8 +177,8 @@ voice update. A message said at once (`item`) whose speech ends at exactly
 `now` already counts as idle, so the next key is delivered in that pass. A
 queued message (`info`) stays unsaid until the voice update marks it said,
 so the next key is delivered one pass later, unless the voice update
-started another queued message. After a step that is not a key, the next
-step is checked at once, at the same input point. When every step has been
+started another queued message. After a step that is not a key or a
+release, the next step is checked at once, at the same input point. When every step has been
 delivered, the scenario ends at the first `menu`, `text` or `game` input
 point where the client is settled (`end`), or earlier if the client exits
 (`exit`).
@@ -373,8 +381,8 @@ again.
 - A modifier key pressed alone in a game is a command (`LCTRL` examines,
   `LSHIFT` and `LALT` stop the history). In a menu, CTRL alone says the
   "press Tab to select" explanation, ALT alone skips the current message,
-  and SHIFT alone says nothing. With real presses, these modifier presses
-  arrive before the chord's main key. The scripts do not press them.
+  and SHIFT alone says nothing. Each acts when the modifier is released
+  (see Input).
 - Backspace in a menu is a first-letter search for `\x08`: it says
   nothing.
 - A unit's status names a square or a subsquare target by the place's own
