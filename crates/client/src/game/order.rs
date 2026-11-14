@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{EntityId, KeywordOrder, World};
+use soundrts_world::{EntityId, KeywordOrder, View};
 
 use crate::style::Style;
 
@@ -101,7 +101,7 @@ impl OrderTypeView {
     pub fn new(
         order: &str,
         unit: EntityId,
-        world: &World,
+        view: View,
         style: &Style,
         log: &crate::log::Log,
     ) -> Option<OrderTypeView> {
@@ -110,7 +110,7 @@ impl OrderTypeView {
         let type_name = words.next().map(str::to_owned);
         let requirements = type_name
             .as_deref()
-            .and_then(|t| world.rules.unit_type(t))
+            .and_then(|t| view.unit_type(t))
             .map(|t| t.requirements.clone())
             .unwrap_or_default();
         let mut title = style_msg(style, keyword.as_str(), "title");
@@ -127,7 +127,7 @@ impl OrderTypeView {
                 .first())
             .map(|p| p.to_string());
         let comment = style_msg_quiet(style, keyword.as_str(), "comment");
-        let info = world.order_info(unit, keyword, type_name.as_deref());
+        let info = view.order_info(unit, keyword, type_name.as_deref());
         if info.is_none() {
             log.error(format!("problem with the order {order} of {}", unit.0));
         }
@@ -167,22 +167,25 @@ impl OrderTypeView {
     }
 
     /// An ability with a long range: the target may be any square.
-    pub fn target_shouldnt_collide(&self, world: &World) -> bool {
+    pub fn target_shouldnt_collide(&self, view: View) -> bool {
         self.keyword == Keyword::Use
             && self
                 .type_name
                 .as_deref()
-                .and_then(|t| world.rules.unit_type(t))
+                .and_then(|t| view.unit_type(t))
                 .is_some_and(|t| t.stats.effect_range > 12 * PRECISION)
     }
 
     /// The missing requirements, else the costs, after "requires".
-    fn requirements_msg(&self, world: &World, style: &Style) -> Msg {
-        let player = world.entity(self.unit).and_then(|e| e.player);
+    fn requirements_msg(&self, view: View, style: &Style) -> Msg {
         let missing: Vec<&String> = self
             .requirements
             .iter()
-            .filter(|r| !player.is_some_and(|p| world.has(p, r)))
+            .filter(|r| {
+                !view
+                    .owner_has(self.unit, r)
+                    .unwrap_or_else(|| view.leaks().unit_owner_has(self.unit, r))
+            })
             .collect();
         let mut and_index = 0;
         let mut m: Msg = Vec::new();
@@ -220,9 +223,9 @@ impl OrderTypeView {
     }
 
     /// The comment, then the requirements or costs.
-    pub fn full_comment(&self, world: &World, style: &Style) -> Msg {
+    pub fn full_comment(&self, view: View, style: &Style) -> Msg {
         let mut m = self.comment.clone();
-        m.extend(self.requirements_msg(world, style));
+        m.extend(self.requirements_msg(view, style));
         m
     }
 }

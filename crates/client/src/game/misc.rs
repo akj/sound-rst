@@ -93,8 +93,9 @@ impl GameInterface {
             C::GameMenu => self.cmd_gamemenu(cx)?,
             C::SayPlayers => {
                 let mut m = Vec::new();
-                for &p in &self.host.world_until_view().players {
-                    m.extend(self.host.world_until_view().player(p).name());
+                let view = self.view();
+                for &p in view.players() {
+                    m.extend(view.player_name(p));
                     m.extend(msg(mp::COMMA));
                 }
                 cx.voice.item(&m);
@@ -114,7 +115,7 @@ impl GameInterface {
             C::Console => self.cmd_console(cx)?,
             C::ReloadParameters => cx.reload_parameters(),
             C::Cmd(cmd) => {
-                if self.host.world_until_view().allow_cheatmode {
+                if self.view().cheats_allowed() {
                     self.execute_command(cx, cmd)?;
                 } else {
                     cx.voice.item(&msg(mp::BEEP));
@@ -160,13 +161,14 @@ impl GameInterface {
 
     fn cmd_objectives(&self, cx: &mut Client) {
         let mut m = Vec::new();
-        let objective = &self.host.world_until_view().map.objective;
+        let view = self.view();
+        let objective = view.map_objective();
         if !objective.is_empty() {
             m.extend(msg(mp::OBJECTIVE));
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
             m.extend(msg(mp::PERIOD));
         }
-        let objectives = &self.host.world_until_view().player(self.me).objectives;
+        let objectives = view.objectives();
         if !objectives.is_empty() {
             m.extend(msg(mp::OBJECTIVE));
             m.extend(msg(mp::COMMA));
@@ -179,9 +181,9 @@ impl GameInterface {
     }
 
     fn cmd_toggle_cheatmode(&mut self, cx: &mut Client) {
-        if self.host.world_until_view().allow_cheatmode {
+        if self.view().cheats_allowed() {
             self.send_command(cx, Command::Cheat(Cheat::ToggleMode));
-            let state = if self.host.world_until_view().player(self.me).cheatmode {
+            let state = if self.view().cheat_mode() {
                 mp::IS_NOW_OFF
             } else {
                 mp::IS_NOW_ON
@@ -249,7 +251,7 @@ impl GameInterface {
     }
 
     fn cmd_console(&mut self, cx: &mut Client) -> Result<(), Stop> {
-        if !self.host.world_until_view().allow_cheatmode {
+        if !self.view().cheats_allowed() {
             cx.voice.item(&msg(mp::BEEP));
             return Ok(());
         }
@@ -262,11 +264,11 @@ impl GameInterface {
     /// Plays as the next player of the game (a cheat): the logins stay with
     /// the players, the events now come from the new one.
     fn cmd_change_player(&mut self, cx: &mut Client) {
-        if !self.host.world_until_view().allow_cheatmode {
+        if !self.view().cheats_allowed() {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
-        let players = &self.host.world_until_view().players;
+        let players = self.view().players();
         let i = players.iter().position(|&p| p == self.me).unwrap_or(0);
         let new = players[(i + 1) % players.len()];
         if new != self.me {
@@ -275,16 +277,12 @@ impl GameInterface {
         }
         // Upstream refreshes the fog of war here from the previous player's
         // last perception: nothing changes until the next turn.
-        let m = [
-            msg(mp::YOU_ARE),
-            self.host.world_until_view().player(self.me).name(),
-        ]
-        .concat();
+        let m = [msg(mp::YOU_ARE), self.view().player_name(self.me)].concat();
         cx.voice.item(&m);
     }
 
     fn is_admin(&self) -> bool {
-        self.host.world_until_view().players.first() == Some(&self.me)
+        self.view().players().first() == Some(&self.me)
     }
 
     /// The game menu: quit, the speeds, continue. In a game on a server,

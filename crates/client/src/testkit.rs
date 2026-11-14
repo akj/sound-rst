@@ -953,7 +953,7 @@ impl Harness {
     /// Runs the game loop until the world has played `turn` turns and their
     /// events are handled.
     pub fn run_until_turn(&mut self, g: &mut TestGame, turn: i64) {
-        while g.game.host.world_until_view().turn() < turn || g.game.has_pending_server_events() {
+        while g.game.view().turn() < turn || g.game.has_pending_server_events() {
             assert!(!g.game.end_loop, "the game ended before turn {turn}");
             self.step(g);
         }

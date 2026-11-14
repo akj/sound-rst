@@ -1,8 +1,8 @@
 //! The zoom: one of the nine subsquares of the current square.
 
+use soundrts_world::MapSquare;
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::square::Square;
 
 /// The subsquares in the order the zoom tries them when it looks for a
 /// unit, with their names.
@@ -42,12 +42,13 @@ pub struct Zoom {
 
 impl Zoom {
     /// The center of `sq`.
-    pub fn new(sq: &Square) -> Zoom {
+    pub fn new(sq: MapSquare) -> Zoom {
+        let ((xmin, ymin), (xmax, ymax)) = (sq.min(), sq.max());
         let mut z = Zoom {
             sub_x: 0,
             sub_y: 0,
-            xstep: (sq.xmax - sq.xmin) as f64 / 3.0,
-            ystep: (sq.ymax - sq.ymin) as f64 / 3.0,
+            xstep: (xmax - xmin) as f64 / 3.0,
+            ystep: (ymax - ymin) as f64 / 3.0,
             xmin: 0.0,
             xmax: 0.0,
             ymin: 0.0,
@@ -58,14 +59,15 @@ impl Zoom {
     }
 
     /// The center of this subsquare, in millimeters.
-    pub fn point(&self, sq: &Square) -> (i64, i64) {
-        let x = sq.x as f64 + self.sub_x as f64 * self.xstep;
-        let y = sq.y as f64 + self.sub_y as f64 * self.ystep;
+    pub fn point(&self, sq: MapSquare) -> (i64, i64) {
+        let (cx, cy) = sq.center();
+        let x = cx as f64 + self.sub_x as f64 * self.xstep;
+        let y = cy as f64 + self.sub_y as f64 * self.ystep;
         (x.trunc() as i64, y.trunc() as i64)
     }
 
-    pub fn title(&self, sq: &Square) -> Msg {
-        let mut t = sq.title.clone();
+    pub fn title(&self, sq: MapSquare) -> Msg {
+        let mut t = sq.title().clone();
         t.extend(subzone_name((self.sub_x, self.sub_y)));
         t
     }
@@ -96,7 +98,7 @@ impl Zoom {
     /// Goes to the first subsquare of `sq` (in [`SUBZONES`] order) that
     /// contains the point. Returns false, at the last subsquare tried, if
     /// none does.
-    pub fn move_to(&mut self, sq: &Square, x: i64, y: i64) -> bool {
+    pub fn move_to(&mut self, sq: MapSquare, x: i64, y: i64) -> bool {
         for ((sx, sy), _) in SUBZONES {
             self.sub_x = sx;
             self.sub_y = sy;
@@ -108,10 +110,11 @@ impl Zoom {
         false
     }
 
-    pub fn update_coords(&mut self, sq: &Square) {
-        self.xmin = sq.xmin as f64 + (self.sub_x + 1) as f64 * self.xstep;
+    pub fn update_coords(&mut self, sq: MapSquare) {
+        let (xmin, ymin) = sq.min();
+        self.xmin = xmin as f64 + (self.sub_x + 1) as f64 * self.xstep;
         self.xmax = self.xmin + self.xstep;
-        self.ymin = sq.ymin as f64 + (self.sub_y + 1) as f64 * self.ystep;
+        self.ymin = ymin as f64 + (self.sub_y + 1) as f64 * self.ystep;
         self.ymax = self.ymin + self.ystep;
     }
 
@@ -133,41 +136,44 @@ impl Zoom {
 mod tests {
     use super::*;
 
-    fn square() -> Square {
-        // b3 of a map with 12 m squares.
-        let mut w = soundrts_world::World::new(
-            soundrts_world::Rules::load(&[""]),
-            soundrts_world::AiScripts::load(&[""]),
-            Vec::new(),
-            0,
-        );
-        w.load_and_build_map(
-            "square_width 12\nnb_columns 3\nnb_lines 3\nnb_players_min 1\nnb_players_max 1\nstarting_squares a1\n",
-        )
-            .unwrap();
-        let id = w.square_by_name("b3").unwrap();
-        w.square(id).clone()
+    /// A game on a map of 3 by 3 squares of 12 m.
+    fn host() -> soundrts_world::Host {
+        soundrts_world::Host::new(&soundrts_world::GameSetup {
+            rules: "def human_faction\nclass faction\n".into(),
+            ai: String::new(),
+            map: "square_width 12\nnb_columns 3\nnb_lines 3\nnb_players_min 1\nnb_players_max 1\nstarting_squares a1\n".into(),
+            seed: 0,
+            controllers: vec![soundrts_world::Controller::human("me", true)],
+            default_triggers: Vec::new(),
+            allow_cheatmode: false,
+            random_starts: false,
+            equivalents: false,
+        })
+        .unwrap()
     }
 
     #[test]
     fn the_zoom_cuts_a_square_in_nine_and_crosses_into_the_next() {
-        let sq = square();
-        let mut z = Zoom::new(&sq);
+        let host = host();
+        let view = host.view(host.seats()[0]);
+        // b3
+        let sq = view.square(view.square_at(1, 2).unwrap());
+        let mut z = Zoom::new(sq);
         assert_eq!(
             (z.xmin, z.xmax, z.ymin, z.ymax),
             (16000.0, 20000.0, 28000.0, 32000.0)
         );
         assert_eq!(
-            z.title(&sq),
-            [sq.title.clone(), msg(mp::AT_THE_CENTER)].concat()
+            z.title(sq),
+            [sq.title().clone(), msg(mp::AT_THE_CENTER)].concat()
         );
-        assert_eq!(z.point(&sq), (18000, 30000));
+        assert_eq!(z.point(sq), (18000, 30000));
         assert!(z.contains(16000, 28000) && !z.contains(20000, 30000));
         assert_eq!(z.obs_pos(), (18.0, 28.5));
         assert_eq!(z.step(1, 0), None);
-        z.update_coords(&sq);
-        assert_eq!(z.point(&sq), (22000, 30000));
-        assert_eq!(z.title(&sq), [sq.title.clone(), msg(mp::EAST)].concat());
+        z.update_coords(sq);
+        assert_eq!(z.point(sq), (22000, 30000));
+        assert_eq!(z.title(sq), [sq.title().clone(), msg(mp::EAST)].concat());
         // Past the east edge: the west subsquare of the next square.
         assert_eq!(z.step(1, 0), Some((1, 0)));
         assert_eq!((z.sub_x, z.sub_y), (-1, 0));
@@ -175,9 +181,9 @@ mod tests {
         assert_eq!(z.step(0, -5), Some((0, -1)));
         assert_eq!((z.sub_x, z.sub_y), (-1, 1));
         // A point in the north-east subsquare.
-        assert!(z.move_to(&sq, 23000, 33000));
+        assert!(z.move_to(sq, 23000, 33000));
         assert_eq!((z.sub_x, z.sub_y), (1, 1));
-        assert!(!z.move_to(&sq, 0, 0));
+        assert!(!z.move_to(sq, 0, 0));
         assert_eq!((z.sub_x, z.sub_y), (-1, -1));
     }
 }

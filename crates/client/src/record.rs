@@ -260,7 +260,7 @@ impl GameRecord {
                 host.queue_line(p, &o.order);
             }
             host.step(recorder);
-            let replayed = host.world_until_view().digest_u64();
+            let replayed = host.digest();
             if replayed != t.digest {
                 return Check::Replayed {
                     turns: i + 1,

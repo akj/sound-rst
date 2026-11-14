@@ -55,24 +55,19 @@ fn title_key(t: &Msg) -> Vec<(u64, String)> {
 impl GameInterface {
     /// The resources of the player, in units.
     pub fn resources(&self) -> Vec<i64> {
-        self.host
-            .world_until_view()
-            .player(self.me)
-            .resources
+        self.view()
+            .resources()
             .iter()
             .map(|r| r / PRECISION)
             .collect()
     }
 
     pub fn available_food(&self) -> i64 {
-        self.host
-            .world_until_view()
-            .player(self.me)
-            .available_food(self.host.world_until_view().food_limit())
+        self.view().available_food()
     }
 
     pub fn used_food(&self) -> i64 {
-        self.host.world_until_view().player(self.me).used_food
+        self.view().used_food()
     }
 
     /// Says a message once the game has started, dropped after 1.5 s.
@@ -147,10 +142,8 @@ impl GameInterface {
             return;
         }
         let mut done: Vec<String> = Vec::new();
-        for u in self.host.world_until_view().player(self.me).units.clone() {
-            let Some(e) = self.host.world_until_view().entity(u) else {
-                continue;
-            };
+        for e in self.host.view(self.me).own_units() {
+            let u = e.id;
             // A view of each unit, as the original makes one: it draws its
             // footstep offset even when its type is done.
             let view = EntityView::new(Arc::new(e.clone()), None, &cx.rng);
@@ -317,7 +310,7 @@ impl GameInterface {
     fn sort_by_square_id(&self, places: &mut [Place]) {
         places.sort_by_key(|p| {
             self.outer_square(Some(*p))
-                .map_or(u32::MAX, |s| self.host.world_until_view().square(s).id)
+                .map_or(u32::MAX, |s| self.view().square(s).protocol_id())
         });
     }
 

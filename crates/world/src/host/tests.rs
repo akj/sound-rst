@@ -1,5 +1,7 @@
 use super::*;
-use crate::command::{KeywordOrder, Order, Queue};
+use crate::command::{KeywordOrder, Order, OrderTarget, Queue};
+use crate::entity::EntityId;
+use crate::orders::Keyword;
 use crate::player::Controller;
 use crate::world::multiplayer_default_triggers;
 use crate::{AiScripts, Rules};
@@ -305,22 +307,4 @@ fn a_typed_command_and_its_old_line_play_the_same_game() {
         assert_eq!(typed.world.digest_u64(), text.world.digest_u64());
     }
     assert_ne!(typed.world.digest_u64(), before);
-}
-
-#[test]
-fn the_default_order_is_the_worlds() {
-    let (mut host, me) = game();
-    let peasant = host
-        .world
-        .player(me)
-        .units
-        .iter()
-        .copied()
-        .find(|&u| &*host.world.entity(u).unwrap().type_name == "peasant")
-        .unwrap();
-    let b2 = host.world.square_by_name("b2").unwrap();
-    assert_eq!(
-        host.default_order(peasant, OrderTarget::Square(b2)),
-        Ok(Some(Keyword::Go))
-    );
 }

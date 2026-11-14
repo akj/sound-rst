@@ -1,14 +1,14 @@
 //! The host of one game: it owns the world, takes the players' commands and
 //! steps the game a turn at a time.
 
-use crate::command::{Cheat, Command, OrderTarget};
-use crate::entity::{EntityId, PlayerId};
+use crate::command::{Cheat, Command};
+use crate::entity::PlayerId;
 use crate::events::Event;
 use crate::nofloat::PRECISION;
-use crate::orders::Keyword;
 use crate::player::ControllerKind;
 use crate::setup::GameSetup;
-use crate::world::{Abort, World};
+use crate::view::View;
+use crate::world::World;
 
 /// The host of one game. It owns the world: everything that changes the
 /// game goes through it, as a [`Command`] for a player, and the game moves
@@ -95,24 +95,32 @@ impl Host {
         w
     }
 
-    /// The keyword of the order `unit` would choose for `target` if it
-    /// received the default order now. The error is the world's.
-    pub fn default_order(
-        &mut self,
-        unit: EntityId,
-        target: OrderTarget,
-    ) -> Result<Option<Keyword>, Abort> {
-        let id = target.text(&self.world);
-        Ok(self
-            .world
-            .get_default_order(unit, &id)?
-            .and_then(Keyword::parse))
+    /// What `player` knows of the game: see [`View`].
+    pub fn view(&self, player: PlayerId) -> View<'_> {
+        View::new(&self.world, player)
     }
 
-    /// The world, to read. Temporary: the interface reads the game here
-    /// until it reads a view of what its player knows instead. Nothing may
-    /// change the world except through the host.
-    pub fn world_until_view(&self) -> &World {
+    /// The text line of a command, as the world reads it and a game on a
+    /// server sends it. `None` for the cheats the host carries out itself
+    /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
+    /// [`Cheat::PlayAs`]), which have no text; a game on a server allows no
+    /// cheat. Temporary: it goes when a game on a server sends commands as
+    /// values.
+    pub fn line(&self, command: &Command) -> Option<String> {
+        command.line(&self.world)
+    }
+
+    /// A sum of the whole state of the game, to check that two machines
+    /// play the same game: see [`World::digest_u64`].
+    pub fn digest(&self) -> u64 {
+        self.world.digest_u64()
+    }
+
+    /// The whole world, to check a game's results in tests. Only the
+    /// `truth` feature has it, and the interface is built without that
+    /// feature: what a player knows goes through [`Host::view`].
+    #[cfg(feature = "truth")]
+    pub fn world(&self) -> &World {
         &self.world
     }
 

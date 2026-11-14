@@ -266,14 +266,7 @@ impl Session {
             countdown(cx);
         }
         if self.kind == SessionKind::Mission {
-            let intro: Vec<String> = game
-                .host
-                .world_until_view()
-                .map
-                .intro
-                .iter()
-                .map(i64::to_string)
-                .collect();
+            let intro: Vec<String> = game.view().map_intro().iter().map(i64::to_string).collect();
             if !intro.is_empty() {
                 cx.play_sequence(&intro);
             }
@@ -282,12 +275,12 @@ impl Session {
 
     /// Says the score and waits until it is said (a key skips ahead).
     pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
-        for m in score_msgs(game.host.world_until_view(), game.me, cx.res.style()) {
+        for m in score_msgs(game.view(), cx.res.style()) {
             cx.voice.info(&m);
         }
         cx.voice.flush(true);
         game.stop_noises(cx);
-        self.has_victory = game.host.world_until_view().player(game.me).has_victory;
+        self.has_victory = game.view().has_victory();
     }
 }
 

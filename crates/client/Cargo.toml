@@ -54,4 +54,7 @@ tts = "0.26"
 
 [dev-dependencies]
 soundrts = { path = ".", features = ["testkit"] }
+# The tests check results in the whole world; the interface itself reads
+# only what its player knows (see the CI workflow).
+soundrts-world = { path = "../world", features = ["truth"] }
 tempfile = "3"
