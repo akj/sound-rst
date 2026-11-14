@@ -32,3 +32,16 @@ jobs:
         run: cargo check -p soundrts --lib --bins
       - name: Test
         run: cargo test --workspace
+
+  # The simulation and the server must also build and pass on Linux, where
+  # a server is likely to run. The client needs Windows.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the original game
+        shell: pwsh
+        run: ./scripts/fetch-upstream.ps1
+      - name: Test the simulation, the protocol and the server
+        run: cargo test -p soundrts-world -p soundrts-protocol -p soundrts-server

@@ -219,8 +219,8 @@ fn a_map_with_too_many_start_units_is_refused() {
 #[test]
 fn a_map_with_squares_too_wide_or_empty_is_refused() {
     assert_eq!(
-        map_error("nb_lines 3\nsquare_width 9223372036854775807\nstarting_units farm"),
-        "a square width of 9223372036854775807, not from 1 to 100"
+        map_error("nb_lines 3\nsquare_width 101\nstarting_units farm"),
+        "a square width of 101, not from 1 to 100"
     );
     assert_eq!(
         map_error("nb_lines 3\nsquare_width 0\nstarting_units farm"),
@@ -243,4 +243,154 @@ fn a_trigger_owner_ending_in_a_wide_character_is_unknown() {
         w.drain_warnings(),
         ["1é is unknown (in \"trigger 1é ( timer 0 ) ( victory )\")"]
     );
+}
+
+#[test]
+fn a_map_text_over_the_size_limits_is_refused() {
+    let big = format!("; {}\n", "x".repeat(300_000));
+    assert_eq!(map_error(&big), "300053 bytes, more than 262144");
+    assert_eq!(
+        map_error(&"\n".repeat(10_000)),
+        "10005 lines, more than 10000"
+    );
+    let long = format!("starting_units {}", "farm ".repeat(1000));
+    assert_eq!(
+        map_error(&long),
+        "a line of 5015 bytes, more than 4096 (in \"starting_units farm farm farm farm farm ...\")"
+    );
+}
+
+/// Each `(` of a trigger went one call deeper when the trigger was dropped,
+/// so deep enough parentheses overflowed the stack.
+#[test]
+fn a_trigger_nested_too_deep_is_refused() {
+    let nested = |depth: usize| {
+        format!(
+            "nb_lines 3\nstarting_units farm\ntrigger players {}timer 0{} ( victory )",
+            "( ".repeat(depth),
+            " )".repeat(depth)
+        )
+    };
+    let text = format!(
+        "square_width 12\nnb_columns 3\nstarting_squares a1\n{}\n",
+        nested(32)
+    );
+    build(
+        &joined(&["res/rules.txt"]),
+        &joined(&["res/ai.txt"]),
+        &text,
+        0,
+    )
+    .unwrap();
+    assert!(
+        map_error(&nested(33))
+            .starts_with("parentheses nested more than 32 deep in trigger players"),
+        "{}",
+        map_error(&nested(33))
+    );
+    assert!(map_error(&nested(10_000)).starts_with("a line of 40035 bytes, more than 4096"));
+}
+
+#[test]
+fn a_map_with_too_many_starts_or_triggers_is_refused() {
+    assert_eq!(
+        map_error(&"computer_only 0 0 a1 farm\n".repeat(200)),
+        "201 starting places, more than 200"
+    );
+    assert_eq!(
+        map_error(&format!(
+            "nb_lines 3\n{}",
+            "trigger players ( timer 0 ) ( victory )\n".repeat(1001)
+        )),
+        "more than 1000 triggers (in \"trigger players ( timer 0 ) ( victory )\")"
+    );
+}
+
+/// A trigger is copied to each start it belongs to, so a short line could
+/// make many copies.
+#[test]
+fn triggers_too_large_once_copied_are_refused() {
+    let owners = "players ".repeat(500);
+    let text = format!(
+        "nb_lines 3\nstarting_units farm\n{}trigger ( {owners}) ( timer 0 ) ( victory )",
+        "player 0 0 a1 farm\n".repeat(100)
+    );
+    let e = map_error(&text);
+    assert!(
+        e.starts_with(
+            "the triggers come to more than 20000 words and lists once copied to their starts"
+        ),
+        "{e}"
+    );
+}
+
+#[test]
+fn starting_units_copied_to_too_many_starting_squares_are_refused() {
+    let squares: Vec<String> = (1..=10).map(|n| format!("a{n} b{n} c{n}")).collect();
+    let text = format!(
+        "nb_lines 10\nstarting_squares {}\nstarting_units {}",
+        squares.join(" "),
+        "0 farm ".repeat(200)
+    );
+    assert_eq!(
+        map_error(&text),
+        "400 starting units on 31 starting squares, more than 10000"
+    );
+}
+
+/// Each passage is a pair of exits, and finding a way goes from each exit
+/// of a square to each other, so repeated passage lines made the first turn
+/// take seconds.
+#[test]
+fn a_map_with_too_many_passages_or_exits_is_refused() {
+    assert_eq!(
+        map_error(&format!(
+            "nb_lines 3\nstarting_units farm\n{}",
+            "west_east_paths a1 a2 a3 b1 b2 b3\n".repeat(334)
+        )),
+        "2004 passages, more than 2000"
+    );
+    assert_eq!(
+        map_error(&format!(
+            "nb_lines 3\nstarting_units farm\n{}",
+            "west_east_paths a1\n".repeat(17)
+        )),
+        "a1 has 17 exits, more than 16"
+    );
+}
+
+/// The rules and the simulation add and multiply these numbers in 64 bits.
+#[test]
+fn a_map_number_beyond_the_limit_is_refused() {
+    assert_eq!(
+        map_error("nb_lines 3\nstarting_units farm\nstarting_resources 3000000"),
+        "3000000000 is beyond 2147483647 (in \"starting_resources 3000000\")"
+    );
+    assert_eq!(
+        map_error("nb_lines 3\nstarting_units farm\nglobal_food_limit 9223372036854775807"),
+        "9223372036854775807 is beyond 2147483647 (in \"global_food_limit 9223372036854775807\")"
+    );
+    assert_eq!(
+        map_error("nb_lines 3\nstarting_units farm\ngoldmine 3000000 a1"),
+        "3000000000 is beyond 2147483647 (in \"goldmine 3000000\")"
+    );
+}
+
+#[test]
+fn removed_meadows_take_the_first_meadow_left_on_their_square() {
+    let text = "square_width 12\nnb_columns 2\nnb_lines 1\nstarting_squares a1\n\
+                starting_units farm\nnb_meadows_by_square 2\nadditional_meadows a1 b1\n\
+                remove_meadows b1 a1 b1 b1 b1\n";
+    let w = build(
+        &joined(&["res/rules.txt"]),
+        &joined(&["res/ai.txt"]),
+        text,
+        0,
+    )
+    .unwrap();
+    let meadows = |name: &str| {
+        let s = w.squares.iter().position(|s| s.name == name).unwrap();
+        w.nb_meadows(soundrts_world::SquareId(s as u32))
+    };
+    assert_eq!((meadows("a1"), meadows("b1")), (2, 0));
 }

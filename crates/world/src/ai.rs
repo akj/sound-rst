@@ -28,6 +28,24 @@ use crate::world::{Abort, Res, TPlace, World};
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
 
+/// The deepest the computer player's planning may go. Getting a unit asks
+/// for its makers, its requirements, resources and food, and each of these
+/// may ask for more. Rules where they ask for each other without end (a farm
+/// that costs food) would exhaust the stack; the original stops at Python's
+/// recursion limit. The original's rules and scripts go 11 deep.
+const MAX_PLANNING_DEPTH: usize = 64;
+
+/// The error at [`MAX_PLANNING_DEPTH`], with Python's message.
+const RECURSION_ERROR: &str = "maximum recursion depth exceeded";
+
+/// One step deeper into the planning, or [`RECURSION_ERROR`].
+fn deeper(depth: usize) -> Res<usize> {
+    if depth >= MAX_PLANNING_DEPTH {
+        return Err(Abort::new(RECURSION_ERROR));
+    }
+    Ok(depth + 1)
+}
+
 /// What `check_type` compares a unit or a type with.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Sel {
@@ -359,8 +377,31 @@ impl World {
         self.raise_dead(p)?;
         self.build_a_warehouse_if_useful(p)?;
         let peasant = self.equivalent(p, "peasant");
+        // A recursion error here ends the player's update with a warning, as
+        // the original's ends at the world's catch.
         self.ai_get(p, NB_WORKERS_TO_GET, &peasant)?;
-        self.follow_plan(p)
+        match self.follow_plan(p) {
+            // The original catches a recursion error of its plan here, and
+            // goes on with the next line of the plan at its next turn.
+            Err(Abort(m)) if m == RECURSION_ERROR => {
+                let ai_type = match &self.pl(p).kind {
+                    PlayerKind::Computer { ai_type } => ai_type.clone(),
+                    _ => String::new(),
+                };
+                let c = self.cs(p);
+                let line = usize::try_from(c.line_nb)
+                    .ok()
+                    .and_then(|i| c.plan.as_ref()?.get(i).cloned())
+                    .unwrap_or_default();
+                let n = c.line_nb + 1;
+                self.warn(format!(
+                    "recursion error with {ai_type}; current ai.txt line is: {line}"
+                ));
+                self.set_line_nb(p, n);
+                Ok(())
+            }
+            other => other,
+        }
     }
 
     /// The cpu intensive players play in turns, one tenth of them each turn.
@@ -999,7 +1040,7 @@ impl World {
             exits.sort_by_key(|&x| square_of_distance(bx, by, self.e(x).x, self.e(x).y));
             if let Some(&exit) = exits.first()
                 && !self.exit_is_blocked(exit, Viewer::Nobody, false, false)
-                && self.ai_gather(p, &gate_cost, 0)?
+                && self.ai_gather(p, &gate_cost, 0, 0)?
             {
                 for w in self.cs(p).workers.clone() {
                     self.take_order(
@@ -1425,10 +1466,12 @@ impl World {
     /// there.
     pub(crate) fn ai_get(&mut self, p: PlayerId, nb: i64, type_name: &str) -> Res<bool> {
         self.csm(p).safe_cnt = 0;
-        self.get_types(p, nb, vec![type_name.to_owned()])
+        self.get_types(p, nb, vec![type_name.to_owned()], 0)
     }
 
-    fn get_types(&mut self, p: PlayerId, nb: i64, types: Vec<String>) -> Res<bool> {
+    /// `_get`. `depth` counts the planning calls this one is inside.
+    fn get_types(&mut self, p: PlayerId, nb: i64, types: Vec<String>, depth: usize) -> Res<bool> {
+        let depth = deeper(depth)?;
         let sel = Sel::List(types.clone());
         if self.nb(p, &sel) >= nb {
             return Ok(true);
@@ -1447,10 +1490,10 @@ impl World {
             let makers = self.rules.get_makers(t);
             if self.nb(p, &Sel::List(makers.clone())) > 0 {
                 let n = nb - self.future_nb(p, &sel);
-                self.build_or_train_or_upgradeto_or_summon(p, t, n)?;
+                self.build_or_train_or_upgradeto_or_summon(p, t, n, depth)?;
                 break;
             } else if let Some(m) = makers.first() {
-                self.get_types(p, 1, vec![m.clone()])?;
+                self.get_types(p, 1, vec![m.clone()], depth)?;
                 return Ok(false);
             }
         }
@@ -1459,7 +1502,8 @@ impl World {
 
     /// `gather`: true if the resources and the food are there; asks for a
     /// farm when food is missing.
-    fn ai_gather(&mut self, p: PlayerId, cost: &[i64], food: i64) -> Res<bool> {
+    fn ai_gather(&mut self, p: PlayerId, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
+        let depth = deeper(depth)?;
         if !self.missing_resources(p, cost)?.is_empty() {
             return Ok(false);
         }
@@ -1470,7 +1514,7 @@ impl World {
                 let t = Sel::One(self.equivalent(p, "farm"));
                 if self.future_nb(p, &t) == self.nb(p, &t) {
                     let Sel::One(name) = t else { unreachable!() };
-                    self.build_or_train_or_upgradeto_or_summon(p, &name, 1)?;
+                    self.build_or_train_or_upgradeto_or_summon(p, &name, 1, depth)?;
                 }
             }
             Ok(false)
@@ -1479,10 +1523,16 @@ impl World {
         }
     }
 
-    fn get_requirements(&mut self, p: PlayerId, requirements: &[String]) -> Res<bool> {
+    fn get_requirements(
+        &mut self,
+        p: PlayerId,
+        requirements: &[String],
+        depth: usize,
+    ) -> Res<bool> {
+        let depth = deeper(depth)?;
         for r in requirements {
             if !self.has(p, r) {
-                return self.get_types(p, 1, vec![r.clone()]);
+                return self.get_types(p, 1, vec![r.clone()], depth);
             }
         }
         Ok(true)
@@ -1493,14 +1543,18 @@ impl World {
         p: PlayerId,
         type_name: &str,
         nb: i64,
+        depth: usize,
     ) -> Res {
+        let depth = deeper(depth)?;
         let t = self
             .rules
             .unit_type(type_name)
             .cloned()
             .ok_or_else(|| Abort::new("'NoneType' object has no attribute '__name__'"))?;
         let makers = self.rules.get_makers(type_name);
-        if !self.get_types(p, 1, makers.clone())? || !self.get_requirements(p, &t.requirements)? {
+        if !self.get_types(p, 1, makers.clone(), depth)?
+            || !self.get_requirements(p, &t.requirements, depth)?
+        {
             return Ok(());
         }
         let mut maker = makers.last().cloned().expect("a maker exists");
@@ -1522,14 +1576,14 @@ impl World {
                 let cost: Vec<i64> = (0..t.cost.len())
                     .map(|i| t.cost[i] - mc.cost.get(i).copied().unwrap_or(0))
                     .collect();
-                if self.ai_gather(p, &cost, t.stats.food_cost - mc.stats.food_cost)? {
+                if self.ai_gather(p, &cost, t.stats.food_cost - mc.stats.food_cost, depth)? {
                     self.order(p, nb, maker_sel, vec!["upgrade_to".into(), name], false)?;
                 }
             } else {
-                self.get_types(p, nb, vec![maker])?;
+                self.get_types(p, nb, vec![maker], depth)?;
             }
         } else if mc.can_build.contains(&name) {
-            if !self.ai_gather(p, &t.cost, t.stats.food_cost)? {
+            if !self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
                 return Ok(());
             }
             let meadow = if let Some(&rt) = t.storable_resource_types.first() {
@@ -1568,13 +1622,13 @@ impl World {
                 && self.potential(p, &t.cost)? > nb_maker * 100
             {
                 // additional production sites
-                self.build_or_train_or_upgradeto_or_summon(p, &maker, 1)?;
+                self.build_or_train_or_upgradeto_or_summon(p, &maker, 1, depth)?;
             }
-            if self.ai_gather(p, &t.cost, t.stats.food_cost)? {
+            if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
                 self.order(p, nb, maker_sel, vec!["train".into(), name], false)?;
             }
         } else if mc.can_research.contains(&name) {
-            if self.ai_gather(p, &t.cost, t.stats.food_cost)? {
+            if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
                 self.order(p, 1, maker_sel, vec!["research".into(), name], false)?;
             }
         } else {

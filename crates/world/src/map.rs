@@ -1,12 +1,24 @@
 //! Map definitions: parsing, building the squares and resources, placing
 //! the players, and writing a map back (`World._parse_map`,
 //! `World._build_map`, `World.populate_map`, `World.save_map`).
+//!
+//! A map may come from a server, so a map over one of the limits below, or
+//! over the text limits of [`crate::defs`], is refused with a [`MapError`].
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::ops::Range;
 
 use regex::Regex;
 
+use crate::defs::{MAX_NUMBER, bounded, check_size, preprocess_within_limits};
 use crate::entity::{Place, PlayerId, SquareId};
 use crate::nofloat::{PRECISION, floordiv, py_float, py_int, to_int};
 use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger};
@@ -44,6 +56,31 @@ pub const MAX_MEADOWS_BY_SQUARE: i64 = 50;
 /// `add_units` action adds. The maps of the original give 1704 at most.
 pub const MAX_START_UNITS: i64 = 10_000;
 
+/// The most passages (paths and bridges) a map may have. Each is a pair of
+/// exits, and finding a way goes through every exit of a square. The maps
+/// of the original have 859 at most.
+pub const MAX_PASSAGES: usize = 2000;
+
+/// The most exits a square may have. Finding a way through a square goes
+/// from each of its exits to each other. The squares of the original have
+/// 4 at most.
+pub const MAX_EXITS_BY_SQUARE: usize = 16;
+
+/// The most starting places a map may have: `player`, `computer` and
+/// `computer_only` lines and starting squares together. The maps of the
+/// original have 42 at most.
+pub const MAX_STARTS: usize = 200;
+
+/// The most `trigger` lines a map may have. The maps of the original have 9
+/// at most.
+pub const MAX_TRIGGERS: usize = 1000;
+
+/// The most words and lists the triggers may come to once each is copied
+/// to every start it belongs to. A trigger for `players` is copied to every
+/// player's start, and each copy is checked every turn. The maps of the
+/// original come to 192 at most.
+pub const MAX_COPIED_TRIGGER_SIZE: usize = 20_000;
+
 fn formatted(line: &str, msg: &str) -> String {
     if line.is_empty() {
         msg.to_owned()
@@ -54,6 +91,11 @@ fn formatted(line: &str, msg: &str) -> String {
 
 fn map_error(line: &str, msg: &str) -> MapError {
     MapError(formatted(line, msg))
+}
+
+/// `n`, or an error if it is beyond [`MAX_NUMBER`].
+fn number(line: &str, n: i64) -> Result<i64, MapError> {
+    bounded(n).ok_or_else(|| map_error(line, &format!("{n} is beyond {MAX_NUMBER}")))
 }
 
 /// One item of a start: units of a type on a square, or a forbidden
@@ -189,10 +231,18 @@ pub fn convert_and_split_first_numbers(words: &[String]) -> (Vec<i64>, Vec<Strin
     for (i, w) in words.iter().enumerate() {
         match to_int(w) {
             Ok(n) => numbers.push(n),
-            Err(_) => return (numbers, words[i..].to_vec()),
+            Err(_) => return (numbers, words.get(i..).unwrap_or_default().to_vec()),
         }
     }
     (numbers, Vec::new())
+}
+
+/// The number of words and lists in a trigger expression.
+fn expr_size(e: &Expr) -> usize {
+    match e {
+        Expr::Word(_) => 1,
+        Expr::List(l) => l.iter().map(expr_size).fold(1, usize::saturating_add),
+    }
 }
 
 struct Patterns {
@@ -205,6 +255,10 @@ struct Patterns {
     square_name: Regex,
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "the patterns are constant, and every map test builds them"
+)]
 fn patterns() -> &'static Patterns {
     static P: std::sync::OnceLock<Patterns> = std::sync::OnceLock::new();
     P.get_or_init(|| Patterns {
@@ -248,7 +302,8 @@ impl World {
                 let Some(second) = b.get(1) else {
                     return Err(MapError(format!("string index out of range: {x}")));
                 };
-                second.is_ascii_digit() && (b.len() == 2 || (b.len() == 3 && b[2].is_ascii_digit()))
+                second.is_ascii_digit()
+                    && (b.len() == 2 || (b.len() == 3 && b.get(2).is_some_and(u8::is_ascii_digit)))
             };
             if is_a_square {
                 sq = Some(x.clone());
@@ -273,7 +328,14 @@ impl World {
         })
     }
 
-    fn add_trigger(&mut self, tree: Vec<Expr>, words_line: &str) -> Result<(), MapError> {
+    /// Copies a trigger to the starts of its owners. `copied` counts the
+    /// size of the copies made so far, against [`MAX_COPIED_TRIGGER_SIZE`].
+    fn add_trigger(
+        &mut self,
+        tree: Vec<Expr>,
+        words_line: &str,
+        copied: &mut usize,
+    ) -> Result<(), MapError> {
         let [owners, condition, action]: [Expr; 3] = tree.try_into().map_err(|_| {
             MapError(format!(
                 "a trigger needs owners, a condition and an action: {words_line}"
@@ -290,52 +352,67 @@ impl World {
                 .collect(),
         };
         let trigger = Trigger { condition, action };
+        let size = expr_size(&trigger.condition).saturating_add(expr_size(&trigger.action));
         let context = format!("trigger {words_line}");
+        let computers = self.map.computers_starts.len();
+        let players = self.map.players_starts.len();
         for o in owners {
-            match o.as_str() {
-                "computers" => {
-                    for s in &mut self.map.computers_starts {
-                        s.triggers.push(trigger.clone());
-                    }
-                }
-                "players" => {
-                    for s in &mut self.map.players_starts {
-                        s.triggers.push(trigger.clone());
-                    }
-                }
-                "all" => {
-                    for s in self
-                        .map
-                        .computers_starts
-                        .iter_mut()
-                        .chain(self.map.players_starts.iter_mut())
-                    {
-                        s.triggers.push(trigger.clone());
-                    }
-                }
+            // The starts of the computers and of the players it goes to.
+            let (to_computers, to_players): (Range<usize>, Range<usize>) = match o.as_str() {
+                "computers" => (0..computers, 0..0),
+                "players" => (0..0, 0..players),
+                "all" => (0..computers, 0..players),
                 _ => {
                     // The last character, which may take more than one byte.
                     let last = o.char_indices().next_back().map_or(0, |(i, _)| i);
-                    let (kind, digit) = o.split_at(last);
-                    let list = match kind {
-                        "computer" => Some(&mut self.map.computers_starts),
-                        "player" => Some(&mut self.map.players_starts),
+                    let (kind, digit) = o.split_at_checked(last).unwrap_or_default();
+                    let one = |len: usize| -> Option<Range<usize>> {
+                        let n = py_int(digit).ok()?.checked_sub(1)?;
+                        let i = if n < 0 {
+                            n.checked_add(i64::try_from(len).ok()?)?
+                        } else {
+                            n
+                        };
+                        let i = usize::try_from(i).ok().filter(|&i| i < len)?;
+                        Some(i..i.saturating_add(1))
+                    };
+                    let target = match kind {
+                        "computer" => one(computers).map(|r| (r, 0..0)),
+                        "player" => one(players).map(|r| (0..0, r)),
                         _ => None,
                     };
-                    let done = list.and_then(|l| {
-                        let n = py_int(digit).ok()? - 1;
-                        let len = l.len() as i64;
-                        let i = if n < 0 { n + len } else { n };
-                        if i < 0 || i >= len {
-                            return None;
-                        }
-                        l[i as usize].triggers.push(trigger.clone());
-                        Some(())
-                    });
-                    if done.is_none() {
+                    let Some(target) = target else {
                         self.warn(formatted(&context, &format!("{o} is unknown")));
-                    }
+                        continue;
+                    };
+                    target
                 }
+            };
+            let copies = to_computers.len().saturating_add(to_players.len());
+            *copied = copied.saturating_add(size.saturating_mul(copies));
+            if *copied > MAX_COPIED_TRIGGER_SIZE {
+                return Err(map_error(
+                    &context,
+                    &format!(
+                        "the triggers come to more than {MAX_COPIED_TRIGGER_SIZE} words and lists once copied to their starts"
+                    ),
+                ));
+            }
+            for s in self
+                .map
+                .computers_starts
+                .get_mut(to_computers)
+                .unwrap_or_default()
+            {
+                s.triggers.push(trigger.clone());
+            }
+            for s in self
+                .map
+                .players_starts
+                .get_mut(to_players)
+                .unwrap_or_default()
+            {
+                s.triggers.push(trigger.clone());
             }
         }
         Ok(())
@@ -347,15 +424,16 @@ impl World {
         let mut triggers: Vec<Vec<String>> = Vec::new();
         let mut starting_resources = vec![0; nb_res];
         let p = patterns();
-        let s = crate::defs::preprocess(map_definition);
+        let s = preprocess_within_limits(map_definition).map_err(MapError)?;
         let s = s.replace('(', " ( ").replace(')', " ) ");
         let s = p.strip_lines.replace_all(&s, "\n").into_owned();
         let s = p
             .random_choice
             .replace_all(&s, |c: &regex::Captures| {
-                let choices: Vec<&str> = c[1].split("\n#end_choice\n").collect();
+                let body = c.get(1).map_or("", |m| m.as_str());
+                let choices: Vec<&str> = body.split("\n#end_choice\n").collect();
                 let i = self.random.choice_index(choices.len()).unwrap_or(0);
-                choices[i].to_owned()
+                choices.get(i).copied().unwrap_or_default().to_owned()
             })
             .into_owned();
         let s = p.resources.replace_all(&s, "${1} ${2} ${3}").into_owned();
@@ -375,18 +453,20 @@ impl World {
             .collect();
         for line in s.split('\n') {
             let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
-            let Some(w) = words.first().cloned() else {
+            let Some((w, args)) = words.split_first() else {
                 continue;
             };
             if w.starts_with(';') {
                 continue;
             }
             let w = w.as_str();
+            // The words after the first two.
+            let rest = args.get(1..).unwrap_or_default();
             if !matches!(
                 w,
                 "south_north" | "west_east" | "terrain" | "speed" | "cover"
             ) {
-                for word in &words[1..] {
+                for word in args {
                     for part in word.split(',') {
                         let part = part.strip_prefix('-').unwrap_or(part);
                         let known = p.valid_word.is_match(part)
@@ -405,16 +485,18 @@ impl World {
                 words
                     .iter()
                     .map(|x| {
-                        py_int(x).map_err(|_| {
-                            map_error(line, &format!("invalid literal for int(): {x}"))
-                        })
+                        py_int(x)
+                            .map_err(|_| {
+                                map_error(line, &format!("invalid literal for int(): {x}"))
+                            })
+                            .and_then(|n| number(line, n))
                     })
                     .collect()
             };
             match w {
-                "title" => self.map.title = int_list(&words[1..])?,
-                "objective" => self.map.objective = int_list(&words[1..])?,
-                "intro" => self.map.intro = int_list(&words[1..])?,
+                "title" => self.map.title = int_list(args)?,
+                "objective" => self.map.objective = int_list(args)?,
+                "intro" => self.map.intro = int_list(args)?,
                 "square_width"
                 | "nb_rows"
                 | "nb_columns"
@@ -425,10 +507,11 @@ impl World {
                 | "nb_meadows_by_square"
                 | "global_food_limit"
                 | "timer_coefficient" => {
-                    let v = words
-                        .get(1)
+                    let v = args
+                        .first()
                         .and_then(|x| py_int(x).ok())
                         .ok_or_else(|| map_error(line, &format!("{w} must be an integer")))?;
+                    let v = number(line, v)?;
                     let m = &mut self.map;
                     match w {
                         "square_width" => m.square_width = v,
@@ -450,11 +533,11 @@ impl World {
                     }
                 }
                 "south_north" | "west_east" => {
-                    let t = words
-                        .get(1)
+                    let t = args
+                        .first()
                         .cloned()
                         .ok_or_else(|| map_error(line, "list index out of range"))?;
-                    let mut squares = words[2..].to_vec();
+                    let mut squares = rest.to_vec();
                     self.check_squares(line, &mut squares);
                     if w == "south_north" {
                         self.map.south_north.push((t, squares));
@@ -463,7 +546,7 @@ impl World {
                     }
                 }
                 "starting_squares" | "additional_meadows" | "remove_meadows" | "high_grounds" => {
-                    let mut squares = words[1..].to_vec();
+                    let mut squares = args.to_vec();
                     self.check_squares(line, &mut squares);
                     let m = &mut self.map;
                     let list = match w {
@@ -475,28 +558,33 @@ impl World {
                     list.extend(squares);
                 }
                 "starting_resources" => {
-                    self.map.starting_resources = Some(words[1..].join(" "));
+                    self.map.starting_resources = Some(args.join(" "));
                     starting_resources = Vec::new();
-                    for c in &words[1..] {
+                    for c in args {
                         let v = to_int(c).map_err(|_| {
                             map_error(line, &format!("expected an integer but found {c}"))
                         })?;
-                        starting_resources.push(v);
+                        starting_resources.push(number(line, v)?);
                     }
                 }
                 _ if self.rules.get_words(w, "class").as_deref()
                     == Some(&["deposit".to_owned()][..]) =>
                 {
-                    for sq in words.iter().skip(2) {
+                    let qty = args.first().cloned().unwrap_or_default();
+                    for sq in rest {
                         self.map
                             .map_objects
-                            .push((sq.clone(), w.to_owned(), words[1].clone()));
+                            .push((sq.clone(), w.to_owned(), qty.clone()));
                     }
                 }
-                "starting_units" => self.map.starting_units.extend(words[1..].iter().cloned()),
+                "starting_units" => self.map.starting_units.extend(args.iter().cloned()),
                 "player" | "computer_only" | "computer" => {
+                    self.check_starts(1)?;
                     self.map.specific_starts.push(words.join(" "));
-                    let (resources, units) = convert_and_split_first_numbers(&words[1..]);
+                    let (resources, units) = convert_and_split_first_numbers(args);
+                    for &r in &resources {
+                        number(line, r)?;
+                    }
                     if resources.len() != nb_res {
                         self.warn(format!(
                             "the map have {} resources while the rules have {} resources",
@@ -511,13 +599,21 @@ impl World {
                         self.map.computers_starts.push(start);
                     }
                 }
-                "trigger" => triggers.push(words[1..].to_vec()),
+                "trigger" => {
+                    if triggers.len() >= MAX_TRIGGERS {
+                        return Err(map_error(
+                            &words.join(" "),
+                            &format!("more than {MAX_TRIGGERS} triggers"),
+                        ));
+                    }
+                    triggers.push(args.to_vec());
+                }
                 "terrain" => {
-                    let t = words
-                        .get(1)
+                    let t = args
+                        .first()
                         .cloned()
                         .ok_or_else(|| map_error(line, "list index out of range"))?;
-                    let mut squares = words[2..].to_vec();
+                    let mut squares = rest.to_vec();
                     self.check_squares(line, &mut squares);
                     for sq in squares {
                         self.map.terrain.insert(sq, t.clone());
@@ -529,10 +625,9 @@ impl World {
                         let f = py_float(x).map_err(|_| {
                             map_error(line, &format!("could not convert string to float: {x}"))
                         })?;
-                        t.push(
-                            crate::nofloat::float_to_int(f * 100.0)
-                                .map_err(|_| map_error(line, "invalid value"))?,
-                        );
+                        let v = crate::nofloat::float_to_int(f * 100.0)
+                            .map_err(|_| map_error(line, "invalid value"))?;
+                        t.push(number(line, v)?);
                     }
                     let [a, b] = t[..] else {
                         return Err(map_error(line, "two values are expected"));
@@ -549,7 +644,7 @@ impl World {
                     }
                 }
                 "water" | "ground" | "no_air" => {
-                    let mut squares = words[1..].to_vec();
+                    let mut squares = args.to_vec();
                     self.check_squares(line, &mut squares);
                     let m = &mut self.map;
                     let set = match w {
@@ -562,10 +657,35 @@ impl World {
                 _ => self.warn(formatted(line, &format!("unknown command: {w}"))),
             }
         }
+        self.check_starts(self.map.starting_squares.len())?;
+        let copied_units = self
+            .map
+            .starting_units
+            .len()
+            .saturating_mul(self.map.starting_squares.len());
+        if i64::try_from(copied_units).unwrap_or(i64::MAX) > MAX_START_UNITS {
+            return Err(MapError(format!(
+                "{} starting units on {} starting squares, more than {MAX_START_UNITS}",
+                self.map.starting_units.len(),
+                self.map.starting_squares.len()
+            )));
+        }
         for sq in self.map.starting_squares.clone() {
             let units = self.map.starting_units.clone();
             let start = self.add_start_to(starting_resources.clone(), &units, Some(sq))?;
             self.map.players_starts.push(start);
+        }
+        let passages = self
+            .map
+            .west_east
+            .iter()
+            .chain(&self.map.south_north)
+            .map(|(_, squares)| squares.len())
+            .fold(0, usize::saturating_add);
+        if passages > MAX_PASSAGES {
+            return Err(MapError(format!(
+                "{passages} passages, more than {MAX_PASSAGES}"
+            )));
         }
         if self.map.nb_players_min > self.map.nb_players_max {
             return Err(MapError("nb_players_min > nb_players_max".into()));
@@ -618,8 +738,26 @@ impl World {
                 }
                 out
             };
+        let mut copied = 0;
         for (tree, line) in trees {
-            self.add_trigger(tree, &line)?;
+            self.add_trigger(tree, &line, &mut copied)?;
+        }
+        Ok(())
+    }
+
+    /// Refuses `more` starts if the map would have more than
+    /// [`MAX_STARTS`].
+    fn check_starts(&self, more: usize) -> Result<(), MapError> {
+        let starts = self
+            .map
+            .players_starts
+            .len()
+            .saturating_add(self.map.computers_starts.len())
+            .saturating_add(more);
+        if starts > MAX_STARTS {
+            return Err(MapError(format!(
+                "{starts} starting places, more than {MAX_STARTS}"
+            )));
         }
         Ok(())
     }
@@ -628,6 +766,7 @@ impl World {
     /// (`load_and_build_map`). The rules and computer scripts must already
     /// include the map's own, if it has any.
     pub fn load_and_build_map(&mut self, map_definition: &str) -> Result<(), MapError> {
+        check_size(map_definition.len()).map_err(MapError)?;
         let text = map_definition.replace("\r\n", "\n").replace('\r', "\n");
         self.parse_map(&text)?;
         let sw = self.map.square_width;
@@ -636,7 +775,7 @@ impl World {
                 "a square width of {sw}, not from 1 to {MAX_SQUARE_WIDTH}"
             )));
         }
-        self.map.square_width *= PRECISION;
+        self.map.square_width = sw.saturating_mul(PRECISION);
         self.build_map()
     }
 
@@ -645,6 +784,17 @@ impl World {
         self.create_resources()?;
         self.arrange_all_resources_symmetrically();
         self.create_passages()?;
+        if let Some(s) = self
+            .squares
+            .iter()
+            .find(|s| s.exits.len() > MAX_EXITS_BY_SQUARE)
+        {
+            return Err(MapError(format!(
+                "{} has {} exits, more than {MAX_EXITS_BY_SQUARE}",
+                s.name,
+                s.exits.len()
+            )));
+        }
         self.create_graphs();
         Ok(())
     }
@@ -691,30 +841,40 @@ impl World {
                 self.squares.push(sq);
             }
         }
-        for i in 0..self.squares.len() {
-            let (col, row) = (self.squares[i].col, self.squares[i].row);
-            let strict: Vec<SquareId> = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                .iter()
-                .filter_map(|(dc, dr)| self.square_at(col + dc, row + dr))
-                .collect();
-            let all: Vec<SquareId> = [
-                (0, 1),
-                (0, -1),
-                (1, 0),
-                (-1, 0),
-                (1, 1),
-                (1, -1),
-                (-1, 1),
-                (-1, -1),
-            ]
+        let neighbors: Vec<(Vec<SquareId>, Vec<SquareId>)> = self
+            .squares
             .iter()
-            .filter_map(|(dc, dr)| self.square_at(col + dc, row + dr))
+            .map(|s| {
+                let at = |&(dc, dr): &(i64, i64)| {
+                    self.square_at(s.col.saturating_add(dc), s.row.saturating_add(dr))
+                };
+                let strict = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                    .iter()
+                    .filter_map(at)
+                    .collect();
+                let all = [
+                    (0, 1),
+                    (0, -1),
+                    (1, 0),
+                    (-1, 0),
+                    (1, 1),
+                    (1, -1),
+                    (-1, 1),
+                    (-1, -1),
+                ]
+                .iter()
+                .filter_map(at)
+                .collect();
+                (strict, all)
+            })
             .collect();
-            self.squares[i].strict_neighbors = strict;
-            self.squares[i].neighbors = all;
+        for (s, (strict, all)) in self.squares.iter_mut().zip(neighbors) {
+            s.strict_neighbors = strict;
+            s.neighbors = all;
         }
-        let xmax = self.map.nb_columns * sw;
-        let res = World::collision_radius() * 2 / 3;
+        // At most 26 columns of 100 squares of width each.
+        let xmax = self.map.nb_columns.saturating_mul(sw);
+        let res = World::collision_radius().saturating_mul(2) / 3;
         self.collision_ground = crate::collision::CollisionMatrix::new(xmax, res);
         self.collision_air = crate::collision::CollisionMatrix::new(xmax, res);
         Ok(())
@@ -728,11 +888,20 @@ impl World {
             }
         }
         m.extend(self.map.additional_meadows.iter().cloned());
+        // Each name of `remove_meadows` removes the first meadow left on its
+        // square, in one pass.
+        let mut removals: BTreeMap<&str, usize> = BTreeMap::new();
         for sq in &self.map.remove_meadows {
-            if let Some(i) = m.iter().position(|x| x == sq) {
-                m.remove(i);
-            }
+            let n = removals.entry(sq.as_str()).or_default();
+            *n = n.saturating_add(1);
         }
+        m.retain(|x| match removals.get_mut(x.as_str()) {
+            Some(n) if *n > 0 => {
+                *n = n.saturating_sub(1);
+                false
+            }
+            _ => true,
+        });
         m
     }
 
@@ -752,6 +921,9 @@ impl World {
                 .rules
                 .type_id(&cls)
                 .ok_or_else(|| MapError(format!("unknown deposit type {cls}")))?;
+            if let Ok(q) = to_int(&n) {
+                number(&format!("{cls} {n}"), q)?;
+            }
             if self.can_receive(s, AirGround::Ground, None) {
                 let d = self.create_deposit(tid, s, &n).map_err(|e| MapError(e.0))?;
                 let m = self.create_meadow(s, None);
@@ -769,8 +941,8 @@ impl World {
     }
 
     fn arrange_all_resources_symmetrically(&mut self) {
-        let xc = floordiv(self.map.nb_columns * 10, 2);
-        let yc = floordiv(self.map.nb_lines * 10, 2);
+        let xc = floordiv(self.map.nb_columns.saturating_mul(10), 2);
+        let yc = floordiv(self.map.nb_lines.saturating_mul(10), 2);
         for i in 0..self.squares.len() {
             self.arrange_resources_symmetrically(SquareId(i as u32), xc, yc);
         }
@@ -782,16 +954,16 @@ impl World {
             for i in squares {
                 let mut portal = false;
                 let first = i.chars().next().unwrap_or(' ');
-                let mut col = ALPHABET.find(first).map_or(0, |c| c as i64 + 1);
-                if col == self.map.nb_columns {
+                let mut col = ALPHABET.find(first).map_or(0, |c| c.saturating_add(1));
+                if i64::try_from(col) == Ok(self.map.nb_columns) {
                     col = 0;
                     portal = true;
                 }
                 let letter = ALPHABET
                     .chars()
-                    .nth(col as usize)
+                    .nth(col)
                     .ok_or_else(|| MapError("string index out of range".into()))?;
-                let j = format!("{letter}{}", &i[1..]);
+                let j = format!("{letter}{}", i.get(1..).unwrap_or_default());
                 let si = self
                     .square_by_name(&i)
                     .ok_or_else(|| MapError(format!("KeyError: '{i}'")))?;
@@ -809,13 +981,15 @@ impl World {
         for (t, squares) in self.map.south_north.clone() {
             for i in squares {
                 let mut portal = false;
-                let mut line =
-                    py_int(&i[1..]).map_err(|_| MapError(format!("invalid square {i}")))? + 1;
-                if line == self.map.nb_lines + 1 {
+                let mut line = py_int(i.get(1..).unwrap_or_default())
+                    .ok()
+                    .and_then(|l| l.checked_add(1))
+                    .ok_or_else(|| MapError(format!("invalid square {i}")))?;
+                if line == self.map.nb_lines.saturating_add(1) {
                     line = 1;
                     portal = true;
                 }
-                let j = format!("{}{line}", &i[..1]);
+                let j = format!("{}{line}", i.get(..1).unwrap_or_default());
                 let si = self
                     .square_by_name(&i)
                     .ok_or_else(|| MapError(format!("KeyError: '{i}'")))?;
@@ -857,10 +1031,13 @@ impl World {
         };
         let faction = if controller.faction == "random_faction" {
             let factions = self.rules.factions();
-            let i = self.random.choice_index(factions.len()).ok_or_else(|| {
-                MapError("Cannot choose from an empty sequence (no faction)".into())
-            })?;
-            factions[i].clone()
+            self.random
+                .choice_index(factions.len())
+                .and_then(|i| factions.get(i))
+                .cloned()
+                .ok_or_else(|| {
+                    MapError("Cannot choose from an empty sequence (no faction)".into())
+                })?
         } else {
             controller.faction.clone()
         };
@@ -955,7 +1132,9 @@ impl World {
         let mut forbidden = Vec::new();
         for item in &start.items {
             match item {
-                StartItem::Forbidden(t) => forbidden.push(t[1..].to_owned()),
+                StartItem::Forbidden(t) => {
+                    forbidden.push(t.strip_prefix('-').unwrap_or(t).to_owned())
+                }
                 StartItem::Units {
                     square,
                     type_name,
@@ -1007,7 +1186,10 @@ impl World {
     pub fn save_map(&self) -> String {
         use std::fmt::Write;
         let sorted = |mut names: Vec<String>| -> Vec<String> {
-            names.sort_by_key(|n| (n[..1].to_owned(), py_int(&n[1..]).unwrap_or(0)));
+            names.sort_by_key(|n| {
+                let (letter, number) = n.split_at_checked(1).unwrap_or_default();
+                (letter.to_owned(), py_int(number).unwrap_or(0))
+            });
             names
         };
         let join = |v: &[i64]| v.iter().map(i64::to_string).collect::<Vec<_>>().join(" ");
@@ -1052,7 +1234,7 @@ impl World {
             }
         }
         let mut res: Vec<(String, i64)> = res.into_iter().collect();
-        res.sort_by(|a, b| (a.0.as_str(), -a.1).cmp(&(b.0.as_str(), -b.1)));
+        res.sort_by(|a, b| (a.0.as_str(), b.1).cmp(&(b.0.as_str(), a.1)));
         for (t, q) in res {
             let mut names = Vec::new();
             for s in &self.squares {
@@ -1072,9 +1254,11 @@ impl World {
             .collect();
         for n in counts {
             let names = sorted(
-                (0..self.squares.len())
-                    .filter(|&i| self.nb_meadows(SquareId(i as u32)) == n)
-                    .map(|i| self.squares[i].name.clone())
+                self.squares
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, _)| self.nb_meadows(SquareId(i as u32)) == n)
+                    .map(|(_, s)| s.name.clone())
                     .collect(),
             );
             if n == 1 {
@@ -1157,7 +1341,7 @@ impl World {
                     continue;
                 };
                 let o = self.square(o);
-                let delta = (o.col - s.col, o.row - s.row);
+                let delta = (o.col.saturating_sub(s.col), o.row.saturating_sub(s.row));
                 let list = match delta {
                     (1, 0) => &mut we,
                     (0, 1) => &mut sn,
