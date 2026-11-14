@@ -160,8 +160,15 @@ impl Session {
         cx.game.seed.unwrap_or(drawn)
     }
 
-    /// Plays the game to its end and says the score.
+    /// Plays the game to its end and says the score. The map's resources,
+    /// loaded by [`Session::start`], are unloaded however it ends.
     pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
+        let result = self.play(cx);
+        cx.res.set_map(None);
+        result
+    }
+
+    fn play(&mut self, cx: &mut Client) -> Result<(), Exit> {
         let Some(mut game) = self.start(cx) else {
             self.leave_server_game(cx);
             return Ok(());

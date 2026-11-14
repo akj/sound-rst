@@ -130,6 +130,9 @@ pub struct Menu {
     /// connection lost) picks the last item, as Escape does. Live menus
     /// that follow the server turn this off.
     pub escape_on_interrupt: bool,
+    /// [`crate::net::interrupts`] when the menu opened: by [`Menu::run`],
+    /// or else by the first event it handled.
+    opened_at: Option<u64>,
 }
 
 impl Menu {
@@ -144,6 +147,7 @@ impl Menu {
             choice_done: false,
             end_loop: false,
             escape_on_interrupt: true,
+            opened_at: None,
         }
     }
 
@@ -340,8 +344,14 @@ impl Menu {
             Some(Event::KeyDown(k)) => self.process_keydown(cx, &k)?,
             _ => {}
         }
+        let opened_at = *self
+            .opened_at
+            .get_or_insert_with(|| crate::net::interrupts(cx));
         crate::net::pump(cx);
-        if self.escape_on_interrupt && !self.choices.is_empty() && crate::net::interrupted(cx) {
+        if self.escape_on_interrupt
+            && !self.choices.is_empty()
+            && crate::net::interrupts(cx) != opened_at
+        {
             self.choice_index = Some(self.choices.len() as i64 - 1);
             self.choice_done = true;
         }
@@ -394,6 +404,7 @@ impl Menu {
 
     /// Says the title, waits for a choice, and runs it.
     pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
+        self.opened_at = Some(crate::net::interrupts(cx));
         self.say_title(cx);
         self.get_choice_from_static_menu(cx)?;
         self.execute_choice(cx)
@@ -534,12 +545,13 @@ pub fn input_string(
     default: &str,
     spell: bool,
 ) -> Result<Option<String>, Exit> {
+    let opened_at = crate::net::interrupts(cx);
     let mut entry = TextEntry::start(cx, prompt, allowed, default, spell);
     loop {
         // A millisecond per read rather than spinning.
         cx.clock.sleep(0.001);
         crate::net::pump(cx);
-        if crate::net::interrupted(cx) {
+        if crate::net::interrupts(cx) != opened_at {
             return Ok(None);
         }
         cx.input.input_point(InputPoint::Text, cx.voice.is_idle());
