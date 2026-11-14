@@ -2,9 +2,9 @@
 //! original's `player.push(...)` and `send_event(...)`.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
-use crate::entity::{Entity, EntityId, SquareId};
+use crate::entity::{EntityId, SquareId};
+use crate::known::KnownEntity;
 use crate::msg::Msg;
 
 /// Why an order cannot be carried out.
@@ -117,10 +117,11 @@ impl EntityEvent {
 #[derive(Clone, Debug)]
 pub enum Event {
     /// Something happened to an entity the player perceives (or to any
-    /// entity, for universal notifications). The entity is a copy taken when
-    /// it happened.
+    /// entity, for universal notifications). The entity is as the player
+    /// knows it at the moment it happened: a sound comes from where the
+    /// entity was then.
     Entity {
-        entity: Box<Entity>,
+        entity: Box<KnownEntity>,
         event: EntityEvent,
     },
     /// A message to say now.
@@ -136,15 +137,16 @@ pub enum Event {
     Voila(Box<Voila>),
 }
 
-/// What a player knows at the end of a turn: copies of what it remembers
-/// and perceives, and the squares it observes.
+/// What a player knows at the end of a turn: the entities it remembers
+/// and perceives, as it knows them, and the squares it observes.
 #[derive(Clone, Debug)]
 pub struct Voila {
     /// The world's time after the turn, in milliseconds.
     pub time: i64,
-    /// The remembered entities, with when each one was last seen.
-    pub memory: Vec<(Arc<Entity>, i64)>,
-    pub perception: Vec<Arc<Entity>>,
+    /// The remembered entities, each with when it was last seen, by id.
+    pub memory: Vec<KnownEntity>,
+    /// The perceived entities, by id.
+    pub perception: Vec<KnownEntity>,
     pub observed_squares: BTreeSet<SquareId>,
     /// Every square in cheat mode.
     pub observed_before_squares: BTreeSet<SquareId>,

@@ -40,7 +40,9 @@ use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{Command, Entity, EntityId, Host, Place, PlayerId, SquareId, View, Voila};
+use soundrts_world::{
+    Command, EntityId, Host, KnownEntity, Place, PlayerId, SquareId, View, Voila,
+};
 
 use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
@@ -118,7 +120,7 @@ impl From<Exit> for Stop {
 #[derive(Clone, Debug)]
 pub enum SrvEvent {
     Entity {
-        entity: Box<Entity>,
+        entity: Box<KnownEntity>,
         event: EntityEvent,
     },
     VoiceImportant(Msg),
@@ -516,11 +518,11 @@ impl GameInterface {
         Ok(())
     }
 
-    fn srv_event(&mut self, cx: &mut Client, entity: Entity, event: &EntityEvent) {
+    fn srv_event(&mut self, cx: &mut Client, entity: KnownEntity, event: &EntityEvent) {
         if cx.clock.now() > self.next_update + EVENT_LIMIT {
             return;
         }
-        let view = EntityView::new(std::sync::Arc::new(entity), None, &cx.rng);
+        let view = EntityView::new(entity, &cx.rng);
         if let Err(Oops { message: e, .. }) = self.notify(cx, &view, event) {
             cx.log.error(format!("problem during srv_event: {e}"));
         }
@@ -594,7 +596,7 @@ impl GameInterface {
     // players and objects
 
     /// Whether the entity belongs to an enemy of the player.
-    pub fn is_an_enemy(&self, e: &Entity) -> bool {
+    pub fn is_an_enemy(&self, e: &KnownEntity) -> bool {
         e.player.is_some_and(|p| !self.view().is_ally(p))
     }
 
@@ -611,7 +613,7 @@ impl GameInterface {
             Place::Inside(c) => self
                 .view()
                 .known(c)
-                .map(|(e, _)| style_msg(cx.res.style(), &e.type_name, "title"))
+                .map(|e| style_msg(cx.res.style(), &e.type_name, "title"))
                 .unwrap_or_default(),
         }
     }
@@ -619,7 +621,7 @@ impl GameInterface {
     /// The place of a container, as the player perceives or remembers it.
     /// `None` if the player knows nothing of it.
     pub fn container_place(&self, container: EntityId) -> Option<Place> {
-        self.view().known(container).and_then(|(e, _)| e.place)
+        self.view().known(container).and_then(|e| e.place)
     }
 
     /// The square of a place, through containers as the player knows

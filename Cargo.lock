@@ -2498,6 +2498,7 @@ name = "soundrts-world"
 version = "0.1.0"
 dependencies = [
  "regex",
+ "soundrts-world",
 ]
 
 [[package]]

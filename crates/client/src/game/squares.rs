@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::rules::AirGround;
-use soundrts_world::{Place, SquareId};
+use soundrts_world::{INF, Place, SquareId};
 
 use crate::audio::{angle, distance};
 use crate::client::Client;
@@ -278,7 +278,7 @@ impl GameInterface {
         self.group.iter().any(|x| {
             self.dobjets
                 .get(x)
-                .is_some_and(|v| v.model.airground_type == AirGround::Air)
+                .is_some_and(|v| v.model.airground == AirGround::Air)
         }) || self
             .order
             .as_ref()
@@ -549,7 +549,9 @@ impl GameInterface {
         let mut best: Option<&EntityView> = None;
         for id in &self.group {
             let v = self.dobjets.get(id)?;
-            if best.is_none_or(|b| v.model.distance_to_goal < b.model.distance_to_goal) {
+            let distance =
+                |v: &EntityView| v.model.own.as_ref().map_or(INF, |o| o.distance_to_goal);
+            if best.is_none_or(|b| distance(v) < distance(b)) {
                 best = Some(v);
             }
         }

@@ -25,9 +25,10 @@ jobs:
         run: cargo fmt --check
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
-      # The tests turn on `soundrts-world/truth`, which gives the whole world.
-      # Built without them, the interface must read the game only through
-      # what its player knows.
+      # The tests turn on `soundrts-world/truth`, which gives the whole world
+      # and names the simulation's `Entity`. Built without them, the
+      # interface must read the game only through what its player knows,
+      # and entities only as `KnownEntity`.
       - name: Build the interface without the whole world
         run: cargo check -p soundrts --lib --bins
       - name: Test

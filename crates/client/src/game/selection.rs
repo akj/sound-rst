@@ -64,7 +64,7 @@ impl GameInterface {
                 .order
                 .as_ref()
                 .is_some_and(|o| o.keyword == Keyword::Build)
-                && v.model.is_a_building_land()
+                && v.model.is_a_building_land
             {
                 p = if self.is_an_exit(cx, v) { 0.5 } else { 0.0 };
             }
@@ -75,9 +75,9 @@ impl GameInterface {
                 Oops::new("unsupported operand type(s) for /: 'NoneType' and 'float'")
             })?;
             p = 1.0 + rt as f64 / 100.0;
-        } else if v.model.stats.is_repairable != 0 && v.hp() < v.hp_max() {
+        } else if v.model.is_repairable && v.hp() < v.hp_max() {
             p = 2.0;
-        } else if v.model.is_a_building_land() {
+        } else if v.model.is_a_building_land {
             p = 3.0;
         } else if v.model.is_exit() {
             p = 4.0;
@@ -174,9 +174,9 @@ impl GameInterface {
             }
             let has_menu = even_if_no_menu || {
                 let t = view.unit_type(&e.type_name);
+                let own = e.own.as_ref();
                 t.is_some_and(|t| !t.can_train.is_empty() || !t.can_upgrade_to.is_empty())
-                    || !e.orders.is_empty()
-                    || !e.basic_abilities().is_empty()
+                    || own.is_some_and(|o| !o.orders.is_empty() || o.has_basic_abilities)
                     || !self.view_menu(u, false).is_empty()
             };
             if has_menu {
@@ -274,7 +274,7 @@ impl GameInterface {
                                     Some(z) => z.contains(v.model.x, v.model.y),
                                     None => self.is_in(v, local_place),
                                 })
-                            && (!filter.idle || v.model.orders.is_empty())
+                            && (!filter.idle || v.orders().is_empty())
                     })
                     .collect();
                 let end = soundrts_world::nofloat::floordiv(m.len() as i64, portion);
@@ -337,7 +337,7 @@ impl GameInterface {
                             Some(z) => z.contains(v.model.x, v.model.y),
                             None => self.is_in(v, self.place),
                         })
-                    && (!filter.idle || v.model.orders.is_empty())
+                    && (!filter.idle || v.orders().is_empty())
             })
             .collect();
         if units.is_empty() {
@@ -812,10 +812,10 @@ mod tests {
         assert!(g.game.host.world().has(them, "keep"));
         // Orders last listed for units the player now sees as the
         // computer's: one the player's peasant cannot give, one it can.
-        for u in [townhall, theirs] {
-            let e = g.game.host.world().entity(u).unwrap().clone();
-            let v = EntityView::new(std::sync::Arc::new(e), None, &h.client.rng);
-            g.game.dobjets.insert(u, v);
+        for (u, mine) in [(townhall, unit(&g, me, "townhall")), (theirs, peasant)] {
+            let mut e = g.game.view().perceived(mine).unwrap();
+            (e.id, e.player, e.own) = (u, Some(them), None);
+            g.game.dobjets.insert(u, EntityView::new(e, &h.client.rng));
         }
         let style = h.client.res.style();
         let listed = |order: &str, unit: EntityId| {
