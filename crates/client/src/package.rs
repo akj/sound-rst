@@ -45,17 +45,43 @@ struct ZipData {
     depth: u32,
 }
 
-/// Whether a zip file can have more than [`MAX_ENTRIES`] entries, counted
-/// before an index of them is built. Each entry of a central directory
-/// starts with its signature, so the signatures anywhere in the file are at
-/// least the entries of whichever directory is read, those that share a
-/// name included.
+/// Whether a zip file can have more than [`MAX_ENTRIES`] entries, checked
+/// before an index of them is built, whichever directory a reader picks:
+/// - each entry of a central directory starts with its signature, so the
+///   signatures anywhere in the file are at least the entries read, those
+///   that share a name included;
+/// - a reader reserves room for the count an end record states, so no end
+///   record anywhere in the file may state more. A count of 0xFFFF in a
+///   32-bit record defers to a 64-bit record.
 fn too_many_entries(bytes: &[u8]) -> bool {
-    bytes
-        .windows(4)
-        .filter(|w| w == b"PK\x01\x02")
-        .nth(MAX_ENTRIES)
-        .is_some()
+    let limit = u64::try_from(MAX_ENTRIES).unwrap_or(u64::MAX);
+    let field = |at: Option<usize>, len: usize| -> u64 {
+        at.and_then(|at| bytes.get(at..at.checked_add(len)?))
+            .map_or(0, |b| {
+                b.iter().rev().fold(0, |n, &x| (n << 8) | u64::from(x))
+            })
+    };
+    let mut entries = 0_usize;
+    for (at, w) in bytes.windows(4).enumerate() {
+        let stated = match w {
+            b"PK\x01\x02" => {
+                entries = entries.saturating_add(1);
+                0
+            }
+            b"PK\x05\x06" => [8, 10]
+                .iter()
+                .map(|&o| field(at.checked_add(o), 2))
+                .filter(|&n| n != 0xFFFF)
+                .max()
+                .unwrap_or(0),
+            b"PK\x06\x06" => field(at.checked_add(24), 8).max(field(at.checked_add(32), 8)),
+            _ => 0,
+        };
+        if entries > MAX_ENTRIES || stated > limit {
+            return true;
+        }
+    }
+    false
 }
 
 fn too_large(what: &str, limit: u64) -> std::io::Error {
@@ -848,6 +874,19 @@ mod tests {
         trailing[10..12].copy_from_slice(&1_u16.to_le_bytes());
         z.extend(trailing);
         assert!(Package::from_zip_bytes("same.zip".into(), z.clone()).is_err());
+        assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
+    }
+
+    #[test]
+    fn a_zip_file_that_states_too_many_entries_is_refused() {
+        // One entry, with an end record that states 20,001.
+        let mut z = zipped(&[("map.txt", b"title 1".to_vec())]);
+        assert!(Package::from_zip_bytes("one.zip".into(), z.clone()).is_ok());
+        let end = z.windows(4).rposition(|w| w == b"PK\x05\x06").unwrap();
+        let stated = u16::try_from(MAX_ENTRIES + 1).unwrap().to_le_bytes();
+        z[end + 8..end + 10].copy_from_slice(&stated);
+        z[end + 10..end + 12].copy_from_slice(&stated);
+        assert!(Package::from_zip_bytes("one.zip".into(), z.clone()).is_err());
         assert!(check_expansion(&z, NETWORK_MAP_LIMITS).is_err());
     }
 
