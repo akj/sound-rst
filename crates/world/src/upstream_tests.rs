@@ -1731,6 +1731,7 @@ mod test_definitions {
 /// Bugs the original has and the port no longer copies.
 mod bugs_of_the_original {
     use super::*;
+    use crate::events::{EntityEvent, Event};
 
     /// Two computers on `jl1_extended`, in the given alliances.
     fn two_computers(alliance: (&str, &str), ai: &str) -> (World, PlayerId, PlayerId) {
@@ -1900,5 +1901,37 @@ starting_resources 100 100
         assert_eq!(pl.cataclysmic_places, [b1].into());
         let m = w.e(archer).menace();
         assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
+    }
+
+    /// The events of the entities the player perceives, since the last call.
+    fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
+        w.drain_events(p)
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Entity { event, .. } => Some(event),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn load_all_aimed_at_a_unit_inside_something_is_refused_at_once() {
+        let mut w = world_text(TWO_SQUARES);
+        let humans = [Controller::human("a", true), Controller::human("b", false)];
+        let a = w.populate_map(&humans, false, false).unwrap()[0];
+        let a1 = sq(&w, "a1");
+        let t1 = create(&mut w, "new_flyingmachine", a, a1);
+        let t2 = create(&mut w, "new_flyingmachine", a, a1);
+        let f = create(&mut w, "footman", a, a1);
+        w.load(t2, f);
+        w.update();
+        w.drain_events(a);
+        for kw in ["load_all", "unload_all"] {
+            take(&mut w, t1, &format!("{kw} {f}"));
+            assert_eq!(evs(&mut w, a), [EntityEvent::OrderImpossible(None)], "{kw}");
+            w.update();
+            assert!(keywords(&w, t1).is_empty(), "{kw}");
+            assert!(evs(&mut w, a).is_empty(), "{kw}");
+        }
     }
 }

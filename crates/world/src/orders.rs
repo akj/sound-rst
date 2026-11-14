@@ -1318,15 +1318,10 @@ impl World {
                 let t = self.get_target_arg(unit, uid)?;
                 let t = match t {
                     Some(Target::Square(s)) => Some(Target::Square(s)),
+                    // A unit inside something is not on a square to load or
+                    // unload at.
                     Some(other) => match self.t_place(&other) {
                         TPlace::At(Place::Square(s)) => Some(Target::Square(s)),
-                        TPlace::At(Place::Inside(_)) => {
-                            // An interior has no id: the next update finds no
-                            // target and the order fails.
-                            self.set_target(unit, uid, None);
-                            self.notify(unit, ok, false);
-                            return Ok(());
-                        }
                         _ => None,
                     },
                     None => None,
