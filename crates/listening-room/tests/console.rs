@@ -137,9 +137,9 @@ fn the_whole_script_runs_and_writes_the_answers() {
     // Steps 3 and 4.
     answers.extend(["", "4", "", "4", ""]);
     answers.extend(["", "5", "", "5", ""]);
-    // Steps 5 and 6 leave out the current renderer: one version each.
-    answers.extend(["", "2", ""]);
-    answers.extend(["", "1", ""]);
+    // Steps 5 and 6.
+    answers.extend(["", "2", "", "2", ""]);
+    answers.extend(["", "1", "", "1", ""]);
     let stdout = run(
         &[
             "--root",
@@ -155,7 +155,7 @@ fn the_whole_script_runs_and_writes_the_answers() {
     assert!(stdout.contains("The game today has no echo"));
     assert!(stdout.contains("That is the end of the script."));
     assert!(stdout.contains(
-        "current: average rating 4.0 out of 5 over 3 steps; in front or behind, 4 of 8 right."
+        "current: average rating 3.0 out of 5 over 5 steps; in front or behind, 4 of 8 right."
     ));
     assert!(stdout.contains(
         "stereo-plus: average rating 3.0 out of 5 over 5 steps; in front or behind, 4 of 8 right."
@@ -172,7 +172,7 @@ fn the_whole_script_runs_and_writes_the_answers() {
     ] {
         assert!(files.iter().any(|f| f == name), "{name} in {files:?}");
     }
-    assert!(!files.iter().any(|f| f == "step5-neighbour-current.wav"));
+    assert!(files.iter().any(|f| f == "step6-terrain-current.wav"));
 
     let results = std::fs::read_to_string(dir.path().join("listening-room-results.txt")).unwrap();
     for line in [
@@ -227,11 +227,12 @@ fn q_stops_and_keeps_the_answers_so_far() {
             "--renderers",
             "stereo-plus",
         ],
-        &["", "4", "", "q"],
+        // Stops at the comment prompt of step 1.
+        &["", "4", "q"],
     );
     assert!(stdout.contains("Stopped. Your answers so far are in"));
     let results = std::fs::read_to_string(dir.path().join("listening-room-results.txt")).unwrap();
-    assert!(results.contains("  stereo-plus: 4 out of 5"));
+    assert!(results.contains("Step 1: a footstep circling you\n  stereo-plus: 4 out of 5\n"));
     assert!(!results.contains("Step 2"));
 }
 

@@ -214,9 +214,9 @@ struct Step {
     title: &'static str,
     slug: &'static str,
     intro: &'static str,
-    /// The game today cannot do what the step tries, so the current
-    /// renderer has nothing to offer in it.
-    without_current: Option<&'static str>,
+    /// Said when the current renderer is in the step: the game today
+    /// cannot do what the step tries, so its version is the baseline.
+    current_note: Option<&'static str>,
     ask: Ask,
 }
 
@@ -227,7 +227,7 @@ const STEPS: [Step; 6] = [
         title: "a footstep circling you",
         slug: "circling",
         intro: "Footsteps go once round you: they start in front, go to your right, behind you, to your left, and back in front.",
-        without_current: None,
+        current_note: None,
         ask: Ask::Rating {
             question: "How well could you follow the footsteps all the way round?",
             take: circling,
@@ -237,14 +237,14 @@ const STEPS: [Step; 6] = [
         title: "in front or behind",
         slug: "front-or-behind",
         intro: "You hear three footsteps, either in front of you or behind you. After each, say which. Each version has 8 of them, half in front and half behind, in random order.",
-        without_current: None,
+        current_note: None,
         ask: Ask::FrontOrBehind,
     },
     Step {
         title: "a sound passing overhead",
         slug: "overhead",
         intro: "A dragon's wings come from in front of you, pass over your head, and go away behind you.",
-        without_current: None,
+        current_note: None,
         ask: Ask::Rating {
             question: "How much did it sound like it passed over your head?",
             take: overhead,
@@ -254,7 +254,7 @@ const STEPS: [Step; 6] = [
         title: "a sound moving away",
         slug: "receding",
         intro: "Footsteps start just in front of you and walk straight away into the distance.",
-        without_current: None,
+        current_note: None,
         ask: Ask::Rating {
             question: "How much did it sound like the footsteps moved away, and not only like they got quieter?",
             take: receding,
@@ -264,8 +264,8 @@ const STEPS: [Step; 6] = [
         title: "a neighbour through an open exit and a closed one",
         slug: "neighbour",
         intro: "A blacksmith works on the next square, to your right. First you hear it through an open exit, then, after a short pause, through a closed one.",
-        without_current: Some(
-            "The game today cannot muffle a sound, so this step leaves out the current renderer.",
+        current_note: Some(
+            "The game today cannot muffle a sound, so the current renderer's version plays the open and the closed exit the same way.",
         ),
         ask: Ask::Rating {
             question: "How clear was the difference between the open exit and the closed one?",
@@ -276,8 +276,8 @@ const STEPS: [Step; 6] = [
         title: "the echo of the place",
         slug: "terrain",
         intro: "Footsteps near you, five times: first with no echo, then in an open meadow, in a forest, in a mountain pass, and inside a town.",
-        without_current: Some(
-            "The game today has no echo, so this step leaves out the current renderer.",
+        current_note: Some(
+            "The game today has no echo, so the current renderer's version plays every place the same way.",
         ),
         ask: Ask::Rating {
             question: "How well did the echoes tell the places apart?",
@@ -477,6 +477,14 @@ impl Session<'_> {
         std::fs::write(&self.results_path, self.results.text())
     }
 
+    /// Adds a line to the current step's results and saves them.
+    fn note(&mut self, line: String) -> io::Result<()> {
+        if let Some(step) = self.results.steps.last_mut() {
+            step.lines.push(line);
+        }
+        self.save()
+    }
+
     fn run_step(&mut self, number: usize, kinds: &[Kind]) -> Flow<()> {
         let step = &STEPS[number - 1];
         self.say(&format!(
@@ -484,24 +492,17 @@ impl Session<'_> {
             step.title, step.intro
         ))?;
         let mut kinds: Vec<Kind> = kinds.to_vec();
-        if let Some(note) = step.without_current {
-            if kinds.contains(&Kind::Current) {
-                self.say(note)?;
-            }
-            kinds.retain(|&k| k != Kind::Current);
+        if let Some(note) = step.current_note
+            && kinds.contains(&Kind::Current)
+        {
+            self.say(note)?;
         }
-        let mut result = StepResult {
+        // The step is in the results from the start, so stopping part way
+        // keeps the answers already given.
+        self.results.steps.push(StepResult {
             lines: vec![format!("Step {number}: {}", step.title)],
-        };
-        if kinds.is_empty() {
-            self.say("None of the chosen renderers can play this step, so it is skipped.")?;
-            result
-                .lines
-                .push("  Skipped: no renderer for it.".to_owned());
-            self.results.steps.push(result);
-            self.save()?;
-            return Ok(());
-        }
+        });
+        self.save()?;
         self.rng.shuffle(&mut kinds);
         let n = kinds.len();
         if n > 1 {
@@ -532,9 +533,7 @@ impl Session<'_> {
                         }
                     };
                     self.results.ratings.push((kind, rating));
-                    result
-                        .lines
-                        .push(format!("  {}: {rating} out of 5", kind.name()));
+                    self.note(format!("  {}: {rating} out of 5", kind.name()))?;
                 }
                 Ask::FrontOrBehind => {
                     self.ask(&format!("Version {version} of {n}. Press Enter to start."))?;
@@ -579,11 +578,11 @@ impl Session<'_> {
                     }
                     self.say(&format!("Version {version}: {right} of {TRIALS} right."))?;
                     self.results.front_or_behind.push((kind, right, TRIALS));
-                    result.lines.push(format!(
+                    self.note(format!(
                         "  {}: {right} of {TRIALS} right (in front {right_front} of {half}, behind {right_behind} of {half})",
                         kind.name(),
                         half = TRIALS / 2
-                    ));
+                    ))?;
                 }
             }
         }
@@ -600,10 +599,8 @@ impl Session<'_> {
         let comment = self
             .ask("Any comment on this step? Type it and press Enter, or press Enter to go on.")?;
         if !comment.is_empty() {
-            result.lines.push(format!("  Comment: {comment}"));
+            self.note(format!("  Comment: {comment}"))?;
         }
-        self.results.steps.push(result);
-        self.save()?;
         Ok(())
     }
 }

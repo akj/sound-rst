@@ -107,10 +107,17 @@ fn a_jump_in_loudness_clicks_in_current_and_not_in_stereo_plus() {
             )
         })
     };
-    let current = largest_step(&channel(&take(&mut Current), 0));
-    let plus = largest_step(&channel(&take(&mut StereoPlus::default()), 0));
-    // The gain goes from 0.07 to 0.71, on a signal of 0.5.
-    assert!(current > 0.3, "current's largest step {current}");
+    let current = channel(&take(&mut Current), 0);
+    let plus = channel(&take(&mut StereoPlus::default()), 0);
+    // The game's gain in front at 1 metre is 0.707 times the loudness, so
+    // the output goes from 0.5 * 0.0707 to 0.5 * 0.707.
+    for out in [&current, &plus] {
+        assert!((out[0] - 0.035_355).abs() < 1e-4, "starts at {}", out[0]);
+        let settled = out[RATE as usize * 3 / 4];
+        assert!((settled - 0.353_55).abs() < 1e-4, "settles at {settled}");
+    }
+    assert!(largest_step(&current) > 0.3, "current's largest step");
+    let plus = largest_step(&plus);
     assert!(plus < 0.001, "stereo-plus's largest step {plus}");
 }
 
