@@ -147,6 +147,7 @@ impl GameInterface {
             C::RotateRight => self.cmd_rotate_right(cx)?,
             C::Console => self.cmd_console(cx),
             C::ReloadParameters => cx.reload_parameters(),
+            C::KeyHelp => self.start_key_help(cx),
             C::Cmd(cmd) => {
                 if self.view().cheats_allowed() {
                     self.execute_command(cx, cmd)?;

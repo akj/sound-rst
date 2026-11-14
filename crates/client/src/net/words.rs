@@ -90,6 +90,12 @@ pub const TOO_LATE: &str = "the key came too late to be the end of the sentence"
 pub const NOTHING_CHANGED: &str = "nothing changed";
 pub const TRY_AGAIN: &str = "to try again, press Enter";
 
+// Key help in a game.
+
+pub const KEY_HELP_ON: &str = "key help on: press a key to hear what it does, Escape to leave";
+pub const KEY_HELP_OFF: &str = "key help off";
+pub const NO_COMMAND: &str = "no command";
+
 // The categories of news, as the log's review keys name them. An alert is
 // the original's own word.
 

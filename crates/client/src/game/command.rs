@@ -169,6 +169,8 @@ pub enum GameCommand {
     RotateRight,
     Console,
     ReloadParameters,
+    /// Turns key help on: keys say what they do instead of doing it.
+    KeyHelp,
     /// A cheat command, as typed in the console.
     Cmd(String),
     /// A known command with arguments it cannot take: pressing its key
@@ -240,6 +242,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "rotate_right",
     "console",
     "reload_parameters",
+    "key_help",
     "cmd",
 ];
 
@@ -406,9 +409,248 @@ impl GameCommand {
             "rotate_right" => none(C::RotateRight)?,
             "console" => none(C::Console)?,
             "reload_parameters" => none(C::ReloadParameters)?,
+            "key_help" => none(C::KeyHelp)?,
             "cmd" => C::Cmd(args.join(" ")),
             other => unreachable!("{other} is in COMMAND_NAMES"),
         })
+    }
+}
+
+/// "next" or "previous", by the sign of a step.
+fn direction(inc: i64) -> &'static str {
+    if inc < 0 { "previous" } else { "next" }
+}
+
+/// "first", "second"... for `n` counted from 1.
+fn ordinal(n: i64) -> String {
+    const WORDS: [&str; 10] = [
+        "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+        "tenth",
+    ];
+    usize::try_from(n)
+        .ok()
+        .and_then(|n| n.checked_sub(1))
+        .and_then(|i| WORDS.get(i))
+        .map_or_else(|| format!("number {n}"), |w| (*w).to_owned())
+}
+
+/// A unit type of the style's `keyboard` names, singular or plural:
+/// `soldier3` is "soldier of type 3".
+fn unit_type(name: &str, plural: bool) -> String {
+    let s = if plural { "s" } else { "" };
+    match name.strip_prefix("soldier") {
+        Some(n) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) => {
+            format!("soldier{s} of type {n}")
+        }
+        _ => format!("{name}{s}"),
+    }
+}
+
+/// The units a filter keeps, as "idle workers and soldiers on this
+/// square". The seven soldier types together are "soldiers".
+fn units(filter: &UnitFilter, plural: bool) -> String {
+    let soldiers: Vec<String> = (1..=7).map(|i| format!("soldier{i}")).collect();
+    let all_soldiers = soldiers.iter().all(|s| filter.keyboard_types.contains(s));
+    let mut names: Vec<String> = Vec::new();
+    for t in &filter.keyboard_types {
+        let name = if all_soldiers && soldiers.contains(t) {
+            if plural { "soldiers" } else { "soldier" }.to_owned()
+        } else {
+            unit_type(t, plural)
+        };
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        names.push(if plural { "units" } else { "unit" }.to_owned());
+    }
+    let mut out = String::new();
+    if filter.idle {
+        out.push_str("idle ");
+    }
+    out.push_str(&names.join(" and "));
+    if filter.local {
+        out.push_str(" on this square");
+    }
+    if filter.even_if_no_menu {
+        out.push_str(", even without a menu");
+    }
+    out
+}
+
+/// ", after the other orders" and ", without stopping to fight".
+fn order_flags(flags: OrderFlags) -> String {
+    let mut out = String::new();
+    if flags.queue {
+        out.push_str(", after the other orders");
+    }
+    if flags.imperative {
+        out.push_str(", without stopping to fight");
+    }
+    out
+}
+
+/// A move of the cursor: "move one square north", "move 5 squares
+/// south-west".
+fn square_move(dx: i64, dy: i64, no_collision: bool) -> String {
+    let north_south = match dy.signum() {
+        1 => "north",
+        -1 => "south",
+        _ => "",
+    };
+    let east_west = match dx.signum() {
+        1 => "east",
+        -1 => "west",
+        _ => "",
+    };
+    let way = match (north_south, east_west) {
+        ("", "") => return "stay on this square".to_owned(),
+        ("", w) | (w, "") => w.to_owned(),
+        (n, e) => format!("{n}-{e}"),
+    };
+    let distance = match dx.unsigned_abs().max(dy.unsigned_abs()) {
+        1 => "one square".to_owned(),
+        n => format!("{n} squares"),
+    };
+    let path = if no_collision {
+        ", even without a path"
+    } else {
+        ""
+    };
+    format!("move {distance} {way}{path}")
+}
+
+impl GameCommand {
+    /// What the command does, said plainly, action first: "select the
+    /// next worker". Key help says it. English for now: every description
+    /// is here, and a new command cannot compile without one.
+    pub fn description(&self) -> String {
+        use GameCommand as C;
+        match self {
+            C::ResourceStatus(r) => format!(
+                "say the amount of the {} resource",
+                ordinal(r.saturating_add(1))
+            ),
+            C::AllResourcesStatus => "say every resource".into(),
+            C::FoodStatus => "say the food".into(),
+            C::UnitHpStatus => "say the hit points of the controlled units".into(),
+            C::ProductionStatus => "say what is in production".into(),
+            C::WorkersStatus => "say what the workers do".into(),
+            C::FightStatus => "say how the fight on this square goes".into(),
+            C::Examine => "describe the target or the square".into(),
+            C::UnitStatus => "say the controlled units and follow them".into(),
+            C::SayTime => "say the time".into(),
+            C::Objectives => "say the objectives".into(),
+            C::SayPlayers => "say the names of the players".into(),
+            C::PlayersStatus => "say who is an ally or an enemy".into(),
+            C::SelectSquare {
+                dx,
+                dy,
+                no_collision,
+            } => square_move(*dx, *dy, *no_collision),
+            C::SelectScoutedSquare(i) => {
+                format!("go to the {} explored square", direction(*i))
+            }
+            C::SelectConflictSquare(i) => {
+                format!("go to the {} square with a fight", direction(*i))
+            }
+            C::SelectUnknownSquare(i) => {
+                format!("go to the {} unexplored square", direction(*i))
+            }
+            C::SelectResourceSquare(i) => {
+                format!("go to the {} square with resources", direction(*i))
+            }
+            C::ToggleZoom => "zoom in or out of the square".into(),
+            C::JumpToAlert => "go to the square of the last alert".into(),
+            C::SelectTarget { inc, types } => match types.as_slice() {
+                [] => format!("{} target", direction(*inc)),
+                [useful] if useful == "useful" => {
+                    format!("{} useful target", direction(*inc))
+                }
+                types => format!("{} target: {}", direction(*inc), types.join(" or ")),
+            },
+            C::SelectOrder { inc, menu } => match menu {
+                OrderMenu::Included => format!("{} order", direction(*inc)),
+                OrderMenu::Active => format!("{} available order", direction(*inc)),
+                OrderMenu::InactiveOnly => {
+                    format!("{} order not yet available", direction(*inc))
+                }
+            },
+            C::OrderShortcut => "choose an order by its shortcut".into(),
+            C::Validate(flags) => format!("confirm the order{}", order_flags(*flags)),
+            C::Default(flags) => format!("give the default order{}", order_flags(*flags)),
+            C::DoAgain { now: false, flags } => {
+                format!("select the last order again{}", order_flags(*flags))
+            }
+            C::DoAgain { now: true, flags } => {
+                format!("give the last order again{}", order_flags(*flags))
+            }
+            C::Escape => "cancel the order, or leave the zoom".into(),
+            C::SelectUnit { inc, filter } => {
+                format!("select the {} {}", direction(*inc), units(filter, false))
+            }
+            C::SelectUnits(filter) => format!("select all {}", units(filter, true)),
+            C::CommandUnit => "control the target, if it is yours".into(),
+            C::Group { portion, filter } => {
+                let part = match portion {
+                    1 => "all".to_owned(),
+                    2 => "half".to_owned(),
+                    4 => "a quarter of".to_owned(),
+                    n => format!("a {} of", ordinal(*n)),
+                };
+                let what = if filter.keyboard_types.is_empty() {
+                    let idle = if filter.idle { "idle " } else { "" };
+                    format!("the {idle}units of the same types")
+                } else {
+                    let all_over = UnitFilter {
+                        local: false,
+                        ..filter.clone()
+                    };
+                    format!("the {}", units(&all_over, true))
+                };
+                let here = if filter.local { " on this square" } else { "" };
+                format!("control {part} {what}{here}")
+            }
+            C::Ungroup => "control only the first unit".into(),
+            C::RecallGroup(name) => format!("recall group {name}"),
+            C::SetGroup { name, .. } => format!("make the controlled units group {name}"),
+            C::AppendGroup { name, .. } => {
+                format!("add the controlled units to group {name}")
+            }
+            C::Help(i) => format!("{} line of help", direction(*i)),
+            C::HistoryPrevious => "previous message".into(),
+            C::HistoryNext => "next message".into(),
+            C::HistoryStop => "skip the message being said".into(),
+            C::Unheard => "say what you missed".into(),
+            C::ReviewPrevious => "previous message of the category".into(),
+            C::ReviewNext => "next message of the category".into(),
+            C::ReviewCategory => "change the category of messages".into(),
+            C::Say => "write to every player".into(),
+            C::SayAllies => "write to your allies".into(),
+            C::ChatPrevious => "previous chat message".into(),
+            C::ChatNext => "next chat message".into(),
+            C::KeyHelp => "turn key help on or off".into(),
+            C::GameMenu => "open the game menu".into(),
+            C::Fullscreen => "switch full screen".into(),
+            C::ToggleCheatmode => "switch cheat mode".into(),
+            C::ToggleTick => "switch the tick at each turn".into(),
+            C::ToggleTalkingClock => "switch the talking clock".into(),
+            C::ChangePlayer => "play as the next player".into(),
+            C::Volume(n) => match n {
+                1 => "raise the volume".into(),
+                -1 => "lower the volume".into(),
+                n if *n > 0 => format!("raise the volume {n} times"),
+                n => format!("lower the volume {} times", n.unsigned_abs()),
+            },
+            C::Immersion => "go into first person".into(),
+            C::RotateLeft => "turn left".into(),
+            C::RotateRight => "turn right".into(),
+            C::Console => "open the console".into(),
+            C::ReloadParameters => "reload the parameters".into(),
+            C::Cmd(cmd) => format!("run the console command {cmd}"),
+            C::Broken { name, .. } => format!("{name}, with arguments it cannot take"),
+        }
     }
 }
 
@@ -464,5 +706,62 @@ mod tests {
             Ok(GameCommand::Broken { .. })
         ));
         assert!(parse("dance").is_err());
+    }
+
+    fn describe(line: &str) -> String {
+        parse(line).unwrap().description()
+    }
+
+    #[test]
+    fn a_description_says_the_action_with_its_arguments() {
+        assert_eq!(describe("select_unit 1 worker"), "select the next worker");
+        assert_eq!(
+            describe("select_unit -1 worker idle"),
+            "select the previous idle worker"
+        );
+        assert_eq!(
+            describe("select_units local soldier3"),
+            "select all soldiers of type 3 on this square"
+        );
+        assert_eq!(
+            describe("resource_status 0"),
+            "say the amount of the first resource"
+        );
+        assert_eq!(describe("history_previous"), "previous message");
+        assert_eq!(describe("select_target 1 useful"), "next useful target");
+        assert_eq!(
+            describe("select_square 0 5 no_collision"),
+            "move 5 squares north, even without a path"
+        );
+        assert_eq!(
+            describe("validate imperative queue_order"),
+            "confirm the order, after the other orders, without stopping to fight"
+        );
+        assert_eq!(
+            describe("group 2 local"),
+            "control half the units of the same types on this square"
+        );
+        assert_eq!(describe("volume -1"), "lower the volume");
+    }
+
+    #[test]
+    fn each_command_of_the_games_keys_has_a_description_of_its_own() {
+        use crate::bindings::{Bindings, CLIENT_BINDINGS};
+        let path = crate::testkit::upstream_root().join("res/ui/bindings.txt");
+        let text = format!(
+            "{}\n{CLIENT_BINDINGS}",
+            std::fs::read_to_string(path).unwrap()
+        );
+        let mut b = Bindings::new();
+        b.load(&text, &GameCommand::parse, &crate::log::Log::silent());
+        let mut seen: Vec<(String, GameCommand)> = Vec::new();
+        for (_, c) in b.iter() {
+            let d = c.description();
+            match seen.iter().find(|(s, _)| *s == d) {
+                Some((_, other)) => assert_eq!(other, c, "two commands are \"{d}\""),
+                None => seen.push((d, c.clone())),
+            }
+        }
+        assert_eq!(seen.len(), 158);
     }
 }
