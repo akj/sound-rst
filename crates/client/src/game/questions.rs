@@ -112,15 +112,22 @@ impl GameInterface {
                 idle += 1;
                 continue;
             };
+            let target = match &o.target {
+                Some(KnownTarget::Entity(id)) => view.known(*id),
+                Some(KnownTarget::Remembered(e)) => Some((**e).clone()),
+                _ => None,
+            };
             match o.keyword {
                 Keyword::Build | Keyword::BuildPhaseTwo => building += 1,
+                // Sent to help build a site.
+                Keyword::Repair if target.as_ref().is_some_and(|t| t.is_building_site()) => {
+                    building += 1
+                }
                 Keyword::Gather => {
-                    let deposit = match &o.target {
-                        Some(KnownTarget::Entity(id)) => view.known(*id),
-                        Some(KnownTarget::Remembered(e)) => Some((**e).clone()),
-                        _ => None,
-                    };
-                    let r = deposit.and_then(|e| self.resource_type(&e));
+                    // A worker bringing back its last load from a deposit
+                    // now exhausted gathers what it carries.
+                    let cargo = v.model.own.as_ref().and_then(|o| o.cargo).map(|c| c.0);
+                    let r = target.and_then(|e| self.resource_type(&e)).or(cargo);
                     if let Some(n) = r.and_then(|r| gathering.get_mut(usize::try_from(r).ok()?)) {
                         *n += 1;
                     }
@@ -331,28 +338,39 @@ mod tests {
     fn the_workers_are_counted_idle_on_each_resource_and_building() {
         let (mut h, mut g) = training();
         let me = g.game.me;
-        let (_, name) = home(&g, me);
+        let (square, name) = home(&g, me);
         // Cheat mode shows the whole map: the deposits are known.
         g.game.host.queue(me, Command::Cheat(Cheat::ToggleMode));
-        cheat(&mut g, me, &format!("add_units {name} 3 peasant"));
+        g.game.host.queue(me, Command::Cheat(Cheat::Resources));
+        cheat(&mut g, me, &format!("add_units {name} 5 peasant"));
         run_turns(&mut h, &mut g, 1);
-        let deposit = |type_name: &str| {
+        let find = |g: &TestGame, type_name: &str| {
             let w = g.game.host.world();
             w.entities()
                 .find(|e| &*e.type_name == type_name)
                 .map(|e| e.id)
-                .unwrap()
         };
-        let (gold, wood) = (deposit("goldmine"), deposit("wood"));
+        let (gold, wood) = (find(&g, "goldmine").unwrap(), find(&g, "wood").unwrap());
         let peasants = units(&g, me, "peasant");
-        assert_eq!(peasants.len(), 4);
+        assert_eq!(peasants.len(), 6);
         order(&mut g, me, peasants[0], &format!("gather {}", gold.0));
         order(&mut g, me, peasants[1], &format!("gather {}", gold.0));
         order(&mut g, me, peasants[2], &format!("gather {}", wood.0));
+        let to = g.game.view().square(square).protocol_id();
+        order(&mut g, me, peasants[3], &format!("build farm {to}"));
+        run_until(&mut h, &mut g, |game| {
+            game.host
+                .world()
+                .entities()
+                .any(|e| &*e.type_name == "buildingsite")
+        });
+        // Sent to help build: a repair of the site.
+        let site = find(&g, "buildingsite").unwrap();
+        order(&mut g, me, peasants[4], &format!("repair {}", site.0));
         run_turns(&mut h, &mut g, 2);
         assert_eq!(
             ask(&mut h, &mut g, Key::N, Mods::NONE),
-            "1 idle , 2 on gold , 1 on wood"
+            "1 idle , 2 on gold , 1 on wood , 2 building"
         );
     }
 
