@@ -10,705 +10,740 @@
 @15020 stereo 6115 vol=1.000 limit=0.000 started
 @16020 step 6
 @16020 stereo 6116 vol=1.000 limit=0.000 started
-@40930 stereo 1194 vol=0.016,0.479 limit=0.500 started
-@40932 step 7
-@41130 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.043,0.043
-@41130 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
-@41230 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@41330 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@41531 pos 1070 v=1.000 x=6.890 y=6.124 prio=-10 limit=0.100 started gains=0.195,0.354
-@41832 pos 1069 v=1.000 x=7.335 y=6.186 prio=-10 limit=0.100 started gains=0.143,0.342
-@44931 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@44931 pos 1070 v=1.000 x=7.335 y=6.186 prio=-10 limit=0.100 started gains=0.143,0.342
-@48132 pos 1061 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@48132 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@48132 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@48132 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@48132 pos 1069 v=1.000 x=7.335 y=6.186 prio=-10 limit=0.100 started gains=0.143,0.342
-@48232 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@48533 pos 1070 v=1.000 x=8.685 y=6.186 prio=-10 limit=0.100 started gains=0.054,0.275
-@50038 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
-@50238 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@50338 pos 1034 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@51643 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@51944 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.000,0.055
-@52144 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@52546 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.003,0.038
-@53248 pos 1062 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@53549 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@53732 step 8
-@53950 pos 1034 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@54151 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@54532 step 9
-@54853 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@54853 pos 1061 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@55255 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@55632 step 10
-@56158 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@56960 pos 1034 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@57763 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@58465 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@59067 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@59167 pos 1060 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@59970 pos 1034 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@60371 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@60472 pos 1063 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@60672 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@61432 step 11
-@61776 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@61776 pos 1061 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@62779 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@63181 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@63582 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@64686 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@64786 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@65288 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@65588 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
-@66291 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@66692 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@66993 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@67896 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@67896 pos 1035 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@68197 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.000,0.055
-@68799 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@68899 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.003,0.038
-@69200 pos 1034 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
-@70605 pos 1070 v=1.000 x=9.053 y=6.620 prio=-10 limit=0.100 started gains=0.046,0.247
-@71006 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@71107 pos 1069 v=1.000 x=8.265 y=7.054 prio=-10 limit=0.100 started gains=0.080,0.267
-@71107 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@71432 step 12
-@71608 pos 1070 v=1.000 x=7.477 y=7.488 prio=-10 limit=0.100 started gains=0.127,0.271
-@72110 pos 1069 v=1.000 x=7.083 y=7.705 prio=-10 limit=0.100 started gains=0.153,0.263
-@72612 pos 1054 v=1.000 x=6.289 y=8.127 prio=-10 limit=0.100 started gains=0.198,0.227
-@72712 pos 1061 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@72812 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@73113 pos 1053 v=1.000 x=5.498 y=8.555 prio=-10 limit=0.100 started gains=0.219,0.175
-@73615 pos 1054 v=1.000 x=5.101 y=8.766 prio=-10 limit=0.100 started gains=0.221,0.150
-@74116 pos 1053 v=1.000 x=4.310 y=9.194 prio=-10 limit=0.100 started gains=0.212,0.108
-@74217 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@74217 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@74233 pos 1098 v=1.000 x=4.024 y=9.352 prio=0 limit=0.000 started gains=0.207,0.095
-@75521 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@76324 pos 1054 v=1.000 x=4.424 y=9.148 prio=-10 limit=0.100 started gains=0.214,0.113
-@76825 pos 1053 v=1.000 x=5.224 y=8.740 prio=-10 limit=0.100 started gains=0.220,0.157
-@76926 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@76926 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@77327 pos 1054 v=1.000 x=6.024 y=8.332 prio=-10 limit=0.100 started gains=0.206,0.208
-@77829 pos 1053 v=1.000 x=6.424 y=8.128 prio=-10 limit=0.100 started gains=0.190,0.232
-@78330 pos 1070 v=1.000 x=7.224 y=7.720 prio=-10 limit=0.100 started gains=0.143,0.263
-@78732 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
-@78832 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@78832 pos 1069 v=1.000 x=8.024 y=7.312 prio=-10 limit=0.100 started gains=0.093,0.267
-@79334 pos 1070 v=1.000 x=8.824 y=6.904 prio=-10 limit=0.100 started gains=0.055,0.250
-@79434 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
-@79835 pos 1069 v=1.000 x=9.224 y=6.700 prio=-10 limit=0.100 started gains=0.042,0.238
-@80237 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
-@80337 pos 1070 v=1.000 x=9.874 y=6.368 prio=-10 limit=0.100 started gains=0.026,0.217
-@80738 pos 1060 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@81039 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
-@82042 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
-@82042 pos 1063 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
-@82444 pos 1034 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
-@82532 step 13
-@82544 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.034,0.005
-@82544 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
-@82644 loop 1065 v=0.500 x=30.000 y=18.000 prio=-10 pending
-@83046 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@83447 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@84149 pos 1037 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
-@84450 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@84651 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@84751 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@84952 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@85353 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.067,0.067
-@85755 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
-@86280 step 14
-@86357 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@86557 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@87059 pos 1036 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
-@87059 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@87360 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@88062 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@88263 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@88664 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
-@89567 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@90099 step 15
-@90133 pos 1195 v=1.000 x=9.874 y=6.368 prio=-1 limit=0.000 started gains=0.118,0.004
-@90871 pos 1070 v=1.000 x=10.678 y=6.575 prio=-11 limit=0.100 started gains=0.129,0.006
-@91072 pos 1061 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@91373 pos 1053 v=1.000 x=11.568 y=6.449 prio=-11 limit=0.100 started gains=0.145,0.008
-@91473 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@91633 pos 1195 v=1.000 x=12.013 y=6.386 prio=0 limit=0.000 started gains=0.154,0.009
-@91875 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@91875 pos 1054 v=1.000 x=12.013 y=6.386 prio=-10 limit=0.100 started gains=0.154,0.009
-@92677 pos 1054 v=1.000 x=12.903 y=6.260 prio=-10 limit=0.100 started gains=0.177,0.013
-@93179 pos 1053 v=1.000 x=13.793 y=6.134 prio=-10 limit=0.100 started gains=0.207,0.020
-@93681 pos 1054 v=1.000 x=14.238 y=6.071 prio=-10 limit=0.100 started gains=0.226,0.026
-@93681 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@94182 pos 1344 v=1.000 x=15.138 y=6.071 prio=-10 limit=0.100 started gains=0.269,0.047
-@94584 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@94684 pos 1345 v=1.000 x=16.033 y=6.008 prio=-10 limit=0.100 started gains=0.322,0.089
-@95186 pos 1344 v=1.000 x=16.483 y=6.008 prio=-10 limit=0.100 started gains=0.346,0.125
-@95687 pos 1345 v=1.000 x=17.383 y=6.008 prio=-10 limit=0.100 started gains=0.358,0.234
-@95788 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@97894 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@97894 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@97894 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
-@97894 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@98597 pos 6101 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@99199 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@100704 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@103212 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@103312 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@103413 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@103413 pos 6102 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@104315 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@104717 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@105018 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@106422 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
-@106523 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@107024 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@107626 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@107927 pos 6103 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@108329 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@108830 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@109733 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@110235 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@111338 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@112442 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@112843 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@112944 pos 6104 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@114549 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@115552 pos 1048 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@116154 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@117459 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@117459 pos 6105 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@118261 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@119565 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@119866 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@120569 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@120669 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
-@120970 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@121572 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@121672 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@121973 pos 6106 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@123077 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@123980 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@124181 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@126087 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@127090 pos 6107 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@127190 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@128294 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@128495 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@128896 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@129498 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@131605 pos 1046 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@131605 pos 6108 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@131705 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@133311 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@134013 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@134113 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@134916 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@136019 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@136019 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@136421 pos 1049 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@136421 pos 6109 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@137023 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@138327 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
-@139230 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@140233 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@140334 pos 1049 v=1.000 x=17.650 y=6.008 prio=-20 limit=0.000 started gains=0.345,0.270
-@140833 pos 1200 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@144135 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@144135 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@146041 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@146342 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@146442 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@147044 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@149552 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@150355 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@150957 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@151158 pos 1056 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@151158 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@151258 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@153365 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
-@154870 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@155271 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@156375 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@156375 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@157980 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@161291 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@162495 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
-@162595 pos 1056 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@162695 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@164000 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@164602 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
-@164903 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@166909 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@167812 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@167836 step 16
-@167837 step 17
-@167913 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
-@168013 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@169618 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@170220 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@171123 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@171137 step 18
-@172738 step 19
-@173238 step 20
-@173838 step 21
-@174538 step 22
-@175338 step 23
-@176238 step 24
-@177238 step 25
-@178338 step 26
-@179538 step 27
-@180838 step 28
-@182238 step 29
-@182239 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@182239 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@182239 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@182239 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
-@182239 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@182239 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@182239 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 skipped
-@182239 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 skipped
-@182239 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 skipped
-@182239 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 skipped
-@182239 pos 1329 v=1.000 x=18.437 y=6.000 prio=0 limit=0.000 started gains=0.259,0.351
-@183740 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
-@183740 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.034,0.005
-@183740 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
-@183740 loop 1065 v=0.500 x=30.000 y=18.000 prio=-10 pending
-@187441 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@189042 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
-@189042 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@189042 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
-@215144 step 30
-@215144 stereo 6115 vol=1.000 limit=0.000 started
-@216144 step 31
-@216144 stereo 6116 vol=1.000 limit=0.000 started
-@218055 step 32
-@218255 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 started gains=0.043,0.043
-@218255 loop 1090 v=0.500 x=30.000 y=18.000 prio=-10 started gains=0.005,0.034
-@218255 loop 1090 v=0.500 x=6.000 y=18.000 prio=-10 pending
-@218455 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@218756 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@219158 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@222755 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@222755 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@222755 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 skipped
-@222755 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@224360 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@225062 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@225263 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@225463 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@225764 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@225764 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@226065 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@227055 step 33
-@227470 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@228774 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@229075 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@229677 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@230480 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@230781 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@231483 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@232085 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@232186 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@232286 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@232487 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@233289 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@233690 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@234995 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@235697 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@236700 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@237503 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@238205 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@238406 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@239710 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@239811 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@240011 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@240513 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@241115 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@242218 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@242720 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@242921 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@243121 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@243523 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@244526 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@244626 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@245228 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@245931 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@246533 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@246733 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@246934 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@247335 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@248740 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@248740 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 skipped
-@250044 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@250245 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@251047 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@251950 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@252352 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@253756 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@254459 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@255061 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@255462 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@255663 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@255963 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@256365 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@256365 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@256866 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@257870 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@258572 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@258572 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 skipped
-@259375 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@259575 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@260478 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@260880 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@261281 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@261381 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@261783 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@262485 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@263889 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@264391 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@265294 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@265394 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@266197 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@267000 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@267802 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@267802 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@268304 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@268605 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@269909 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@270311 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@270612 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@271314 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@271414 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@272116 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@272718 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@273019 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@273621 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@273822 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@274023 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@275026 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@275528 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@276029 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@277033 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@277635 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@278136 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@278337 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@278538 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@280143 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@280243 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@280644 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@281046 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@281848 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@281949 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@283654 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@283755 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@284959 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@284959 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@285260 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@286263 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@286463 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@286764 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@287868 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@287868 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@288370 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@289273 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@289273 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@289473 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@291079 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@291279 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@292784 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@292784 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@292885 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@293085 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@294690 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@295894 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@295995 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@296195 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@296597 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@297700 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@298001 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@298403 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@299005 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@299406 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@300209 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@300610 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@300911 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@301312 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@302516 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@304222 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@304322 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@304723 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@305125 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@305526 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@305827 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@306128 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@306228 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@307031 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@307332 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@308436 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@309138 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@310342 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@310944 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@311144 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@312549 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@313251 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@313653 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@313653 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@314355 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@315158 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@315459 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@315659 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@316061 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@316956 step 34
-@316957 step 35
-@317064 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@317164 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@318368 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@318669 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@318870 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@319171 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@319472 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@320074 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@320375 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@321779 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@322783 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@323385 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@323786 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@324187 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@324889 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@326093 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@326394 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@326796 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@328100 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@328100 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@329003 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@329505 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@329705 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@329705 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 skipped
-@329806 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@331210 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@331311 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@331311 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 skipped
-@331311 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
-@332715 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@334220 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@334421 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@334621 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@335223 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@335625 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@336327 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@337230 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@337431 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@338334 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@338936 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@338936 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@340240 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@340942 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@341042 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@341143 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@341745 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@342246 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@342949 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@343250 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@343450 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@344855 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@344855 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@346059 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@346159 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@346661 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@347363 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@347564 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@348065 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@348366 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@349169 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@350473 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@350975 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@352480 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@352781 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@352881 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@352881 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@353985 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@354085 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@354988 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@355289 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@355389 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@356393 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@356794 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@357697 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@357697 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@358199 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@358600 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@359403 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@360105 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@360205 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@360607 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@361510 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@362914 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@364319 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@364319 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@364519 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@365121 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@365121 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 skipped
-@365723 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@366024 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@366225 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@367931 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@369235 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@369737 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@370539 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@370940 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@371041 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@371041 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@371041 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@372345 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@372746 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@372746 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
-@373950 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@374151 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@375054 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@375355 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@376760 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@376860 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@377261 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@377763 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@378064 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@378465 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@378565 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@379970 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@380171 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@380171 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@381174 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@381876 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@383080 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@383682 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@383983 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@384485 pos 1054 v=1.000 x=10.050 y=6.000 prio=-11 limit=0.100 started gains=0.121,0.004
-@384886 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@384987 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@384987 pos 1053 v=1.000 x=10.500 y=6.000 prio=-11 limit=0.100 started gains=0.128,0.004
-@385187 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@385488 pos 1054 v=1.000 x=11.400 y=6.000 prio=-11 limit=0.100 started gains=0.143,0.006
-@385789 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@385956 pos 1030 v=1.000 x=12.300 y=6.000 prio=0 limit=0.000 started gains=0.163,0.009
-@385957 pos 1130 v=1.000 x=17.563 y=6.437 prio=0 limit=0.000 started gains=0.318,0.241
-@385958 pos 1130 v=1.000 x=18.437 y=6.437 prio=0 limit=0.000 started gains=0.241,0.318
-@385990 pos 1053 v=1.000 x=12.300 y=6.000 prio=-10 limit=0.100 started gains=0.163,0.009
-@386256 pos 1130 v=1.000 x=18.000 y=6.437 prio=0 limit=0.000 started gains=0.286,0.286
-@386257 pos 1130 v=1.000 x=18.437 y=6.000 prio=0 limit=0.000 started gains=0.259,0.351
-@386258 pos 1130 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
-@386391 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 skipped
-@386391 pos 1054 v=1.000 x=18.118 y=6.755 prio=-10 limit=0.100 started gains=0.259,0.278
-@386391 pos 1054 v=1.000 x=17.113 y=6.437 prio=-10 limit=0.100 skipped
-@386491 pos 1054 v=1.000 x=12.745 y=6.062 prio=-10 limit=0.100 skipped
-@386792 pos 1053 v=1.000 x=17.668 y=6.755 prio=-10 limit=0.100 started gains=0.292,0.239
-@386792 pos 1054 v=1.000 x=17.550 y=6.437 prio=-10 limit=0.100 started gains=0.319,0.239
-@386856 pos 1042 v=1.000 x=16.663 y=6.437 prio=0 limit=0.000 started gains=0.326,0.142
-@386857 pos 1043 v=1.000 x=13.635 y=6.186 prio=0 limit=0.000 started gains=0.201,0.019
-@386893 pos 1054 v=1.000 x=17.537 y=6.000 prio=-10 limit=0.100 started gains=0.352,0.255
-@386893 pos 6008 v=1.000 x=13.635 y=6.186 prio=0 limit=0.000 started gains=0.201,0.019
-@386993 pos 1053 v=1.000 x=13.635 y=6.186 prio=-10 limit=0.100 started gains=0.201,0.019
-@387093 pos 1054 v=1.000 x=17.100 y=6.000 prio=-10 limit=0.100 started gains=0.363,0.196
-@387194 pos 1054 v=1.000 x=16.773 y=6.684 prio=-10 limit=0.100 started gains=0.314,0.151
-@387294 pos 1053 v=1.000 x=17.087 y=6.000 prio=-10 limit=0.100 started gains=0.363,0.194
-@387294 pos 1053 v=1.000 x=17.100 y=6.887 prio=-10 limit=0.100 skipped
-@387495 pos 1054 v=1.000 x=14.516 y=6.356 prio=-10 limit=0.100 started gains=0.233,0.033
-@387595 pos 1053 v=1.000 x=16.205 y=6.070 prio=-10 limit=0.100 started gains=0.329,0.102
-@387595 pos 1053 v=1.000 x=16.328 y=6.613 prio=-10 limit=0.100 skipped
-@387695 pos 1054 v=1.000 x=16.768 y=5.681 prio=-10 limit=0.100 started gains=0.382,0.155
-@387796 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@387796 pos 1054 v=1.000 x=16.281 y=7.037 prio=-10 limit=0.100 started gains=0.286,0.111
-@387996 pos 1054 v=1.000 x=15.878 y=6.613 prio=-10 limit=0.100 started gains=0.289,0.084
-@387996 pos 1053 v=1.000 x=14.935 y=6.517 prio=-10 limit=0.100 started gains=0.249,0.045
-@388057 pos 1041 v=1.000 x=14.935 y=6.517 prio=0 limit=0.000 started gains=0.249,0.045
-@388059 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388061 pos 1041 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388097 pos 1053 v=1.000 x=16.305 y=6.260 prio=-10 limit=0.100 started gains=0.324,0.111
-@388097 pos 6004 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388357 pos 1078 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@388357 pos 1040 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@388358 pos 1042 v=1.000 x=16.663 y=6.437 prio=0 limit=0.000 started gains=0.326,0.142
-@388359 pos 1043 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388398 pos 6108 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@388398 pos 6002 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388498 pos 1054 v=1.000 x=15.894 y=6.442 prio=-10 limit=0.100 started gains=0.296,0.084
-@388657 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388699 pos 6002 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@388899 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@389257 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@389301 pos 6001 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@389401 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@389501 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@389501 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@389557 pos 1040 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@389558 pos 1309 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
-@389559 pos 1326 v=1.000 x=15.878 y=6.613 prio=0 limit=0.000 started gains=0.289,0.084
-@390806 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@390806 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@391408 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@392511 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@392511 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@392511 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@393815 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@394016 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
-@394317 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@394518 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
-@394819 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@395120 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
-@395621 pos 1097 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@396123 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@396223 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@397026 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
-@397528 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@397628 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@398932 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@399434 pos 1333 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
-@400136 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
-@400437 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@400538 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@400638 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@402343 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@402343 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
-@402745 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@403146 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
-@403146 pos 6109 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@403146 pos 1097 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
-@403949 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@404450 pos 1334 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
-@405554 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
-@405654 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@405955 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
-@406858 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
-@406956 step 36
-@406957 step 37
-@407260 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@408057 step 38
-@408457 step 39
-@408457 stereo 6115 vol=1.000 limit=0.000 started
-@409757 step 40
-@409757 stereo 6116 vol=1.000 limit=0.000 started
-@410868 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
-@410868 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
-@410868 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
-@410868 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 skipped
-@410868 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
-@410868 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 skipped
-@410868 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 started gains=0.043,0.043
-@410868 loop 1090 v=0.500 x=30.000 y=18.000 prio=-10 started gains=0.005,0.034
-@410868 loop 1090 v=0.500 x=6.000 y=18.000 prio=-10 pending
-@437069 step 41
-@437069 stereo 6115 vol=1.000 limit=0.000 started
-@437969 step 42
-@437969 stereo 6115 vol=1.000 limit=0.000 started
-@438569 step 43
-@438569 stereo 6116 vol=1.000 limit=0.000 started
-@441279 step 44
-@441279 stereo 6116 vol=1.000 limit=0.000 started
-@449189 step 45
-@449189 stereo 6116 vol=1.000 limit=0.000 started
+@40931 stereo 1194 vol=0.016,0.479 limit=0.500 started
+@40933 step 7
+@41131 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.043,0.043
+@41131 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
+@41232 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@41332 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@41332 pos 1070 v=1.000 x=6.445 y=6.062 prio=-10 limit=0.100 started gains=0.255,0.346
+@41633 pos 1069 v=1.000 x=6.890 y=6.124 prio=-10 limit=0.100 started gains=0.195,0.354
+@41934 pos 1070 v=1.000 x=7.335 y=6.186 prio=-10 limit=0.100 started gains=0.143,0.342
+@42335 pos 1069 v=1.000 x=7.785 y=6.186 prio=-10 limit=0.100 started gains=0.103,0.323
+@42737 pos 1070 v=1.000 x=8.685 y=6.186 prio=-10 limit=0.100 started gains=0.054,0.275
+@42937 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@43238 pos 1069 v=1.000 x=9.135 y=6.186 prio=-10 limit=0.100 started gains=0.040,0.252
+@43740 pos 1070 v=1.000 x=9.841 y=6.186 prio=-10 limit=0.100 started gains=0.025,0.221
+@43840 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@44342 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@45245 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@45746 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@46047 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@46449 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@46649 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@47653 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@47954 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@48154 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@48255 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@49459 pos 1035 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@49659 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@50061 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
+@51064 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@51064 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@51967 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.000,0.055
+@52368 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@52368 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@52569 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.003,0.038
+@52970 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@53672 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@54074 pos 1035 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@54174 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@55077 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@55478 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@55880 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@57284 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@57284 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@58588 pos 1036 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@59090 pos 1061 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@59190 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@59993 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@60132 step 8
+@60896 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@60932 step 9
+@61197 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@61398 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@61598 pos 1035 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@62032 step 10
+@62501 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
+@62602 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@63404 pos 1037 v=1.000 x=9.841 y=6.186 prio=-20 limit=0.000 started gains=0.025,0.221
+@64006 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@64107 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.000,0.055
+@64608 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@64709 pos 1070 v=1.000 x=9.053 y=6.620 prio=-10 limit=0.100 started gains=0.046,0.247
+@64909 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@65210 pos 1069 v=1.000 x=8.659 y=6.837 prio=-10 limit=0.100 started gains=0.061,0.258
+@65712 pos 1070 v=1.000 x=7.871 y=7.271 prio=-10 limit=0.100 started gains=0.102,0.272
+@65812 pos 1059 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@66213 pos 1069 v=1.000 x=7.083 y=7.705 prio=-10 limit=0.100 started gains=0.153,0.263
+@66314 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@66715 pos 1054 v=1.000 x=6.686 y=7.916 prio=-10 limit=0.100 started gains=0.177,0.248
+@66916 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.003,0.038
+@66916 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@67217 pos 1053 v=1.000 x=5.895 y=8.344 prio=-10 limit=0.100 started gains=0.211,0.202
+@67417 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@67718 pos 1054 v=1.000 x=5.101 y=8.766 prio=-10 limit=0.100 started gains=0.221,0.150
+@67832 step 11
+@68220 pos 1053 v=1.000 x=4.707 y=8.983 prio=-10 limit=0.100 started gains=0.218,0.127
+@68531 pos 1098 v=1.000 x=4.024 y=9.352 prio=0 limit=0.000 started gains=0.207,0.095
+@68722 pos 1054 v=1.000 x=4.024 y=9.352 prio=-10 limit=0.100 started gains=0.207,0.095
+@68822 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@70427 pos 1059 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@70829 pos 1054 v=1.000 x=4.824 y=8.944 prio=-10 limit=0.100 started gains=0.219,0.134
+@71330 pos 1053 v=1.000 x=5.624 y=8.536 prio=-10 limit=0.100 started gains=0.216,0.183
+@71531 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@71832 pos 1054 v=1.000 x=6.424 y=8.128 prio=-10 limit=0.100 started gains=0.190,0.232
+@72233 pos 1063 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@72334 pos 1053 v=1.000 x=6.824 y=7.924 prio=-10 limit=0.100 started gains=0.168,0.251
+@72835 pos 1070 v=1.000 x=7.624 y=7.516 prio=-10 limit=0.100 started gains=0.117,0.268
+@72835 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@73237 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@73337 pos 1069 v=1.000 x=8.424 y=7.108 prio=-10 limit=0.100 started gains=0.072,0.260
+@73638 pos 1060 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.041
+@73838 pos 1070 v=1.000 x=8.824 y=6.904 prio=-10 limit=0.100 started gains=0.055,0.250
+@74340 pos 1069 v=1.000 x=9.624 y=6.496 prio=-10 limit=0.100 started gains=0.031,0.225
+@75042 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@75745 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@76547 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.000,0.055
+@76848 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@76949 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@77049 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@77651 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.003,0.038
+@77832 step 12
+@77952 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@78253 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@78454 pos 1036 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@79557 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@79758 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@80059 pos 1037 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@80962 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@81463 pos 1037 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@82467 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@82768 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.003,0.038
+@82768 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@83972 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@84072 pos 1036 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@84172 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@84774 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.200,0.084
+@85677 pos 1056 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.021,0.207
+@85677 pos 1035 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@85677 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@87182 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@87483 pos 1034 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@88487 pos 1063 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.001,0.082
+@88788 pos 1034 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.026,0.217
+@88932 step 13
+@88988 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@88988 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.034,0.005
+@88988 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
+@89088 loop 1065 v=0.500 x=30.000 y=18.000 prio=-10 pending
+@89189 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@89891 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@89891 pos 1062 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@90393 pos 1034 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
+@90593 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@90794 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@90995 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@91195 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@91697 pos 1034 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
+@92680 step 14
+@93001 pos 1062 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@93403 pos 1037 v=1.000 x=9.874 y=6.368 prio=-20 limit=0.000 started gains=0.118,0.004
+@93904 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@94406 pos 1059 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@94607 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@94908 pos 1000 v=0.500 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.067,0.067
+@95610 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@95811 pos 1070 v=1.000 x=9.072 y=6.776 prio=-11 limit=0.100 started gains=0.107,0.003
+@96312 pos 1069 v=1.000 x=8.270 y=7.184 prio=-11 limit=0.100 started gains=0.099,0.003
+@96499 step 15
+@96513 pos 1061 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.157,0.157
+@96731 pos 1196 v=1.000 x=7.873 y=7.395 prio=-1 limit=0.000 started gains=0.095,0.003
+@96814 pos 1070 v=1.000 x=7.468 y=7.592 prio=-11 limit=0.100 started gains=0.091,0.003
+@97315 pos 1069 v=1.000 x=7.909 y=7.506 prio=-11 limit=0.100 started gains=0.095,0.003
+@97616 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@97817 pos 1070 v=1.000 x=8.791 y=7.334 prio=-11 limit=0.100 started gains=0.103,0.004
+@97917 pos 9999 v=0.500 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.157,0.157
+@98218 pos 1000 v=0.500 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.067,0.067
+@98319 pos 1069 v=1.000 x=9.677 y=7.185 prio=-11 limit=0.100 started gains=0.114,0.005
+@98820 pos 1070 v=1.000 x=10.122 y=7.122 prio=-11 limit=0.100 started gains=0.119,0.005
+@98820 pos 9999 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@99322 pos 1069 v=1.000 x=11.012 y=6.996 prio=-11 limit=0.100 started gains=0.133,0.007
+@99523 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@99824 pos 1054 v=1.000 x=11.902 y=6.870 prio=-11 limit=0.100 started gains=0.150,0.010
+@100031 pos 1194 v=1.000 x=12.347 y=6.807 prio=0 limit=0.000 started gains=0.160,0.012
+@100325 pos 1053 v=1.000 x=12.347 y=6.807 prio=-10 limit=0.100 started gains=0.160,0.012
+@100927 pos 1054 v=1.000 x=12.792 y=6.744 prio=-10 limit=0.100 started gains=0.171,0.014
+@101329 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@101429 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@101429 pos 1053 v=1.000 x=13.682 y=6.618 prio=-10 limit=0.100 started gains=0.198,0.022
+@101730 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@101931 pos 1054 v=1.000 x=14.568 y=6.469 prio=-10 limit=0.100 started gains=0.233,0.035
+@102432 pos 1344 v=1.000 x=15.458 y=6.343 prio=-10 limit=0.100 started gains=0.278,0.061
+@102934 pos 1345 v=1.000 x=15.903 y=6.280 prio=-10 limit=0.100 started gains=0.303,0.083
+@103436 pos 1344 v=1.000 x=16.793 y=6.154 prio=-10 limit=0.100 started gains=0.348,0.157
+@103837 pos 1056 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@103937 pos 1345 v=1.000 x=17.650 y=6.033 prio=-10 limit=0.100 started gains=0.343,0.269
+@105141 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@105743 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@105944 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@106144 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@106646 pos 6101 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@107649 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@107750 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@108051 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@108552 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@109255 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@109756 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
+@110659 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@111161 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@111462 pos 6102 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@112264 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@113569 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@114371 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@115977 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@115977 pos 6103 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@116880 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@117181 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@117281 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@120391 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@120391 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@120893 pos 1046 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@121093 pos 6104 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@121194 pos 1055 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@122197 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@123301 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@124103 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@124605 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
+@125006 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@125408 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@125608 pos 6105 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@126612 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@127314 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@127514 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@128217 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@128618 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@128919 pos 1048 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@130123 pos 6106 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@132732 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@132732 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@133033 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@133334 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@133534 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@133835 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@135139 pos 6107 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@137447 pos 1046 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@137648 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@137949 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@139052 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@139654 pos 6108 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@139755 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@139955 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@140156 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@141159 pos 1049 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@141862 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@142263 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
+@143266 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@144470 pos 6109 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@145473 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@145674 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@145674 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 skipped
+@145774 pos 1048 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@145975 pos 1056 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@148931 pos 1200 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@149386 pos 1046 v=1.000 x=17.650 y=6.033 prio=-20 limit=0.000 started gains=0.343,0.269
+@149988 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@150389 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@150690 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@152496 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@152496 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@152597 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@152697 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@154302 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@154904 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@156811 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@158115 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@159419 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
+@159820 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@160021 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@161626 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@162830 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@163232 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@163432 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@165539 pos 9999 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@165940 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 started gains=0.314,0.314
+@166643 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@167144 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@167445 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@168549 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@169352 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@169653 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@171258 pos 1058 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@171431 step 16
+@171432 step 17
+@172061 pos 1000 v=1.000 x=18.000 y=11.999 prio=-20 limit=0.000 started gains=0.135,0.135
+@173064 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@174732 step 18
+@176332 step 19
+@176832 step 20
+@177432 step 21
+@178132 step 22
+@178932 step 23
+@179832 step 24
+@180832 step 25
+@181932 step 26
+@183132 step 27
+@184432 step 28
+@185832 step 29
+@185833 pos 1000 v=0.500 x=18.000 y=23.999 prio=-20 limit=0.000 started gains=0.031,0.031
+@185833 pos 1057 v=1.000 x=10.191 y=6.218 prio=-20 limit=0.000 started gains=0.123,0.004
+@185833 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@185833 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 skipped
+@185833 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 skipped
+@185833 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
+@185833 pos 1064 v=1.000 x=3.715 y=9.519 prio=-20 limit=0.000 started gains=0.067,0.002
+@185833 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@185833 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 skipped
+@185833 pos 1050 v=1.000 x=18.000 y=6.000 prio=-20 limit=0.000 skipped
+@185833 pos 1329 v=1.000 x=18.437 y=6.000 prio=0 limit=0.000 started gains=0.259,0.351
+@188033 pos 1000 v=1.000 x=18.000 y=12.000 prio=-20 limit=0.000 started gains=0.135,0.135
+@188033 loop 1065 v=0.500 x=6.000 y=18.000 prio=-10 started gains=0.034,0.005
+@188033 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 pending
+@188033 loop 1065 v=0.500 x=30.000 y=18.000 prio=-10 pending
+@221837 step 30
+@221837 stereo 6115 vol=1.000 limit=0.000 started
+@222837 step 31
+@222837 stereo 6116 vol=1.000 limit=0.000 started
+@224748 step 32
+@224947 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 started gains=0.043,0.043
+@224947 loop 1090 v=0.500 x=30.000 y=18.000 prio=-10 started gains=0.005,0.034
+@224947 loop 1090 v=0.500 x=6.000 y=18.000 prio=-10 pending
+@225248 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@225750 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@225850 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@227154 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@227857 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@228960 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@230164 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@230666 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@231669 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@231870 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@231870 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@232271 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@232472 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@232873 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@232973 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@233475 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@233676 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@234378 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@234679 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@235181 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@235181 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@236585 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@236886 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@238090 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@238391 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@238993 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@239394 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@239796 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@240148 step 33
+@241100 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@241501 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@241903 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@243307 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@244612 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@245113 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@245514 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@246116 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@247421 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@247421 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@247822 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@248023 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@248023 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 skipped
+@248926 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@249628 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@249628 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@249728 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@249929 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@250330 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@250732 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@251635 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@252437 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@252738 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@254143 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@254343 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@254945 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@255547 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@255547 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@256651 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@257253 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@258557 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@260062 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@260263 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@260664 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@261366 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@261768 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@261868 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@262470 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@263072 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@263172 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@263172 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@263774 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@264075 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@264477 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@264778 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@266182 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@266283 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@267487 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@267687 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@267888 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@268891 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@269192 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@269593 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@270898 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@271199 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@271801 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@272704 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@273506 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@273506 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@274409 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@274510 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@275613 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@275814 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@275814 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@276315 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@277519 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@277720 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@278523 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@279125 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@280529 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@280830 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@281332 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@281633 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@282135 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@283439 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@283539 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@283940 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@284944 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@285245 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@285445 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@285847 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@286950 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@288355 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@288455 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@288556 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@288957 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@289358 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@289960 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@290763 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@291164 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@291465 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@291565 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@292769 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@293973 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@294274 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@294575 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@294876 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@295980 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@296181 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@296783 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@297585 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@297786 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@297786 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@299291 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@300294 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@301097 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@301297 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@301498 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@301799 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@302200 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@302501 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@303505 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@303806 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@303906 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@305110 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@305612 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@305712 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@306815 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@307016 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@307417 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@307417 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@309223 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@310427 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@310628 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@311029 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@312033 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@313538 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@313538 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@313838 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@314240 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@315042 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@315243 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@315444 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@315745 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@316447 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@316648 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@317651 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@317751 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@317952 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@318052 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@318253 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@319256 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@320360 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@320661 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@321764 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@322467 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@322467 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@324072 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@324774 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@325075 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@325778 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@325978 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@326279 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@327082 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@328788 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@329088 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@329590 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@330047 step 34
+@330048 step 35
+@330092 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@330493 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@331697 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@332199 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@332299 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@332801 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@332801 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 skipped
+@333403 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@333704 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@333704 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@335108 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@335209 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@335209 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@336814 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@337215 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@338519 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@339121 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@339322 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@339824 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@340125 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@341228 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@341329 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@342733 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@343436 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@343937 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@344539 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@344740 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@345241 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@345944 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@346245 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@346546 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@346847 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@347348 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@347549 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@348352 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@348552 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@348954 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@349857 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@350258 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@350760 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@351863 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@351863 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@351863 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@352565 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@353268 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@354873 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@356177 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@356478 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@357181 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@357783 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@357983 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@358284 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@359187 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@359288 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@359789 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@361093 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@361495 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@362097 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@362398 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@362699 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@363702 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@363903 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@364204 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@365307 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@365408 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@365508 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@366010 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@366311 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@367314 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@368718 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@369621 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@369822 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@370324 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@370524 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@371628 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@372029 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@372932 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@373334 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@374136 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@374939 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@375440 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@376444 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@376845 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@376945 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@377146 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@377748 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@378049 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@378952 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@379153 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@379755 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@379855 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@380256 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@381260 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@381661 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@382363 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@382564 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@382664 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@382865 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@384370 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@385674 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@386677 pos 1058 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@386978 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@387380 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@387480 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@387982 pos 1054 v=1.000 x=10.050 y=6.000 prio=-11 limit=0.100 started gains=0.121,0.004
+@388483 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@388483 pos 1053 v=1.000 x=10.500 y=6.000 prio=-11 limit=0.100 started gains=0.128,0.004
+@388885 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@388985 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@388985 pos 1054 v=1.000 x=11.400 y=6.000 prio=-11 limit=0.100 started gains=0.143,0.006
+@389447 pos 1030 v=1.000 x=12.300 y=6.000 prio=0 limit=0.000 started gains=0.163,0.009
+@389448 pos 1130 v=1.000 x=17.563 y=6.437 prio=0 limit=0.000 started gains=0.318,0.241
+@389449 pos 1130 v=1.000 x=18.437 y=6.437 prio=0 limit=0.000 started gains=0.241,0.318
+@389487 pos 1053 v=1.000 x=12.300 y=6.000 prio=-10 limit=0.100 started gains=0.163,0.009
+@389747 pos 1130 v=1.000 x=18.000 y=6.437 prio=0 limit=0.000 started gains=0.286,0.286
+@389748 pos 1130 v=1.000 x=18.437 y=6.000 prio=0 limit=0.000 started gains=0.259,0.351
+@389749 pos 1130 v=1.000 x=18.000 y=6.000 prio=0 limit=0.000 started gains=0.314,0.314
+@389988 pos 1054 v=1.000 x=12.745 y=6.062 prio=-10 limit=0.100 started gains=0.174,0.011
+@390189 pos 1054 v=1.000 x=17.668 y=6.755 prio=-10 limit=0.100 started gains=0.292,0.239
+@390289 pos 1054 v=1.000 x=17.987 y=6.000 prio=-10 limit=0.100 skipped
+@390289 pos 1054 v=1.000 x=16.663 y=6.437 prio=-10 limit=0.100 skipped
+@390347 pos 1042 v=1.000 x=16.663 y=6.437 prio=0 limit=0.000 started gains=0.326,0.142
+@390348 pos 1043 v=1.000 x=13.635 y=6.186 prio=0 limit=0.000 started gains=0.201,0.019
+@390389 pos 1054 v=1.000 x=17.100 y=6.437 prio=-10 limit=0.100 started gains=0.331,0.188
+@390389 pos 6008 v=1.000 x=13.635 y=6.186 prio=0 limit=0.000 started gains=0.201,0.019
+@390490 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@390490 pos 1054 v=1.000 x=17.100 y=6.000 prio=-10 limit=0.100 started gains=0.363,0.196
+@390490 pos 1053 v=1.000 x=13.635 y=6.186 prio=-10 limit=0.100 started gains=0.201,0.019
+@390690 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@390690 pos 1053 v=1.000 x=16.773 y=6.684 prio=-10 limit=0.100 started gains=0.314,0.151
+@390791 pos 1053 v=1.000 x=17.087 y=6.000 prio=-10 limit=0.100 started gains=0.363,0.194
+@390791 pos 1053 v=1.000 x=17.100 y=6.887 prio=-10 limit=0.100 skipped
+@390991 pos 1053 v=1.000 x=16.205 y=6.070 prio=-10 limit=0.100 started gains=0.329,0.102
+@390991 pos 1054 v=1.000 x=14.516 y=6.356 prio=-10 limit=0.100 started gains=0.233,0.033
+@391192 pos 1054 v=1.000 x=16.328 y=6.613 prio=-10 limit=0.100 started gains=0.307,0.114
+@391192 pos 1054 v=1.000 x=16.659 y=6.793 prio=-10 limit=0.100 skipped
+@391292 pos 1054 v=1.000 x=16.337 y=5.812 prio=-10 limit=0.100 skipped
+@391493 pos 1054 v=1.000 x=15.779 y=6.216 prio=-10 limit=0.100 started gains=0.299,0.075
+@391493 pos 1053 v=1.000 x=14.935 y=6.517 prio=-10 limit=0.100 started gains=0.249,0.045
+@391548 pos 1039 v=1.000 x=14.935 y=6.517 prio=0 limit=0.000 started gains=0.249,0.045
+@391550 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@391552 pos 1040 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@391593 pos 6004 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@391794 pos 1053 v=1.000 x=16.305 y=6.260 prio=-10 limit=0.100 started gains=0.324,0.111
+@391848 pos 1078 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@391848 pos 1040 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@391849 pos 1042 v=1.000 x=16.663 y=6.437 prio=0 limit=0.000 started gains=0.326,0.142
+@391850 pos 1043 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@391894 pos 6108 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@391894 pos 6002 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@392095 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@392148 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@392195 pos 6002 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@392748 pos 1008 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@392797 pos 6001 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@392898 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@393048 pos 1041 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@393049 pos 1309 v=1.000 x=15.354 y=6.678 prio=0 limit=0.000 started gains=0.263,0.060
+@393050 pos 1326 v=1.000 x=15.878 y=6.613 prio=0 limit=0.000 started gains=0.289,0.084
+@393299 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@393399 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@393600 pos 1062 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@393901 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@394102 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@394704 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@395005 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@395205 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@395406 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@396710 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
+@397011 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@397011 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@398215 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 started gains=0.006,0.030
+@398616 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@399118 pos 1055 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@399118 pos 1097 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@399519 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@400422 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@401024 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@401727 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@402630 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
+@402830 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@403332 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@403533 pos 1063 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@405038 pos 1059 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@406241 pos 1057 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@406442 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@406643 pos 6109 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@406643 pos 1097 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@406743 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@407646 pos 1000 v=0.500 x=6.000 y=23.999 prio=-20 limit=0.000 started gains=0.030,0.006
+@407646 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
+@408047 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@408950 pos 1000 v=0.500 x=6.000 y=11.999 prio=-20 limit=0.000 started gains=0.038,0.003
+@409452 pos 1000 v=1.000 x=12.000 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@409653 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@409653 pos 1050 v=1.000 x=28.097 y=9.742 prio=-20 limit=0.000 started gains=0.005,0.092
+@410154 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@410656 pos 1000 v=1.000 x=23.999 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@411258 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@411358 pos 1000 v=0.500 x=6.000 y=12.000 prio=-20 limit=0.000 started gains=0.038,0.003
+@411358 pos 1000 v=0.500 x=30.000 y=23.999 prio=-20 limit=0.000 skipped
+@411860 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@412663 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@412863 pos 1056 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@413465 pos 1050 v=1.000 x=18.000 y=10.200 prio=-20 limit=0.000 started gains=0.163,0.163
+@414067 pos 6110 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@414067 pos 1097 v=1.000 x=16.281 y=7.037 prio=0 limit=0.000 started gains=0.286,0.111
+@414167 pos 1060 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@414268 pos 1000 v=1.000 x=30.000 y=12.000 prio=-20 limit=0.000 started gains=0.005,0.076
+@414468 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
+@415672 pos 1061 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@416475 pos 1000 v=1.000 x=30.000 y=11.999 prio=-20 limit=0.000 started gains=0.005,0.076
+@417077 pos 1000 v=1.000 x=24.000 y=6.000 prio=-20 limit=0.000 started gains=0.008,0.156
+@417478 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@417579 pos 1064 v=1.000 x=18.000 y=1.800 prio=-20 limit=0.000 started gains=0.707,0.707
+@417980 pos 9999 v=1.000 x=31.902 y=2.257 prio=-20 limit=0.000 started gains=0.000,0.072
+@419084 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@420047 step 36
+@420048 step 37
+@420789 pos 9999 v=1.000 x=15.354 y=6.678 prio=-20 limit=0.000 started gains=0.263,0.060
+@420889 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@421148 step 38
+@421548 step 39
+@421548 stereo 6115 vol=1.000 limit=0.000 started
+@422848 step 40
+@422848 stereo 6116 vol=1.000 limit=0.000 started
+@422849 pos 9999 v=0.500 x=7.902 y=9.742 prio=-20 limit=0.000 started gains=0.046,0.003
+@422849 pos 1000 v=1.000 x=11.999 y=6.000 prio=-20 limit=0.000 started gains=0.156,0.008
+@422849 loop 1065 v=0.500 x=18.000 y=18.000 prio=-10 started gains=0.043,0.043
+@422849 loop 1090 v=0.500 x=30.000 y=18.000 prio=-10 started gains=0.005,0.034
+@422849 loop 1090 v=0.500 x=6.000 y=18.000 prio=-10 pending
+@450450 step 41
+@450450 stereo 6115 vol=1.000 limit=0.000 started
+@451350 step 42
+@451350 stereo 6115 vol=1.000 limit=0.000 started
+@451950 step 43
+@451950 stereo 6116 vol=1.000 limit=0.000 started
+@454660 step 44
+@454660 stereo 6116 vol=1.000 limit=0.000 started
+@462570 step 45
+@462570 stereo 6116 vol=1.000 limit=0.000 started

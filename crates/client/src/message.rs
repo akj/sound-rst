@@ -55,9 +55,9 @@ impl Category {
     }
 
     /// The categories whose news is said before the other news waiting,
-    /// in this order: what players say, then news of the game or the
-    /// connection itself.
-    pub const AHEAD: [Category; 2] = [Category::Chat, Category::System];
+    /// in this order: what players say, news of the game or the connection
+    /// itself, then the story.
+    pub const AHEAD: [Category; 3] = [Category::Chat, Category::System, Category::Story];
 
     /// The category after this one, the first after the last.
     pub fn next(self) -> Category {

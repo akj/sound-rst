@@ -1,13 +1,14 @@
 //! The voice: what the player hears said, in which order, and when a key
 //! press cuts it short.
 //!
-//! Answers to keys and messages said "now" (menus, cut scenes) interrupt
-//! the queue. News the game volunteers waits in the queue, as the policy
-//! of its category says, and is never lost: a message cut off goes back in
-//! the queue, newer news about a subject replaces the unheard news about
-//! it, and every message but answers is kept in a log. The player can walk
-//! back through the log, one category at a time, or through what they
-//! have not heard.
+//! Answers to keys and messages said "now" (menus, prompts) interrupt the
+//! queue. Outside a game, a message said now holds the caller until it is
+//! said or a key is pressed; inside the game loop nothing waits. News the
+//! game volunteers waits in the queue, as the policy of its category says,
+//! and is never lost: a message cut off goes back in the queue, newer news
+//! about a subject replaces the unheard news about it, and every message
+//! but answers is kept in a log. The player can walk back through the log,
+//! one category at a time, or through what they have not heard.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -49,11 +50,11 @@ pub type Utterance = Vec<UtterancePart>;
 pub enum VoiceKind {
     /// Said now, not kept in the history.
     Item,
-    /// Said now; keys pressed meanwhile are dropped.
+    /// Said now; outside a game, keys pressed meanwhile are dropped.
     Alert,
-    /// Said now until a key press, which is used up.
+    /// Said now; outside a game, until a key press, which is used up.
     Important,
-    /// Said now until a key press, which stays queued.
+    /// Said now; outside a game, until a key press, which stays queued.
     Confirmation,
     /// A menu title: as a confirmation.
     Menu,
@@ -299,7 +300,7 @@ pub enum Heard {
 /// What a message of the log is.
 #[derive(Clone, Debug, PartialEq)]
 enum Content {
-    /// Said at once: a menu title, a message that stops the game.
+    /// Said at once: a menu title, a prompt, a message outside a game.
     Now(Msg),
     News(News),
 }
@@ -399,6 +400,8 @@ pub struct Voice {
     current: usize,
     missed: Missed,
     review: Review,
+    /// Inside the game loop: a message said now does not wait.
+    in_game: bool,
     channel: VoiceChannel,
     input: Input,
     clock: ClockRef,
@@ -418,10 +421,19 @@ impl Voice {
                 category: Category::Alert,
                 at: None,
             },
+            in_game: false,
             channel,
             input,
             clock,
         }
+    }
+
+    /// Inside the game loop nothing said waits, so that the world, its
+    /// sounds and the keys go on: a message said now starts, and the next
+    /// key or message cuts it as it cuts an answer. Outside, a message said
+    /// now holds the caller until it is said or a key is pressed.
+    pub fn set_in_game(&mut self, in_game: bool) {
+        self.in_game = in_game;
     }
 
     /// The index of the next message waiting to be said, or `log.len()`:
@@ -564,71 +576,83 @@ impl Voice {
         self.say_now(msg, VoiceKind::Menu, Content::Now(msg.clone()));
     }
 
-    /// News the game says now, as its policy says: spoken as
-    /// [`Voice::important`], or else taken as other news.
+    /// News said now outside a game (a campaign's cut scene), as its
+    /// policy says: spoken as [`Voice::important`], or else taken as other
+    /// news.
     pub fn important_news(&mut self, news: News, policy: Policy) {
-        self.news_now(news, policy, VoiceKind::Important);
-    }
-
-    /// News the game says now, as its policy says: spoken as
-    /// [`Voice::confirmation`], or else taken as other news.
-    pub fn confirmation_news(&mut self, news: News, policy: Policy) {
-        self.news_now(news, policy, VoiceKind::Confirmation);
-    }
-
-    fn news_now(&mut self, news: News, policy: Policy, kind: VoiceKind) {
         match policy {
-            Policy::Speak => self.say_now(&news.parts.clone(), kind, Content::News(news)),
-            other => self.news(news, other),
+            Policy::Speak => self.say_now(
+                &news.parts.clone(),
+                VoiceKind::Important,
+                Content::News(news),
+            ),
+            other => {
+                self.news(news, other);
+            }
         }
     }
 
     /// Takes news as `policy` says: queued to be said (or for its recorded
     /// sounds only), kept unheard, or dropped. It replaces the unheard
-    /// news about the same subject, in its turn.
-    pub fn news(&mut self, news: News, policy: Policy) {
+    /// news about the same subject, in its turn. The place of the news in
+    /// the log, unless it was dropped.
+    pub fn news(&mut self, news: News, policy: Policy) -> Option<EntryId> {
         if news.parts.is_empty() {
-            return;
+            return None;
         }
         let heard = match policy {
-            Policy::Drop => return,
+            Policy::Drop => return None,
             Policy::Speak => Heard::Waiting { sounds_only: false },
             Policy::Sound if self.channel.has_sounds(&news.parts) => {
                 Heard::Waiting { sounds_only: true }
             }
             Policy::Sound | Policy::Log => Heard::No,
         };
-        match news.subject.as_ref().and_then(|s| self.unheard_about(s)) {
+        let id = match news.subject.as_ref().and_then(|s| self.unheard_about(s)) {
             Some(i) => {
                 let e = &mut self.log[i];
                 e.content = Content::News(news);
                 e.heard = heard;
+                e.id
             }
-            None => self.push(Content::News(news), heard),
-        }
+            None => {
+                self.push(Content::News(news), heard);
+                EntryId(self.next_id - 1)
+            }
+        };
         self.update();
+        Some(id)
     }
 
-    /// Says now (giving up the unsaid queue) until the end, or until a key
-    /// press unless it is an alert. The key press stays queued after a
-    /// confirmation or a menu title.
+    /// Whether the message of the log at `id` waits to be said, or is
+    /// being said from the queue.
+    pub fn is_waiting(&self, id: EntryId) -> bool {
+        self.log.iter().any(|e| e.id == id && e.is_waiting())
+    }
+
+    /// Says now, cutting the message being said (news cut off is said
+    /// again in its turn). Outside a game, waits until the end, or until a
+    /// key press unless it is an alert; the key press stays queued after a
+    /// confirmation or a menu title. In a game, does not wait.
     fn say_now(&mut self, msg: &Msg, kind: VoiceKind, content: Content) {
         if msg.is_empty() {
             return;
         }
-        let interruptible = kind != VoiceKind::Alert;
-        let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
         self.dismiss_current_if_cancelled();
         self.channel.play(msg, CENTERED, kind, Parts::All);
-        while self.channel.get_busy() {
-            if interruptible && self.key_hit(keep_key) {
-                break;
+        if !self.in_game {
+            let interruptible = kind != VoiceKind::Alert;
+            let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
+            while self.channel.get_busy() {
+                if interruptible && self.key_hit(keep_key) {
+                    break;
+                }
+                self.clock.sleep(0.1);
+                self.channel.update();
             }
-            self.clock.sleep(0.1);
-            self.channel.update();
-        }
-        if !interruptible {
-            self.input.clear_keydowns();
+            if !interruptible {
+                self.input.clear_keydowns();
+            }
         }
         self.push(content, Heard::Yes);
         self.go_to_next_unsaid();
@@ -823,6 +847,28 @@ impl Voice {
             None => {
                 self.active = false;
                 self.history = false;
+            }
+        }
+    }
+
+    /// A game is over: the news about it waiting to be said is given up,
+    /// and stays in the log unheard. The news said ahead of the others
+    /// (what players say, news of the game itself, the story) is still
+    /// said, since the end of a game is often what it tells; so is the
+    /// message being said. A walk through the history ends with it.
+    pub fn end_game(&mut self) {
+        let being_said = self.active.then_some(self.current);
+        if std::mem::take(&mut self.history)
+            && let Some(e) = being_said.and_then(|i| self.log.get_mut(i))
+            && e.heard == (Heard::Waiting { sounds_only: true })
+        {
+            // Said from the history with its words: heard once it ends.
+            e.heard = Heard::Waiting { sounds_only: false };
+        }
+        for (i, e) in self.log.iter_mut().enumerate() {
+            let ahead = e.category().is_some_and(|c| Category::AHEAD.contains(&c));
+            if e.is_waiting() && !ahead && being_said != Some(i) {
+                e.heard = Heard::No;
             }
         }
     }

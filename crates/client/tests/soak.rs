@@ -4,11 +4,10 @@
 //! interface and the world headlessly; it says nothing about speech output.
 
 use soundrts::bindings::{Bindings, Chord};
-use soundrts::clock::Clock;
 use soundrts::game::command::GameCommand;
 use soundrts::input::{Key, Mods};
 use soundrts::rng::ClientRng;
-use soundrts::testkit::{Harness, LiveKeys, Script};
+use soundrts::testkit::{Harness, Script};
 
 /// What the client may log during such a game: upstream's own style
 /// warnings for objects without some sounds, the world's warnings, and the
@@ -24,8 +23,7 @@ const EXPECTED_WARNINGS: &[&str] = &[
 const TURNS: i64 = 2000;
 
 fn soak(map: &str, seed: i64) {
-    let live = LiveKeys::default();
-    let mut h = Harness::new("en", Script::new().keep_open().with_live(live.clone()));
+    let mut h = Harness::new("en", Script::new().keep_open());
     let mut g = h.start_training(map, &["aggressive"], seed);
     // A garrison at the town hall, so that the human holds 2000 turns: the
     // point is a long fight, not a quick defeat.
@@ -65,10 +63,6 @@ fn soak(map: &str, seed: i64) {
             chords[rng.below(chords.len())].clone()
         };
         i += 1;
-        // A menu or the console waits for keys: leave it with Escape.
-        if matches!(command, GameCommand::GameMenu | GameCommand::Console) {
-            live.tap_at(h.clock.now() + 2.0, Key::Escape, Mods::NONE);
-        }
         h.press(chord.key, chord.mods);
         presses += 1;
         // Playing the other side would leave this one unattended: switch
@@ -80,6 +74,12 @@ fn soak(map: &str, seed: i64) {
             presses += 1;
         }
         h.step(&mut g);
+        // The game menu and the console take the keys until they close:
+        // leave them with Escape.
+        if matches!(command, GameCommand::GameMenu | GameCommand::Console) {
+            h.press(Key::Escape, Mods::NONE);
+            h.step(&mut g);
+        }
         let pause = 0.2 + rng.random() * 2.0;
         h.run_for(&mut g, pause);
     }

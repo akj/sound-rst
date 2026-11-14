@@ -9,6 +9,7 @@ length 1034 17823
 length 1035 14331
 length 1036 20590
 length 1037 13515
+length 1039 106984
 length 1040 141814
 length 1041 210295
 length 1042 166281
@@ -39,13 +40,11 @@ length 1097 80091
 length 1098 185533
 length 1130 667166
 length 1194 928345
-length 1195 398866
+length 1196 724172
 length 1200 1341451
 length 1309 909977
 length 1326 938594
 length 1329 3540159
-length 1333 654172
-length 1334 626190
 length 1344 471361
 length 1345 521859
 length 6001 1323537
@@ -61,6 +60,7 @@ length 6106 1050703
 length 6107 1346757
 length 6108 1117460
 length 6109 1497687
+length 6110 412154
 length 6115 6871
 length 6116 3719
 length 9999 208980
@@ -88,146 +88,140 @@ length 9999 208980
 @16830 voice important "prologue"
 @17630 voice important "A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done..."
 @27430 voice important "chapter 1"
-@28530 voice important "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
-@40932 sounds 2 300f113e9ce8c768
-@40932 step 7 key F9
-@41030 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
-@42130 voice confirmation "new objective build 1 farm"
-@44930 voice info ", 1 gold mine and 1 wood at a 1"
-@44931 voice confirmation "new objective build 1 barracks"
-@48131 voice info ", 1 gold mine and 1 wood at a 1"
-@51831 voice info ", 1 wood at c 1"
-@53732 sounds 24 8e96654d9189709b
-@53732 step 8 key z
-@53732 voice item "5 gold"
-@54532 sounds 2 38865aae0e44fe86
-@54532 step 9 key x
-@54532 voice item "10 wood"
-@55632 sounds 3 bce2170321c0fdfd
-@55632 step 10 key e
-@55632 voice item "peasant 1 at a 1 , exploit wood , awaiting your orders"
-@61432 sounds 10 8652c97a2ba64961
-@61432 step 11 key ALT a
-@61432 voice item "f build farm on , b build barracks on , a build wall on , g build gate on , t build scout tower on ,"
-@71432 sounds 22 164970fe74117b20
-@71432 step 12 key f
-@71432 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
-@82532 sounds 32 d2c0ca57962cd9e5
-@82532 step 13 key RIGHT
-@82532 voice item [1091] "b 1 , meadows , in the fog of war"
-@86280 sounds 12 124216c8413e203f
-@86280 step 14 key TAB
-@86280 voice item [1003] "a meadow at the center , build farm on"
-@90099 sounds 9 ebd2923cd8a03f68
-@90099 step 15 key RETURN
-@90099 voice item "build farm on a meadow"
-@92299 voice info "0 gold"
-@93099 voice info "7 wood"
-@140833 voice info "farm 2 complete"
-@140834 voice confirmation "objective complete build 1 farm"
-@144134 voice info "farm 2 complete"
-@167836 sounds 113 81a57e5385d8a285
-@167836 step 16 wait_turns 250
-@167837 step 17 key F9
-@167837 voice item "objective: , build 1 barracks ,"
-@171137 sounds 5 8565b30562f60efa
-@171137 step 18 key BACKQUOTE
-@171137 voice menu "Enter a command."
-@172738 step 19 key a (type a barracks)
-@172738 voice item "a . a"
-@173238 step 20 key SPACE (type a barracks)
-@173238 voice item "  . a "
-@173838 step 21 key b (type a barracks)
-@173838 voice item "b . a b"
-@174538 step 22 key a (type a barracks)
-@174538 voice item "a . a ba"
-@175338 step 23 key r (type a barracks)
-@175338 voice item "r . a bar"
-@176238 step 24 key r (type a barracks)
-@176238 voice item "r . a barr"
-@177238 step 25 key a (type a barracks)
-@177238 voice item "a . a barra"
-@178338 step 26 key c (type a barracks)
-@178338 voice item "c . a barrac"
-@179538 step 27 key k (type a barracks)
-@179538 voice item "k . a barrack"
-@180838 step 28 key s (type a barracks)
-@180838 voice item "s . a barracks"
-@182238 step 29 key RETURN
-@182238 voice item "a barracks"
-@182539 voice cut queue=0
-@182539 voice important "Nicely done!"
-@183739 voice info "barracks 1 at b 1"
-@183740 voice confirmation "objective complete build 1 barracks"
-@187440 voice info "barracks 1 at b 1"
-@187441 voice confirmation "mission complete"
-@189041 voice info "barracks 1 at b 1"
-@189043 voice cut queue=0
-@189044 voice info "Victory! at 2 minutes 2 seconds"
-@192544 voice info "2 units produced , 0 lost , 0 neutralized"
-@197244 voice info "4 building produced , 0 lost , 0 neutralized"
-@202244 voice info "5 gold gathered , 5 consumed"
-@205444 voice info "12 wood gathered , 5 consumed"
-@208944 voice info "score 33 press F5 to listen again"
-@212844 voice menu "please make a selection"
-@215144 sounds 19 3651190d0b3627ae
-@215144 step 30 key DOWN
-@215144 voice item "continue ,"
-@216144 sounds 1 e6cd51b43106d553
-@216144 step 31 key RETURN
-@216144 voice confirmation "continue"
-@216954 voice important "chapter 2"
-@218055 sounds 1 79d5c79907c4dcb5
-@218055 step 32 key F9
-@218154 voice item "b 1 , 1 town hall , 1 farm , 2 peasant , 2 footman and 1 archer"
-@219254 voice confirmation "new objective resist ennemy attacks"
-@222754 voice info ", 1 gold mine at a 1"
-@225154 voice info ", 1 wood at c 1"
-@227055 sounds 17 318305b2bb7b8914
-@227055 step 33 key SPACE
-@227055 voice item "b 1 , you are not controlling any unit"
-@316956 sounds 158 606ac0495351e407
-@316956 step 34 wait_turns 300
-@316957 step 35 key SPACE
-@316957 voice item "b 1 , you are not controlling any unit"
-@384456 voice info "1 footman enemy at a 1"
-@388357 voice info "alert at b 1"
-@389757 voice info "1 footman neutralized at b 1"
-@406956 sounds 217 630795ac20ed0e83
-@406956 step 36 wait_turns 300
-@406957 step 37 key z
-@406957 voice item "10 gold"
-@408057 sounds 1 4c034d0c33b62114
-@408057 step 38 key F10
-@408057 voice menu "Menu"
-@408457 step 39 key DOWN
-@408457 voice item "cancel game ,"
-@409757 sounds 1 f9c2c4e0550774a0
-@409757 step 40 key RETURN
-@409757 voice confirmation "cancel game"
-@410869 voice info "Defeat at 3 minutes 6 seconds"
-@414169 voice info "5 units produced , 0 lost , 1 neutralized"
-@418869 voice info "3 building produced , 0 lost , 0 neutralized"
-@423869 voice info "10 gold gathered , 0 consumed"
-@427369 voice info "10 wood gathered , 0 consumed"
-@430869 voice info "score 29 press F5 to listen again"
-@434769 voice menu "please make a selection"
-@437069 sounds 10 30313652ce81e10f
-@437069 step 41 key DOWN
-@437069 voice item "restart ,"
-@437969 sounds 1 98179f8f2afa13db
-@437969 step 42 key DOWN
-@437969 voice item "Quit ,"
-@438569 sounds 1 e42e1e15fe1e2b48
-@438569 step 43 key RETURN
-@438569 voice confirmation "Quit"
-@438979 voice menu "please make a selection"
-@441279 sounds 1 bf45e6477cd80d12
-@441279 step 44 key ESCAPE
-@441279 voice confirmation "go back to the previous menu"
-@444089 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@449189 sounds 1 d2ba29a57d312896
-@449189 step 45 key ESCAPE
-@449189 voice confirmation "quit,"
-@449699 sounds 1 7e4e447e73211724
-@449699 end
+@28530 voice info "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
+@40933 sounds 2 949bc42afb2c47e7
+@40933 step 7 key F9
+@41031 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
+@48531 voice info "new objective build 1 farm"
+@51331 voice info "new objective build 1 barracks"
+@54531 voice info ", 1 gold mine and 1 wood at a 1"
+@58231 voice info ", 1 wood at c 1"
+@60132 sounds 45 36791c910e060026
+@60132 step 8 key z
+@60132 voice item "5 gold"
+@60932 sounds 1 697aa4b2f4e6e191
+@60932 step 9 key x
+@60932 voice item "10 wood"
+@62032 sounds 3 8ce519fbec9a48c0
+@62032 step 10 key e
+@62032 voice item "peasant 1 at a 1 , exploit wood , awaiting your orders"
+@67832 sounds 19 50f783e440244b5a
+@67832 step 11 key ALT a
+@67832 voice item "f build farm on , b build barracks on , a build wall on , g build gate on , t build scout tower on ,"
+@77832 sounds 25 d875c88deac47cb4
+@77832 step 12 key f
+@77832 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+@88932 sounds 22 14224e82f0c95b0a
+@88932 step 13 key RIGHT
+@88932 voice item [1091] "b 1 , meadows , in the fog of war"
+@92680 sounds 13 c50345da574b9231
+@92680 step 14 key TAB
+@92680 voice item [1003] "a meadow at the center , build farm on"
+@96499 sounds 9 b842222d927c2eef
+@96499 step 15 key RETURN
+@96499 voice item "build farm on a meadow in the fog of war ,"
+@100699 voice info "0 gold"
+@101499 voice info "7 wood"
+@148931 voice info "farm 2 complete"
+@150631 voice info "objective complete build 1 farm"
+@171431 sounds 122 0fc6df32d8f31001
+@171431 step 16 wait_turns 250
+@171432 step 17 key F9
+@171432 voice item "objective: , build 1 barracks ,"
+@174732 sounds 2 49935bb6b1221070
+@174732 step 18 key BACKQUOTE
+@174732 voice menu "Enter a command."
+@176332 step 19 key a (type a barracks)
+@176332 voice item "a . a"
+@176832 step 20 key SPACE (type a barracks)
+@176832 voice item "  . a "
+@177432 step 21 key b (type a barracks)
+@177432 voice item "b . a b"
+@178132 step 22 key a (type a barracks)
+@178132 voice item "a . a ba"
+@178932 step 23 key r (type a barracks)
+@178932 voice item "r . a bar"
+@179832 step 24 key r (type a barracks)
+@179832 voice item "r . a barr"
+@180832 step 25 key a (type a barracks)
+@180832 voice item "a . a barra"
+@181932 step 26 key c (type a barracks)
+@181932 voice item "c . a barrac"
+@183132 step 27 key k (type a barracks)
+@183132 voice item "k . a barrack"
+@184432 step 28 key s (type a barracks)
+@184432 voice item "s . a barracks"
+@185832 step 29 key RETURN
+@185832 voice item "a barracks"
+@186832 voice info "Nicely done!"
+@188032 voice info "barracks 1 at b 1"
+@190137 voice info "objective complete build 1 barracks"
+@193837 voice info "mission complete"
+@195437 voice info "Victory! at 2 minutes 14 seconds"
+@199237 voice info "2 units produced , 0 lost , 0 neutralized"
+@203937 voice info "4 building produced , 0 lost , 0 neutralized"
+@208937 voice info "5 gold gathered , 5 consumed"
+@212137 voice info "12 wood gathered , 5 consumed"
+@215637 voice info "score 33 press F5 to listen again"
+@219537 voice menu "please make a selection"
+@221837 sounds 15 0eb794d6006135e3
+@221837 step 30 key DOWN
+@221837 voice item "continue ,"
+@222837 sounds 1 dc29b0ea86fe2297
+@222837 step 31 key RETURN
+@222837 voice confirmation "continue"
+@223647 voice important "chapter 2"
+@224748 sounds 1 b2befdd48b6ac0d5
+@224748 step 32 key F9
+@224847 voice item "b 1 , 1 town hall , 1 farm , 2 peasant , 2 footman and 1 archer"
+@232347 voice info "new objective resist ennemy attacks"
+@235847 voice info ", 1 gold mine at a 1"
+@238247 voice info ", 1 wood at c 1"
+@240148 sounds 31 0534052dcb6866cd
+@240148 step 33 key SPACE
+@240148 voice item "b 1 , you are not controlling any unit"
+@330047 sounds 157 bfaddb91411fb007
+@330047 step 34 wait_turns 300
+@330048 step 35 key SPACE
+@330048 voice item "b 1 , you are not controlling any unit"
+@387947 voice info "1 footman enemy at a 1"
+@391848 voice info "alert at b 1"
+@393248 voice info "1 footman neutralized at b 1"
+@420047 sounds 217 45d3fafbe5219a5f
+@420047 step 36 wait_turns 300
+@420048 step 37 key z
+@420048 voice item "10 gold"
+@421148 sounds 2 b1407d12b2c108db
+@421148 step 38 key F10
+@421148 voice menu "Menu"
+@421548 step 39 key DOWN
+@421548 voice item "cancel game ,"
+@422848 sounds 1 93d509ed1bfe6f98
+@422848 step 40 key RETURN
+@422848 voice confirmation "cancel game"
+@423950 voice info "Defeat at 3 minutes 16 seconds"
+@427550 voice info "5 units produced , 0 lost , 1 neutralized"
+@432250 voice info "3 building produced , 0 lost , 0 neutralized"
+@437250 voice info "10 gold gathered , 0 consumed"
+@440750 voice info "10 wood gathered , 0 consumed"
+@444250 voice info "score 29 press F5 to listen again"
+@448150 voice menu "please make a selection"
+@450450 sounds 6 e95f96673a37fca1
+@450450 step 41 key DOWN
+@450450 voice item "restart ,"
+@451350 sounds 1 2a3eeabd64cca7da
+@451350 step 42 key DOWN
+@451350 voice item "Quit ,"
+@451950 sounds 1 fd8be8779740247e
+@451950 step 43 key RETURN
+@451950 voice confirmation "Quit"
+@452360 voice menu "please make a selection"
+@454660 sounds 1 54055290e5cbc9a5
+@454660 step 44 key ESCAPE
+@454660 voice confirmation "go back to the previous menu"
+@457470 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@462570 sounds 1 4377470e2708da56
+@462570 step 45 key ESCAPE
+@462570 voice confirmation "quit,"
+@463080 sounds 1 658a54d9e880005d
+@463080 end

@@ -265,8 +265,8 @@ impl Client {
         self.fullscreen
     }
 
-    /// Says the sounds or texts of a cut scene in order, each one
-    /// interruptible, as the story's policy says.
+    /// Says the sounds or texts of a campaign's cut scene, outside a game,
+    /// in order, each one interruptible, as the story's policy says.
     pub fn play_sequence(&mut self, names: &[String]) {
         let policy = self.config.news.of(Category::Story);
         if policy == Policy::Speak {

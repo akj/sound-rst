@@ -9,15 +9,15 @@ use soundrts_world::msgparts as mp;
 use soundrts_world::{Cheat, Command};
 
 use crate::client::Client;
-use crate::input::{Event, KeyDown};
-use crate::menu::{Action, Flow, Menu, TextEntry, input_string};
+use crate::input::{Event, Key, KeyDown};
+use crate::menu::{Action, Flow, Menu, TextEntry, Typed};
 use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 use soundrts_protocol::Channel;
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
-use super::{GameInterface, Oops, POSITIONAL_BEEP_SOUND, R, Stop, TURN, style_msg};
+use super::{GameInterface, Mode, Oops, POSITIONAL_BEEP_SOUND, R, Stop, Story, TURN, style_msg};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -26,11 +26,34 @@ enum GameMenuChoice {
     Speed(f64),
 }
 
-/// The game menu, open in a game on a server while the game goes on, and
-/// the choice made in it.
+/// The game menu, the choice made in it, and the story it was opened
+/// during, which goes on once it closes.
 pub(crate) struct GameMenu {
     menu: Menu,
     choice: Rc<Cell<Option<GameMenuChoice>>>,
+    over: Option<Story>,
+}
+
+impl GameMenu {
+    /// What the keys do once the menu is closed.
+    fn closed(self) -> Mode {
+        self.over.map_or(Mode::Playing, Mode::Story)
+    }
+}
+
+/// A chat line being typed, who it is for, and the game menu it was
+/// written from, which stays open.
+pub(crate) struct Chat {
+    channel: Channel,
+    entry: TextEntry,
+    over: Option<GameMenu>,
+}
+
+impl Chat {
+    /// What the keys do once the line is sent or given up.
+    fn closed(self) -> Mode {
+        self.over.map_or(Mode::Playing, Mode::GameMenu)
+    }
 }
 
 /// The characters the console accepts.
@@ -99,7 +122,7 @@ impl GameInterface {
             C::ReviewCategory => cx.voice.review_category(),
             C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
             C::Objectives => self.cmd_objectives(cx),
-            C::GameMenu => self.cmd_gamemenu(cx)?,
+            C::GameMenu => self.cmd_gamemenu(cx),
             C::SayPlayers => {
                 let mut m = Vec::new();
                 let view = self.view();
@@ -122,7 +145,7 @@ impl GameInterface {
             }
             C::RotateLeft => self.cmd_rotate_left(cx)?,
             C::RotateRight => self.cmd_rotate_right(cx)?,
-            C::Console => self.cmd_console(cx)?,
+            C::Console => self.cmd_console(cx),
             C::ReloadParameters => cx.reload_parameters(),
             C::Cmd(cmd) => {
                 if self.view().cheats_allowed() {
@@ -161,8 +184,9 @@ impl GameInterface {
         Ok(())
     }
 
-    /// Starts typing a chat line to the game's players or to the allies;
-    /// the game goes on meanwhile. A beep without a server.
+    /// Starts typing a chat line to the game's players or to the allies,
+    /// over the game menu if it is open; the game goes on meanwhile. A
+    /// beep without a server.
     fn cmd_say(&mut self, cx: &mut Client, channel: Channel) {
         if self.net.is_none() {
             cx.voice.item(&msg(mp::BEEP));
@@ -173,7 +197,28 @@ impl GameInterface {
             prompt.extend(text(words::TO_YOUR_ALLIES));
         }
         let entry = TextEntry::start(cx, &prompt, crate::net::chat_char, "", false);
-        self.chat_entry = Some((channel, entry));
+        let over = match std::mem::replace(&mut self.mode, Mode::Playing) {
+            Mode::GameMenu(gm) => Some(gm),
+            _ => None,
+        };
+        self.mode = Mode::Chat(Chat {
+            channel,
+            entry,
+            over,
+        });
+    }
+
+    /// A key pressed while a chat line is typed.
+    pub(crate) fn chat_key(&mut self, cx: &mut Client, mut chat: Chat, k: &KeyDown) {
+        match chat.entry.key(cx, k) {
+            Typed::Done(line) => {
+                let channel = chat.channel;
+                self.mode = chat.closed();
+                crate::net::send_chat(cx, channel, &line);
+            }
+            Typed::Cancelled => self.mode = chat.closed(),
+            Typed::Typing | Typed::Ignored => self.mode = Mode::Chat(chat),
+        }
     }
 
     fn cmd_resource_status(&self, cx: &mut Client, r: i64) {
@@ -283,13 +328,24 @@ impl GameInterface {
         self.host.queue(self.me, Command::Cheat(cheat));
     }
 
-    fn cmd_console(&mut self, cx: &mut Client) -> Result<(), Stop> {
+    /// Starts typing a command of the console, in a game that allows
+    /// cheats.
+    fn cmd_console(&mut self, cx: &mut Client) {
         if !self.view().cheats_allowed() {
             cx.voice.item(&msg(mp::BEEP));
-            return Ok(());
+            return;
         }
-        if let Some(cmd) = input_string(cx, &msg(mp::ENTER_COMMAND), console_char, "", false)? {
-            self.execute_command(cx, &cmd)?;
+        let entry = TextEntry::start(cx, &msg(mp::ENTER_COMMAND), console_char, "", false);
+        self.mode = Mode::Console(entry);
+    }
+
+    /// A key pressed while a command of the console is typed: Enter runs
+    /// it.
+    pub(crate) fn console_key(&mut self, cx: &mut Client, mut entry: TextEntry, k: &KeyDown) -> R {
+        match entry.key(cx, k) {
+            Typed::Done(cmd) => self.execute_command(cx, &cmd)?,
+            Typed::Cancelled => {}
+            Typed::Typing | Typed::Ignored => self.mode = Mode::Console(entry),
         }
         Ok(())
     }
@@ -320,13 +376,12 @@ impl GameInterface {
         self.view().players().first() == Some(&self.me)
     }
 
-    /// The game menu: quit, the speeds, continue. In a game on a server,
-    /// the game goes on while it is open and the keys go to it; otherwise
-    /// the game waits for a choice.
-    fn cmd_gamemenu(&mut self, cx: &mut Client) -> Result<(), Stop> {
+    /// Opens the game menu: quit, the speeds, continue. The keys go to it
+    /// until a choice is made. In single-player the world waits meanwhile,
+    /// and its sounds stop; in a game on a server, the game goes on.
+    fn cmd_gamemenu(&mut self, cx: &mut Client) {
         if self.net.is_none() {
-            cx.voice.silent_flush();
-            cx.stop_sound(true);
+            cx.stop_sound(false);
         }
         let choice: Rc<Cell<Option<GameMenuChoice>>> = Rc::new(Cell::new(None));
         let set = |c: GameMenuChoice| {
@@ -362,37 +417,47 @@ impl GameInterface {
             );
         }
         menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
-        if self.net.is_some() {
-            menu.say_title(cx);
-            self.game_menu = Some(GameMenu { menu, choice });
-            return Ok(());
-        }
-        menu.run(cx)?;
-        self.game_menu_chosen(cx, choice.get());
-        Ok(())
+        menu.say_title(cx);
+        let over = match std::mem::replace(&mut self.mode, Mode::Playing) {
+            Mode::Story(s) => Some(s),
+            _ => None,
+        };
+        self.mode = Mode::GameMenu(GameMenu { menu, choice, over });
     }
 
-    /// A key pressed while the game menu is open in a game on a server: the
-    /// keys bound to writing to the game or to the allies do so as in the
-    /// game, the other keys go to the menu, which closes once an item is
-    /// chosen.
-    pub(crate) fn game_menu_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
+    /// A key pressed while the game menu is open: the keys bound to
+    /// writing to the game or to the allies do so as in the game, and so
+    /// does the menus' own chat key; the other keys go to the menu, which
+    /// closes once an item is chosen.
+    pub(crate) fn game_menu_key(
+        &mut self,
+        cx: &mut Client,
+        mut gm: GameMenu,
+        k: KeyDown,
+    ) -> Result<(), Stop> {
         let channel = match self.bindings.command_for(&k) {
             Some(GameCommand::Say) => Some(Channel::Game),
             Some(GameCommand::SayAllies) => Some(Channel::Allies),
+            // The menus' chat key, with other modifiers.
+            _ if k.key == Key::F7 => Some(Channel::Game),
             _ => None,
         };
         if let Some(channel) = channel {
+            self.mode = Mode::GameMenu(gm);
             self.cmd_say(cx, channel);
             return Ok(());
         }
-        let Some(gm) = &mut self.game_menu else {
-            return Ok(());
-        };
         if gm.menu.handle(cx, Some(Event::KeyDown(k)))? {
             let choice = gm.choice.get();
-            self.game_menu = None;
+            // Quitting ends the story too, so that the world takes the
+            // command; the story's messages stay in the queue.
+            self.mode = match choice {
+                Some(GameMenuChoice::Quit) => Mode::Playing,
+                _ => gm.closed(),
+            };
             self.game_menu_chosen(cx, choice);
+        } else {
+            self.mode = Mode::GameMenu(gm);
         }
         Ok(())
     }

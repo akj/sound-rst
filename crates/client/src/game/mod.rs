@@ -11,6 +11,12 @@
 //! server event is handled per pass of the loop, after the key presses,
 //! as in the original.
 //!
+//! Nothing said stops the loop. What the keys do depends on one [`Mode`].
+//! In single-player the world waits, on purpose, while a story is told
+//! and while the game menu or the console is open: the host is not
+//! stepped, its events wait and nothing moves, but the keys and the voice
+//! go on. In a game on a server the world never waits.
+//!
 //! The submodules follow the original's files and sections: [`entity`]
 //! (`clientgameentity.py`), [`focus`] (`clientgamefocus.py`), [`news`],
 //! [`order`] (`clientgameorder.py`), [`animation`], [`stats`]
@@ -33,6 +39,8 @@ pub mod squares;
 pub mod stats;
 #[cfg(test)]
 mod testing;
+#[cfg(test)]
+mod tests;
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -48,7 +56,7 @@ use soundrts_world::{
 use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, KeyDown};
-use crate::menu::{Exit, TextEntry, Typed};
+use crate::menu::{Exit, TextEntry};
 use crate::message::{Category, News, Subject};
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
@@ -143,6 +151,43 @@ pub enum SrvEvent {
     Voila(Box<Voila>),
 }
 
+/// What the keys do now.
+pub(crate) enum Mode {
+    /// The keys are the commands of the bindings.
+    Playing,
+    /// The next key picks an order by its shortcut.
+    OrderShortcut,
+    /// A story is told (see [`GameInterface::tell_story`]).
+    Story(Story),
+    /// The game menu is open.
+    GameMenu(misc::GameMenu),
+    /// A chat line is being typed.
+    Chat(misc::Chat),
+    /// A command of the console is being typed.
+    Console(TextEntry),
+}
+
+impl Mode {
+    /// Where the keys of this mode are read.
+    fn input_point(&self) -> InputPoint {
+        match self {
+            Mode::Playing | Mode::OrderShortcut | Mode::Story(_) => InputPoint::Game,
+            Mode::GameMenu(_) => InputPoint::Menu,
+            Mode::Chat(_) | Mode::Console(_) => InputPoint::Text,
+        }
+    }
+}
+
+/// A story being told: its messages in the voice's log.
+pub(crate) struct Story(Vec<EntryId>);
+
+impl Story {
+    /// Whether every message has been said or skipped.
+    fn is_told(&self, cx: &Client) -> bool {
+        !self.0.iter().any(|&id| cx.voice.is_waiting(id))
+    }
+}
+
 /// The category of a message the world says now. Objectives and the end of
 /// a mission are the story; the rest (players defeated or leaving, answers
 /// to the console) is about the game itself.
@@ -223,7 +268,8 @@ pub struct GameInterface {
     pub x: f64,
     pub y: f64,
     pub o: f64,
-    pub(crate) shortcut_mode: bool,
+    /// What the keys do now.
+    pub(crate) mode: Mode,
     pub(crate) previous_order: Option<OrderTypeView>,
     pub(crate) previous_group: Option<Vec<EntityId>>,
     pub(crate) previous_compass: Option<Msg>,
@@ -272,10 +318,6 @@ pub struct GameInterface {
     pub(crate) orders_list: Vec<Keyword>,
     /// In a game on a server: what runs the turns the server sends.
     pub net: Option<lockstep::NetDriver>,
-    /// A chat line being typed, and who it is for.
-    pub(crate) chat_entry: Option<(soundrts_protocol::Channel, TextEntry)>,
-    /// The game menu, while it is open in a game on a server.
-    pub(crate) game_menu: Option<misc::GameMenu>,
 }
 
 impl GameInterface {
@@ -302,7 +344,7 @@ impl GameInterface {
             x: 0.0,
             y: 0.0,
             o: 0.0,
-            shortcut_mode: false,
+            mode: Mode::Playing,
             previous_order: None,
             previous_group: None,
             previous_compass: None,
@@ -338,8 +380,6 @@ impl GameInterface {
             pending_commands: Vec::new(),
             orders_list: Vec::new(),
             net: None,
-            chat_entry: None,
-            game_menu: None,
         }
     }
 
@@ -400,10 +440,15 @@ impl GameInterface {
 
     /// One pass of the loop: a turn if one is due, the animations, the key
     /// presses, one server event, the voice, then a millisecond's rest.
-    /// Errors are logged, as the original's loop catches them, and cut the
-    /// pass short, rest included.
+    /// While the world waits, only the keys and the voice. Nothing said
+    /// waits meanwhile ([`crate::voice::Voice::set_in_game`]). Errors are
+    /// logged, as the original's loop catches them, and cut the pass
+    /// short, rest included.
     pub fn step(&mut self, cx: &mut Client) -> Result<(), Exit> {
-        match self.try_step(cx) {
+        cx.voice.set_in_game(true);
+        let result = self.try_step(cx);
+        cx.voice.set_in_game(false);
+        match result {
             Ok(()) => cx.clock.sleep(0.001),
             Err(Stop::Exit) => return Err(Exit),
             Err(Stop::Oops(e)) => cx
@@ -415,19 +460,69 @@ impl GameInterface {
 
     fn try_step(&mut self, cx: &mut Client) -> Result<(), Stop> {
         crate::net::pump(cx);
+        self.end_story_if_told(cx);
+        let waits = self.world_waits();
         if self.net.is_some() {
             self.net_update(cx);
-        } else if self.time_to_ask_for_next_update(cx) {
+        } else if !waits && self.time_to_ask_for_next_update(cx) {
             self.ask_for_update(cx);
         }
-        self.animate_objects(cx);
+        if !waits {
+            self.animate_objects(cx);
+        }
         self.process_events(cx)?;
         if let Some(hook) = cx.game.hook.clone() {
             hook(self, cx);
         }
-        self.process_srv_events(cx)?;
+        if !self.world_waits() {
+            self.process_srv_events(cx)?;
+        }
         cx.voice.update();
         Ok(())
+    }
+
+    /// Goes back to playing once the story being told is told.
+    fn end_story_if_told(&mut self, cx: &Client) {
+        if let Mode::Story(s) = &self.mode
+            && s.is_told(cx)
+        {
+            self.mode = Mode::Playing;
+        }
+    }
+
+    /// Whether the world waits for the player: in single-player, while a
+    /// story is told or the game menu or the console is open.
+    pub fn world_waits(&self) -> bool {
+        self.net.is_none()
+            && match self.mode {
+                Mode::Playing | Mode::OrderShortcut | Mode::Chat(_) => false,
+                Mode::Story(_) | Mode::GameMenu(_) | Mode::Console(_) => true,
+            }
+    }
+
+    /// Tells a story: each message as story news, said before the other
+    /// news waiting. In single-player the world waits until every message
+    /// has been said or skipped, and its sounds stop; in a game on a
+    /// server, nothing waits.
+    pub(crate) fn tell_story(&mut self, cx: &mut Client, messages: Vec<Msg>) {
+        let policy = cx.config.news.of(Category::Story);
+        let story = Story(
+            messages
+                .into_iter()
+                .filter_map(|m| cx.voice.news(News::new(Category::Story, m), policy))
+                .collect(),
+        );
+        if self.net.is_some() || story.is_told(cx) {
+            return;
+        }
+        cx.stop_sound(false);
+        match &mut self.mode {
+            Mode::Story(s) => s.0.extend(story.0),
+            Mode::Playing | Mode::OrderShortcut => self.mode = Mode::Story(story),
+            // The world waits while these are open, and chat is only typed
+            // on a server: no story comes meanwhile.
+            Mode::GameMenu(_) | Mode::Chat(_) | Mode::Console(_) => {}
+        }
     }
 
     fn time_to_ask_for_next_update(&self, cx: &Client) -> bool {
@@ -476,37 +571,60 @@ impl GameInterface {
     /// Handles the key presses waiting.
     fn process_events(&mut self, cx: &mut Client) -> Result<(), Stop> {
         cx.input.set_game(Some(self.progress()));
-        cx.input.input_point(InputPoint::Game, cx.voice.is_idle());
+        cx.input
+            .input_point(self.mode.input_point(), cx.voice.is_idle());
         for e in cx.input.get_all() {
             match e {
                 InputEvent::Quit => return Err(Stop::Exit),
-                InputEvent::KeyDown(k) if self.chat_entry.is_some() => {
-                    let (channel, entry) = self.chat_entry.as_mut().expect("checked");
-                    let channel = *channel;
-                    match entry.key(cx, &k) {
-                        Typed::Done(line) => {
-                            self.chat_entry = None;
-                            crate::net::send_chat(cx, channel, &line);
-                        }
-                        Typed::Cancelled => self.chat_entry = None,
-                        Typed::Typing | Typed::Ignored => {}
-                    }
-                }
-                InputEvent::KeyDown(k) if self.game_menu.is_some() => {
-                    self.game_menu_key(cx, k)?;
-                }
-                InputEvent::KeyDown(k) => {
-                    if self.shortcut_mode {
-                        self.shortcut_mode = false;
-                        self.execute_order_shortcut(cx, &k)?;
-                    } else {
-                        self.process_keydown(cx, &k)?;
-                    }
-                }
+                InputEvent::KeyDown(k) => self.route_key(cx, k)?,
                 InputEvent::KeyUp(_) => {}
             }
         }
         Ok(())
+    }
+
+    /// Gives a key press to the mode, which may change.
+    fn route_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
+        // The key before may have skipped the story's last message.
+        self.end_story_if_told(cx);
+        match std::mem::replace(&mut self.mode, Mode::Playing) {
+            Mode::Playing => self.process_keydown(cx, &k),
+            Mode::OrderShortcut => Ok(self.execute_order_shortcut(cx, &k)?),
+            Mode::Story(s) => {
+                self.mode = Mode::Story(s);
+                self.story_key(cx, &k)
+            }
+            Mode::GameMenu(gm) => self.game_menu_key(cx, gm, k),
+            Mode::Chat(chat) => {
+                self.chat_key(cx, chat, &k);
+                Ok(())
+            }
+            Mode::Console(entry) => Ok(self.console_key(cx, entry, &k)?),
+        }
+    }
+
+    /// A key pressed while a story is told: the keys of the game menu,
+    /// the history, the news, help and the volume do as in the game; any
+    /// other key skips the message being said.
+    fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
+        use GameCommand as C;
+        match self.bindings.command_for(k).cloned() {
+            Some(
+                c @ (C::GameMenu
+                | C::HistoryPrevious
+                | C::HistoryNext
+                | C::Unheard
+                | C::ReviewPrevious
+                | C::ReviewNext
+                | C::ReviewCategory
+                | C::Help(_)
+                | C::Volume(_)),
+            ) => self.execute(cx, &c),
+            _ => {
+                cx.voice.say_next(false);
+                Ok(())
+            }
+        }
     }
 
     fn process_keydown(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
@@ -534,12 +652,14 @@ impl GameInterface {
     pub(crate) fn process_srv_event(&mut self, cx: &mut Client, e: SrvEvent) -> Result<(), Stop> {
         match e {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
-            SrvEvent::VoiceImportant(m) => {
-                let news = News::new(important_category(&m), m);
-                let policy = cx.config.news.of(news.category);
-                cx.voice.confirmation_news(news, policy);
+            SrvEvent::VoiceImportant(m) => cx.news(News::new(important_category(&m), m)),
+            SrvEvent::Sequence(names) => {
+                let story = names
+                    .iter()
+                    .map(|n| vec![MsgPart::from(n.as_str())])
+                    .collect();
+                self.tell_story(cx, story);
             }
-            SrvEvent::Sequence(parts) => cx.play_sequence(&parts),
             // In a game on a server, the server keeps the time.
             SrvEvent::Speed(s) => {
                 if self.net.is_none() {
@@ -564,9 +684,11 @@ impl GameInterface {
         }
     }
 
+    /// The game is over for the player: the sounds stop, and of the news
+    /// waiting, only what the end of a game is about is still said.
     pub(crate) fn srv_quit(&mut self, cx: &mut Client) {
-        cx.voice.silent_flush();
-        cx.stop_sound(true);
+        cx.voice.end_game();
+        cx.stop_sound(false);
         self.end_loop = true;
     }
 
@@ -668,16 +790,14 @@ impl GameInterface {
         }
     }
 
-    /// Says the objective of the map, if any, as the story's policy says.
-    pub fn say_objective(&self, cx: &mut Client) {
+    /// The objective of the map, if any, as said when the game starts.
+    pub fn objective(&self) -> Option<Msg> {
         let objective = self.view().map_objective();
-        if !objective.is_empty() {
+        (!objective.is_empty()).then(|| {
             let mut m = msg(mp::OBJECTIVE);
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
-            let policy = cx.config.news.of(Category::Story);
-            cx.voice
-                .confirmation_news(News::new(Category::Story, m), policy);
-        }
+            m
+        })
     }
 
     /// Whether server events wait to be handled.
