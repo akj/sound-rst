@@ -37,11 +37,46 @@ pub const MAX_STYLE_PARENTS: usize = 8;
 /// object has 7 generations of ancestors.
 pub const MAX_STYLE_DEPTH: usize = 16;
 
-/// The most attributes all the objects may hold together once they
-/// inherit. The original's style, with every mod, comes to 12,708.
-pub const MAX_STYLE_ATTRIBUTES: usize = 100_000;
+/// The most bytes all the objects may hold together once they inherit,
+/// counted as [`Style::size`] counts them. Inheritance copies values, so
+/// this bounds the memory a style takes. The original's style, with every
+/// mod, comes to 235 KB.
+pub const MAX_STYLE_SIZE: usize = 16 * 1024 * 1024;
 
-type Objects = IndexMap<String, IndexMap<String, StyleValue>>;
+type Object = IndexMap<String, StyleValue>;
+type Objects = IndexMap<String, Object>;
+
+/// The bytes of an attribute: its name and words, and one for each.
+fn attribute_size(attr: &str, value: &StyleValue) -> usize {
+    fn words(w: &[String]) -> usize {
+        w.iter()
+            .fold(0_usize, |n, w| n.saturating_add(w.len()).saturating_add(1))
+    }
+    fn noise(n: &Noise) -> usize {
+        match n {
+            Noise::Silent => 0,
+            Noise::Loop { sound, .. } => sound.len(),
+            Noise::Repeat { sounds, .. } => words(sounds),
+            Noise::IfMe(a, b) => noise(a).saturating_add(noise(b)),
+            Noise::Invalid(w) => words(w),
+        }
+    }
+    let value = match value {
+        StyleValue::Words(w) => words(w),
+        StyleValue::IfMe(a, b) => words(a).saturating_add(words(b)),
+        StyleValue::Noise(n) => noise(n),
+    };
+    attr.len().saturating_add(1).saturating_add(value)
+}
+
+/// The value of `attr` in `object`. An attribute `x_level_N` falls back to
+/// `x`.
+fn lookup<'a>(object: &'a Object, attr: &str) -> Option<&'a StyleValue> {
+    object.get(attr).or_else(|| {
+        let (head, _) = attr.split_at_checked(attr.len().checked_sub(1)?)?;
+        object.get(head.strip_suffix("_level_")?)
+    })
+}
 
 /// A background noise: what an object sounds like while it exists.
 #[derive(Clone, Debug, PartialEq)]
@@ -188,9 +223,11 @@ impl Style {
     }
 
     /// Adds the style of a map that came from a server: the attributes
-    /// this style lacks, its own or inherited, and nothing else. Returns
-    /// how many attributes were ignored because the style has them.
+    /// this style lacks, its own, inherited or by level, and nothing else,
+    /// even through inheritance. Returns how many attributes were ignored
+    /// because the style has them.
     pub fn add_downloaded(&mut self, texts: &[&str]) -> usize {
+        let before = self.dict.clone();
         let mut ignored: usize = 0;
         for (name, attributes) in self.parse(texts) {
             if !self.dict.contains_key(&name) && self.dict.len() >= MAX_STYLE_OBJECTS {
@@ -212,6 +249,13 @@ impl Style {
             self.dict.entry(name).or_default().extend(fresh);
         }
         self.apply_inheritance();
+        // An attribute added to a parent reaches the children, where it can
+        // stand in front of a value they had by level.
+        for (name, object) in &mut self.dict {
+            if let Some(old) = before.get(name) {
+                object.retain(|attr, _| old.contains_key(attr) || lookup(old, attr).is_none());
+            }
+        }
         ignored
     }
 
@@ -294,12 +338,9 @@ impl Style {
 
     /// Copies each missing attribute from the parents, until nothing
     /// changes, at most [`MAX_STYLE_DEPTH`] times over and until the style
-    /// holds [`MAX_STYLE_ATTRIBUTES`].
+    /// holds [`MAX_STYLE_SIZE`].
     fn apply_inheritance(&mut self) {
-        let mut total = self
-            .dict
-            .values()
-            .fold(0_usize, |n, o| n.saturating_add(o.len()));
+        let mut total = self.size();
         for _ in 0..=MAX_STYLE_DEPTH {
             let mut modified = false;
             let names: Vec<String> = self.dict.keys().cloned().collect();
@@ -319,10 +360,12 @@ impl Style {
                     if missing.is_empty() {
                         continue;
                     }
-                    total = total.saturating_add(missing.len());
-                    if total > MAX_STYLE_ATTRIBUTES {
+                    total = missing
+                        .iter()
+                        .fold(total, |n, (k, v)| n.saturating_add(attribute_size(k, v)));
+                    if total > MAX_STYLE_SIZE {
                         self.log.warning(format!(
-                            "style: more than {MAX_STYLE_ATTRIBUTES} attributes once inherited; inheritance stops"
+                            "style: more than {MAX_STYLE_SIZE} bytes once inherited; inheritance stops"
                         ));
                         return;
                     }
@@ -341,18 +384,11 @@ impl Style {
         ));
     }
 
-    /// The value of `object.attr`. Inheritance has copied every attribute
-    /// of the ancestors into the object, so the object alone is looked at.
-    fn val(&self, object: &str, attr: &str) -> Option<&StyleValue> {
-        self.dict.get(object)?.get(attr)
-    }
-
-    /// The value of `object.attr`. An attribute `x_level_N` falls back to `x`.
+    /// The value of `object.attr`. An attribute `x_level_N` falls back to
+    /// `x`. Inheritance has copied every attribute of the ancestors into
+    /// the object, so the object alone is looked at.
     pub fn value(&self, object: &str, attr: &str) -> Option<&StyleValue> {
-        self.val(object, attr).or_else(|| {
-            let (head, _) = attr.split_at_checked(attr.len().checked_sub(1)?)?;
-            self.val(object, head.strip_suffix("_level_")?)
-        })
+        lookup(self.dict.get(object)?, attr)
     }
 
     fn warn_once(&self, object: &str, attr: &str) {
@@ -408,12 +444,13 @@ impl Style {
         self.dict.keys().map(String::as_str)
     }
 
-    /// How many attributes the objects hold together, inherited ones
-    /// included.
-    pub fn attribute_count(&self) -> usize {
+    /// How many bytes the objects hold together, inherited attributes
+    /// included: each attribute's name and words, and one for each.
+    pub fn size(&self) -> usize {
         self.dict
             .values()
-            .fold(0_usize, |n, o| n.saturating_add(o.len()))
+            .flat_map(|o| o.iter())
+            .fold(0_usize, |n, (k, v)| n.saturating_add(attribute_size(k, v)))
     }
 }
 
@@ -561,19 +598,17 @@ mod tests {
     }
 
     #[test]
-    fn inheritance_stops_at_the_limit_of_attributes() {
-        let mut text = "def parent\n".to_owned();
-        for i in 0..1000 {
-            text.push_str(&format!("a{i} 1\n"));
-        }
-        for i in 0..200 {
+    fn inheritance_stops_at_the_limit_of_bytes() {
+        // One attribute of 64 KB, which 5,000 children would copy.
+        let mut text = format!("def parent\nbig {}\n", "x ".repeat(32 * 1024));
+        for i in 0..4999 {
             text.push_str(&format!("def child{i}\nis_a parent\n"));
         }
         let mut style = Style::new(Log::silent());
         style.load(&[&text]);
-        assert!(style.attribute_count() <= MAX_STYLE_ATTRIBUTES);
-        assert!(style.has("child0", "a999"));
-        assert!(!style.has("child199", "a0"));
+        assert!(style.size() <= MAX_STYLE_SIZE);
+        assert!(style.has("child0", "big"));
+        assert!(!style.has("child4998", "big"));
     }
 
     #[test]
@@ -601,5 +636,15 @@ mod tests {
         assert_eq!(style.words("golem", "title"), ["9000"]);
         assert_eq!(style.words("golem", "attack_hit"), ["5"]);
         assert_eq!(style.words("footman", "move"), ["8"]);
+    }
+
+    #[test]
+    fn an_attribute_a_downloaded_style_adds_to_a_parent_does_not_replace_a_childs_level() {
+        let mut style = Style::new(Log::silent());
+        style.load(&["def unit\ntitle 1\n\ndef footman\nis_a unit\nattack_hit 5\n"]);
+        let ignored = style.add_downloaded(&["def unit\nattack_hit_level_2 666\n"]);
+        assert_eq!(ignored, 0);
+        assert_eq!(style.words("unit", "attack_hit_level_2"), ["666"]);
+        assert_eq!(style.words("footman", "attack_hit_level_2"), ["5"]);
     }
 }

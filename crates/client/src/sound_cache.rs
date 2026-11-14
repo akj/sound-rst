@@ -102,6 +102,12 @@ fn is_all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// A key that names a sound or a text: digits below the numbers the game
+/// encodes to be said as numbers.
+fn is_sound_number(key: &str) -> bool {
+    is_all_digits(key) && key.parse::<u64>().is_ok_and(|n| n < NB_ENCODE_SHIFT)
+}
+
 impl SoundCache {
     /// Builds the cache from the text files and the `.ogg` files found
     /// under `ui` (and its translation) in the layers.
@@ -146,17 +152,21 @@ impl SoundCache {
     }
 
     /// Adds the texts and sounds of a map that came from a server, as
-    /// [`SoundCache::new`] reads them, but only under the keys this cache
-    /// lacks: the game's own texts and sounds stay. Returns how many were
-    /// ignored because the cache has them.
+    /// [`SoundCache::new`] reads them, but only under sound numbers this
+    /// cache lacks: the game's own texts and sounds stay, and so do the
+    /// numbers and words the game says as they are. Returns how many were
+    /// ignored.
     pub fn add_downloaded(&mut self, texts: &[String], sound_dirs: &[(Package, String)]) -> usize {
         let mut ignored: usize = 0;
         let mut txt = HashMap::new();
         for t in texts {
             update_text_table(&mut txt, t, &self.log);
         }
+        let taken = |cache: &SoundCache, key: &str| {
+            cache.txt.contains_key(key) || cache.sounds.contains_key(key) || !is_sound_number(key)
+        };
         for (key, value) in txt {
-            if self.txt.contains_key(&key) || self.sounds.contains_key(&key) {
+            if taken(self, &key) {
                 ignored = ignored.saturating_add(1);
             } else {
                 self.txt.insert(key, value);
@@ -175,7 +185,7 @@ impl SoundCache {
             }
         }
         for (key, sound) in sounds {
-            if self.txt.contains_key(&key) || self.sounds.contains_key(&key) {
+            if taken(self, &key) {
                 ignored = ignored.saturating_add(1);
             } else {
                 self.sounds.insert(key, sound);
@@ -281,5 +291,31 @@ impl Sounds {
 
     pub fn update_volumes(&self, params: Rc<Parameters>) {
         self.0.borrow_mut().update_volumes(params);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_downloaded_text_cannot_stand_for_a_number_or_a_word() {
+        let log = Log::silent();
+        let params = Rc::new(Parameters::default());
+        let mut cache =
+            SoundCache::new(&["5 What are your orders?\n".to_owned()], &[], params, log);
+        let added = format!(
+            "5 Press Alt F4.\n9000 golem\n{} six\nhello bye\n",
+            NB_ENCODE_SHIFT + 5
+        );
+        assert_eq!(cache.add_downloaded(&[added], &[]), 3);
+        let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
+            Spoken::Text(t) => t,
+            Spoken::Sound(_) => "a sound".to_owned(),
+        };
+        assert_eq!(said(&mut cache, MsgPart::Num(5)), "What are your orders?");
+        assert_eq!(said(&mut cache, MsgPart::Num(9000)), "golem");
+        assert_eq!(said(&mut cache, MsgPart::Num(NB_ENCODE_SHIFT + 5)), "5");
+        assert_eq!(said(&mut cache, MsgPart::from("hello")), "hello");
     }
 }
