@@ -491,19 +491,6 @@ impl<'a> Leaks<'a> {
         self.world.activity(unit)
     }
 
-    /// Every entity truly on a square, in arrival order, seen or not.
-    ///
-    /// Used to choose the sound of a unit's footsteps: on the ground of the
-    /// nearest still object (a bridge, a meadow...).
-    pub fn objects_on(&self, square: SquareId) -> Vec<&'a Entity> {
-        let w = self.world;
-        w.square(square)
-            .objects
-            .iter()
-            .filter_map(|&o| w.entity(o))
-            .collect()
-    }
-
     /// The place of a container, as it is now, perceived or not.
     ///
     /// Used for the square of a unit inside a transport or a building: in

@@ -295,36 +295,6 @@ fn a_remembered_units_activity_is_the_live_ones() {
 }
 
 #[test]
-fn the_objects_on_a_square_are_all_there_seen_or_not() {
-    let (w, me, them) = game();
-    let there = square_of(&w, unit(&w, them, "townhall"));
-    let v = View::new(&w, me);
-    assert!(!w.player(me).observed_squares.contains(&there));
-    let old: Vec<&str> = w
-        .square(there)
-        .objects
-        .iter()
-        .map(|&o| &*w.entity(o).unwrap().type_name)
-        .collect();
-    let leaked: Vec<&str> = v
-        .leaks()
-        .objects_on(there)
-        .iter()
-        .map(|e| &*e.type_name)
-        .collect();
-    assert_eq!(leaked, old);
-    for t in ["townhall", "farm", "peasant", "meadow"] {
-        assert!(leaked.contains(&t), "{t} in {leaked:?}");
-    }
-    assert!(
-        v.leaks()
-            .objects_on(there)
-            .iter()
-            .all(|e| v.perceived(e.id).is_none())
-    );
-}
-
-#[test]
 fn a_container_is_read_live() {
     let (w, me, them) = game();
     let townhall = unit(&w, them, "townhall");

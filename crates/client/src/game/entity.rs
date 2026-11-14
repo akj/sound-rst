@@ -902,7 +902,8 @@ impl GameInterface {
     }
 
     /// The footstep sounds of the entity: on the terrain, else on the
-    /// nearest still object with a ground, else its own.
+    /// nearest still object with a ground that the player knows on its
+    /// square, else its own.
     fn footstep_noise(&self, cx: &Client, v: &EntityView) -> Vec<String> {
         let style = cx.res.style();
         let mut result = style.words(v.type_name(), "move");
@@ -915,16 +916,20 @@ impl GameInterface {
         let Some(s) = v.place().and_then(|p| p.square()) else {
             return result;
         };
-        let objects = self.view().leaks().objects_on(s);
+        let objects: Vec<&EntityView> = self
+            .dobjets
+            .values()
+            .filter(|o| o.place() == Some(Place::Square(s)))
+            .collect();
         if objects.len() >= 30 {
             return result;
         }
         let mut d_min = 9_999_999.0;
-        for m in objects {
-            if m.stats.speed != 0 {
+        for o in objects {
+            if o.model.stats.speed != 0 {
                 continue;
             }
-            let g = style.words(&m.type_name, "ground");
+            let g = style.words(o.type_name(), "ground");
             let Some(g0) = g.first() else { continue };
             let attr = format!("move_on_{g0}");
             if !style.has(v.type_name(), &attr) {
@@ -934,9 +939,6 @@ impl GameInterface {
                 .get(1)
                 .and_then(|k| soundrts_world::nofloat::py_float(k).ok())
                 .unwrap_or(1.0);
-            let Some(o) = self.dobjets.get(&m.id) else {
-                continue;
-            };
             if k == 0.0 {
                 continue;
             }
@@ -1093,6 +1095,32 @@ mod tests {
             footstep_random: 0.0,
             anim: AnimState::default(),
         }
+    }
+
+    #[test]
+    fn footsteps_sound_on_the_objects_the_player_knows() {
+        let (h, mut g) = training();
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let v = &g.game.dobjets[&peasant];
+        // On its meadows the peasant steps on the grass of the nearest
+        // building or meadow.
+        assert_eq!(g.game.footstep_noise(&h.client, v), ["1053", "1054"]);
+        // The player remembers a wood under its feet, which is not there:
+        // the steps are on leaves.
+        let wood = g
+            .game
+            .dobjets
+            .values()
+            .find(|o| o.type_name() == "wood")
+            .unwrap();
+        let mut model = wood.model.as_ref().clone();
+        (model.id, model.place, model.x, model.y) =
+            (EntityId(999_999), v.place(), v.model.x, v.model.y);
+        let remembered = EntityView::new(Arc::new(model), Some(0), &h.client.rng);
+        g.game.dobjets.insert(EntityId(999_999), remembered);
+        let v = &g.game.dobjets[&peasant];
+        assert_eq!(g.game.footstep_noise(&h.client, v), ["1069", "1070"]);
     }
 
     #[test]
