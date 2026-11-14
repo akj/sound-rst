@@ -1829,4 +1829,17 @@ starting_squares a1 b1 c1
         assert!(w.player(ps[2]).has_been_defeated);
         assert_eq!(w.players, [ps[0]]);
     }
+
+    #[test]
+    fn every_player_quits_when_nobody_is_playing_any_more() {
+        let mut w = world_text(THREE_SQUARES);
+        let humans = ["a", "b", "c"].map(|n| Controller::human(n, false));
+        let ps = w.populate_map(&humans, false, false).unwrap();
+        for &p in &ps {
+            w.plm(p).has_been_defeated = true;
+        }
+        w.update();
+        assert!(w.players.is_empty(), "still in the game: {:?}", w.players);
+        assert_eq!(w.ex_players, ps);
+    }
 }
