@@ -572,7 +572,7 @@ impl World {
             .map(|&o| self.e(o))
             .chain(remembered.iter().map(|r| &**r));
         for o in entities {
-            let Some(Place::Square(mut place)) = o.place else {
+            let Some(Place::Square(place)) = o.place else {
                 continue;
             };
             if self.player_is_an_enemy_of_entity(p, o) {
@@ -584,11 +584,8 @@ impl World {
                     presence.push(place);
                 }
                 if !o.is_melee() {
-                    // The loop variable is `place` itself in the original, so
-                    // after the loop `place` is the last neighbor.
                     for n in self.square(place).neighbors.clone() {
                         *menace.entry(n).or_insert(0) += floordiv(m, 10);
-                        place = n;
                     }
                 }
             } else if o.is_corpse() {

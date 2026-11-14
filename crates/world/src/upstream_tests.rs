@@ -1884,4 +1884,21 @@ starting_resources 100 100
         assert!(w.player(p).budget.is_empty());
         assert_eq!(w.player(p).resources, start);
     }
+
+    #[test]
+    fn a_ranged_enemy_that_harms_makes_its_own_square_cataclysmic() {
+        let (mut w, a, b) = two_humans();
+        let (a1, b1) = (sq(&w, "a1"), sq(&w, "b1"));
+        create(&mut w, "footman", a, b1);
+        let archer = create(&mut w, "archer", b, b1);
+        assert!(!w.e(archer).is_melee());
+        w.em(archer).stats.harm_level = 1;
+        w.em(archer).time_limit = Some(1_000_000);
+        assert!(is_perceiving(&mut w, a, archer));
+        w.update_enemy_menace_and_presence_and_corpses(a);
+        let pl = w.player(a);
+        assert_eq!(pl.cataclysmic_places, [b1].into());
+        let m = w.e(archer).menace();
+        assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
+    }
 }
