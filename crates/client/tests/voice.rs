@@ -6,6 +6,7 @@ use soundrts::clock::Clock;
 use soundrts::input::Key;
 use soundrts::message::InfoOptions;
 use soundrts::testkit::{Harness, Script, SpeechEvent};
+use soundrts::tts::{Progress, SpeechEnd};
 use soundrts_world::msg::{Msg, MsgPart};
 
 fn t(s: &str) -> Msg {
@@ -52,7 +53,11 @@ fn a_key_press_cuts_an_important_message_short_and_is_used_up() {
     h.client.voice.important(&t(LONG));
     assert!(h.clock.now() < 1.0);
     assert!(h.client.input.get_keydowns().is_empty());
-    assert_eq!(h.speech.events(), [SpeechEvent::Speak(LONG.into())]);
+    // The message first stops whatever was being said.
+    assert_eq!(
+        h.speech.events(),
+        [SpeechEvent::Stop, SpeechEvent::Speak(LONG.into())]
+    );
 }
 
 #[test]
@@ -169,4 +174,118 @@ fn identical_chat_lines_are_all_said_and_an_idle_voice_says_chat_at_once() {
         h.client.voice.update();
     }
     assert_eq!(h.spoken(), ["hello", "hello", "hello", "info"]);
+}
+
+#[test]
+fn a_finished_report_starts_the_next_queued_message_without_waiting_for_the_estimate() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.clock.advance(0.1);
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    // The screen reader says it has finished, 0.9 s before the estimate.
+    h.speech.report(Progress::Ended(SpeechEnd::Finished));
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "bbbbb"]);
+}
+
+#[test]
+fn a_report_that_speech_goes_on_keeps_the_next_message_waiting_past_the_estimate() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.speech.report(Progress::Speaking);
+    for _ in 0..20 {
+        h.clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    h.speech.report(Progress::Ended(SpeechEnd::Finished));
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "bbbbb"]);
+}
+
+#[test]
+fn a_message_cancelled_at_the_screen_reader_is_dismissed_and_not_repeated() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.clock.advance(0.5);
+    h.client.voice.update();
+    // The player silences it at the screen reader; the key also reaches
+    // the game, which says an item before the voice update.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    h.client.voice.item(&t("x"));
+    for _ in 0..20 {
+        h.clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "x", "bbbbb"]);
+    let said: Vec<_> = h.client.voice.history().map(|(_, said)| said).collect();
+    assert_eq!(said, [true, true]);
+}
+
+/// Says a 3 s item, queues news with `queue` half a second in, then says
+/// another item 1.5 s in (as arrowing to the next square does), and lets
+/// the voice run. Returns everything spoken.
+fn item_then_queued_then_item(queue: impl FnOnce(&mut soundrts::voice::Voice)) -> Vec<String> {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    h.client.voice.item(&t("a long description of 30 chars"));
+    clock.advance(0.5);
+    h.client.voice.update();
+    queue(&mut h.client.voice);
+    clock.advance(1.0);
+    h.client.voice.update();
+    h.client.voice.item(&t("next"));
+    for _ in 0..100 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    h.spoken()
+}
+
+#[test]
+fn chat_queued_while_an_item_is_said_is_said_after_the_next_item() {
+    let spoken = item_then_queued_then_item(|v| v.chat(&t("chat line")));
+    assert_eq!(
+        spoken,
+        ["a long description of 30 chars", "next", "chat line"]
+    );
+}
+
+#[test]
+fn news_queued_while_an_item_is_said_is_said_after_the_next_item() {
+    let spoken = item_then_queued_then_item(|v| v.info(&t("alert line")));
+    assert_eq!(
+        spoken,
+        ["a long description of 30 chars", "next", "alert line"]
+    );
+}
+
+#[test]
+fn news_cut_off_after_more_than_a_second_is_said_again() {
+    let mut h = Harness::new("en", Script::new());
+    let clock = h.clock.clone();
+    h.client.voice.info(&t("news of thirty characters, 3 s"));
+    h.client.voice.info(&t("more"));
+    for _ in 0..15 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    h.client.voice.item(&t("x"));
+    for _ in 0..100 {
+        clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(
+        h.spoken(),
+        [
+            "news of thirty characters, 3 s",
+            "x",
+            "news of thirty characters, 3 s",
+            "more"
+        ]
+    );
 }

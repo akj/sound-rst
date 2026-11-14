@@ -149,7 +149,6 @@ impl UtteranceLog {
 pub struct VoiceChannel {
     tts: Tts,
     queue: VecDeque<(Spoken, f64, f64)>,
-    starting_time: f64,
     audio: Audio,
     sounds: Sounds,
     clock: ClockRef,
@@ -171,7 +170,6 @@ impl VoiceChannel {
         VoiceChannel {
             tts,
             queue: VecDeque::new(),
-            starting_time: 0.0,
             audio,
             sounds,
             clock,
@@ -215,12 +213,6 @@ impl VoiceChannel {
             self.queue.push_back((part, msg.lv, msg.rv));
         }
         self.update();
-        self.starting_time = self.clock.now();
-    }
-
-    /// Whether the current message has been playing for over a second.
-    pub fn is_almost_done(&self) -> bool {
-        self.clock.now() - self.starting_time > 1.0
     }
 
     /// Stops the current message and forgets the rest of it.
@@ -250,12 +242,23 @@ impl VoiceChannel {
         }
     }
 
-    /// Starts the next part when the previous one is over.
+    /// Whether the player silenced the message at the screen reader.
+    pub fn was_cancelled(&self) -> bool {
+        self.tts.was_cancelled()
+    }
+
+    /// Starts the next part when the previous one is over. A message the
+    /// player silenced at the screen reader is dismissed with its other
+    /// parts.
     pub fn update(&mut self) {
-        if !self.audio.voice_busy()
-            && !self.tts.is_speaking()
-            && let Some((part, lv, rv)) = self.queue.pop_front()
-        {
+        if self.audio.voice_busy() || self.tts.is_speaking() {
+            return;
+        }
+        // Read after the end: a cancel reported in between still counts.
+        if self.tts.was_cancelled() {
+            self.queue.clear();
+        }
+        if let Some((part, lv, rv)) = self.queue.pop_front() {
             match part {
                 Spoken::Text(t) => self.tts.speak(&t),
                 Spoken::Sound(s) => self.audio.voice_play(&s, lv, rv),
@@ -330,10 +333,12 @@ impl Voice {
         self.current = self.unsaid();
     }
 
-    /// A message cut short after a second counts as said, so it does not
-    /// come back again and again.
-    fn give_up_current_if_partially_said(&mut self) {
-        if self.current_message_is_unsaid() && self.channel.is_almost_done() {
+    /// The queued message on the voice channel counts as said if the
+    /// player silenced it at the screen reader. Cut off by the game, it
+    /// stays unsaid and is said again when the voice is free. A message
+    /// still waiting is not touched.
+    fn dismiss_current_if_cancelled(&mut self) {
+        if self.active && self.current_message_is_unsaid() && self.channel.was_cancelled() {
             self.mark_current_as_said();
         }
     }
@@ -441,7 +446,7 @@ impl Voice {
         let interruptible = kind != VoiceKind::Alert;
         let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
         let options = InfoOptions::default();
-        self.give_up_current_if_partially_said();
+        self.dismiss_current_if_cancelled();
         let now = self.now();
         self.channel.play(
             &Message::new(msg.clone(), options.clone(), false, now),
@@ -472,7 +477,7 @@ impl Voice {
 
     pub fn item_stereo(&mut self, msg: &Msg, lv: f64, rv: f64) {
         if !msg.is_empty() {
-            self.give_up_current_if_partially_said();
+            self.dismiss_current_if_cancelled();
             self.go_to_next_unsaid();
             let now = self.now();
             let options = InfoOptions {

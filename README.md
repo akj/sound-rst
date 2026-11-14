@@ -57,6 +57,22 @@ To get a written record of everything the game says, set `debug_mode = 1` in `So
 
 To play in another language, write its code, for example `fr`, in `cfg/language.txt` in the data folder.
 
+### Speech that ends when NVDA says so
+
+Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off.
+
+NVDA 2024.1 and later can tell the game when speech has ended, and whether you silenced it. This route is off by default and has not yet been checked by ear. To try it:
+
+1. Fetch NVDA's controller client. The script downloads a pinned release into `vendor/nvda-controller` and checks its hash. The next build copies `nvdaControllerClient.dll` next to the program.
+
+   ```powershell
+   pwsh scripts/fetch-nvda-controller.ps1
+   ```
+
+2. In `SoundRTS.ini`, in the `[tts]` section, set `nvda_direct = 1`.
+
+With `nvda_direct = 1`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, set `nvda_direct = 0`. The log `tmp/client.log` says which route the game uses.
+
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, and the current folder.
 
 ## Play with others
@@ -169,11 +185,14 @@ These tests show what text the port sends to the speech device. They cannot show
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game.
+- `scripts/fetch-nvda-controller.ps1` fetches NVDA's controller client, for the `nvda_direct` setting.
 
 ## Licenses
 
 The code is a port of the SoundRTS source code and keeps its BSD 3-clause license. See [LICENSE.txt](LICENSE.txt).
 
 On Windows the program links [Tolk](https://github.com/dkager/tolk) (LGPL 3) to reach the screen reader. Tolk loads `nvdaControllerClient64.dll` (LGPL 2.1, from NV Access) and `SAAPI64.dll`. The build copies both files next to the program. Keep them there when you copy the program somewhere else.
+
+For the `nvda_direct` setting, `scripts/fetch-nvda-controller.ps1` fetches NVDA's current controller client, `nvdaControllerClient.dll` (LGPL 2.1, from [NV Access](https://github.com/nvaccess/nvda/tree/master/extras/controllerClient)), with its license, into `vendor/nvda-controller`. The game loads it at run time and does not change it. The build copies the DLL next to the program when it has been fetched. The repository does not contain it.
 
 The listening room built with `--features binaural` links [Steam Audio](https://github.com/ValveSoftware/steam-audio) (Apache 2.0) through `phonon.dll`. The build copies `phonon.dll` next to `listening-room.exe`, with `phonon-THIRDPARTY.md`, which lists the licenses of the code inside the DLL. Keep both files next to the program when you copy it somewhere else.

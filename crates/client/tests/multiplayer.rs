@@ -468,11 +468,12 @@ fn turns_keep_running_while_the_game_menu_is_open() {
         .count();
     assert_eq!(done as i64, g.game.host.world_until_view().turn());
     // The news went on with the menu open; Escape chose to continue, and
-    // F10 then went to the game, which opened the menu again.
+    // F10 then went to the game, which opened the menu again. News cut off
+    // by either is said again after it.
     let said = h.said_since(said_from);
-    let (news, last) = said.split_at(said.len().saturating_sub(2));
+    let (news, menu): (Vec<_>, Vec<_>) = said.iter().partition(|s| s.contains(" at "));
     assert!(!news.is_empty(), "{said:#?}");
-    assert_eq!(last, ["continue game", "Menu"], "{said:#?}");
+    assert_eq!(menu, ["continue game", "Menu"], "{said:#?}");
 }
 
 #[test]

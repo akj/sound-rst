@@ -17,7 +17,7 @@ use soundrts::paths::Paths;
 use soundrts::record::GameRecord;
 use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
-use soundrts::tts::ScreenReaderSpeech;
+use soundrts::tts::screen_reader_speech;
 use soundrts::window::{self, WindowCommand, WindowLink};
 use soundrts::{mainmenu, notice, probe};
 
@@ -122,7 +122,10 @@ fn main() -> ExitCode {
                 }
             };
             let devices = Devices {
-                speech: Box::new(ScreenReaderSpeech::new()),
+                speech: Box::new(screen_reader_speech(
+                    config.nvda_direct != 0,
+                    game_log.clone(),
+                )),
                 audio,
                 input: Box::new(input),
                 clock,

@@ -56,6 +56,9 @@ pub struct Config {
     pub wait_delay_per_character: f64,
     /// Say when a player arrives on or leaves the server (1) or not (0).
     pub announce_arrivals: i64,
+    /// Speak through NVDA's own controller client, which says when speech
+    /// ends (1), or through Tolk only (0).
+    pub nvda_direct: i64,
 }
 
 impl Default for Config {
@@ -76,6 +79,7 @@ impl Default for Config {
             require_humans: 0,
             wait_delay_per_character: 0.1,
             announce_arrivals: 1,
+            nvda_direct: 0,
         }
     }
 }
@@ -170,7 +174,7 @@ fn text(s: &str) -> Option<String> {
 }
 
 impl Config {
-    fn rows(&self) -> [(&'static str, &'static str, String); 13] {
+    fn rows(&self) -> [(&'static str, &'static str, String); 14] {
         [
             ("general", "login", self.login.to_string()),
             ("general", "mods", self.mods.clone()),
@@ -193,6 +197,7 @@ impl Config {
                 "wait_delay_per_character",
                 py_float(self.wait_delay_per_character),
             ),
+            ("tts", "nvda_direct", self.nvda_direct.to_string()),
         ]
     }
 
@@ -262,8 +267,8 @@ impl Config {
         field!("server", fpct_max, int);
         field!("server", require_humans, int);
         field!("tts", wait_delay_per_character, float);
-        // Not an option of the original, whose files lack it: missing is
-        // not an error.
+        // Options of the port only: the original's files lack them, so
+        // missing is not an error.
         match read(&ini, "general", "announce_arrivals", int) {
             Read::Value(v) => c.announce_arrivals = v,
             Read::Missing => {}
@@ -271,6 +276,14 @@ impl Config {
                 log.warning(format!(
                     "announce_arrivals will be \"1\" instead of {raw:?}"
                 ));
+                error = true;
+            }
+        }
+        match read(&ini, "tts", "nvda_direct", int) {
+            Read::Value(v) => c.nvda_direct = v,
+            Read::Missing => {}
+            Read::Invalid(raw) => {
+                log.warning(format!("nvda_direct will be \"0\" instead of {raw:?}"));
                 error = true;
             }
         }
