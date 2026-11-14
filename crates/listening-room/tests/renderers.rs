@@ -3,7 +3,8 @@
 
 use listening_room::render::{BLOCK, Current, Renderer, StereoPlus, render_take};
 use listening_room::rng::Rng;
-use listening_room::scene::{Listener, Place, Point, RATE, Scene, Sound, Source};
+use listening_room::scene::{Listener, Point, RATE, Scene, Sound, Source};
+use listening_room::sounds::Sounds;
 
 fn noise(seconds: f64) -> Sound {
     let mut rng = Rng::new(3);
@@ -12,7 +13,7 @@ fn noise(seconds: f64) -> Sound {
         .collect()
 }
 
-fn scene(sound: &Sound, position: Point, loudness: f64, blocked: bool, place: Place) -> Scene {
+fn scene(sound: &Sound, position: Point, loudness: f64, blocked: bool) -> Scene {
     Scene {
         listener: Listener::NORTH,
         sources: vec![Source {
@@ -22,15 +23,12 @@ fn scene(sound: &Sound, position: Point, loudness: f64, blocked: bool, place: Pl
             loudness,
             blocked,
         }],
-        place,
     }
 }
 
 /// Renders one source standing still.
 fn still(r: &mut dyn Renderer, sound: &Sound, position: Point, seconds: f64) -> Vec<f32> {
-    render_take(r, seconds, &|_| {
-        scene(sound, position, 1.0, false, Place::Dry)
-    })
+    render_take(r, seconds, &|_| scene(sound, position, 1.0, false))
 }
 
 fn channel(out: &[f32], c: usize) -> Vec<f32> {
@@ -48,6 +46,50 @@ fn brightness(x: &[f32]) -> f64 {
     energy(&diff) / energy(x)
 }
 
+/// The energy of `x` between `low` and `high` Hz, from its spectrum.
+fn band_energy(x: &[f32], low: f64, high: f64) -> f64 {
+    let n = x.len().next_power_of_two();
+    let mut re: Vec<f64> = x.iter().map(|&s| f64::from(s)).collect();
+    re.resize(n, 0.0);
+    let mut im = vec![0.0; n];
+    // An in-place radix-2 FFT.
+    let mut j = 0;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j |= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let mut len = 2;
+    while len <= n {
+        let step = -std::f64::consts::TAU / len as f64;
+        for s in (0..n).step_by(len) {
+            for k in 0..len / 2 {
+                let (wi, wr) = (step * k as f64).sin_cos();
+                let (a, b) = (s + k, s + k + len / 2);
+                let (tr, ti) = (re[b] * wr - im[b] * wi, re[b] * wi + im[b] * wr);
+                (re[b], im[b]) = (re[a] - tr, im[a] - ti);
+                re[a] += tr;
+                im[a] += ti;
+            }
+        }
+        len <<= 1;
+    }
+    // Scaled so that the whole spectrum holds the signal's energy.
+    let hz = f64::from(RATE) / n as f64;
+    2.0 / n as f64
+        * (0..n / 2)
+            .filter(|&k| (low..high).contains(&(k as f64 * hz)))
+            .map(|k| re[k] * re[k] + im[k] * im[k])
+            .sum::<f64>()
+}
+
 fn largest_step(x: &[f32]) -> f32 {
     x.windows(2)
         .map(|w| (w[1] - w[0]).abs())
@@ -57,6 +99,38 @@ fn largest_step(x: &[f32]) -> f32 {
 const LEFT: Point = Point::new(-3.0, 0.0, 0.0);
 const FRONT: Point = Point::new(0.0, 3.0, 0.0);
 const BEHIND: Point = Point::new(0.0, -3.0, 0.0);
+
+#[test]
+fn the_spectrum_measure_finds_a_tone_in_its_band() {
+    let tone: Vec<f32> = (0..RATE as usize / 10)
+        .map(|i| (std::f64::consts::TAU * 9_000.0 * i as f64 / f64::from(RATE)).sin() as f32)
+        .collect();
+    let all = band_energy(&tone, 0.0, 24_000.0);
+    assert!((all / energy(&tone) - 1.0).abs() < 0.01, "Parseval: {all}");
+    assert!(band_energy(&tone, 8_000.0, 10_000.0) > 0.99 * all);
+}
+
+#[test]
+fn the_bright_sound_is_short_and_has_real_content_above_12_khz() {
+    let bright = Sounds::generated(String::new()).bright;
+    assert!(
+        bright.len() <= RATE as usize / 20,
+        "{} samples",
+        bright.len()
+    );
+    let all = band_energy(&bright, 0.0, 24_000.0);
+    let above_6 = band_energy(&bright, 6_000.0, 24_000.0) / all;
+    let above_12 = band_energy(&bright, 12_000.0, 24_000.0) / all;
+    assert!(above_6 > 0.6, "share above 6 kHz {above_6}");
+    assert!(above_12 > 0.3, "share above 12 kHz {above_12}");
+    // It starts at full strength within a millisecond.
+    let peak = bright.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let first = bright.iter().position(|s| s.abs() >= 0.5 * peak).unwrap();
+    assert!(
+        first < RATE as usize / 1000,
+        "reaches half its peak at {first}"
+    );
+}
 
 #[test]
 fn a_source_on_the_left_has_more_energy_on_the_left() {
@@ -98,13 +172,7 @@ fn a_jump_in_loudness_clicks_in_current_and_not_in_stereo_plus() {
     let take = |r: &mut dyn Renderer| {
         render_take(r, 1.0, &|t| {
             let loudness = if t < 0.5 { 0.1 } else { 1.0 };
-            scene(
-                &sound,
-                Point::new(0.0, 1.0, 0.0),
-                loudness,
-                false,
-                Place::Dry,
-            )
+            scene(&sound, Point::new(0.0, 1.0, 0.0), loudness, false)
         })
     };
     let current = channel(&take(&mut Current), 0);
@@ -127,33 +195,13 @@ fn stereo_plus_muffles_a_source_through_a_closed_exit() {
     let east = Point::new(12.0, 0.0, 0.0);
     let take = |blocked: bool| {
         let out = render_take(&mut StereoPlus::default(), 0.5, &|_| {
-            scene(&sound, east, 1.0, blocked, Place::Dry)
+            scene(&sound, east, 1.0, blocked)
         });
         channel(&out, 1)
     };
     let (open, closed) = (take(false), take(true));
     assert!(brightness(&closed) < 0.2 * brightness(&open));
     assert!(energy(&closed) < 0.5 * energy(&open));
-}
-
-#[test]
-fn stereo_plus_echoes_longer_in_a_mountain_pass_than_in_a_meadow_and_not_when_dry() {
-    // A short burst, then silence: what follows the burst is echo.
-    let burst: Sound = noise(0.05)
-        .iter()
-        .copied()
-        .chain(vec![0.0; RATE as usize])
-        .collect();
-    let tail = |place: Place| {
-        let out = render_take(&mut StereoPlus::default(), 1.0, &|_| {
-            scene(&burst, FRONT, 1.0, false, place)
-        });
-        energy(&out[2 * (RATE as usize / 5)..])
-    };
-    assert_eq!(tail(Place::Dry), 0.0);
-    let (meadow, pass) = (tail(Place::Meadow), tail(Place::MountainPass));
-    assert!(meadow > 0.0);
-    assert!(pass > 2.0 * meadow, "meadow {meadow}, pass {pass}");
 }
 
 #[test]
@@ -167,15 +215,32 @@ fn takes_are_whole_blocks_of_stereo() {
 mod binaural {
     use super::*;
     use listening_room::binaural::Binaural;
+    use listening_room::sounds::{Origin, train};
 
     fn binaural() -> Binaural {
         Binaural::new(None).expect("Steam Audio starts")
+    }
+
+    fn plus() -> Binaural {
+        Binaural::plus(None).expect("Steam Audio starts")
     }
 
     /// The first frame at which a channel reaches a tenth of its peak.
     fn onset(x: &[f32]) -> usize {
         let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         x.iter().position(|s| s.abs() >= 0.1 * peak).unwrap()
+    }
+
+    /// The game's own sounds, as the script plays them.
+    fn game_sounds() -> Sounds {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        let sounds = Sounds::load(Some(&root));
+        assert!(
+            matches!(sounds.origin, Origin::Game(_)),
+            "the game data is missing: run scripts/fetch-upstream.ps1"
+        );
+        sounds
     }
 
     #[test]
@@ -196,23 +261,73 @@ mod binaural {
         assert!(energy(&l) > 2.0 * energy(&r));
     }
 
+    /// The head model's front-behind cue points the right way: the ear
+    /// hears more above 6 kHz from a source in front than from the same
+    /// source behind.
     #[test]
-    fn a_source_behind_differs_from_the_same_source_in_front() {
+    fn a_broadband_source_in_front_has_more_treble_than_behind_in_both_ears() {
         let sound = noise(0.5);
         let front = still(&mut binaural(), &sound, FRONT, 0.5);
         let behind = still(&mut binaural(), &sound, BEHIND, 0.5);
-        let (bf, bb) = (
-            brightness(&channel(&front, 0)),
-            brightness(&channel(&behind, 0)),
+        for (ear, c) in [("left", 0), ("right", 1)] {
+            let f = band_energy(&channel(&front, c), 6_000.0, 24_000.0);
+            let b = band_energy(&channel(&behind, c), 6_000.0, 24_000.0);
+            eprintln!("binaural, {ear} ear, energy above 6 kHz: front {f:.4e}, behind {b:.4e}");
+            assert!(f > 1.05 * b, "{ear} ear: front {f}, behind {b}");
+        }
+    }
+
+    #[test]
+    fn binaural_plus_dulls_a_source_behind_and_leaves_it_alone_in_front() {
+        let sound = noise(0.5);
+        let plain_front = still(&mut binaural(), &sound, FRONT, 0.5);
+        let plus_front = still(&mut plus(), &sound, FRONT, 0.5);
+        assert_eq!(plain_front, plus_front);
+
+        let plain_behind = still(&mut binaural(), &sound, BEHIND, 0.5);
+        let plus_behind = still(&mut plus(), &sound, BEHIND, 0.5);
+        for c in 0..2 {
+            let (plain, plus) = (
+                brightness(&channel(&plain_behind, c)),
+                brightness(&channel(&plus_behind, c)),
+            );
+            eprintln!("behind, ear {c}: brightness binaural {plain}, binaural-plus {plus}");
+            assert!(plus < 0.5 * plain, "ear {c}: binaural {plain}, plus {plus}");
+        }
+    }
+
+    /// The script's front-or-behind takes: three sounds 3 metres in front
+    /// or behind. Plain binaural plays the game's footstep louder behind
+    /// (Steam Audio's head model lifts 1 to 2 kHz behind, where the
+    /// footstep has most of its energy); binaural-plus never does.
+    #[test]
+    fn binaural_plus_is_quieter_behind_than_in_front() {
+        let sounds = game_sounds();
+        let level = |r: &mut dyn Renderer, clips: &[Vec<f32>], at: Point| {
+            energy(&still(r, &train(clips, 0.45, 3), at, 2.0))
+        };
+        let footstep = |r: fn() -> Binaural, at| level(&mut r(), &sounds.footsteps, at);
+        let (front, behind) = (footstep(binaural, FRONT), footstep(binaural, BEHIND));
+        let db = |a: f64, b: f64| 10.0 * (a / b).log10();
+        eprintln!(
+            "binaural, footstep: behind against front {:+.2} dB",
+            db(behind, front)
         );
-        let diff: Vec<f32> = front.iter().zip(&behind).map(|(a, b)| a - b).collect();
-        let relative = energy(&diff) / energy(&front);
-        eprintln!("binaural: brightness front {bf}, behind {bb}; difference energy {relative}");
-        assert!(relative > 0.1, "front and behind differ by {relative}");
-        assert!(
-            (bf - bb).abs() > 0.05 * bf,
-            "brightness front {bf}, behind {bb}"
-        );
+        assert!(behind > front, "front {front}, behind {behind}");
+
+        let bright = std::slice::from_ref(&sounds.bright);
+        for (name, clips) in [
+            ("footstep", &sounds.footsteps[..]),
+            ("bright sound", bright),
+        ] {
+            let front = level(&mut plus(), clips, FRONT);
+            let behind = level(&mut plus(), clips, BEHIND);
+            eprintln!(
+                "binaural-plus, {name}: behind against front {:+.2} dB",
+                db(behind, front)
+            );
+            assert!(behind < front, "{name}: front {front}, behind {behind}");
+        }
     }
 
     #[test]
@@ -220,9 +335,7 @@ mod binaural {
         let sound = noise(0.5);
         let east = Point::new(12.0, 0.0, 0.0);
         let take = |blocked: bool| {
-            let out = render_take(&mut binaural(), 0.5, &|_| {
-                scene(&sound, east, 1.0, blocked, Place::Dry)
-            });
+            let out = render_take(&mut binaural(), 0.5, &|_| scene(&sound, east, 1.0, blocked));
             channel(&out, 1)
         };
         let (open, closed) = (take(false), take(true));
@@ -235,62 +348,5 @@ mod binaural {
         );
         assert!(brightness(&closed) < 0.5 * brightness(&open));
         assert!(energy(&closed) < 0.5 * energy(&open));
-    }
-
-    /// Steam Audio's parametric reverb, with decay times we supply and no
-    /// scene. After a short burst, the measured decay follows the middle
-    /// band's time, both ears get it, and they differ.
-    #[test]
-    fn the_parametric_reverb_follows_the_decay_times_we_give_it() {
-        let burst: Sound = noise(0.05)
-            .iter()
-            .copied()
-            .chain(vec![0.0; 4 * RATE as usize])
-            .collect();
-        let take = |place: Place| {
-            render_take(&mut binaural(), 4.0, &|_| {
-                scene(&burst, FRONT, 1.0, false, place)
-            })
-        };
-        let window = |out: &[f32], from: f64| {
-            let a = (from * f64::from(RATE)) as usize;
-            energy(&out[2 * a..2 * (a + RATE as usize / 10)])
-        };
-        // The time to fall 60 dB, from the fall over 0.2 to 1 second.
-        let rt60 = |out: &[f32]| {
-            let fall = 10.0 * (window(out, 0.2) / window(out, 0.9)).log10();
-            60.0 * 0.7 / fall
-        };
-        let dry = take(Place::Dry);
-        assert!(energy(&dry[2 * (RATE as usize / 5)..]) < 1e-9);
-        let forest = rt60(&take(Place::Forest));
-        let pass_take = take(Place::MountainPass);
-        let pass = rt60(&pass_take);
-        eprintln!(
-            "parametric reverb, measured RT60: forest {forest:.2} s, mountain pass {pass:.2} s"
-        );
-        let middle = |place: Place| f64::from(place.decay_times().unwrap()[1]);
-        assert!(
-            (forest / middle(Place::Forest) - 1.0).abs() < 0.3,
-            "forest {forest}"
-        );
-        assert!(
-            (pass / middle(Place::MountainPass) - 1.0).abs() < 0.3,
-            "pass {pass}"
-        );
-
-        let (l, r) = (channel(&pass_take, 0), channel(&pass_take, 1));
-        let tail = (0.3 * f64::from(RATE)) as usize;
-        let correlation = l[tail..]
-            .iter()
-            .zip(&r[tail..])
-            .map(|(a, b)| f64::from(a * b))
-            .sum::<f64>()
-            / (energy(&l[tail..]) * energy(&r[tail..])).sqrt();
-        assert!(energy(&r[tail..]) > 0.0);
-        assert!(
-            correlation.abs() < 0.5,
-            "left-right correlation {correlation}"
-        );
     }
 }

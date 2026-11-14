@@ -1,5 +1,6 @@
 //! The sounds the script plays: the game's own when its data is found,
-//! otherwise generated noise bursts.
+//! otherwise generated noise bursts, and a bright test sound that is always
+//! generated.
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +29,10 @@ pub struct Sounds {
     pub wings: [Clip; 2],
     /// A blacksmith at work (1300).
     pub building: Clip,
+    /// A short burst of white noise with a fast attack: unlike the game's
+    /// footsteps, most of its energy is above 6 kHz, where the head
+    /// model's cues for front and behind are.
+    pub bright: Clip,
     pub origin: Origin,
 }
 
@@ -71,6 +76,7 @@ impl Sounds {
             footsteps: [effect(1053)?, effect(1054)?],
             wings: [effect(1317)?, effect(1318)?],
             building: effect(1300)?,
+            bright: bright(),
             origin: Origin::Game(root.to_path_buf()),
         })
     }
@@ -97,9 +103,23 @@ impl Sounds {
             footsteps: [burst(0.06, 4_000.0, &step), burst(0.06, 3_000.0, &step)],
             wings: [burst(0.3, 1_500.0, &wing), burst(0.3, 1_200.0, &wing)],
             building: burst(1.5, 5_000.0, &knock),
+            bright: bright(),
             origin: Origin::Generated(reason),
         }
     }
+}
+
+/// 40 milliseconds of white noise, flat up to 24 kHz, that rises in half a
+/// millisecond and dies away by 60 dB in 40.
+fn bright() -> Clip {
+    let mut rng = Rng::new(2);
+    (0..RATE as usize / 25)
+        .map(|i| {
+            let t = i as f32 / RATE as f32;
+            let envelope = (t / 0.0005).min(1.0) * (-t / 0.0058).exp();
+            0.9 * envelope * rng.noise()
+        })
+        .collect()
 }
 
 /// Linear resampling to [`RATE`].

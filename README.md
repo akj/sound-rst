@@ -126,16 +126,31 @@ The listening room is a separate program that helps decide how the game's positi
 The renderers are:
 
 - `current`: the game's sound as it is now, left-right placement and loudness.
-- `stereo-plus`: the same, with volume changes that cannot click, a duller tone for sounds behind you, a muffled tone through a closed exit, and a simple echo.
-- `binaural`: Steam Audio with a model of the head, for headphones. It is in the program only if you build it with `--features binaural`.
+- `stereo-plus`: the same, with volume changes that cannot click, a duller tone for sounds behind you, and a muffled tone through a closed exit.
+- `binaural`: Steam Audio with a model of the head, for headphones.
+- `binaural-plus`: `binaural` with plain cues added for behind: a sound behind you is also duller, with the same filter as `stereo-plus`, and a little quieter.
+
+The two binaural renderers are in the program only if you build it with `--features binaural`.
 
 ```powershell
 cargo run -p listening-room -- --root vendor/soundrts-upstream
 ```
 
-The script has six steps: a footstep circling you, in front or behind, a sound passing overhead, a sound moving away, a neighbour through an open exit and a closed one, and the echo of a place. Each step plays the same sounds through each renderer in a random order, and tells you the order at the end of the step. To run only one step, add `--step 3`. To compare only some renderers, add for example `--renderers current,binaural`. Type `q` at any question to stop.
+The script has seven steps:
 
-The program saves your answers after each step in `listening-room-results.txt`, in the current folder. Send that file back.
+1. A footstep circling you. You rate how well you could follow it.
+2. In front or behind: three footsteps stand in front of you or behind you, and you say which.
+3. In front or behind, with a bright sound: the same, with a short burst of noise in place of the footsteps. This step is only for `binaural` and `binaural-plus`.
+4. Footsteps walking past: they walk from your right to your left, in front of you or behind you, and you say which.
+5. A sound passing overhead.
+6. A sound moving away.
+7. A neighbour through an open exit and a closed one.
+
+Steps 2, 3 and 4 have 4 trials for each renderer, half in front and half behind. With every renderer, a session has 40 of these trials. The other steps ask for a rating from 1 to 5.
+
+Each step plays the same sounds through each renderer in a random order, and tells you the order at the end of the step. To run only one step, add `--step 4`. To compare only some renderers, add for example `--renderers current,binaural`. Type `q` at any question to stop.
+
+The program saves your answers after each step in `listening-room-results.txt`, in the current folder. For steps 2, 3 and 4, the file records every trial: where the sound was, and what you answered. Send that file back.
 
 To build the binaural renderer, you need Clang: the C++ Clang tools of Visual Studio, or LLVM. If the build cannot find Clang, set `LIBCLANG_PATH` to the folder that holds `libclang.dll`. The first build downloads Steam Audio 4.8.1 (about 180 MB) into `target/steamaudio-cache` and checks its SHA-256.
 
@@ -146,6 +161,15 @@ cargo run -p listening-room --features binaural -- --root vendor/soundrts-upstre
 To try another model of the head, add `--sofa <file>`. The file must be a SOFA file in the SimpleFreeFieldHRIR convention.
 
 With `--render-to <folder>`, the program writes each sound to a WAV file in that folder and plays nothing. The tests use this option. Run the program with `--help` for every option.
+
+### What the first session found
+
+In the first session, `binaural` placed sounds well when they moved, but it got only 1 of 8 trials right in the in-front-or-behind step. Two measurements explain it:
+
+- The game's footstep has almost nothing above 4 kHz. Over headphones, the cues for front and behind are mostly above 4 to 5 kHz, so the head model had little to work with. The bright sound in step 3 has most of its energy above 6 kHz. If `binaural` places the bright sound correctly, the problem is the footstep sound, not the renderer.
+- Steam Audio's head model plays sound from behind louder than sound in front below 2 kHz, where the footstep has most of its energy, and mostly quieter above it. So the footstep was about half a decibel louder behind. If you take louder to mean in front, you hear it backwards. `binaural-plus` adds a duller tone and a lower volume behind, so the footstep and the bright sound are quieter behind than in front.
+
+The first session also showed that an echo cannot tell terrains apart, so the listening room no longer has one. Ambient sounds and footsteps for each terrain will do that job when the new sounds exist.
 
 ## Test
 

@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use crate::render::{Current, Renderer, StereoPlus, render_take};
 use crate::rng::Rng;
-use crate::scene::{Listener, Place, Point, RATE, Scene, Sound, Source};
-use crate::sounds::{Origin, Sounds, train};
+use crate::scene::{Listener, Point, RATE, Scene, Sound, Source};
+use crate::sounds::{Clip, Origin, Sounds, train};
 
 /// A renderer, by the name the player chooses it by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,22 +17,34 @@ pub enum Kind {
     Current,
     StereoPlus,
     Binaural,
+    BinauralPlus,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 3] = [Kind::Current, Kind::StereoPlus, Kind::Binaural];
+    pub const ALL: [Kind; 4] = [
+        Kind::Current,
+        Kind::StereoPlus,
+        Kind::Binaural,
+        Kind::BinauralPlus,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::Current => "current",
             Kind::StereoPlus => "stereo-plus",
             Kind::Binaural => "binaural",
+            Kind::BinauralPlus => "binaural-plus",
         }
+    }
+
+    /// Whether the renderer is on Steam Audio, and so uses the head model.
+    pub fn is_binaural(self) -> bool {
+        matches!(self, Kind::Binaural | Kind::BinauralPlus)
     }
 
     /// Whether this build has the renderer.
     pub fn is_built(self) -> bool {
-        self != Kind::Binaural || cfg!(feature = "binaural")
+        !self.is_binaural() || cfg!(feature = "binaural")
     }
 
     /// The renderers this build has.
@@ -45,12 +57,14 @@ impl Kind {
             .into_iter()
             .find(|k| k.name() == name)
             .ok_or_else(|| {
-                format!("There is no renderer called {name}. The renderers are current, stereo-plus and binaural.")
+                format!("There is no renderer called {name}. The renderers are current, stereo-plus, binaural and binaural-plus.")
             })?;
         if kind.is_built() {
             Ok(kind)
         } else {
-            Err("This build has no binaural renderer. Build it with: cargo build -p listening-room --release --features binaural".to_owned())
+            Err(format!(
+                "This build has no {name} renderer. Build it with: cargo build -p listening-room --release --features binaural"
+            ))
         }
     }
 
@@ -61,10 +75,12 @@ impl Kind {
             Kind::StereoPlus => Ok(Box::<StereoPlus>::default()),
             #[cfg(feature = "binaural")]
             Kind::Binaural => Ok(Box::new(crate::binaural::Binaural::new(sofa)?)),
+            #[cfg(feature = "binaural")]
+            Kind::BinauralPlus => Ok(Box::new(crate::binaural::Binaural::plus(sofa)?)),
             #[cfg(not(feature = "binaural"))]
-            Kind::Binaural => {
+            Kind::Binaural | Kind::BinauralPlus => {
                 let _ = sofa;
-                Err("This build has no binaural renderer.".to_owned())
+                Err(format!("This build has no {} renderer.", self.name()))
             }
         }
     }
@@ -99,8 +115,8 @@ impl Take {
     }
 }
 
-/// One source in a place, heard by a listener at the origin facing north.
-fn one(sound: &Sound, position: Point, blocked: bool, place: Place) -> Scene {
+/// One source, heard by a listener at the origin facing north.
+fn one(sound: &Sound, position: Point, blocked: bool) -> Scene {
     Scene {
         listener: Listener::NORTH,
         sources: vec![Source {
@@ -110,7 +126,6 @@ fn one(sound: &Sound, position: Point, blocked: bool, place: Place) -> Scene {
             loudness: 1.0,
             blocked,
         }],
-        place,
     }
 }
 
@@ -119,20 +134,33 @@ fn circling(s: &Sounds) -> Take {
     Take::new(10.5, move |t| {
         // Clockwise seen from above: ahead, right, behind, left.
         let a = TAU * t / 10.0;
-        one(
-            &sound,
-            Point::new(3.0 * a.sin(), 3.0 * a.cos(), 0.0),
-            false,
-            Place::Dry,
-        )
+        one(&sound, Point::new(3.0 * a.sin(), 3.0 * a.cos(), 0.0), false)
     })
 }
 
-fn front_or_behind(s: &Sounds, behind: bool) -> Take {
-    let sound = train(&s.footsteps, 0.45, 3);
+/// Three of `clips`, standing 3 metres in front or behind.
+fn standing(clips: &[Clip], behind: bool) -> Take {
+    let sound = train(clips, 0.45, 3);
     let y = if behind { -3.0 } else { 3.0 };
-    Take::new(2.0, move |_| {
-        one(&sound, Point::new(0.0, y, 0.0), false, Place::Dry)
+    Take::new(2.0, move |_| one(&sound, Point::new(0.0, y, 0.0), false))
+}
+
+fn footsteps_front_or_behind(s: &Sounds, behind: bool) -> Take {
+    standing(&s.footsteps, behind)
+}
+
+fn bright_front_or_behind(s: &Sounds, behind: bool) -> Take {
+    standing(std::slice::from_ref(&s.bright), behind)
+}
+
+/// Footsteps that walk from 4 metres to the right to 4 metres to the
+/// left, 2 metres in front or behind, in 4 seconds.
+fn walking_past(s: &Sounds, behind: bool) -> Take {
+    let sound = train(&s.footsteps, 0.5, 9);
+    let y = if behind { -2.0 } else { 2.0 };
+    Take::new(4.5, move |t| {
+        let x = 4.0 - 8.0 * (t / 4.0).min(1.0);
+        one(&sound, Point::new(x, y, 0.0), false)
     })
 }
 
@@ -140,7 +168,7 @@ fn overhead(s: &Sounds) -> Take {
     let sound = train(&s.wings, 0.35, 20);
     Take::new(7.5, move |t| {
         let y = 15.0 - 30.0 * (t / 7.0).min(1.0);
-        one(&sound, Point::new(0.0, y, 4.0), false, Place::Dry)
+        one(&sound, Point::new(0.0, y, 4.0), false)
     })
 }
 
@@ -148,7 +176,7 @@ fn receding(s: &Sounds) -> Take {
     let sound = train(&s.footsteps, 0.5, 24);
     Take::new(12.5, move |t| {
         let y = 1.0 + 39.0 * (t / 12.0).min(1.0);
-        one(&sound, Point::new(0.0, y, 0.0), false, Place::Dry)
+        one(&sound, Point::new(0.0, y, 0.0), false)
     })
 }
 
@@ -169,33 +197,9 @@ fn neighbour(s: &Sounds) -> Take {
     // A building on the next square east, 12 metres away. It is loud, so
     // that the closed exit stays audible at that distance.
     Take::new(seconds, move |t| {
-        let mut scene = one(&sound, Point::new(12.0, 0.0, 0.0), t >= switch, Place::Dry);
+        let mut scene = one(&sound, Point::new(12.0, 0.0, 0.0), t >= switch);
         scene.sources[0].loudness = 4.0;
         scene
-    })
-}
-
-/// The places of the terrain step, in the order it plays them.
-const PLACES: [Place; 5] = [
-    Place::Dry,
-    Place::Meadow,
-    Place::Forest,
-    Place::MountainPass,
-    Place::Town,
-];
-const PLACE_SECONDS: f64 = 5.5;
-
-fn terrain(s: &Sounds) -> Take {
-    let steps = train(&s.footsteps, 0.5, 6);
-    let every = (PLACE_SECONDS * f64::from(RATE)) as usize;
-    let mut samples = vec![0.0; every * PLACES.len()];
-    for k in 0..PLACES.len() {
-        samples[k * every..k * every + steps.len()].copy_from_slice(&steps);
-    }
-    let sound: Sound = samples.into();
-    Take::new(PLACE_SECONDS * PLACES.len() as f64, move |t| {
-        let place = PLACES[((t / PLACE_SECONDS) as usize).min(PLACES.len() - 1)];
-        one(&sound, Point::new(1.5, 1.5, 0.0), false, place)
     })
 }
 
@@ -206,8 +210,12 @@ enum Ask {
         question: &'static str,
         take: fn(&Sounds) -> Take,
     },
-    /// Eight trials in front or behind, in random order.
-    FrontOrBehind,
+    /// [`TRIALS`] trials, half in front and half behind, in random order.
+    FrontOrBehind {
+        /// What the summary calls the step.
+        label: &'static str,
+        take: fn(&Sounds, bool) -> Take,
+    },
 }
 
 struct Step {
@@ -217,17 +225,22 @@ struct Step {
     /// Said when the current renderer is in the step: the game today
     /// cannot do what the step tries, so its version is the baseline.
     current_note: Option<&'static str>,
+    /// The only renderers the step is for, if not all of them.
+    only: Option<&'static [Kind]>,
     ask: Ask,
 }
 
-const TRIALS: usize = 8;
+/// Trials for each renderer in a front-or-behind step. With all four
+/// renderers, a whole session has ten such runs: 40 trials.
+const TRIALS: usize = 4;
 
-const STEPS: [Step; 6] = [
+const STEPS: [Step; 7] = [
     Step {
         title: "a footstep circling you",
         slug: "circling",
         intro: "Footsteps go once round you: they start in front, go to your right, behind you, to your left, and back in front.",
         current_note: None,
+        only: None,
         ask: Ask::Rating {
             question: "How well could you follow the footsteps all the way round?",
             take: circling,
@@ -236,15 +249,42 @@ const STEPS: [Step; 6] = [
     Step {
         title: "in front or behind",
         slug: "front-or-behind",
-        intro: "You hear three footsteps, either in front of you or behind you. After each, say which. Each version has 8 of them, half in front and half behind, in random order.",
+        intro: "You hear three footsteps, either in front of you or behind you. After each, say which. Each version has 4 of them, half in front and half behind, in random order.",
         current_note: None,
-        ask: Ask::FrontOrBehind,
+        only: None,
+        ask: Ask::FrontOrBehind {
+            label: "footsteps",
+            take: footsteps_front_or_behind,
+        },
+    },
+    Step {
+        title: "in front or behind, with a bright sound",
+        slug: "front-or-behind-bright",
+        intro: "Step 2 again, for the two binaural renderers, with a short bright burst of noise in place of the footsteps. It tells whether the footstep sound or the renderer made front and behind hard. You hear three bursts, either in front of you or behind you. After each, say which. Each version has 4 of them, half in front and half behind, in random order.",
+        current_note: None,
+        only: Some(&[Kind::Binaural, Kind::BinauralPlus]),
+        ask: Ask::FrontOrBehind {
+            label: "bright sound",
+            take: bright_front_or_behind,
+        },
+    },
+    Step {
+        title: "footsteps walking past, in front or behind",
+        slug: "walking-past",
+        intro: "Footsteps start at your right and walk to your left, passing either in front of you or behind you. After each, say which. Each version has 4 of them, half in front and half behind, in random order.",
+        current_note: None,
+        only: None,
+        ask: Ask::FrontOrBehind {
+            label: "walking past",
+            take: walking_past,
+        },
     },
     Step {
         title: "a sound passing overhead",
         slug: "overhead",
         intro: "A dragon's wings come from in front of you, pass over your head, and go away behind you.",
         current_note: None,
+        only: None,
         ask: Ask::Rating {
             question: "How much did it sound like it passed over your head?",
             take: overhead,
@@ -255,6 +295,7 @@ const STEPS: [Step; 6] = [
         slug: "receding",
         intro: "Footsteps start just in front of you and walk straight away into the distance.",
         current_note: None,
+        only: None,
         ask: Ask::Rating {
             question: "How much did it sound like the footsteps moved away, and not only like they got quieter?",
             take: receding,
@@ -267,21 +308,10 @@ const STEPS: [Step; 6] = [
         current_note: Some(
             "The game today cannot muffle a sound, so the current renderer's version plays the open and the closed exit the same way.",
         ),
+        only: None,
         ask: Ask::Rating {
             question: "How clear was the difference between the open exit and the closed one?",
             take: neighbour,
-        },
-    },
-    Step {
-        title: "the echo of the place",
-        slug: "terrain",
-        intro: "Footsteps near you, five times: first with no echo, then in an open meadow, in a forest, in a mountain pass, and inside a town.",
-        current_note: Some(
-            "The game today has no echo, so the current renderer's version plays every place the same way.",
-        ),
-        ask: Ask::Rating {
-            question: "How well did the echoes tell the places apart?",
-            take: terrain,
         },
     },
 ];
@@ -352,8 +382,8 @@ struct Results {
     header: Vec<String>,
     steps: Vec<StepResult>,
     ratings: Vec<(Kind, u8)>,
-    /// Renderer, right, out of.
-    front_or_behind: Vec<(Kind, usize, usize)>,
+    /// Renderer, the step's label, right, out of.
+    front_or_behind: Vec<(Kind, &'static str, usize, usize)>,
 }
 
 impl Results {
@@ -366,12 +396,13 @@ impl Results {
                 .filter(|(k, _)| *k == kind)
                 .map(|(_, r)| *r)
                 .collect();
-            let (right, of) = self
+            let scores: Vec<String> = self
                 .front_or_behind
                 .iter()
-                .filter(|(k, _, _)| *k == kind)
-                .fold((0, 0), |(r, o), (_, a, b)| (r + a, o + b));
-            if ratings.is_empty() && of == 0 {
+                .filter(|(k, ..)| *k == kind)
+                .map(|(_, label, right, of)| format!("{label} {right} of {of} right"))
+                .collect();
+            if ratings.is_empty() && scores.is_empty() {
                 continue;
             }
             let mut parts = Vec::new();
@@ -384,8 +415,8 @@ impl Results {
                     if ratings.len() == 1 { "step" } else { "steps" }
                 ));
             }
-            if of > 0 {
-                parts.push(format!("in front or behind, {right} of {of} right"));
+            if !scores.is_empty() {
+                parts.push(format!("in front or behind: {}", scores.join(", ")));
             }
             lines.push(format!("{}: {}.", kind.name(), parts.join("; ")));
         }
@@ -487,11 +518,29 @@ impl Session<'_> {
 
     fn run_step(&mut self, number: usize, kinds: &[Kind]) -> Flow<()> {
         let step = &STEPS[number - 1];
+        let mut kinds: Vec<Kind> = kinds
+            .iter()
+            .copied()
+            .filter(|k| step.only.is_none_or(|only| only.contains(k)))
+            .collect();
+        if kinds.is_empty() {
+            let only: Vec<&str> = step
+                .only
+                .unwrap_or_default()
+                .iter()
+                .map(|k| k.name())
+                .collect();
+            self.say(&format!(
+                "Step {number} of {NUM_STEPS}: {}. This step is only for the {} renderers, and none of them is chosen, so it is skipped.",
+                step.title,
+                only.join(" and ")
+            ))?;
+            return Ok(());
+        }
         self.say(&format!(
             "Step {number} of {NUM_STEPS}: {}. {}",
             step.title, step.intro
         ))?;
-        let mut kinds: Vec<Kind> = kinds.to_vec();
         if let Some(note) = step.current_note
             && kinds.contains(&Kind::Current)
         {
@@ -535,13 +584,13 @@ impl Session<'_> {
                     self.results.ratings.push((kind, rating));
                     self.note(format!("  {}: {rating} out of 5", kind.name()))?;
                 }
-                Ask::FrontOrBehind => {
+                Ask::FrontOrBehind { label, take } => {
                     self.ask(&format!("Version {version} of {n}. Press Enter to start."))?;
                     let mut trials = [false, true].repeat(TRIALS / 2);
                     self.rng.shuffle(&mut trials);
                     let (mut right, mut right_front, mut right_behind) = (0, 0, 0);
                     for (t, &behind) in trials.iter().enumerate() {
-                        let take = front_or_behind(&self.sounds, behind);
+                        let take = take(&self.sounds, behind);
                         let truth = if behind { "behind" } else { "front" };
                         let file = format!(
                             "step{number}-{}-{}-trial{}-{truth}.wav",
@@ -575,9 +624,19 @@ impl Session<'_> {
                         } else {
                             self.say("Wrong: it was in front.")?;
                         }
+                        let side = |b: bool| if b { "behind" } else { "in front" };
+                        self.note(format!(
+                            "  {}, trial {}: {}, answered {}",
+                            kind.name(),
+                            t + 1,
+                            side(behind),
+                            side(said_behind)
+                        ))?;
                     }
                     self.say(&format!("Version {version}: {right} of {TRIALS} right."))?;
-                    self.results.front_or_behind.push((kind, right, TRIALS));
+                    self.results
+                        .front_or_behind
+                        .push((kind, label, right, TRIALS));
                     self.note(format!(
                         "  {}: {right} of {TRIALS} right (in front {right_front} of {half}, behind {right_behind} of {half})",
                         kind.name(),
@@ -613,7 +672,7 @@ fn calibrate(kinds: &[Kind], sofa: Option<&Path>) -> Result<Vec<(Kind, f32)>, St
     let level = |kind: Kind| -> Result<f32, String> {
         let mut renderer = kind.make(sofa)?;
         let out = render_take(renderer.as_mut(), 0.5, &|_| {
-            one(&noise, Point::new(0.0, 2.0, 0.0), false, Place::Dry)
+            one(&noise, Point::new(0.0, 2.0, 0.0), false)
         });
         Ok((out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt())
     };
@@ -659,15 +718,15 @@ pub fn run(opts: &Options, input: &mut dyn BufRead, out: &mut dyn Write) -> Resu
         ),
     };
     let head = match &opts.sofa {
-        Some(p) => format!("Head model for binaural: {}.", p.display()),
-        None => "Head model for binaural: Steam Audio's default.".to_owned(),
+        Some(p) => format!("Head model for the binaural renderers: {}.", p.display()),
+        None => "Head model for the binaural renderers: Steam Audio's default.".to_owned(),
     };
     let mut header = vec![
         "Listening room results".to_owned(),
         format!("Renderers: {}.", names.join(", ")),
         sounds_line.clone(),
     ];
-    if opts.kinds.contains(&Kind::Binaural) {
+    if opts.kinds.iter().any(|k| k.is_binaural()) {
         header.push(head.clone());
     }
     header.push(format!(
@@ -698,7 +757,7 @@ pub fn run(opts: &Options, input: &mut dyn BufRead, out: &mut dyn Write) -> Resu
         .say(&format!("Renderers: {}.", names.join(", ")))
         .map_err(io)?;
     session.say(&sounds_line).map_err(io)?;
-    if opts.kinds.contains(&Kind::Binaural) {
+    if opts.kinds.iter().any(|k| k.is_binaural()) {
         session.say(&head).map_err(io)?;
     }
     session
