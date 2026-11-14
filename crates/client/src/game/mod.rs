@@ -418,7 +418,10 @@ impl GameInterface {
     /// Takes what the host tells the seat between turns, after a cheat
     /// that changed the game at once: the answers are from it from now
     /// on. After playing as another player, the seat is that player's, and
-    /// what the interface remembered of the game starts again.
+    /// what the interface remembered of the game starts again. An end of
+    /// turn of the previous seat still waiting in the queue brings the
+    /// interface's copies up to date with that seat's entities and squares;
+    /// the new seat notes only what it sees itself.
     pub(crate) fn install_at_once(&mut self, told: TurnMessage) {
         if told.seat == self.me {
             self.seat.install(told);
