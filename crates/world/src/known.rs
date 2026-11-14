@@ -60,9 +60,13 @@ pub struct KnownEntity {
     /// For a building site, the type of the building it becomes.
     pub site_type: Option<TypeId>,
     /// The unit's number among its owner's units of its type: the `3` of
-    /// `footman 3`. The owner's interface names its units with it; any
-    /// interface reads it to decide whether a unit added by the map is
-    /// worth saying.
+    /// `footman 3`. The owner's interface names its units with it.
+    ///
+    /// A leak, kept so that nothing said changes: only the owner should
+    /// know it, since it follows the owner's other units of the type, but
+    /// the interface reads it for any unit a map adds, to decide whether
+    /// the arrival is worth saying. A host should not send it for another
+    /// player's unit once that decision no longer needs it.
     pub number: Option<i64>,
     /// The exit it blocks: it also stands on the square on the other side.
     pub blocked_exit: Option<EntityId>,
