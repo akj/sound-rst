@@ -857,8 +857,14 @@ impl Voice {
     /// said, since the end of a game is often what it tells; so is the
     /// message being said. A walk through the history ends with it.
     pub fn end_game(&mut self) {
-        self.history = false;
         let being_said = self.active.then_some(self.current);
+        if std::mem::take(&mut self.history)
+            && let Some(e) = being_said.and_then(|i| self.log.get_mut(i))
+            && e.heard == (Heard::Waiting { sounds_only: true })
+        {
+            // Said from the history with its words: heard once it ends.
+            e.heard = Heard::Waiting { sounds_only: false };
+        }
         for (i, e) in self.log.iter_mut().enumerate() {
             let ahead = e.category().is_some_and(|c| Category::AHEAD.contains(&c));
             if e.is_waiting() && !ahead && being_said != Some(i) {

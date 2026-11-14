@@ -186,6 +186,36 @@ fn the_end_of_a_game_ends_a_walk_through_the_history() {
 }
 
 #[test]
+fn a_message_said_from_the_history_when_the_game_ends_is_heard() {
+    let mut h = Harness::new("en", Script::new());
+    // Under the sound policy, words without a sound wait to be heard.
+    let chime = || {
+        let mut m = vec![MsgPart::Num(6114)];
+        m.extend(t("bell"));
+        News::new(Category::Production, m)
+    };
+    info(&mut h.client.voice, "one");
+    run(&mut h, 1.0);
+    // The bell's sound starts; the history goes back to "one", then says
+    // the bell, still waiting, with its words.
+    h.client.voice.news(chime(), Policy::Sound);
+    h.client.voice.previous();
+    while h.spoken().len() < 3 {
+        run(&mut h, 0.1);
+    }
+    assert_eq!(h.spoken(), ["one", "one", "bell"]);
+    h.client.voice.end_game();
+    run(&mut h, 3.0);
+    assert_eq!(
+        log(&h),
+        [
+            ("one".to_owned(), Heard::Yes),
+            ("6114 bell".to_owned(), Heard::Yes)
+        ]
+    );
+}
+
+#[test]
 fn a_key_press_does_not_cut_an_alert_and_is_dropped() {
     let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Down));
     h.client.voice.alert(&t(LONG));
