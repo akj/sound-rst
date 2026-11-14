@@ -86,96 +86,192 @@ length 6116 3719
 @76484 voice item "Modify your login"
 @78184 sounds 1 e79e59e003084105
 @78184 step 29 key DOWN
-@78184 voice item "Mods"
-@78584 sounds 1 a40905af71716214
-@78584 step 30 key RETURN
-@78584 voice confirmation "Mods"
-@78994 voice menu "Mods"
-@79394 sounds 1 64a451ff6e32ee31
-@79394 step 31 key DOWN
-@79394 voice item "nothing! ,"
-@80394 sounds 1 a01ed35158663f2a
-@80394 step 32 key DOWN
-@80394 voice item "flyingtownhall ,"
-@81994 sounds 1 a09b662b7d32f3e6
-@81994 step 33 key DOWN
-@81994 voice item "orc ,"
-@82494 sounds 1 820f806c144edb61
-@82494 step 34 key DOWN
-@82494 voice item "teleportation ,"
-@83994 sounds 1 180ff356240c69dd
-@83994 step 35 key DOWN
-@83994 voice item "go back to the previous menu ,"
-@86994 sounds 1 e68d5cc025e0e503
-@86994 step 36 key DOWN
-@86994 voice item "nothing! ,"
-@87994 sounds 1 d4d03633b022447a
-@87994 step 37 key ESCAPE
-@87994 voice confirmation "go back to the previous menu"
-@90804 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@95904 sounds 1 2b6ff29b69daa662
-@95904 step 38 key DOWN
-@95904 voice item "single player, , play on your computer"
-@99704 sounds 1 81331a0dffdc0687
-@99704 step 39 key DOWN
-@99704 voice item "multiplayer, , play on the Internet"
-@103204 sounds 1 18ce0c4270af3545
-@103204 step 40 key DOWN
-@103204 voice item "options, , modify your parameters"
-@106504 sounds 1 ed8c3b4e05ef9db0
-@106504 step 41 key DOWN
-@106504 voice item "quit, , quit this program"
-@109004 sounds 1 0e31280ab096cad8
-@109004 step 42 key DOWN
-@109004 voice item "single player, , play on your computer"
-@112804 sounds 1 614be16eaae52720
-@112804 step 43 key DOWN
-@112804 voice item "multiplayer, , play on the Internet"
-@116304 sounds 1 669224c9e90ceedc
-@116304 step 44 key DOWN
-@116304 voice item "options, , modify your parameters"
-@119604 sounds 1 47b7e9217061e105
-@119604 step 45 key RETURN
-@119604 voice confirmation "options,"
-@120414 voice menu "options menu"
-@121614 sounds 1 e7cda1cb442c1c04
-@121614 step 46 key DOWN
-@121614 voice item "Modify your login"
-@123314 sounds 1 f609ffaaddfba001
-@123314 step 47 key DOWN
-@123314 voice item "Mods"
-@123714 sounds 1 ba38e8dbd7d786c8
-@123714 step 48 key DOWN
-@123714 voice item "Soundpacks"
-@124714 sounds 1 d23b167c9ba59e5c
-@124714 step 49 key RETURN
-@124714 voice confirmation "Soundpacks"
-@125724 voice menu "Soundpacks"
-@126724 sounds 1 78f7b40ca1f8e68e
-@126724 step 50 key DOWN
-@126724 voice item "nothing! ,"
-@127724 sounds 1 1b884a8ef38b40ae
-@127724 step 51 key DOWN
-@127724 voice item "soundpack ,"
-@128824 sounds 1 a40f0cf37d42f7af
-@128824 step 52 key DOWN
-@128824 voice item "go back to the previous menu ,"
-@131824 sounds 1 6a19fad77286fc5d
-@131824 step 53 key DOWN
-@131824 voice item "nothing! ,"
-@132824 sounds 1 a43bf068eff690bb
-@132824 step 54 key UP
-@132824 voice item "go back to the previous menu ,"
-@135824 sounds 1 a42fe73a78eb7334
-@135824 step 55 key UP
-@135824 voice item "soundpack ,"
-@136924 sounds 1 e687dfcc3ead6847
-@136924 step 56 key RETURN
-@136924 voice confirmation "soundpack"
-@137834 title SoundRTS 1.3.8.1  soundpack
-@137834 voice menu "SoundRTS 1.3.8.1  soundpack, please make a selection"
-@143834 sounds 1 b3d77b77708d967e
-@143834 step 57 key ESCAPE
-@143834 voice confirmation "quit,"
-@144344 sounds 1 90bb6bba28a144f4
-@144344 exit
+@78184 voice item "sound and speech"
+@79784 sounds 1 a40905af71716214
+@79784 step 30 key RETURN
+@79784 voice confirmation "sound and speech"
+@81394 voice menu "sound and speech"
+@82994 sounds 1 41c08f75dcee4092
+@82994 step 31 key DOWN
+@82994 voice item "volume , 50 percent , Enter or Home raises it, End lowers it"
+@89394 sounds 1 98991b851bb6b6b6
+@89394 step 32 key DOWN
+@89394 voice item "alert , spoken"
+@90794 sounds 1 e6e00f5eb1c8054f
+@90794 step 33 key DOWN
+@90794 voice item "production , spoken"
+@92694 sounds 1 699417247094fb4d
+@92694 step 34 key DOWN
+@92694 voice item "economy , spoken"
+@94294 sounds 1 53d1011a6a534234
+@94294 step 35 key DOWN
+@94294 voice item "scouting , spoken"
+@95994 sounds 1 0e3a86f33c6a324a
+@95994 step 36 key DOWN
+@95994 voice item "chat , spoken"
+@97294 sounds 1 046535c27b8f80e6
+@97294 step 37 key DOWN
+@97294 voice item "system , spoken"
+@98794 sounds 1 748b56d506d51c39
+@98794 step 38 key DOWN
+@98794 voice item "story , spoken"
+@100194 sounds 1 07a96c392066c675
+@100194 step 39 key DOWN
+@100194 voice item "NVDA tells the game when it has finished speaking , off , this needs NVDA's current controller client and works from the next start: turn it off if messages stop, overlap, or wait too long"
+@118994 sounds 1 8cd81cd1a054b853
+@118994 step 40 key DOWN
+@118994 voice item "speech rate , 10 characters a second , press Enter to measure it"
+@125794 sounds 1 e52a16ad86199ad0
+@125794 step 41 key DOWN
+@125794 voice item "go back to the previous menu"
+@128594 sounds 1 0e7bd356d401eefa
+@128594 step 42 key DOWN
+@128594 voice item "volume , 50 percent , Enter or Home raises it, End lowers it"
+@134994 sounds 1 924e73c06b212521
+@134994 step 43 key RETURN
+@135004 voice item "60 percent of the volume"
+@137804 sounds 1 ac24d0d47efaaac3
+@137804 step 44 key END
+@137804 voice item "50 percent of the volume"
+@140604 step 45 key DOWN
+@140604 voice item "alert , spoken"
+@142004 sounds 1 bf0d462e7a8a81f3
+@142004 step 46 key RETURN
+@142014 voice item "its sound only"
+@143414 sounds 1 c3ea90b5dd439bae
+@143414 step 47 key RETURN
+@143424 voice item "kept silently in the log"
+@145824 sounds 1 0b71da7b7260782a
+@145824 step 48 key RETURN
+@145834 voice item "dropped"
+@146534 sounds 1 f51c2c734d71ee4b
+@146534 step 49 key RETURN
+@146544 voice item "spoken"
+@147144 sounds 1 a9e89f5d541c7166
+@147144 step 50 key s
+@147144 voice item "scouting , spoken"
+@148844 sounds 1 3479431a3cedcbe1
+@148844 step 51 key SHIFT s
+@148844 voice item "speech rate , 10 characters a second , press Enter to measure it"
+@155644 sounds 1 d00bd0c0bc9533f9
+@155644 step 52 key RETURN
+@155654 voice item "press a key to hear a sentence, then press a key the moment it ends. Escape cancels."
+@164054 sounds 1 527c631678034b60
+@164054 step 53 key SPACE
+@164054 voice item "This sentence measures how fast your screen reader speaks, so that each message of the game can follow the last one without a gap."
+@177054 step 54 key RETURN
+@177054 voice item "measured: 10 characters a second . to measure again, press Enter"
+@183854 step 55 key RETURN
+@183864 voice item "press a key to hear a sentence, then press a key the moment it ends. Escape cancels."
+@192264 sounds 1 1b33ac036f661b06
+@192264 step 56 key SPACE
+@192264 voice item "This sentence measures how fast your screen reader speaks, so that each message of the game can follow the last one without a gap."
+@192764 step 57 interrupt_after 0.5 key RETURN
+@192764 voice item "the key came too early to be the end of the sentence , nothing changed . to try again, press Enter"
+@202564 step 58 key ESCAPE
+@202564 voice confirmation "go back to the previous menu"
+@205374 voice menu "options menu"
+@206574 sounds 1 32cf0fc947761e58
+@206574 step 59 key DOWN
+@206574 voice item "Modify your login"
+@208274 sounds 1 48bd620aa1bd726c
+@208274 step 60 key DOWN
+@208274 voice item "sound and speech"
+@209874 sounds 1 0665b69380672a83
+@209874 step 61 key DOWN
+@209874 voice item "Mods"
+@210274 sounds 1 67fec51fae2672dc
+@210274 step 62 key RETURN
+@210274 voice confirmation "Mods"
+@210684 voice menu "Mods"
+@211084 sounds 1 2ab9960123dc035d
+@211084 step 63 key DOWN
+@211084 voice item "nothing! ,"
+@212084 sounds 1 5b6e5820002457fc
+@212084 step 64 key DOWN
+@212084 voice item "flyingtownhall ,"
+@213684 sounds 1 4648474fc7d85c33
+@213684 step 65 key DOWN
+@213684 voice item "orc ,"
+@214184 sounds 1 1e64affd1f1ad088
+@214184 step 66 key DOWN
+@214184 voice item "teleportation ,"
+@215684 sounds 1 a2e646ae3489b8a2
+@215684 step 67 key DOWN
+@215684 voice item "go back to the previous menu ,"
+@218684 sounds 1 6ba60490c69670f2
+@218684 step 68 key DOWN
+@218684 voice item "nothing! ,"
+@219684 sounds 1 74f0a7acae79471b
+@219684 step 69 key ESCAPE
+@219684 voice confirmation "go back to the previous menu"
+@222494 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@227594 sounds 1 48fcc3d97018431b
+@227594 step 70 key DOWN
+@227594 voice item "single player, , play on your computer"
+@231394 sounds 1 a5a98e61b98f3679
+@231394 step 71 key DOWN
+@231394 voice item "multiplayer, , play on the Internet"
+@234894 sounds 1 ea557ed42601cfae
+@234894 step 72 key DOWN
+@234894 voice item "options, , modify your parameters"
+@238194 sounds 1 f648a5ecc9d1b8ba
+@238194 step 73 key DOWN
+@238194 voice item "quit, , quit this program"
+@240694 sounds 1 4a1a39e1bacce2b9
+@240694 step 74 key DOWN
+@240694 voice item "single player, , play on your computer"
+@244494 sounds 1 5387f685d02a3de9
+@244494 step 75 key DOWN
+@244494 voice item "multiplayer, , play on the Internet"
+@247994 sounds 1 4749e35717c07c1b
+@247994 step 76 key DOWN
+@247994 voice item "options, , modify your parameters"
+@251294 sounds 1 b4f9be21107bc32b
+@251294 step 77 key RETURN
+@251294 voice confirmation "options,"
+@252104 voice menu "options menu"
+@253304 sounds 1 27b613064b3e0d6a
+@253304 step 78 key DOWN
+@253304 voice item "Modify your login"
+@255004 sounds 1 a9cb39ec7d9a0de7
+@255004 step 79 key DOWN
+@255004 voice item "sound and speech"
+@256604 sounds 1 85a0db4e06fcde84
+@256604 step 80 key DOWN
+@256604 voice item "Mods"
+@257004 sounds 1 88445782e104dfe5
+@257004 step 81 key DOWN
+@257004 voice item "Soundpacks"
+@258004 sounds 1 379c06a37a5f88ea
+@258004 step 82 key RETURN
+@258004 voice confirmation "Soundpacks"
+@259014 voice menu "Soundpacks"
+@260014 sounds 1 854a02bc52e94c00
+@260014 step 83 key DOWN
+@260014 voice item "nothing! ,"
+@261014 sounds 1 e9d753d6c94238ad
+@261014 step 84 key DOWN
+@261014 voice item "soundpack ,"
+@262114 sounds 1 93e9b2a11f2241fc
+@262114 step 85 key DOWN
+@262114 voice item "go back to the previous menu ,"
+@265114 sounds 1 c7000633236e3498
+@265114 step 86 key DOWN
+@265114 voice item "nothing! ,"
+@266114 sounds 1 1cb5010bf75b2133
+@266114 step 87 key UP
+@266114 voice item "go back to the previous menu ,"
+@269114 sounds 1 6f60a36508f41854
+@269114 step 88 key UP
+@269114 voice item "soundpack ,"
+@270214 sounds 1 fa0eb97036aead7f
+@270214 step 89 key RETURN
+@270214 voice confirmation "soundpack"
+@271124 title SoundRTS 1.3.8.1  soundpack
+@271124 voice menu "SoundRTS 1.3.8.1  soundpack, please make a selection"
+@277124 sounds 1 e0658978b2f6b6f1
+@277124 step 90 key ESCAPE
+@277124 voice confirmation "quit,"
+@277634 sounds 1 7de6a1882996bcb0
+@277634 exit

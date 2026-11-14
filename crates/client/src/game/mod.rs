@@ -285,7 +285,7 @@ impl GameInterface {
         GameInterface {
             host,
             me,
-            speed: cx.config.speed as f64,
+            speed: cx.config.speed,
             dobjets: IndexMap::new(),
             scouted_squares: BTreeSet::new(),
             scouted_before_squares: BTreeSet::new(),

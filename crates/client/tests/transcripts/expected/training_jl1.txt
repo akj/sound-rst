@@ -740,16 +740,16 @@ length 9999 208980
 @781351 step 242 key HOME
 @781351 voice item "60 percent of the volume"
 @784151 voice info "9 wood"
-@784952 sounds 21 7cd8b55adea4a4c2
+@784952 sounds 19 6ae9aac48a70c07f
 @784952 step 243 key KP_PLUS
 @784952 voice item "70 percent of the volume"
-@787752 sounds 20 5bd9a92de10c08e6
+@787752 sounds 18 5afb3f713d5cdf99
 @787752 step 244 key END
 @787752 voice item "60 percent of the volume"
-@790552 sounds 17 8e7c52b3be5b1202
+@790552 sounds 15 2aee7434fb8a1773
 @790552 step 245 key KP_MINUS
 @790552 voice item "50 percent of the volume"
-@793352 sounds 14 cb4d90642a468e87
+@793352 sounds 12 63e45d2dd8fa2c80
 @793352 step 246 key CTRL BACKQUOTE
 @793651 sounds 2 8cb3d94e432f120e
 @793651 step 247 key CTRL F3

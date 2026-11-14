@@ -47,7 +47,10 @@ pub struct Config {
     pub mods: String,
     pub soundpacks: String,
     pub num_channels: i64,
-    pub speed: i64,
+    /// The speed a single-player game starts at: 1 is normal.
+    pub speed: f64,
+    /// The main volume of the game's sounds, in percent.
+    pub main_volume: u8,
     /// What the player hears of each category of news (`[news]`).
     pub news: Policies,
     pub debug_mode: i64,
@@ -55,6 +58,8 @@ pub struct Config {
     pub fpct_coef: f64,
     pub fpct_max: i64,
     pub require_humans: i64,
+    /// How long the screen reader takes to say one character, in seconds:
+    /// the game estimates from it when speech ends.
     pub wait_delay_per_character: f64,
     /// Say when a player arrives on or leaves the server (1) or not (0).
     pub announce_arrivals: i64,
@@ -70,7 +75,8 @@ impl Default for Config {
             mods: String::new(),
             soundpacks: String::new(),
             num_channels: 16,
-            speed: 1,
+            speed: 1.0,
+            main_volume: 50,
             news: Policies::default(),
             debug_mode: 0,
             timeout: 60.0,
@@ -91,6 +97,16 @@ type Ini = HashMap<String, HashMap<String, String>>;
 /// Formats a float as Python's `str()` does for ordinary values.
 fn py_float(v: f64) -> String {
     format!("{v:?}")
+}
+
+/// Formats a whole number without a decimal point, as the original game
+/// wrote the options it reads as integers.
+fn number(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        py_float(v)
+    }
 }
 
 fn parse_ini(text: &str) -> Result<Ini, String> {
@@ -207,6 +223,17 @@ fn float(s: &str) -> Option<f64> {
     s.trim().replace('_', "").parse().ok()
 }
 
+/// A float above 0: a speed or a duration.
+fn positive(s: &str) -> Option<f64> {
+    float(s).filter(|v| v.is_finite() && *v > 0.0)
+}
+
+fn percent(s: &str) -> Option<u8> {
+    int(s)
+        .and_then(|v| u8::try_from(v).ok())
+        .filter(|v| *v <= 100)
+}
+
 fn text(s: &str) -> Option<String> {
     Some(s.to_owned())
 }
@@ -218,7 +245,8 @@ impl Config {
             ("general", "mods", self.mods.clone()),
             ("general", "soundpacks", self.soundpacks.clone()),
             ("general", "num_channels", self.num_channels.to_string()),
-            ("general", "speed", self.speed.to_string()),
+            ("general", "speed", number(self.speed)),
+            ("general", "main_volume", self.main_volume.to_string()),
             ("general", "debug_mode", self.debug_mode.to_string()),
             (
                 "general",
@@ -300,33 +328,35 @@ impl Config {
         field!("general", mods, text);
         field!("general", soundpacks, text);
         field!("general", num_channels, int);
-        field!("general", speed, int);
+        field!("general", speed, positive);
         field!("general", debug_mode, int);
         field!("server", timeout, float);
         field!("server", fpct_coef, float);
         field!("server", fpct_max, int);
         field!("server", require_humans, int);
-        field!("tts", wait_delay_per_character, float);
+        field!("tts", wait_delay_per_character, positive);
         // Options of the port only: the original's files lack them, so
         // missing is not an error.
-        match read(&ini, "general", "announce_arrivals", int) {
-            Read::Value(v) => c.announce_arrivals = v,
-            Read::Missing => {}
-            Read::Invalid(raw) => {
-                log.warning(format!(
-                    "announce_arrivals will be \"1\" instead of {raw:?}"
-                ));
-                error = true;
-            }
+        macro_rules! port_field {
+            ($section:literal, $name:ident, $convert:expr) => {
+                match read(&ini, $section, stringify!($name), $convert) {
+                    Read::Value(v) => c.$name = v,
+                    Read::Missing => {}
+                    Read::Invalid(raw) => {
+                        log.warning(format!(
+                            "{} will be {:?} instead of {:?}",
+                            stringify!($name),
+                            c.$name.to_string(),
+                            raw
+                        ));
+                        error = true;
+                    }
+                }
+            };
         }
-        match read(&ini, "tts", "nvda_direct", int) {
-            Read::Value(v) => c.nvda_direct = v,
-            Read::Missing => {}
-            Read::Invalid(raw) => {
-                log.warning(format!("nvda_direct will be \"0\" instead of {raw:?}"));
-                error = true;
-            }
-        }
+        port_field!("general", main_volume, percent);
+        port_field!("general", announce_arrivals, int);
+        port_field!("tts", nvda_direct, int);
         // The original's `verbosity` chooses the policies once: the file is
         // then rewritten with a `[news]` section instead.
         let mut outdated = false;

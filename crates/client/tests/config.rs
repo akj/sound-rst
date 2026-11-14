@@ -36,7 +36,7 @@ fn test_load_defaults_if_file_doesnt_exist() {
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
         "[general]\nlogin = player\nmods = \nsoundpacks = \nnum_channels = 16\nspeed = 1\n\
-         debug_mode = 0\nannounce_arrivals = 1\n\n[server]\ntimeout = 60.0\nfpct_coef = 2.3\nfpct_max = 3\nrequire_humans = 0\n\n\
+         main_volume = 50\ndebug_mode = 0\nannounce_arrivals = 1\n\n[server]\ntimeout = 60.0\nfpct_coef = 2.3\nfpct_max = 3\nrequire_humans = 0\n\n\
          [tts]\nwait_delay_per_character = 0.1\nnvda_direct = 0\n\n\
          [news]\nalert = speak\nproduction = speak\neconomy = speak\nscouting = speak\nchat = speak\nsystem = speak\nstory = speak\n\n"
     );
@@ -188,4 +188,58 @@ fn a_verbosity_line_beside_a_news_section_is_ignored() {
     assert_eq!(reading, Reading::Outdated);
     assert_eq!(c.news.of(Category::Production), Policy::Speak);
     assert_eq!(c.news.of(Category::Alert), Policy::Log);
+}
+
+#[test]
+fn the_volume_and_a_slow_speed_survive_a_save() {
+    let mut c = Config {
+        main_volume: 70,
+        speed: 0.5,
+        ..Config::default()
+    };
+    let text = c.to_ini();
+    assert!(text.contains("\nspeed = 0.5\nmain_volume = 70\n"), "{text}");
+    let (read, reading) = Config::from_ini(&text, &Log::silent());
+    assert_eq!(reading, Reading::Clean);
+    assert_eq!((read.main_volume, read.speed), (70, 0.5));
+    // A whole speed is written as the original wrote it.
+    c.speed = 2.0;
+    assert!(c.to_ini().contains("\nspeed = 2\n"));
+}
+
+#[test]
+fn an_invalid_volume_speed_or_speech_rate_takes_its_default_and_is_logged() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("client.log");
+    let log = Log::file_only(&log_path);
+    let mut text = Config::default().to_ini();
+    for (from, to) in [
+        ("main_volume = 50", "main_volume = 150"),
+        ("speed = 1", "speed = 0"),
+        (
+            "wait_delay_per_character = 0.1",
+            "wait_delay_per_character = -1",
+        ),
+    ] {
+        text = text.replace(from, to);
+    }
+    let (c, reading) = Config::from_ini(&text, &log);
+    assert_eq!(reading, Reading::Errors);
+    assert_eq!(c.main_volume, 50);
+    assert_eq!(c.speed, 1.0);
+    assert_eq!(c.wait_delay_per_character, 0.1);
+    let logged = std::fs::read_to_string(&log_path).unwrap();
+    for line in [
+        "main_volume will be \"50\" instead of \"150\"",
+        "speed will be \"1\" instead of \"0\"",
+        "wait_delay_per_character will be \"0.1\" instead of \"-1\"",
+    ] {
+        assert!(logged.contains(line), "{logged}");
+    }
+    // A file of an earlier version, without a volume, is not an error.
+    let (c, reading) = Config::from_ini(
+        &Config::default().to_ini().replace("main_volume = 50\n", ""),
+        &log,
+    );
+    assert_eq!((c.main_volume, reading), (50, Reading::Clean));
 }
