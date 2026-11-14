@@ -158,6 +158,7 @@ pub enum AudioEvent {
         channel: usize,
         left: f32,
         right: f32,
+        behind: f32,
     },
     Stop {
         channel: usize,
@@ -236,13 +237,14 @@ impl AudioOutput for RecordingAudio {
         r.playing.insert(ch, end);
     }
 
-    fn set_gains(&mut self, channel: Channel, left: f32, right: f32) {
+    fn set_gains(&mut self, channel: Channel, left: f32, right: f32, behind: f32) {
         let mut r = self.log.0.borrow_mut();
         r.gains.insert(channel.index(), (left, right));
         r.events.push(AudioEvent::Gains {
             channel: channel.index(),
             left,
             right,
+            behind,
         });
     }
 

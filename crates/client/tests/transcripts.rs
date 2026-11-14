@@ -616,7 +616,7 @@ impl AudioOutput for ReplayAudio {
         self.busy.insert(channel.index(), end);
     }
 
-    fn set_gains(&mut self, _: Channel, _: f32, _: f32) {}
+    fn set_gains(&mut self, _: Channel, _: f32, _: f32, _: f32) {}
 
     fn stop(&mut self, channel: Channel) {
         self.busy.remove(&channel.index());

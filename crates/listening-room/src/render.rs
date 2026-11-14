@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use soundrts::audio::{angle, stereo};
+use soundrts::audio::{BEHIND_CUTOFF, LowPass, behind, stereo};
 
 use crate::scene::{RATE, Scene, Sound, Source};
 
@@ -92,33 +92,6 @@ impl Renderer for Current {
     }
 }
 
-/// Two one-pole low-pass filters in a row (12 dB an octave).
-#[derive(Clone, Copy)]
-pub(crate) struct LowPass {
-    a: f32,
-    z1: f32,
-    z2: f32,
-}
-
-impl LowPass {
-    pub(crate) fn new(cutoff: f32) -> LowPass {
-        let a = 1.0 - (-2.0 * std::f32::consts::PI * cutoff / RATE as f32).exp();
-        LowPass {
-            a,
-            z1: 0.0,
-            z2: 0.0,
-        }
-    }
-
-    pub(crate) fn process(&mut self, x: f32) -> f32 {
-        self.z1 += self.a * (x - self.z1);
-        self.z2 += self.a * (self.z1 - self.z2);
-        self.z2
-    }
-}
-
-/// Where the tone behind goes: a sound straight behind is low-passed here.
-pub(crate) const BEHIND_CUTOFF: f32 = 2_500.0;
 /// A sound through a closed exit is low-passed here...
 const BLOCKED_CUTOFF: f32 = 1_400.0;
 /// ...and played at this fraction of its volume.
@@ -137,9 +110,10 @@ struct Voice {
 
 /// The game's maths with three changes: each volume change is spread
 /// evenly over a block, so it cannot click; a sound behind is blended
-/// towards a low-passed copy of itself, the more the further behind; and
-/// a sound through a closed exit is low-passed and quieter. Height is
-/// ignored, as in the game.
+/// towards a low-passed copy of itself, the more the further behind, with
+/// the game's own filter and measure of behind; and a sound through a
+/// closed exit is low-passed and quieter. Height is ignored, as in the
+/// game.
 #[derive(Default)]
 pub struct StereoPlus {
     voices: HashMap<u32, Voice>,
@@ -152,21 +126,20 @@ impl Renderer for StereoPlus {
             .retain(|id, _| scene.sources.iter().any(|s| s.id == *id));
         for s in &scene.sources {
             let gains = game_gains(scene, s);
-            let a = angle(
+            let behind = behind(
                 l.position.x,
                 l.position.y,
                 s.position.x,
                 s.position.y,
                 l.facing,
-            );
-            let behind = (-a.cos()).max(0.0) as f32;
+            ) as f32;
             let blocked = if s.blocked { 1.0 } else { 0.0 };
             let v = self.voices.entry(s.id).or_insert_with(|| Voice {
                 gains,
                 behind,
                 blocked,
-                behind_filter: LowPass::new(BEHIND_CUTOFF),
-                blocked_filter: LowPass::new(BLOCKED_CUTOFF),
+                behind_filter: LowPass::new(BEHIND_CUTOFF, RATE),
+                blocked_filter: LowPass::new(BLOCKED_CUTOFF, RATE),
             });
             let input = block_of(&s.sound, start);
             for (i, (frame, x)) in out.as_chunks_mut::<2>().0.iter_mut().zip(input).enumerate() {
@@ -175,7 +148,7 @@ impl Renderer for StereoPlus {
                 let gr = lerp(v.gains.1, gains.1, t);
                 let w = lerp(v.behind, behind, t);
                 let k = lerp(v.blocked, blocked, t);
-                let mut y = x + w * (v.behind_filter.process(x) - x);
+                let mut y = v.behind_filter.blend(x, w);
                 y += k * (v.blocked_filter.process(y) - y);
                 y *= 1.0 - k * (1.0 - BLOCKED_GAIN);
                 frame[0] += gl * y;

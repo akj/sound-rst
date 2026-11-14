@@ -17,8 +17,9 @@ use audionimbus::{
     HrtfInterpolation, HrtfSettings, Sofa, Transmission, Vector3, air_absorption,
     distance_attenuation,
 };
+use soundrts::audio::{BEHIND_CUTOFF, LowPass};
 
-use crate::render::{BEHIND_CUTOFF, BLOCK, LowPass, Renderer, block_of, lerp};
+use crate::render::{BLOCK, Renderer, block_of, lerp};
 use crate::scene::{RATE, Scene};
 
 /// How much of a closed exit's sound gets through, in Steam Audio's low,
@@ -101,7 +102,7 @@ impl Binaural {
             )
             .expect("a binaural effect"),
             behind,
-            behind_filter: LowPass::new(BEHIND_CUTOFF),
+            behind_filter: LowPass::new(BEHIND_CUTOFF, RATE),
         })
     }
 }
