@@ -6,16 +6,50 @@
 //! is one of the base classes (worker, soldier, building, effect, deposit,
 //! upgrade, ability) becomes a [`UnitType`]; the others (factions,
 //! `parameters`) stay as raw definitions, read with [`Rules::get`].
+//!
+//! The rules of a map come from a server, so a text over one of the limits
+//! below is refused whole, with a warning, as if it were empty.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::defs::preprocess;
+use crate::defs::{bounded, check_size, preprocess_within_limits};
 use crate::nofloat::{PRECISION, py_int, to_int};
 
 /// Game time between two world updates, in milliseconds.
 pub const VIRTUAL_TIME_INTERVAL: i64 = 300;
 /// The largest number of resource types a map can use.
 pub const MAX_NB_OF_RESOURCE_TYPES: usize = 10;
+
+/// The most classes the rules may define, or scripts a scripts text. The
+/// original's rules with a mod define 81 classes; its scripts are 3.
+pub const MAX_DEFINITIONS: usize = 500;
+
+/// The most parents (`is_a` words) a class may list. The original's
+/// classes list one.
+pub const MAX_PARENTS: usize = 8;
+
+/// The most ancestors (parents, their parents, and so on) a class may have,
+/// which bounds how deep inheritance goes. The original's classes have 2
+/// at most.
+pub const MAX_ANCESTORS: usize = 32;
+
+/// The most properties a class may have once it inherits, counted as its
+/// own and each ancestor's added together. The original's classes have 20
+/// of their own and at most 25 counted this way.
+pub const MAX_PROPERTIES: usize = 200;
+
+/// The most properties all the classes may have together once they
+/// inherit, counted as for [`MAX_PROPERTIES`]. Inheritance copies
+/// properties to every class below, and each unknown one is a warning. The
+/// original's rules come to 675 at most.
+pub const MAX_INHERITED_PROPERTIES: usize = 10_000;
 
 /// A property value as written in the definition file, after conversion.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,7 +122,7 @@ impl Definitions {
     }
 
     fn def(&self, name: &str) -> Option<&Def> {
-        self.index(name).map(|i| &self.defs[i].1)
+        self.defs.iter().find(|(n, _)| n == name).map(|(_, d)| d)
     }
 
     /// `_Definitions._val`: the value of a property, looked up through the
@@ -114,7 +148,7 @@ impl Definitions {
             for p in parents {
                 if self.def(p).is_some()
                     && !visited.contains(&p.as_str())
-                    && let Some(v) = self.val(p, attr, depth + 1, visited)
+                    && let Some(v) = self.val(p, attr, depth.saturating_add(1), visited)
                 {
                     return Some(v);
                 }
@@ -126,62 +160,135 @@ impl Definitions {
     fn get(&self, obj: &str, attr: &str) -> Option<RawValue> {
         let mut v = self.val(obj, attr, 0, &mut Vec::new());
         if v.is_none()
-            && attr.len() >= 8
-            && attr.get(attr.len() - 8..attr.len() - 1) == Some("_level_")
+            && let Some(base) = without_level(attr)
         {
-            v = self.val(obj, &attr[..attr.len() - 8], 0, &mut Vec::new());
+            v = self.val(obj, base, 0, &mut Vec::new());
         }
         v
     }
 
-    fn apply_inheritance(&mut self, expanded_is_a: bool, warnings: &mut Vec<String>) {
-        let mut modified = true;
-        let mut passes = 0;
-        while modified && passes < 1000 {
-            modified = false;
-            passes += 1;
-            for oi in 0..self.defs.len() {
-                let Some(RawValue::Words(is_a)) = def_get(&self.defs[oi].1, "is_a").cloned() else {
+    /// Refuses a class with more than [`MAX_PARENTS`] parents, more than
+    /// [`MAX_ANCESTORS`] ancestors, or more than [`MAX_PROPERTIES`]
+    /// properties once it inherits, and classes with more than
+    /// [`MAX_INHERITED_PROPERTIES`] together, before inheritance is applied.
+    fn check_inheritance(&self) -> Result<(), String> {
+        let mut total: usize = 0;
+        let index: BTreeMap<&str, usize> = self
+            .defs
+            .iter()
+            .enumerate()
+            .map(|(i, (n, _))| (n.as_str(), i))
+            .collect();
+        let parents = |d: &'_ Def| -> Vec<String> {
+            match def_get(d, "is_a") {
+                Some(RawValue::Words(w)) => w.clone(),
+                _ => Vec::new(),
+            }
+        };
+        for (name, d) in &self.defs {
+            let mut queue = parents(d);
+            if queue.len() > MAX_PARENTS {
+                return Err(format!(
+                    "{name} has {} parents, more than {MAX_PARENTS}",
+                    queue.len()
+                ));
+            }
+            let mut ancestors = BTreeSet::new();
+            let mut properties = d.len();
+            let mut next = 0;
+            while let Some(p) = queue.get(next) {
+                next = next.saturating_add(1);
+                let Some(&pi) = index.get(p.as_str()) else {
                     continue;
                 };
-                if expanded_is_a && def_get(&self.defs[oi].1, "expanded_is_a").is_none() {
-                    self.defs[oi]
-                        .1
-                        .push(("expanded_is_a".into(), RawValue::Words(is_a.clone())));
+                if !ancestors.insert(pi) {
+                    continue;
+                }
+                if ancestors.len() > MAX_ANCESTORS {
+                    return Err(format!("{name} has more than {MAX_ANCESTORS} ancestors"));
+                }
+                if let Some((_, pd)) = self.defs.get(pi) {
+                    properties = properties.saturating_add(pd.len());
+                    queue.extend(parents(pd));
+                }
+            }
+            if properties > MAX_PROPERTIES {
+                return Err(format!(
+                    "{name} has {properties} properties with those it inherits, more than {MAX_PROPERTIES}"
+                ));
+            }
+            total = total.saturating_add(properties);
+            if total > MAX_INHERITED_PROPERTIES {
+                return Err(format!(
+                    "the classes have more than {MAX_INHERITED_PROPERTIES} properties with those they inherit"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Copies to each class the properties of its parents it does not have,
+    /// pass after pass until nothing changes. With `expanded_is_a`, also
+    /// lists each class's ancestors in `expanded_is_a`, nearest first.
+    fn apply_inheritance(&mut self, expanded_is_a: bool, warnings: &mut Vec<String>) {
+        for _ in 0..1000 {
+            let mut modified = false;
+            for oi in 0..self.defs.len() {
+                let Some((child_name, child)) = self.defs.get_mut(oi) else {
+                    continue;
+                };
+                let Some(RawValue::Words(is_a)) = def_get(child, "is_a").cloned() else {
+                    continue;
+                };
+                if expanded_is_a && def_get(child, "expanded_is_a").is_none() {
+                    child.push(("expanded_is_a".into(), RawValue::Words(is_a.clone())));
                     modified = true;
                 }
+                let child_name = child_name.clone();
+                let mut keys: BTreeSet<String> = child.iter().map(|(k, _)| k.clone()).collect();
                 for p in &is_a {
                     let Some(pi) = self.index(p) else {
-                        warnings.push(format!(
-                            "error in {}.is_a: {} doesn't exist",
-                            self.defs[oi].0, p
-                        ));
+                        warnings.push(format!("error in {child_name}.is_a: {p} doesn't exist"));
                         continue;
                     };
-                    let parent = self.defs[pi].1.clone();
-                    for (k, v) in parent {
+                    // A class that is its own parent has nothing to copy.
+                    let Ok([(_, child), (_, parent)]) = self.defs.get_disjoint_mut([oi, pi]) else {
+                        continue;
+                    };
+                    for (k, v) in parent.iter() {
                         if expanded_is_a && k == "expanded_is_a" {
                             let RawValue::Words(parent_list) = v else {
                                 continue;
                             };
-                            for item in parent_list {
-                                let o = &mut self.defs[oi].1;
-                                if let Some(RawValue::Words(own)) = def_get_mut(o, "expanded_is_a")
-                                    && !own.contains(&item)
-                                {
-                                    own.push(item);
-                                    modified = true;
+                            if let Some(RawValue::Words(own)) = def_get_mut(child, "expanded_is_a")
+                            {
+                                for item in parent_list {
+                                    if !own.contains(item) {
+                                        own.push(item.clone());
+                                        modified = true;
+                                    }
                                 }
                             }
-                        } else if def_get(&self.defs[oi].1, &k).is_none() {
-                            self.defs[oi].1.push((k, v));
+                        } else if !keys.contains(k) {
+                            keys.insert(k.clone());
+                            child.push((k.clone(), v.clone()));
                             modified = true;
                         }
                     }
                 }
             }
+            if !modified {
+                break;
+            }
         }
     }
+}
+
+/// `attr` without its `_level_<character>` ending, if it has one.
+fn without_level(attr: &str) -> Option<&str> {
+    let n = attr.len().checked_sub(8)?;
+    let (base, end) = (attr.get(..n)?, attr.get(n..)?);
+    (end.get(..7)? == "_level_").then_some(base)
 }
 
 const STRING_PROPERTIES: &[&str] = &["airground_type"];
@@ -254,77 +361,90 @@ fn is_precision_property(k: &str) -> bool {
 
 /// Reads definition text into `defs` (`_Definitions.read` with the
 /// property types of `Rules`). A line that cannot be read is skipped with a
-/// warning, like the original.
-fn read_rules_text(s: &str, d: &mut Definitions, warnings: &mut Vec<String>) {
-    let s = preprocess(s);
+/// warning, like the original. A text over a limit is an error.
+fn read_rules_text(s: &str, d: &mut Definitions, warnings: &mut Vec<String>) -> Result<(), String> {
+    let s = preprocess_within_limits(s)?;
     let mut name = String::from("(the name is missing)");
     for line in s.split('\n') {
-        let mut words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
-        if words.is_empty() {
+        let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+        let Some((w0, args)) = words.split_first() else {
+            continue;
+        };
+        if w0 == "clear" {
+            d.defs.clear();
             continue;
         }
-        let ok = (|| -> Option<()> {
-            let w0 = words[0].clone();
-            if w0 == "clear" {
-                d.defs.clear();
-                return Some(());
+        if w0 == "def" {
+            match args.first() {
+                Some(n) => name = n.clone(),
+                None => warnings.push(format!("error in definition of {name}: {line}")),
             }
-            if w0 == "def" {
-                name = words.get(1)?.clone();
-                if d.index(&name).is_none() {
-                    d.defs.push((name.clone(), Vec::new()));
+            if !args.is_empty() && d.index(&name).is_none() {
+                if d.defs.len() >= MAX_DEFINITIONS {
+                    return Err(format!("more than {MAX_DEFINITIONS} classes"));
                 }
-                return Some(());
+                d.defs.push((name.clone(), Vec::new()));
             }
-            let value = if STRING_PROPERTIES.contains(&w0.as_str()) {
-                RawValue::Str(words.get(1)?.clone())
-            } else if INT_PROPERTIES.contains(&w0.as_str()) {
-                RawValue::Int(py_int(words.get(1)?).ok()?)
-            } else if is_precision_property(&w0) {
-                if w0 == "effect_range" && words.len() >= 2 {
-                    match words[1].as_str() {
-                        "square" => words[1] = "6".into(),
-                        "nearby" => words[1] = "12".into(),
-                        "anywhere" => words[1] = "2147483".into(),
-                        _ => {}
-                    }
-                }
-                if words.len() >= 2 && words[1] == "inf" {
-                    words[1] = "2147483".into();
-                }
-                RawValue::Int(to_int(words.get(1)?).ok()?)
-            } else if w0 == "storable_resource_types" {
-                let mut l = Vec::new();
-                for x in &words[1..] {
-                    l.push(py_int(x).ok()?);
-                }
-                RawValue::IntList(l)
-            } else if w0 == "cost" || w0 == "storage_bonus" {
-                let mut l = Vec::new();
-                for x in &words[1..] {
-                    l.push(to_int(x).ok()?);
-                }
-                RawValue::IntList(l)
-            } else {
-                if w0 == "effect"
-                    && words.get(1)? == "bonus"
-                    && is_precision_property(words.get(2)?)
-                {
-                    words[3] = to_int(words.get(3)?).ok()?.to_string();
-                    if words.len() > 4 {
-                        words[4] = to_int(&words[4]).ok()?.to_string();
-                    }
-                }
-                RawValue::Words(words[1..].to_vec())
-            };
-            let i = d.index(&name)?;
-            def_set(&mut d.defs[i].1, &w0, value);
-            Some(())
-        })();
-        if ok.is_none() {
-            warnings.push(format!("error in definition of {name}: {line}"));
+            continue;
         }
+        let Some(value) = property_value(w0, args) else {
+            warnings.push(format!("error in definition of {name}: {line}"));
+            continue;
+        };
+        let Some((_, def)) = d.defs.iter_mut().find(|(n, _)| *n == name) else {
+            warnings.push(format!("error in definition of {name}: {line}"));
+            continue;
+        };
+        if def.len() >= MAX_PROPERTIES && def_get(def, w0).is_none() {
+            return Err(format!("{name} has more than {MAX_PROPERTIES} properties"));
+        }
+        def_set(def, w0, value);
     }
+    Ok(())
+}
+
+/// The value of property `w0` written with the words `args`, or `None` when
+/// it cannot be read.
+fn property_value(w0: &str, args: &[String]) -> Option<RawValue> {
+    let first = || args.first();
+    Some(if STRING_PROPERTIES.contains(&w0) {
+        RawValue::Str(first()?.clone())
+    } else if INT_PROPERTIES.contains(&w0) {
+        RawValue::Int(int(first()?)?)
+    } else if is_precision_property(w0) {
+        let v = match first()?.as_str() {
+            "square" if w0 == "effect_range" => "6",
+            "nearby" if w0 == "effect_range" => "12",
+            "anywhere" | "inf" if w0 == "effect_range" => "2147483",
+            "inf" => "2147483",
+            other => other,
+        };
+        RawValue::Int(decimal(v)?)
+    } else if w0 == "storable_resource_types" {
+        RawValue::IntList(args.iter().map(|x| int(x)).collect::<Option<_>>()?)
+    } else if w0 == "cost" || w0 == "storage_bonus" {
+        RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
+    } else {
+        let mut words = args.to_vec();
+        if w0 == "effect" && first()? == "bonus" && is_precision_property(args.get(1)?) {
+            for w in words.iter_mut().skip(2).take(2) {
+                *w = decimal(w)?.to_string();
+            }
+            args.get(2)?;
+        }
+        RawValue::Words(words)
+    })
+}
+
+/// An integer of the rules, within [`crate::defs::MAX_NUMBER`].
+fn int(s: &str) -> Option<i64> {
+    py_int(s).ok().and_then(bounded)
+}
+
+/// A decimal of the rules, multiplied by [`PRECISION`], within
+/// [`crate::defs::MAX_NUMBER`].
+fn decimal(s: &str) -> Option<i64> {
+    to_int(s).ok().and_then(bounded)
 }
 
 /// Replaces `class race` (at the start of a line) with `class faction`.
@@ -909,11 +1029,24 @@ impl Rules {
     /// the mods', the campaign's and the map's. As the original's resource
     /// loader does, the texts are joined with a line break and read as one,
     /// with any line end accepted.
+    ///
+    /// Rules over one of the limits ([`crate::defs::MAX_TEXT_BYTES`],
+    /// [`MAX_DEFINITIONS`], [`MAX_ANCESTORS`]...) are refused: they load as
+    /// empty rules with a warning that says which limit.
     pub fn load<S: AsRef<str>>(texts: &[S]) -> Rules {
         let mut warnings = Vec::new();
         let mut raw = Definitions::default();
-        let s = replace_class_race(&join_layers(texts));
-        read_rules_text(&s, &mut raw, &mut warnings);
+        let read = check_size(layers_size(texts)).and_then(|()| {
+            let s = replace_class_race(&join_layers(texts));
+            read_rules_text(&s, &mut raw, &mut warnings)?;
+            raw.check_inheritance()
+        });
+        if let Err(e) = read {
+            return Rules {
+                warnings: vec![format!("the rules are refused: {e}")],
+                ..Rules::default()
+            };
+        }
         raw.apply_inheritance(true, &mut warnings);
         if let Some(RawValue::Int(n)) = raw.get("parameters", "nb_of_resource_types")
             && n > MAX_NB_OF_RESOURCE_TYPES as i64
@@ -925,18 +1058,17 @@ impl Rules {
         let nb_res = nb_of_resource_types(&raw);
         let mut types = Vec::new();
         let mut by_name = BTreeMap::new();
-        for i in 0..raw.defs.len() {
-            let name = raw.defs[i].0.clone();
-            let class_name = match def_get(&raw.defs[i].1, "class") {
+        for (name, d) in &mut raw.defs {
+            let class_name = match def_get(d, "class") {
                 Some(RawValue::Words(w)) => w.first().cloned(),
                 _ => None,
             };
             let Some(base) = class_name.as_deref().and_then(BaseClass::from_name) else {
                 continue;
             };
-            interpret(&mut raw.defs[i].1, base, &name, nb_res, &mut warnings);
-            let t = build_type(&name, base, &raw.defs[i].1, nb_res, &mut warnings);
-            by_name.insert(name, TypeId(types.len() as u32));
+            interpret(d, base, name, nb_res, &mut warnings);
+            let t = build_type(name, base, d, nb_res, &mut warnings);
+            by_name.insert(name.clone(), TypeId(types.len() as u32));
             types.push(t);
         }
         Rules {
@@ -1014,9 +1146,14 @@ impl Rules {
     /// The unit type called `name`, to change it (tests change rules).
     pub fn unit_type_mut(&mut self, name: &str) -> Option<&mut UnitType> {
         let id = self.type_id(name)?;
-        Some(&mut self.types[id.0 as usize])
+        self.types.get_mut(id.0 as usize)
     }
 
+    /// The unit type of an id this rules gave.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "a TypeId comes from the same rules, whose types do not change in number"
+    )]
     pub fn ty(&self, id: TypeId) -> &UnitType {
         &self.types[id.0 as usize]
     }
@@ -1029,8 +1166,8 @@ impl Rules {
     /// The type a faction uses instead of `type_name`, or `type_name`.
     pub fn equivalent_type(&self, type_name: &str, faction: &str) -> String {
         match self.get_words(faction, type_name) {
-            Some(w) if !w.is_empty() => w[0].clone(),
-            _ => type_name.to_owned(),
+            Some(w) => w.first().cloned().unwrap_or_else(|| type_name.to_owned()),
+            None => type_name.to_owned(),
         }
     }
 
@@ -1090,6 +1227,14 @@ fn nb_of_resource_types(raw: &Definitions) -> usize {
     }
 }
 
+/// The bytes of the texts together.
+fn layers_size<S: AsRef<str>>(texts: &[S]) -> usize {
+    texts
+        .iter()
+        .map(|s| s.as_ref().len())
+        .fold(0, usize::saturating_add)
+}
+
 /// The texts joined with a line break, line ends converted to `\n`.
 fn join_layers<S: AsRef<str>>(texts: &[S]) -> String {
     texts
@@ -1117,8 +1262,8 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
             let mut map: Vec<(String, i64)> = Vec::new();
             let mut targets: Vec<String> = Vec::new();
             for s in words {
-                match to_int(&s) {
-                    Ok(n) => {
+                match decimal(&s) {
+                    Some(n) => {
                         for t in targets.drain(..) {
                             match map.iter_mut().find(|(k, _)| *k == t) {
                                 Some(e) => e.1 = n,
@@ -1126,7 +1271,7 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
                             }
                         }
                     }
-                    Err(_) => targets.push(s),
+                    None => targets.push(s),
                 }
             }
             def_set(d, vs_attr, RawValue::Versus(map));
@@ -1263,38 +1408,56 @@ impl AiScripts {
     /// `load_ai`: reads the `ai.txt` texts of the layers, joined with a line
     /// break as the original's resource loader does. A second `def` of the
     /// same name restarts that script.
+    ///
+    /// Scripts over one of the limits ([`crate::defs::MAX_TEXT_BYTES`],
+    /// [`MAX_DEFINITIONS`]...) are refused: they load as no scripts with a
+    /// warning that says which limit.
     pub fn load<S: AsRef<str>>(texts: &[S]) -> AiScripts {
         let mut ai = AiScripts::default();
-        {
-            let s = preprocess(&join_layers(texts));
-            let mut name: Option<String> = None;
-            for line in s.split('\n') {
-                let words: Vec<&str> = line.split_whitespace().collect();
-                if words.is_empty() {
-                    continue;
-                }
-                if words[0] == "def" {
-                    let Some(n) = words.get(1) else {
-                        ai.warnings.push(format!("error in ai.txt: {line}"));
-                        continue;
-                    };
-                    let n = (*n).to_owned();
-                    match ai.scripts.iter_mut().find(|(k, _)| *k == n) {
-                        Some(e) => e.1.clear(),
-                        None => ai.scripts.push((n.clone(), Vec::new())),
-                    }
-                    name = Some(n);
-                } else if let Some(n) = &name {
-                    if let Some(e) = ai.scripts.iter_mut().find(|(k, _)| k == n) {
-                        e.1.push(line.to_owned());
-                    }
-                } else {
-                    ai.warnings
-                        .push("'def <AI_name>' is missing (check ai.txt)".to_owned());
-                }
-            }
+        let read = check_size(layers_size(texts))
+            .and_then(|()| preprocess_within_limits(&join_layers(texts)))
+            .and_then(|s| ai.read(&s));
+        if let Err(e) = read {
+            return AiScripts {
+                scripts: Vec::new(),
+                warnings: vec![format!("the computer player scripts are refused: {e}")],
+            };
         }
         ai
+    }
+
+    fn read(&mut self, s: &str) -> Result<(), String> {
+        let mut name: Option<String> = None;
+        for line in s.split('\n') {
+            let words: Vec<&str> = line.split_whitespace().collect();
+            let Some(&w0) = words.first() else {
+                continue;
+            };
+            if w0 == "def" {
+                let Some(n) = words.get(1) else {
+                    self.warnings.push(format!("error in ai.txt: {line}"));
+                    continue;
+                };
+                let n = (*n).to_owned();
+                let count = self.scripts.len();
+                match self.scripts.iter_mut().find(|(k, _)| *k == n) {
+                    Some(e) => e.1.clear(),
+                    None if count >= MAX_DEFINITIONS => {
+                        return Err(format!("more than {MAX_DEFINITIONS} scripts"));
+                    }
+                    None => self.scripts.push((n.clone(), Vec::new())),
+                }
+                name = Some(n);
+            } else if let Some(n) = &name {
+                if let Some(e) = self.scripts.iter_mut().find(|(k, _)| k == n) {
+                    e.1.push(line.to_owned());
+                }
+            } else {
+                self.warnings
+                    .push("'def <AI_name>' is missing (check ai.txt)".to_owned());
+            }
+        }
+        Ok(())
     }
 
     /// `get_ai(name)`: the lines of a script.
@@ -1312,6 +1475,7 @@ impl AiScripts {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 
@@ -1372,6 +1536,95 @@ mod tests {
         let r = Rules::load(&["def a\nclass soldier\nhp_max 3\ndef b\nis_a b b a b a\n"]);
         assert_eq!(r.get("b", "hp_max"), Some(RawValue::Int(3000)));
         assert_eq!(r.get("b", "speed"), None);
+    }
+
+    /// The rules refused, with the only warning.
+    fn refused(text: &str) -> String {
+        let r = Rules::load(&[text]);
+        assert!(r.classnames().is_empty() && r.types().is_empty(), "{text}");
+        let [w] = &r.warnings[..] else {
+            panic!("{:?}", r.warnings);
+        };
+        w.clone()
+    }
+
+    #[test]
+    fn rules_over_a_limit_are_refused_whole() {
+        assert_eq!(
+            refused(&format!("def a\nclass soldier\n; {}", "x".repeat(300_000))),
+            "the rules are refused: 300022 bytes, more than 262144"
+        );
+        assert_eq!(
+            refused(&(0..501).map(|i| format!("def c{i}\n")).collect::<String>()),
+            "the rules are refused: more than 500 classes"
+        );
+        let properties: String = (0..201).map(|i| format!("p{i} 1\n")).collect();
+        assert_eq!(
+            refused(&format!("def a\n{properties}")),
+            "the rules are refused: a has more than 200 properties"
+        );
+    }
+
+    #[test]
+    fn inheritance_too_broad_or_too_deep_is_refused() {
+        assert_eq!(
+            refused("def a\ndef b\nis_a a a a a a a a a a\n"),
+            "the rules are refused: b has 9 parents, more than 8"
+        );
+        let chain: String = (0..34)
+            .map(|i| format!("def c{i}\nis_a c{}\n", i + 1))
+            .collect();
+        assert_eq!(
+            refused(&chain),
+            "the rules are refused: c0 has more than 32 ancestors"
+        );
+        let properties: String = (0..150).map(|i| format!("p{i} 1\n")).collect();
+        assert_eq!(
+            refused(&format!("def a\n{properties}def b\n{properties}is_a a\n")),
+            "the rules are refused: b has 301 properties with those it inherits, more than 200"
+        );
+        let many: String = (0..100).map(|i| format!("def b{i}\nis_a a\n")).collect();
+        assert_eq!(
+            refused(&format!("def a\n{properties}{many}")),
+            "the rules are refused: the classes have more than 10000 properties with those they inherit"
+        );
+        // A cycle within the limits loads, as in the original.
+        let r = Rules::load(&["def a\nclass soldier\nis_a b\nhp_max 1\ndef b\nis_a a\nspeed 2\n"]);
+        assert_eq!(r.get("b", "hp_max"), Some(RawValue::Int(1000)));
+        assert_eq!(r.unit_type("a").unwrap().stats.speed, 2000);
+    }
+
+    /// The simulation sums `food_provided` in 64 bits, and this value made
+    /// the sum overflow.
+    #[test]
+    fn a_number_beyond_the_limit_is_an_error_in_its_line() {
+        let r = Rules::load(&[
+            "def farm\nclass building\nfood_provided 9223372036854775807\nhp_max 3000000\n",
+        ]);
+        assert_eq!(r.unit_type("farm").unwrap().stats.food_provided, 0);
+        assert_eq!(r.unit_type("farm").unwrap().stats.hp_max, 0);
+        assert_eq!(
+            r.warnings,
+            [
+                "error in definition of farm: food_provided 9223372036854775807",
+                "error in definition of farm: hp_max 3000000"
+            ]
+        );
+    }
+
+    #[test]
+    fn scripts_over_a_limit_are_refused_whole() {
+        let ai = AiScripts::load(&[(0..501).map(|i| format!("def s{i}\n")).collect::<String>()]);
+        assert!(ai.names().is_empty());
+        assert_eq!(
+            ai.warnings,
+            ["the computer player scripts are refused: more than 500 scripts"]
+        );
+        let ai = AiScripts::load(&["def a\n".repeat(10_001)]);
+        assert_eq!(
+            ai.warnings,
+            ["the computer player scripts are refused: 10002 lines, more than 10000"]
+        );
     }
 
     #[test]

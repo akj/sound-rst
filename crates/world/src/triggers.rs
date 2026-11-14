@@ -10,13 +10,26 @@ use crate::nofloat::{py_float, py_int};
 use crate::player::{Objective, PlayerKind};
 use crate::world::{Abort, NotEnoughSpace, Res, World};
 
-/// A word or a parenthesized list of a trigger.
+/// The deepest a trigger may nest parentheses. Dropping, cloning, comparing
+/// or hashing an [`Expr`] goes one call deeper for each level, so this keeps
+/// them far from the end of the stack. The original's triggers nest 3 deep.
+pub const MAX_TRIGGER_DEPTH: usize = 32;
+
+/// A word or a parenthesized list of a trigger. [`list_to_tree`] makes one
+/// at most [`MAX_TRIGGER_DEPTH`] deep.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Expr {
     Word(String),
     List(Vec<Expr>),
 }
 
+#[deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 impl Expr {
     fn word(&self) -> Res<&str> {
         match self {
@@ -41,26 +54,40 @@ impl Expr {
     }
 }
 
-/// `_list_to_tree`: parentheses make nested lists.
+/// `_list_to_tree`: parentheses make nested lists. A list left open is
+/// dropped, like the original. Nesting deeper than [`MAX_TRIGGER_DEPTH`] is
+/// an error.
+#[deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 pub fn list_to_tree(words: &[String]) -> Result<Vec<Expr>, String> {
-    let mut cache: Vec<Vec<Expr>> = vec![Vec::new()];
+    let mut top: Vec<Expr> = Vec::new();
+    let mut open: Vec<Vec<Expr>> = Vec::new();
     for w in words {
         match w.as_str() {
-            "(" => cache.push(Vec::new()),
-            ")" => {
-                if cache.len() < 2 {
-                    return Err("list index out of range".into());
+            "(" => {
+                if open.len() >= MAX_TRIGGER_DEPTH {
+                    return Err(format!(
+                        "parentheses nested more than {MAX_TRIGGER_DEPTH} deep"
+                    ));
                 }
-                let last = cache.pop().expect("checked");
-                cache.last_mut().expect("checked").push(Expr::List(last));
+                open.push(Vec::new());
             }
-            _ => cache
+            ")" => {
+                let last = open.pop().ok_or("list index out of range")?;
+                open.last_mut().unwrap_or(&mut top).push(Expr::List(last));
+            }
+            _ => open
                 .last_mut()
-                .expect("never empty")
+                .unwrap_or(&mut top)
                 .push(Expr::Word(w.clone())),
         }
     }
-    Ok(cache.swap_remove(0))
+    Ok(top)
 }
 
 fn is_digits(s: &str) -> bool {
@@ -693,5 +720,21 @@ mod tests {
             ]
         );
         assert!(list_to_tree(&words(")")).is_err());
+    }
+
+    #[test]
+    fn a_list_left_open_is_dropped_and_deep_nesting_is_an_error() {
+        let w = |s: &str| Expr::Word(s.into());
+        assert_eq!(list_to_tree(&words("a ( b ( c")).unwrap(), [w("a")]);
+        let nested = |depth: usize| {
+            let mut t = vec!["(".to_owned(); depth];
+            t.extend(vec![")".to_owned(); depth]);
+            t
+        };
+        assert_eq!(list_to_tree(&nested(MAX_TRIGGER_DEPTH)).unwrap().len(), 1);
+        assert_eq!(
+            list_to_tree(&nested(MAX_TRIGGER_DEPTH + 1)),
+            Err("parentheses nested more than 32 deep".to_owned())
+        );
     }
 }

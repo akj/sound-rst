@@ -22,84 +22,101 @@ pub fn pymod(a: i64, b: i64) -> i64 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NotANumber;
 
-/// Python's `float(s)`: surrounding whitespace is ignored, single underscores
-/// may separate digits, and `inf` and `nan` are accepted.
-pub fn py_float(s: &str) -> Result<f64, NotANumber> {
-    let t = s.trim_matches(|c: char| c.is_whitespace());
-    if t.is_empty() {
-        return Err(NotANumber);
-    }
-    let cleaned;
-    let t = if t.contains('_') {
-        let b = t.as_bytes();
-        for (i, &c) in b.iter().enumerate() {
-            if c == b'_' {
-                let ok = i > 0
-                    && i + 1 < b.len()
-                    && b[i - 1].is_ascii_digit()
-                    && b[i + 1].is_ascii_digit();
-                if !ok {
-                    return Err(NotANumber);
-                }
-            }
+pub use parsing::{float_to_int, py_float, py_int, to_int};
+
+/// Numbers read from text, which may come from a server. No text may make
+/// these panic.
+mod parsing {
+    #![deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
+
+    use super::{NotANumber, PRECISION};
+
+    /// Python's `float(s)`: surrounding whitespace is ignored, single
+    /// underscores may separate digits, and `inf` and `nan` are accepted.
+    pub fn py_float(s: &str) -> Result<f64, NotANumber> {
+        let t = s.trim_matches(|c: char| c.is_whitespace());
+        if t.is_empty() {
+            return Err(NotANumber);
         }
-        cleaned = t.replace('_', "");
-        cleaned.as_str()
-    } else {
-        t
-    };
-    // Rust accepts the same spellings as Python ("1.", ".5", "1e3", "inf",
-    // "infinity", "nan", with a sign), and rounds correctly like Python.
-    t.parse::<f64>().map_err(|_| NotANumber)
-}
-
-/// Converts a decimal written in a definition file to an integer with
-/// [`PRECISION`]: `int(float(s) * PRECISION)`.
-///
-/// The value goes through a binary float, as in the original, so "1.005"
-/// gives 1004. Every machine computes the same IEEE product, so the result
-/// is still deterministic.
-pub fn to_int(s: &str) -> Result<i64, NotANumber> {
-    float_to_int(py_float(s)? * PRECISION as f64)
-}
-
-/// Python's `int(f)` for a float: truncation toward zero.
-pub fn float_to_int(f: f64) -> Result<i64, NotANumber> {
-    if !f.is_finite() || f.abs() >= 9.2e18 {
-        return Err(NotANumber);
-    }
-    Ok(f.trunc() as i64)
-}
-
-/// Python's `int(s)` for a decimal integer written as text.
-pub fn py_int(s: &str) -> Result<i64, NotANumber> {
-    let t = s.trim_matches(|c: char| c.is_whitespace());
-    let (neg, digits) = match t.as_bytes().first() {
-        Some(b'-') => (true, &t[1..]),
-        Some(b'+') => (false, &t[1..]),
-        _ => (false, t),
-    };
-    if digits.is_empty() || digits.starts_with('_') || digits.ends_with('_') {
-        return Err(NotANumber);
-    }
-    let mut value: i64 = 0;
-    let mut previous_underscore = false;
-    for c in digits.chars() {
-        if c == '_' {
-            if previous_underscore {
+        let cleaned;
+        let t = if t.contains('_') {
+            // Each underscore is between two digits.
+            let b = t.as_bytes();
+            let first_or_last = b.first() == Some(&b'_') || b.last() == Some(&b'_');
+            let between_digits = b.windows(3).all(|w| match w {
+                [before, b'_', after] => before.is_ascii_digit() && after.is_ascii_digit(),
+                _ => true,
+            });
+            if first_or_last || !between_digits {
                 return Err(NotANumber);
             }
-            previous_underscore = true;
-            continue;
-        }
-        previous_underscore = false;
-        let d = c.to_digit(10).ok_or(NotANumber)?;
-        value = value
-            .checked_mul(10)
-            .and_then(|v| v.checked_add(i64::from(d)))
-            .ok_or(NotANumber)?;
+            cleaned = t.replace('_', "");
+            cleaned.as_str()
+        } else {
+            t
+        };
+        // Rust accepts the same spellings as Python ("1.", ".5", "1e3", "inf",
+        // "infinity", "nan", with a sign), and rounds correctly like Python.
+        t.parse::<f64>().map_err(|_| NotANumber)
     }
-    Ok(if neg { -value } else { value })
+
+    /// Converts a decimal written in a definition file to an integer with
+    /// [`PRECISION`]: `int(float(s) * PRECISION)`.
+    ///
+    /// The value goes through a binary float, as in the original, so "1.005"
+    /// gives 1004. Every machine computes the same IEEE product, so the result
+    /// is still deterministic.
+    pub fn to_int(s: &str) -> Result<i64, NotANumber> {
+        float_to_int(py_float(s)? * PRECISION as f64)
+    }
+
+    /// Python's `int(f)` for a float: truncation toward zero.
+    pub fn float_to_int(f: f64) -> Result<i64, NotANumber> {
+        if !f.is_finite() || f.abs() >= 9.2e18 {
+            return Err(NotANumber);
+        }
+        Ok(f.trunc() as i64)
+    }
+
+    /// Python's `int(s)` for a decimal integer written as text.
+    pub fn py_int(s: &str) -> Result<i64, NotANumber> {
+        let t = s.trim_matches(|c: char| c.is_whitespace());
+        let (neg, digits) = match t.strip_prefix('-') {
+            Some(digits) => (true, digits),
+            None => (false, t.strip_prefix('+').unwrap_or(t)),
+        };
+        if digits.is_empty() || digits.starts_with('_') || digits.ends_with('_') {
+            return Err(NotANumber);
+        }
+        let mut value: i64 = 0;
+        let mut previous_underscore = false;
+        for c in digits.chars() {
+            if c == '_' {
+                if previous_underscore {
+                    return Err(NotANumber);
+                }
+                previous_underscore = true;
+                continue;
+            }
+            previous_underscore = false;
+            let d = c.to_digit(10).ok_or(NotANumber)?;
+            value = value
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(i64::from(d)))
+                .ok_or(NotANumber)?;
+        }
+        if neg {
+            value.checked_neg().ok_or(NotANumber)
+        } else {
+            Ok(value)
+        }
+    }
 }
 
 /// The cosine of an angle in degrees, times 1000, from a fixed table.
