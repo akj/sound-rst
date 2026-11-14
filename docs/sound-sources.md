@@ -9,7 +9,7 @@ Researched on 14 November 2026.
 - **Footsteps.** Good CC0 recordings exist for grass, leaves, mud, shallow water and snow, and they are far brighter than the game's own. Grass and leaves each have a set of five separate single steps, which is the shape the game uses. Gravel is weak. Wood is dark everywhere, though still brighter than the original.
 - **Terrain ambience.** Every terrain has two or three CC0 beds, all 44.1 kHz or higher and long enough to loop. The town is the weak one: no CC0 recording found is both medieval-sounding and free of speech.
 - **Brightness.** The game's default footstep has no energy above 4 kHz at all, and the cues headphones use to place a sound in front or behind lie mostly above 4 to 5 kHz. In the listening test, that footstep was placed wrongly 7 times in 8. The grass and leaves sets have 56 to 92 percent of their energy above 4 kHz.
-- **Nothing has been listened to.** Every judgement here comes from the uploaders' descriptions and from measurement. Your ears decide.
+- **Andrew rated every candidate by ear** on 14 November 2026, blind and in random order. See "What the listening found" below. There is a clear choice for every role except wood, forest and the town.
 
 ## How to listen
 
@@ -273,11 +273,39 @@ Shortlisted from the API's descriptions and facts, not downloaded into the audit
 - **Content, not verified.** What each recording contains comes from its author's description; nothing was played. Hiss, wind or insects can raise the brightness figure, and a description can leave out a passing car or a voice. Whether each bed loops cleanly is also unknown.
 - **The other roles** come from a search pass whose facts are the API's; only the files with a percentage were downloaded and measured.
 
+## What the listening found
+
+Andrew rated all 45 candidates with `scripts/rate-sounds.ps1` on 14 November 2026: one pass, with headphones, each role's candidates in random order and unnamed until the role was done. Each rating is from 1, unusable, to 5, just right. Footsteps were played in mono and centred, so these ratings judge how each ground sounds, not how well a sound can be placed in front or behind.
+
+Chosen, by role:
+
+- **Grass:** Nox_Sound's boots on grass, 5. GiocoSound's single steps 3, SilentStrikeZ's walk 2 ("could be okay if chopped up").
+- **Leaves:** Anthousai's walk, 5. Joao_Janz's single steps 4. Juno24's 2, ruled out for background noise.
+- **Gravel:** Ali_6868's six single steps, 5. PotatokingXII's walk 4.
+- **Wood:** OBXJohn's bridge 3, kbeezy88's boardwalk 2. "Lots of background noise in both." Still open.
+- **Mud:** Nox_Sound's boots in mud, 5. Adielees9 and Vrymaa 3 each: "more realistic, but the sounds are too far apart. I want short sounds that make it quick to navigate with arrows."
+- **Shallow water:** aglinder's walk, 5. ChristopherJngs 4, Adielees9 3.
+- **Snow:** cabled_mess's four single steps, 5. xkeril's walk 4.
+- **Meadow:** richwise and Alcappuccino, 4 each, to use both. DanGasior 3.
+- **Forest:** all three 2, because they "all sound very similar to meadow". Fester993's was the best of them. Still open.
+- **Dense forest:** greysound's Clark's Tower, 4. Dokuta_Gerovv's forest at night 3, "could be an okay forest perhaps". bruno.auzet's pine forest 2.
+- **Mountain:** kyles's heavy gusts in the Swiss Alps, 5. nicotep 4, felix.blume 3.
+- **Marsh:** Danjocross's frogs at night, 5. jacekksiazek 4, MarleneAyni 3.
+- **River:** klau78's small river, 5, "the best river". Extemporalist's snowmelt, 5, heard as a stream. DrTrumpet's Molln stream, 4, heard as being on the river, as in a boat.
+- **Lake:** TheFlyFishingFilmmaker's gentle waves, 5. TRP's 4.
+- **Sea:** molkko's waves, 4. huhuertas and YevgVerh 3 each, "all great, but might be a bit loud". All were played at the same measured loudness, so these two sound bigger, not louder: they may suit the ocean, played quieter.
+- **Town:** none. The market and the blacksmith 2, the crowd and the fountain with bells 1. Still open.
+
+What it shows:
+
+- **Brightness did not decide the preference.** In the four footstep roles where brightness clearly separated the candidates (grass, mud, water, snow), the brightest never won, and in three the darkest did. In the other three roles the candidates' brightness overlapped or differed by under 1 percent. The brightness measure stands for being placed in front or behind, which this test did not try. Before a footstep is final, the chosen ones should go through the listening room's front-or-behind step.
+- **Footsteps must be short.** A step is heard on each move with the arrow keys, so each step is cut short, and a walk's own pace does not carry over.
+- **One author for several grounds.** Nox_Sound's boots won on both grass and mud. The same series may cover the grounds still weak, with the same boots and microphone.
+
 ## Recommendations
 
-1. **Start with your ears on the footsteps.** Grass and leaves have sets of single steps that are bright and the right shape. If they sound right, they settle the two commonest grounds.
-2. **Cut steps from the best walks** for mud, water and snow (Vrymaa's mud, Adielees9's water, xkeril's snow). A walk holds many single steps, and cutting them needs only `ffmpeg`. Do it only after you have chosen by ear.
-3. **For the ambience,** listen to all nine terrains in a row, and pick the set where each one is unmistakable next to the others. The likely confusions are forest against meadow (birds), dense forest against mountain (wind), and night forest against marsh (insects).
-4. **Treat wood and the town as open problems.** Wood may need a recorded session of our own, or brightening by design. The town could be a quiet crowd bed with the forge and bells laid on top, rather than one recording.
-5. **Decide on the Public Domain Mark.** If you accept it, the radio aporee walks are worth adding for grass, leaves, gravel and mud.
-6. **Keep the licence record with the files.** When sounds are chosen, the facts here and the hashes in `scripts/sound-candidates.psd1` are the record to ship with them.
+1. **Test the chosen footsteps in front and behind** in the listening room, which today plays only the game's own footstep.
+2. **Cut short single steps** from the chosen walks (Nox_Sound's grass and mud, Anthousai's leaves, aglinder's water) with `ffmpeg`. Then listen again, since a step on its own can sound different from a walk.
+3. **Search again for wood, forest and the town.** Look first in Nox_Sound's boots series for wood. A forest must not sound like the meadow: fewer open-field birds and crickets, more leaves and trees. The town could be a quiet crowd bed with the forge and bells laid on top, rather than one recording.
+4. **Decide on the Public Domain Mark.** If you accept it, the radio aporee walks are worth adding for grass, leaves, gravel and mud.
+5. **Keep the licence record with the files.** When sounds are chosen, the facts here and the hashes in `scripts/sound-candidates.psd1` are the record to ship with them.
