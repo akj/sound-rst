@@ -14,6 +14,7 @@ use soundrts::log::Log;
 use soundrts::options::Options;
 use soundrts::parameters::Parameters;
 use soundrts::paths::Paths;
+use soundrts::record::GameRecord;
 use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
 use soundrts::tts::ScreenReaderSpeech;
@@ -36,6 +37,23 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 notice::fatal(&e.to_string());
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if let Some(file) = &options.check_record {
+        return match GameRecord::read(file) {
+            Ok(record) => {
+                let check = record.check();
+                notice::print(&format!("{check}\n"));
+                if check.passed() {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+            Err(e) => {
+                notice::fatal(&e);
                 ExitCode::FAILURE
             }
         };

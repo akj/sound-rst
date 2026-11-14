@@ -31,6 +31,7 @@ pub mod package;
 pub mod parameters;
 pub mod paths;
 pub mod probe;
+pub mod record;
 pub mod resource;
 pub mod rng;
 pub mod rodio_output;

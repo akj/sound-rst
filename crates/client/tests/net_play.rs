@@ -249,7 +249,12 @@ fn two_players_play_a_game_in_step_and_leave_it() {
             let you = net.you;
             {
                 let mut r = record.borrow_mut();
-                r.digests = net.digests.clone();
+                r.digests = net
+                    .record
+                    .turns
+                    .iter()
+                    .map(|t| (t.turn, t.digest))
+                    .collect();
                 for (slot, &p) in slots.iter().enumerate() {
                     for e in g
                         .world

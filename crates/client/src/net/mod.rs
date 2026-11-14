@@ -91,6 +91,9 @@ pub struct GameLink {
     pub turns: VecDeque<(Turn, Vec<SlotOrders>)>,
     /// The game is over for this player (the server said so).
     pub ended: bool,
+    /// The turn the server last said the game went out of sync after,
+    /// until the game has saved its record.
+    pub out_of_sync: Option<Turn>,
     /// Bytes of orders sent since the last turn received.
     sent_since_turn: usize,
 }
@@ -102,6 +105,7 @@ impl GameLink {
             you,
             turns: VecDeque::new(),
             ended: false,
+            out_of_sync: None,
             sent_since_turn: 0,
         }
     }
@@ -302,9 +306,10 @@ impl Net {
                 cx.log.info(format!("slot {slot} left the game"));
             }
             ServerMsg::OutOfSync { turn, slots } => {
-                if let Some(g) = &self.game {
+                if let Some(g) = &mut self.game {
                     cx.log
                         .warning(format!("out of sync after turn {turn}: slots {slots:?}"));
+                    g.out_of_sync = Some(turn);
                     let m = if slots.contains(&g.you) {
                         words::OUT_OF_SYNC
                     } else {
