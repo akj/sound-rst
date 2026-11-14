@@ -221,3 +221,25 @@ fn cancelling_a_training_that_has_finished_refunds_nothing() {
     assert_eq!(w.player(me).used_food, used_food);
     assert_eq!(peasants(&w), before + 1);
 }
+
+/// A player who quits and is disconnected in the same turn sends "quit"
+/// twice; the second comes from a player who has already left.
+#[test]
+fn a_player_who_has_left_gives_no_more_commands() {
+    let (mut w, me, you) = game();
+    w.queue_command(you, "quit");
+    w.queue_command(you, "quit");
+    w.update();
+    assert_eq!(w.ex_players, [you]);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    let told = w
+        .drain_events(me)
+        .iter()
+        .filter(|e| matches!(e, Event::VoiceImportant(_)))
+        .count();
+    assert_eq!(told, 2, "has been defeated, then has just quit, once each");
+    w.queue_command(you, "quit");
+    w.update();
+    assert_eq!(w.ex_players, [you]);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}

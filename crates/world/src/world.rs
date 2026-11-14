@@ -933,15 +933,20 @@ impl World {
     // update
 
     /// Queues a text command for a player. Commands run in order at the
-    /// start of the next [`World::update`].
+    /// start of the next [`World::update`], unless the player has left the
+    /// game by then.
     pub fn queue_command(&mut self, player: PlayerId, command: &str) {
         self.pending_commands.push((player, command.to_owned()));
     }
 
     /// Runs the queued commands, then advances the world by one turn of
-    /// [`VIRTUAL_TIME_INTERVAL`].
+    /// [`VIRTUAL_TIME_INTERVAL`]. The commands of a player who has left the
+    /// game are dropped, including a player who left earlier in this turn.
     pub fn update(&mut self) {
         for (p, cmd) in std::mem::take(&mut self.pending_commands) {
+            if !self.players.contains(&p) {
+                continue;
+            }
             if let Err(Abort(msg)) = self.execute_command(p, &cmd) {
                 self.warn(format!("command {cmd:?}: {msg}"));
             }
