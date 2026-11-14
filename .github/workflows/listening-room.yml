@@ -1,0 +1,43 @@
+name: Listening room
+
+# The binaural renderer needs Steam Audio (a 180 MB download) and Clang, so
+# it is checked here, only when the listening room changes, and not in the
+# required check.
+on:
+  push:
+    branches: [main]
+    paths:
+      - crates/listening-room/**
+      - Cargo.lock
+      - .github/workflows/listening-room.yml
+  pull_request:
+    paths:
+      - crates/listening-room/**
+      - Cargo.lock
+      - .github/workflows/listening-room.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: listening-room-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  binaural:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the original game
+        shell: pwsh
+        run: ./scripts/fetch-upstream.ps1
+      - name: Keep the Steam Audio download
+        uses: actions/cache@v4
+        with:
+          path: target/steamaudio-cache
+          key: ${{ runner.os }}-steamaudio-4.8.1
+      - name: Lint with the binaural renderer
+        run: cargo clippy -p listening-room --features binaural --all-targets -- -D warnings
+      - name: Test with the binaural renderer
+        run: cargo test -p listening-room --features binaural

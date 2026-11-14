@@ -130,6 +130,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "audionimbus"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ee5cd8d9b68f6eb9891b22439bb4d52cbf00a16299cfb5c1a9be1cd2e6051e3"
+dependencies = [
+ "audionimbus-sys",
+ "bitflags 2.13.2",
+ "slotmap",
+ "smallvec",
+]
+
+[[package]]
+name = "audionimbus-sys"
+version = "4.8.2-rc.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d657e216c39f4a44ec98c703bff6d99aa53a555d781983664ac8cf1dd18ad9b3"
+dependencies = [
+ "bindgen 0.71.1",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -149,6 +170,26 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bindgen"
+version = "0.71.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+dependencies = [
+ "bitflags 2.13.2",
+ "cexpr",
+ "clang-sys",
+ "itertools",
+ "log",
+ "prettyplease 0.2.37",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex 1.3.0",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "bindgen"
 version = "0.73.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "787ef8ef523575546b106a58213d6e6b06198a05c2f757258c68a74273670cfa"
@@ -157,12 +198,12 @@ dependencies = [
  "cexpr",
  "clang-sys",
  "log",
- "prettyplease",
+ "prettyplease 0.3.0",
  "proc-macro2",
  "quote",
  "regex",
  "rustc-hash",
- "shlex",
+ "shlex 2.0.1",
  "syn 3.0.10",
 ]
 
@@ -273,7 +314,7 @@ dependencies = [
  "find-msvc-tools",
  "jobserver",
  "libc",
- "shlex",
+ "shlex 2.0.1",
 ]
 
 [[package]]
@@ -628,6 +669,12 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
+
+[[package]]
+name = "either"
+version = "1.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "encoding_rs"
@@ -1133,6 +1180,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1278,6 +1334,18 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "listening-room"
+version = "0.1.0"
+dependencies = [
+ "audionimbus",
+ "rodio",
+ "sha2",
+ "soundrts",
+ "tempfile",
+ "zip",
+]
 
 [[package]]
 name = "litemap"
@@ -1896,6 +1964,16 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "prettyplease"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
@@ -2256,6 +2334,12 @@ dependencies = [
 
 [[package]]
 name = "shlex"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
@@ -2297,6 +2381,15 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slotmap"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
+dependencies = [
+ "version_check",
+]
 
 [[package]]
 name = "smallvec"
@@ -2424,7 +2517,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c3e8acdf2b1f4bb13f1813b40b52f3edf4cc94d8a55fe713a584f672a10388d"
 dependencies = [
- "bindgen",
+ "bindgen 0.73.2",
 ]
 
 [[package]]
