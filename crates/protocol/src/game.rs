@@ -15,9 +15,10 @@
 //! Each is encoded with postcard, a compact binary form of serde's data
 //! model: field values in order, integers as variable-length numbers, no
 //! names. The same value gives the same bytes on every machine. The lobby
-//! keeps JSON: measured on whole games, JSON made the game stream about ten
-//! times larger, too much for a player who hosts a large game on a home
-//! connection (see `tests/stream_measure.rs`).
+//! keeps JSON. Measured on whole games (`tests/stream_measure.rs`), a
+//! player hosting 15 other seats of the largest game would send about 6.8
+//! megabits a second of JSON at the 99th percentile, and 0.8 of postcard;
+//! with the WebSocket's per-message compression, 0.37 against 0.23.
 //!
 //! Decoding takes bytes from a stranger. It refuses more than
 //! [`MAX_GAME_MESSAGE_BYTES`], bytes left over, and anything the encoder
