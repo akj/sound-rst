@@ -627,6 +627,13 @@ impl World {
             return;
         }
         let Some(p) = self.e(unit).player else { return };
+        // An impossible order was never paid for, or was refunded when it
+        // failed; a complete one has delivered what it paid for. Either
+        // waits in the queue until the unit's next update.
+        if o.is_impossible || o.is_complete {
+            self.notify(unit, EntityEvent::OrderOk, false);
+            return;
+        }
         if unpay && let Ok(cost) = self.order_cost(unit, o) {
             self.unpay(p, &cost);
         }
