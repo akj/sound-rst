@@ -67,13 +67,35 @@ mod parsing {
     }
 
     /// Converts a decimal written in a definition file to an integer with
-    /// [`PRECISION`]: `int(float(s) * PRECISION)`.
+    /// [`PRECISION`], truncated toward zero: "1.005" gives 1005, "-0.0019"
+    /// gives -1.
     ///
-    /// The value goes through a binary float, as in the original, so "1.005"
-    /// gives 1004. Every machine computes the same IEEE product, so the result
-    /// is still deterministic.
+    /// The decimal is the shortest that reads back as the same binary float,
+    /// which is the decimal as written when it has up to 15 significant
+    /// digits. Multiplying the float instead would give 1004 for "1.005".
     pub fn to_int(s: &str) -> Result<i64, NotANumber> {
-        float_to_int(py_float(s)? * PRECISION as f64)
+        const _: () = assert!(PRECISION == 1000, "three decimals");
+        // Rust writes a float in full, without an exponent.
+        let text = py_float(s)?.to_string();
+        let (neg, digits) = match text.strip_prefix('-') {
+            Some(digits) => (true, digits),
+            None => (false, text.as_str()),
+        };
+        let (units, decimals) = digits.split_once('.').unwrap_or((digits, ""));
+        let decimals = decimals.chars().chain(std::iter::repeat('0')).take(3);
+        let mut value: i64 = 0;
+        for c in units.chars().chain(decimals) {
+            let d = c.to_digit(10).ok_or(NotANumber)?;
+            value = value
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(i64::from(d)))
+                .ok_or(NotANumber)?;
+        }
+        if neg {
+            value.checked_neg().ok_or(NotANumber)
+        } else {
+            Ok(value)
+        }
     }
 
     /// Python's `int(f)` for a float: truncation toward zero.
@@ -244,8 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn to_int_matches_python_including_binary_float_rounding() {
-        // Expected values printed by CPython 3.11: int(float(s) * 1000).
+    fn to_int_reads_three_decimals_as_written() {
         let cases = [
             ("0.29", 290),
             ("0.57", 570),
@@ -260,8 +281,14 @@ mod tests {
             (" 3 ", 3000),
             ("1_5", 15000),
             ("0.015", 15),
-            ("1.005", 1004),
+            ("1.005", 1005),
             ("4.35", 4350),
+            ("2.675", 2675),
+            ("-1.005", -1005),
+            ("-0.0019", -1),
+            ("0.0009", 0),
+            ("1e-7", 0),
+            ("4503599627370495", 4503599627370495000),
         ];
         for (s, expected) in cases {
             assert_eq!(to_int(s), Ok(expected), "to_int({s:?})");
@@ -271,6 +298,8 @@ mod tests {
         assert_eq!(to_int("nan"), Err(NotANumber));
         assert_eq!(to_int("1__0"), Err(NotANumber));
         assert_eq!(to_int(""), Err(NotANumber));
+        assert_eq!(to_int("9223372036854776"), Err(NotANumber));
+        assert_eq!(to_int("1e300"), Err(NotANumber));
     }
 
     #[test]
