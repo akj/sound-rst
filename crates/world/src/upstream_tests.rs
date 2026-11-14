@@ -1975,6 +1975,31 @@ starting_squares a1
         assert_eq!(w.player(p).units, full);
     }
 
+    #[test]
+    fn a_computer_forgets_a_unit_three_minutes_after_losing_sight_of_it() {
+        let mut w = world_text(THREE_SQUARES);
+        let controllers = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+            Controller::human("c", false),
+        ];
+        let ps = w.populate_map(&controllers, false, false).unwrap();
+        let (cp, b) = (ps[0], ps[1]);
+        let (a1, c1) = (sq(&w, "a1"), sq(&w, "c1"));
+        create(&mut w, "footman", cp, a1);
+        let enemy = create(&mut w, "footman", b, a1);
+        assert!(is_perceiving(&mut w, cp, enemy));
+        move_to(&mut w, enemy, c1);
+        assert!(!is_perceiving(&mut w, cp, enemy));
+        assert!(w.player(cp).memory.contains_key(&enemy));
+        w.time += 3 * 60 * 1000;
+        is_perceiving(&mut w, cp, enemy);
+        assert!(w.player(cp).memory.contains_key(&enemy));
+        w.time += 1;
+        is_perceiving(&mut w, cp, enemy);
+        assert!(!w.player(cp).memory.contains_key(&enemy));
+    }
+
     /// The events of the entities the player perceives, since the last call.
     fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
         w.drain_events(p)
