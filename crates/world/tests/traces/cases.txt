@@ -1,4 +1,4 @@
-# Parity cases. Each line: name, kind (static or trace), map and options.
+# The trace cases. Each line: name, kind (static or trace), map and options.
 # Paths are relative to vendor/soundrts-upstream. Lists are comma separated
 # and are joined with a line break, as the original's resource loader does.
 #

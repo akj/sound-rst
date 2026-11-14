@@ -98,18 +98,18 @@ pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers}
 /// [`World::digest_u64`].
 pub const SIM_VERSION: u32 = 1;
 
-/// The hash of the recorded traces under `tests/parity/expected` for
+/// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.
 #[cfg(test)]
-const PARITY_TRACES_HASH: u64 = 0x3d68_f52f_4501_34d6;
+const TRACES_HASH: u64 = 0x3d68_f52f_4501_34d6;
 
 #[cfg(test)]
 mod sim_version {
     use std::hash::{Hash, Hasher};
 
     #[test]
-    fn the_parity_traces_change_only_with_the_sim_version() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity/expected");
+    fn the_traces_change_only_with_the_sim_version() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/traces/expected");
         let mut names: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().file_name().into_string().unwrap())
@@ -123,8 +123,8 @@ mod sim_version {
         }
         assert_eq!(
             h.finish(),
-            super::PARITY_TRACES_HASH,
-            "the parity traces changed: bump SIM_VERSION and set PARITY_TRACES_HASH to {:#018x}",
+            super::TRACES_HASH,
+            "the traces changed: bump SIM_VERSION and set TRACES_HASH to {:#018x}",
             h.finish()
         );
     }

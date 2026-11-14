@@ -1,12 +1,13 @@
-//! Replays the scripts of `tests/parity/scenarios` on the client and
-//! compares what it says with what the original said for the same keys
-//! (`tests/parity/expected`). `tests/parity/README.md` defines the model:
-//! the virtual clock, the input points, when a step is delivered, and the
-//! transcript grammar.
+//! Replays the scripts of `tests/transcripts/scenarios` on the client and
+//! compares what it says and plays with the recorded transcripts
+//! (`tests/transcripts/expected`). `tests/transcripts/README.md` describes
+//! the model: the virtual clock, the input points, when a step is
+//! delivered, and the transcript grammar.
 //!
-//! On a difference the test shows the first differing line with its
-//! context, and writes the whole transcript of the client to
-//! `target/parity/<scenario>.txt`.
+//! Every run writes the client's transcript and positional-sound stream to
+//! `target/transcripts/`. On a difference the test shows the first
+//! differing line with its context. With `UPDATE_EXPECTED=1` the test
+//! writes the transcript and the stream to `expected/` instead.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -31,8 +32,8 @@ use soundrts::voice::{UtteranceLog, UtterancePart, VoiceEvent};
 /// The virtual epoch: 10^9 s, in microseconds.
 const BASE_US: i64 = 1_000_000_000_000_000;
 
-fn parity_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/parity")
+fn transcripts_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/transcripts")
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,9 @@ const STEP_KINDS: [&str; 7] = [
 
 impl Scenario {
     fn load(name: &str) -> Scenario {
-        let path = parity_dir().join("scenarios").join(format!("{name}.txt"));
+        let path = transcripts_dir()
+            .join("scenarios")
+            .join(format!("{name}.txt"));
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}"));
         let mut settings: Vec<(&'static str, String)> = vec![
             ("language", "en".into()),
@@ -124,8 +127,7 @@ fn expand_steps(steps: &[String]) -> Vec<(String, String)> {
     out
 }
 
-/// A key press as SDL2 and pygame 2 deliver it on a US layout (README,
-/// Input).
+/// A key press with the characters a US layout gives it (README, Input).
 fn key_event(spec: &str) -> KeyDown {
     let words: Vec<&str> = spec.split_whitespace().collect();
     let (mod_words, name) = words.split_at(words.len() - 1);
@@ -408,7 +410,7 @@ impl Replay {
         };
         if let Some(k) = key {
             self.ready.push_back(RawInput::KeyDown(key_event(&k)));
-            // The reference neither repeats a key nor posts its release:
+            // The replay neither repeats a key nor posts its release:
             // the queue forgets the key without an event.
             self.ready.push_back(RawInput::FocusLost);
         }
@@ -541,12 +543,12 @@ fn sound_line(e: &SoundEvent) -> String {
 
 /// Integer microseconds on the virtual epoch; every sleep lets the replay
 /// deliver a timed key.
-struct ParityClock {
+struct ReplayClock {
     us: Rc<Cell<i64>>,
     replay: RefCell<Option<ReplayRef>>,
 }
 
-impl Clock for ParityClock {
+impl Clock for ReplayClock {
     fn now(&self) -> f64 {
         (BASE_US + self.us.get()) as f64 / 1e6
     }
@@ -585,7 +587,7 @@ impl InputSource for ReplaySource {
 
 /// A sound keeps its channel busy for exactly its length, in microseconds,
 /// times its loops.
-struct ParityAudio {
+struct ReplayAudio {
     us: Rc<Cell<i64>>,
     /// channel -> end (`None`: a loop)
     busy: HashMap<usize, Option<i64>>,
@@ -600,7 +602,7 @@ fn length_us(sound: &Sound) -> i64 {
     (f64::from(frames_44100 as f32 / 44100f32) * 1e6).round() as i64
 }
 
-impl AudioOutput for ParityAudio {
+impl AudioOutput for ReplayAudio {
     fn play(&mut self, channel: Channel, sound: &Sound, looping: bool) {
         let len = length_us(sound);
         {
@@ -688,7 +690,7 @@ fn run(s: &Scenario) -> String {
         quit_sent: false,
         reads_at: (-1, 0),
     }));
-    let clock = Rc::new(ParityClock {
+    let clock = Rc::new(ReplayClock {
         us: us.clone(),
         replay: RefCell::new(None),
     });
@@ -715,7 +717,7 @@ fn run(s: &Scenario) -> String {
     let (speech, _) = RecordingSpeech::new();
     let devices = Devices {
         speech: Box::new(speech),
-        audio: Box::new(ParityAudio {
+        audio: Box::new(ReplayAudio {
             us: us.clone(),
             busy: HashMap::new(),
             lengths: lengths.clone(),
@@ -795,76 +797,92 @@ fn first_difference(expected: &str, actual: &str) -> Option<String> {
             .join("\n")
     };
     Some(format!(
-        "first difference at line {}\n--- expected (original)\n{}\n--- actual (Rust)\n{}",
+        "first difference at line {}\n--- expected\n{}\n--- actual\n{}",
         i + 1,
         show(&e),
         show(&a)
     ))
 }
 
+/// The largest positional-sound stream kept in `expected/`, in bytes.
+const SOUNDS_LIMIT: usize = 256 * 1024;
+
+/// Whether the tests write what the client produces to `expected/` instead
+/// of comparing (`UPDATE_EXPECTED=1`).
+fn updating() -> bool {
+    std::env::var_os("UPDATE_EXPECTED").is_some_and(|v| v == "1")
+}
+
+/// Compares `actual` with the file `expected/<file>`, byte for byte; `None`
+/// means the file must not exist. With `UPDATE_EXPECTED=1`, writes or
+/// removes the file instead. On a difference, returns the file's text.
+fn check_expected(file: &str, actual: Option<&str>) -> Result<(), Option<String>> {
+    let path = transcripts_dir().join("expected").join(file);
+    let expected = std::fs::read_to_string(&path).ok();
+    if expected.as_deref() == actual {
+        return Ok(());
+    }
+    if !updating() {
+        return Err(expected);
+    }
+    match actual {
+        Some(text) => std::fs::write(&path, text),
+        None => std::fs::remove_file(&path),
+    }
+    .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    Ok(())
+}
+
+const IF_INTENDED: &str = "If the change is intended, run the test again with UPDATE_EXPECTED=1 \
+     and review the diff of tests/transcripts/expected (see tests/transcripts/README.md).";
+
 fn check(name: &str) {
     let s = Scenario::load(name);
     let both = run(&s);
     let (transcript, sounds) = both.split_once('\u{0}').unwrap();
-    let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/parity");
-    std::fs::create_dir_all(&out_dir).expect("target/parity");
+    let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/transcripts");
+    std::fs::create_dir_all(&out_dir).expect("target/transcripts");
     std::fs::write(out_dir.join(format!("{name}.txt")), transcript).expect("write transcript");
     std::fs::write(out_dir.join(format!("{name}.sounds.txt")), sounds).expect("write sounds");
-    let expected_dir = parity_dir().join("expected");
-    let expected = std::fs::read_to_string(expected_dir.join(format!("{name}.txt")))
-        .expect("expected transcript");
-    let expected = without_exception_types(&expected);
-    // The voice, the titles and the steps first: a difference there says
-    // more than the sound summaries it shifts.
-    let voice_only = |t: &str| {
-        t.lines()
-            .filter(|l| !l.starts_with("length ") && !is_sound_summary(l))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    if let Some(d) = first_difference(&voice_only(&expected), &voice_only(transcript)) {
-        panic!(
-            "{name}: the voice differs from the original's\n{d}\n(full transcript: target/parity/{name}.txt)"
-        );
+    let full = format!(
+        "(full transcript: target/transcripts/{name}.txt, sounds: target/transcripts/{name}.sounds.txt)"
+    );
+    if let Err(expected) = check_expected(&format!("{name}.txt"), Some(transcript)) {
+        let expected = expected.unwrap_or_default();
+        // The voice, the titles and the steps first: a difference there says
+        // more than the sound summaries it shifts.
+        let voice_only = |t: &str| {
+            t.lines()
+                .filter(|l| !l.starts_with("length ") && !is_sound_summary(l))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let what =
+            if let Some(d) = first_difference(&voice_only(&expected), &voice_only(transcript)) {
+                format!("the voice differs from the recording\n{d}")
+            } else if let Some(d) = first_difference(&expected, transcript) {
+                format!("the sound lengths or the sounds of a step differ from the recording\n{d}")
+            } else {
+                "the transcript has the same lines as the recording, but other line ends".to_owned()
+            };
+        panic!("{name}: {what}\n{full}\n{IF_INTENDED}");
     }
-    if let Some(d) = first_difference(&expected, transcript) {
-        panic!(
-            "{name}: the sound lengths or the sounds of a step differ from the original's\n{d}\n\
-             (full transcript: target/parity/{name}.txt, sounds: target/parity/{name}.sounds.txt)"
-        );
+    let kept = (sounds.len() <= SOUNDS_LIMIT).then_some(sounds);
+    if let Err(expected) = check_expected(&format!("{name}.sounds.txt"), kept) {
+        let what = match (expected, kept) {
+            (Some(e), Some(a)) => match first_difference(&e, a) {
+                Some(d) => format!("the positional sounds differ from the recording\n{d}"),
+                None => "the positional sounds have the same lines as the recording, but other line ends".to_owned(),
+            },
+            (None, _) => format!(
+                "the positional sounds fit in {SOUNDS_LIMIT} bytes, but expected/{name}.sounds.txt is missing"
+            ),
+            (Some(_), None) => format!(
+                "the positional sounds are longer than {SOUNDS_LIMIT} bytes, but expected/{name}.sounds.txt exists"
+            ),
+        };
+        panic!("{name}: {what}\n{full}\n{IF_INTENDED}");
     }
-    if let Ok(expected_sounds) =
-        std::fs::read_to_string(expected_dir.join(format!("{name}.sounds.txt")))
-        && let Some(d) = first_difference(&expected_sounds, sounds)
-    {
-        panic!(
-            "{name}: the positional sounds differ from the original's\n{d}\n(full stream: target/parity/{name}.sounds.txt)"
-        );
-    }
-}
-
-/// The original's exception lines without the Python exception class:
-/// `exception <message> (<Class>: <text>)` becomes `exception <message>:
-/// <text>`, as the client logs its errors.
-fn without_exception_types(transcript: &str) -> String {
-    let mut out = String::new();
-    for line in transcript.lines() {
-        let rewritten = line
-            .split_once(" exception ")
-            .filter(|(t, _)| t.starts_with('@'))
-            .and_then(|(t, rest)| {
-                let body = rest.strip_suffix(')')?;
-                let (message, inner) = body.rsplit_once(" (")?;
-                let (class, text) = inner.split_once(": ")?;
-                class
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
-                    .then(|| format!("{t} exception {message}: {text}"))
-            });
-        out.push_str(rewritten.as_deref().unwrap_or(line));
-        out.push('\n');
-    }
-    out
 }
 
 /// `@<ms> sounds <count> <fnv64>`: the summary of a step's sounds.

@@ -1,6 +1,7 @@
-//! Parity with the original game: the maps built and the games played by
-//! the Python code (dumped by `tests/parity/dump_reference.py`) must be
-//! reproduced exactly. See `tests/parity/README.md`.
+//! The recorded traces: the maps built and the games played from the cases
+//! of `tests/traces/cases.txt` must match `tests/traces/expected` exactly.
+//! With `UPDATE_EXPECTED=1` the tests write what the port computes there
+//! instead. See `tests/traces/README.md`.
 
 mod common;
 
@@ -10,8 +11,8 @@ use std::path::PathBuf;
 use soundrts_world::entity::{ActionKind, Entity, Place};
 use soundrts_world::{AiScripts, Controller, PlayerId, Rules, World, multiplayer_default_triggers};
 
-fn parity_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/parity")
+fn traces_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/traces")
 }
 
 struct Case {
@@ -28,7 +29,7 @@ struct Case {
 }
 
 fn cases() -> Vec<Case> {
-    let text = std::fs::read_to_string(parity_dir().join("cases.txt")).unwrap();
+    let text = std::fs::read_to_string(traces_dir().join("cases.txt")).unwrap();
     let mut out = Vec::new();
     for line in text.lines() {
         let line = line.trim();
@@ -217,7 +218,14 @@ fn dump_tick(w: &World) -> Vec<String> {
     lines
 }
 
-/// The placeholders of the scenarios, resolved as the Python script does.
+/// A scenario command with its placeholders resolved, or `None` when one of
+/// them names nothing (the command is then skipped). `{u:<type>:<n>}` is a
+/// unit of the player and `{eu:...}` one of the other player; `{here:...}`,
+/// `{hn:...}` and `{there:...}` are the id and name of a unit's square;
+/// `{at:<square>:<type>:<n>}` is an object of a square; `{mead:<n>}` and
+/// `{loc:<type>:<n>}` are objects on the square of the player's first unit;
+/// `{ids:<type>}` is a group of the player's units; `{sq:<square>}` is a
+/// square's id.
 fn resolve(w: &World, players: &[PlayerId], pi: usize, cmd: &str) -> Option<String> {
     let me = players[pi];
     let other = players
@@ -315,8 +323,33 @@ fn controllers(spec: &str) -> Vec<Controller> {
         .collect()
 }
 
-fn compare(name: &str, expected: &[String], actual: &[String]) {
-    for (i, (e, a)) in expected.iter().zip(actual).enumerate() {
+/// Whether the tests write what the port produces to `expected/` instead of
+/// comparing (`UPDATE_EXPECTED=1`).
+fn updating() -> bool {
+    std::env::var_os("UPDATE_EXPECTED").is_some_and(|v| v == "1")
+}
+
+/// Compares `actual` with the file `expected/<file>`, byte for byte. With
+/// `UPDATE_EXPECTED=1`, writes `actual` to the file instead. On a
+/// difference, returns the file's text (empty if the file is missing).
+fn check_expected(file: &str, actual: &str) -> Result<(), String> {
+    let path = traces_dir().join("expected").join(file);
+    let expected = std::fs::read_to_string(&path).unwrap_or_default();
+    if expected == actual {
+        Ok(())
+    } else if updating() {
+        std::fs::write(&path, actual).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        Ok(())
+    } else {
+        Err(expected)
+    }
+}
+
+/// Panics with the first line that differs between two texts that differ.
+fn compare(name: &str, expected: &str, actual: &str) {
+    let expected: Vec<&str> = expected.lines().collect();
+    let actual: Vec<&str> = actual.lines().collect();
+    for (i, (e, a)) in expected.iter().zip(&actual).enumerate() {
         if e != a {
             let tick = expected[..=i]
                 .iter()
@@ -337,20 +370,7 @@ fn compare(name: &str, expected: &[String], actual: &[String]) {
         actual.len(),
         "{name}: not the same number of lines"
     );
-}
-
-fn expected(name: &str) -> Vec<String> {
-    let path = parity_dir().join("expected").join(format!("{name}.txt"));
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| {
-            panic!(
-                "{}: {e} (run tests/parity/dump_reference.py)",
-                path.display()
-            )
-        })
-        .lines()
-        .map(str::to_owned)
-        .collect()
+    panic!("{name}: the same lines, but other line ends");
 }
 
 fn fnv64(text: &str) -> String {
@@ -368,7 +388,7 @@ fn run_trace(case: &Case) -> (Vec<String>, Vec<String>) {
     let players = w
         .populate_map(&controllers(&case.players), true, true)
         .unwrap();
-    let scenario = std::fs::read_to_string(parity_dir().join(&case.scenario)).unwrap();
+    let scenario = std::fs::read_to_string(traces_dir().join(&case.scenario)).unwrap();
     let mut by_tick: BTreeMap<usize, Vec<(usize, String)>> = BTreeMap::new();
     for line in scenario.lines() {
         let line = line.trim();
@@ -406,76 +426,65 @@ fn run_trace(case: &Case) -> (Vec<String>, Vec<String>) {
     (summary, full)
 }
 
-/// Where a failed trace writes its full dump.
+/// Where the tests write the full dump of a case that differs.
 fn actual_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/parity-actual")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/traces-actual")
 }
 
-/// The hash of each built map's dump, by case.
-fn static_hashes() -> BTreeMap<String, String> {
-    let path = parity_dir().join("expected/static_hashes.txt");
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| {
-            panic!(
-                "{}: {e} (run tests/parity/dump_reference.py)",
-                path.display()
-            )
-        })
-        .lines()
-        .filter_map(|l| l.split_once(' '))
-        .map(|(n, h)| (n.to_owned(), h.to_owned()))
-        .collect()
+/// Writes the full dump of a case to `target/traces-actual/<case>.txt`.
+fn write_actual(name: &str, dump: &[String]) -> PathBuf {
+    let dir = actual_dir();
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(format!("{name}.txt"));
+    std::fs::write(&path, dump.join("\n") + "\n").unwrap();
+    path
 }
 
-fn check_static(case: &Case, hashes: &BTreeMap<String, String>) {
-    let dump = dump_static(&make_world(case));
-    let actual = fnv64(&dump.join("\n"));
-    let expected = hashes
-        .get(&case.name)
-        .unwrap_or_else(|| panic!("{}: no hash in static_hashes.txt", case.name));
-    if actual != *expected {
-        let dir = actual_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(format!("{}.txt", case.name));
-        std::fs::write(&path, dump.join("\n") + "\n").unwrap();
+const IF_INTENDED: &str = "If the change is intended, run the test again with UPDATE_EXPECTED=1 \
+     and review the diff of tests/traces/expected (see tests/traces/README.md).";
+
+/// The built maps: one line per static case, its name and the hash of its
+/// dump, in `expected/static_hashes.txt`.
+fn check_static() {
+    let mut text = String::new();
+    let mut dumps = Vec::new();
+    for case in cases().into_iter().filter(|c| c.kind == "static") {
+        let dump = dump_static(&make_world(&case));
+        let line = format!("{} {}", case.name, fnv64(&dump.join("\n")));
+        text.push_str(&line);
+        text.push('\n');
+        dumps.push((case.name, line, dump));
+    }
+    if let Err(expected) = check_expected("static_hashes.txt", &text) {
+        let mut differ = Vec::new();
+        for (name, line, dump) in &dumps {
+            if !expected.lines().any(|l| l == line) {
+                let path = write_actual(name, dump);
+                differ.push(format!("{line} (full dump: {})", path.display()));
+            }
+        }
         panic!(
-            "{}: the built map differs from the original's (hash {actual}, expected {expected}).\n\
-             The dump is in {}. To get the original's, run from vendor/soundrts-upstream:\n    \
-             ..\\.venv-ref\\Scripts\\python.exe ..\\..\\crates\\world\\tests\\parity\\dump_reference.py \
-             --only {} --full ..\\..\\target\\parity-reference\n\
-             then compare it with target/parity-reference/{}.txt",
-            case.name,
-            path.display(),
-            case.name,
-            case.name
+            "the built maps differ from expected/static_hashes.txt:\n{}\n{IF_INTENDED}",
+            differ.join("\n")
         );
     }
 }
 
+/// The scripted games whose name starts with `prefix`: one line per update
+/// in `expected/<case>.txt`.
 fn check(prefix: &str) {
     let mut n = 0;
-    let hashes = static_hashes();
-    for case in cases().into_iter().filter(|c| c.name.starts_with(prefix)) {
-        match case.kind.as_str() {
-            "static" => check_static(&case, &hashes),
-            _ => {
-                let (summary, full) = run_trace(&case);
-                let expected = expected(&case.name);
-                if expected != summary {
-                    let dir = actual_dir();
-                    std::fs::create_dir_all(&dir).unwrap();
-                    let path = dir.join(format!("{}.txt", case.name));
-                    std::fs::write(&path, full.join("\n") + "\n").unwrap();
-                    eprintln!(
-                        "full trace written to {}; get the original's with \
-                         dump_reference.py --only {} --full ..\\..\\target\\parity-reference \
-                         (see tests/parity/README.md)",
-                        path.display(),
-                        case.name
-                    );
-                }
-                compare(&case.name, &expected, &summary);
-            }
+    for case in cases()
+        .into_iter()
+        .filter(|c| c.kind == "trace" && c.name.starts_with(prefix))
+    {
+        let (summary, full) = run_trace(&case);
+        let text = summary.join("\n") + "\n";
+        if let Err(expected) = check_expected(&format!("{}.txt", case.name), &text) {
+            let path = write_actual(&case.name, &full);
+            eprintln!("{}: the full dump is in {}", case.name, path.display());
+            eprintln!("{IF_INTENDED}");
+            compare(&case.name, &expected, &text);
         }
         n += 1;
     }
@@ -486,57 +495,53 @@ fn check(prefix: &str) {
 #[test]
 fn a_different_seed_gives_a_different_trace() {
     let mut case = cases().into_iter().find(|c| c.name == "trace_jl1").unwrap();
-    let expected = expected(&case.name);
+    let (first, _) = run_trace(&case);
     case.seed += 1;
-    let (actual, _) = run_trace(&case);
-    assert_eq!(expected.len(), case.ticks, "one line per update");
-    let first_difference = expected.iter().zip(&actual).position(|(e, a)| e != a);
-    assert!(
-        first_difference.is_some(),
-        "a different seed gave the same trace"
-    );
+    let (second, _) = run_trace(&case);
+    assert_eq!(first.len(), case.ticks, "one line per update");
+    assert_ne!(first, second, "a different seed gave the same trace");
 }
 
 #[test]
-fn built_maps_match_the_original() {
-    check("static_");
+fn built_maps_match_the_recording() {
+    check_static();
 }
 
 #[test]
-fn game_on_jl1_matches_the_original_tick_by_tick() {
+fn game_on_jl1_matches_the_recording_tick_by_tick() {
     check("trace_jl1");
 }
 
 #[test]
-fn fight_on_jl7_matches_the_original_tick_by_tick() {
+fn fight_on_jl7_matches_the_recording_tick_by_tick() {
     check("trace_jl7");
 }
 
 #[test]
-fn campaign_mission_3_matches_the_original_tick_by_tick() {
+fn campaign_mission_3_matches_the_recording_tick_by_tick() {
     check("trace_campaign3");
 }
 
 #[test]
-fn portals_on_the_cyclic_map_match_the_original_tick_by_tick() {
+fn portals_on_the_cyclic_map_match_the_recording_tick_by_tick() {
     check("trace_cyclic");
 }
 
 #[test]
-fn boats_walls_spells_and_computer_orders_on_jl5_match_the_original_tick_by_tick() {
+fn boats_walls_spells_and_computer_orders_on_jl5_match_the_recording_tick_by_tick() {
     check("trace_jl5");
 }
 
 #[test]
-fn campaign_mission_2_triggers_match_the_original_tick_by_tick() {
+fn campaign_mission_2_triggers_match_the_recording_tick_by_tick() {
     check("trace_campaign2");
 }
 
-/// `PARITY_ONLY=<prefix>` narrows the AI games to the cases starting with
-/// it, to debug one of them.
+/// `TRACES_ONLY=<prefix>` narrows the games with computer players to the
+/// cases starting with it, to debug one of them.
 #[test]
-fn games_with_computer_players_match_the_original_tick_by_tick() {
-    let only = std::env::var("PARITY_ONLY").unwrap_or_default();
+fn games_with_computer_players_match_the_recording_tick_by_tick() {
+    let only = std::env::var("TRACES_ONLY").unwrap_or_default();
     check(&format!(
         "trace_ai_{}",
         only.trim_start_matches("trace_ai_")
