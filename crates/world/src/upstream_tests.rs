@@ -1757,4 +1757,51 @@ mod bugs_of_the_original {
         w.creature_update(th).unwrap();
         assert_eq!(w.e(p).hp, max - 160);
     }
+
+    const TWO_SQUARES: &str = "
+square_width 12
+nb_columns 2
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 2
+nb_players_max 2
+starting_squares a1 b1
+";
+
+    /// Two human players, on `a1` and `b1`, with no units.
+    fn two_humans() -> (World, PlayerId, PlayerId) {
+        let mut w = world_text(TWO_SQUARES);
+        let ps = w
+            .populate_map(
+                &[Controller::human("a", false), Controller::human("b", false)],
+                false,
+                false,
+            )
+            .unwrap();
+        (w, ps[0], ps[1])
+    }
+
+    #[test]
+    fn a_splash_that_kills_its_target_still_hits_the_units_beside_it() {
+        let (mut w, a, b) = two_humans();
+        let a1 = sq(&w, "a1");
+        let dragon = create(&mut w, "dragon", a, a1);
+        let target = create(&mut w, "footman", b, a1);
+        let beside = create(&mut w, "footman", b, a1);
+        let (t, s) = (w.e(target), w.e(beside));
+        let d2 = (t.x - s.x).pow(2) + (t.y - s.y).pow(2);
+        assert!(d2 <= PRECISION * PRECISION, "within the splash radius");
+        w.em(target).hp = 1;
+        w.set_action_target(dragon, Some(Target::Entity(target)));
+        let max = w.e(beside).stats.hp_max;
+        for _ in 0..20 {
+            w.update();
+            if w.e(target).place.is_none() {
+                break;
+            }
+        }
+        assert!(w.e(target).place.is_none(), "the target is dead");
+        // The dragon's damage of 4, less the footman's armor of 0.5.
+        assert_eq!(w.e(beside).hp, max - 3500);
+    }
 }
