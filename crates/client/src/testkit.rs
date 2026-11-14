@@ -970,7 +970,8 @@ impl Harness {
 
     /// Starts a training game on the multiplayer map `map` against
     /// computers of these types, with the world's seed fixed. The objective
-    /// is said and the bindings are loaded; no turn has run yet.
+    /// is told as the story and the bindings are loaded; no turn has run
+    /// yet.
     pub fn start_training(&mut self, map: &str, computers: &[&str], seed: i64) -> TestGame {
         self.client.game.seed = Some(seed);
         let m = self

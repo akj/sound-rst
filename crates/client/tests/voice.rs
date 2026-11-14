@@ -132,6 +132,45 @@ fn a_key_press_cuts_a_confirmation_short_and_stays_queued() {
 }
 
 #[test]
+fn in_a_game_a_message_said_now_does_not_wait_and_the_key_stays_for_the_game() {
+    let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Down));
+    h.client.voice.set_in_game(true);
+    let before = h.clock.now();
+    h.client.voice.confirmation(&t(LONG));
+    h.client.voice.alert(&t(LONG));
+    assert_eq!(h.clock.now(), before);
+    assert_eq!(h.spoken(), [LONG, LONG]);
+    assert!(h.client.voice.is_busy());
+    run(&mut h, 1.0);
+    assert_eq!(h.client.input.get_keydowns().len(), 1);
+}
+
+#[test]
+fn the_end_of_a_game_gives_up_its_news_but_what_it_is_about() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    info(v, "said");
+    info(v, "production");
+    tell(v, Category::Scouting, "scouting");
+    tell(v, Category::Story, "mission complete");
+    tell(v, Category::System, "player quits");
+    v.end_game();
+    run(&mut h, 10.0);
+    // The system news first, as it was ahead of the story.
+    assert_eq!(h.spoken(), ["said", "player quits", "mission complete"]);
+    assert_eq!(
+        log(&h),
+        [
+            ("said".to_owned(), Heard::Yes),
+            ("production".to_owned(), Heard::No),
+            ("scouting".to_owned(), Heard::No),
+            ("mission complete".to_owned(), Heard::Yes),
+            ("player quits".to_owned(), Heard::Yes),
+        ]
+    );
+}
+
+#[test]
 fn a_key_press_does_not_cut_an_alert_and_is_dropped() {
     let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Down));
     h.client.voice.alert(&t(LONG));
@@ -365,7 +404,7 @@ fn unheard_news() -> Harness {
 }
 
 /// What the voice says when `f` is done to it.
-fn said(h: &mut Harness, f: impl FnOnce(&mut Voice)) -> String {
+fn said<T>(h: &mut Harness, f: impl FnOnce(&mut Voice) -> T) -> String {
     let from = h.utterances().len();
     f(&mut h.client.voice);
     h.said_since(from).join(" | ")
@@ -470,14 +509,14 @@ fn each_policy_does_what_it_says() {
 }
 
 #[test]
-fn a_story_message_not_spoken_does_not_stop_the_game() {
+fn a_cut_scene_message_not_spoken_does_not_wait() {
     let mut h = Harness::new("en", Script::new());
     let before = h.clock.now();
     let story = || News::new(Category::Story, t(LONG));
-    h.client.voice.confirmation_news(story(), Policy::Log);
+    h.client.voice.important_news(story(), Policy::Log);
     assert_eq!(h.clock.now(), before);
     assert_eq!(h.spoken(), Vec::<String>::new());
-    h.client.voice.confirmation_news(story(), Policy::Speak);
+    h.client.voice.important_news(story(), Policy::Speak);
     assert!(h.clock.now() >= before + 5.0);
     assert_eq!(
         log(&h),

@@ -74,6 +74,8 @@ In the options menu, Sound and speech has these items. Each item says its name, 
 
 While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. News is never lost: a message cut off is said again, newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square), and every message is kept in a log, heard or not.
 
+Nothing said stops the game. Important messages, such as a player defeated, a new objective or the console's answer, are said before other news waiting, while the game goes on. In single-player, the game waits on purpose while the story is told (a mission's intro, the objective, a cut scene) and while the game menu or the console is open. While the story is told, the game menu, the history and news keys, help and the volume keys work, and any other key skips the message being said. In a game on a server, nothing waits.
+
 | Key | Does |
 | --- | --- |
 | F4 | What did I miss: says how many messages you have not heard in each category. Press again to hear them one at a time: the newest alert first, then the others, oldest first. |

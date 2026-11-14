@@ -583,7 +583,7 @@ impl GameInterface {
                 }
             }
             if !m.is_empty() {
-                self.shortcut_mode = true;
+                self.mode = super::Mode::OrderShortcut;
                 cx.voice.item(&m);
                 return;
             }

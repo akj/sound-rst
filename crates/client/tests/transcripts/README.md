@@ -61,8 +61,10 @@ keyboard and the window with its own. The rest is the client's own code.
 - Only sleeping advances the clock: a sleep of `s` seconds adds
   `round(s × 10^6)` µs. Computation takes no time. The client sleeps 1 ms
   per pass of the game loop, 10 ms per menu poll, and 100 ms per pass of a
-  blocking voice loop (a message said now, a flush). The text entry loop
-  sleeps 1 ms, then is an input point, then reads the queue.
+  blocking voice loop (a message said now outside a game, a flush). The
+  text entry loop of the menus sleeps 1 ms, then is an input point, then
+  reads the queue. In a game, nothing said blocks, and the game menu, the
+  console and a chat line read their keys in the game loop.
 - Transcript times are whole milliseconds: the microseconds divided by
   1000.
 
@@ -128,9 +130,12 @@ not busy, no queued part) and no message is waiting to be said.
   player's next action. Only an input point may deliver a step, except an
   `interrupt_after` step, which may also arrive at the end of a sleep (see
   Steps). There are four kinds:
-  - `menu`: a menu waits for a choice;
-  - `text`: a line of text is being typed;
-  - `game`: the game loop reads the keys;
+  - `menu`: a menu waits for a choice, or in a game, the game menu is
+    open;
+  - `text`: a line of text is being typed, or in a game, a console command
+    or a chat line;
+  - `game`: the game loop reads the keys of the game, of the order
+    shortcut, or of a story being told;
   - `voice`: a message being said looks for a key that interrupts it.
 
   Every other read, such as the read that drops the keys pressed during an
@@ -188,25 +193,33 @@ end of each world update.
 
 ### The game loop and the world
 
-The world runs in the client's thread. One pass of the game loop:
+The world runs in the client's thread. The world waits while a story is
+told (the intro and objective of a game, a cut scene) or while the game
+menu or the console is open. One pass of the game loop:
 
-1. if not waiting for a world update and `now >= next_update`: the orders
-   written since the last update go to the world in order;
-   `next_update = now + 0.3 / speed`; the world updates and queues its
-   server events for the interface (entity events, important messages,
-   sequences, speed changes), then `Voila`, the end of the turn; at the end
-   of a game, the events of the players quitting follow it;
-2. the animations, if `now >= previous_animation + animation_delay`
-   (0.1 s);
-3. the key presses: the `game` input point, then every queued key;
-4. one server event;
+1. if the world does not wait, is not waiting for a world update, and
+   `now >= next_update`: the orders written since the last update go to
+   the world in order; `next_update = now + 0.3 / speed`; the world updates
+   and queues its server events for the interface (entity events,
+   important messages, sequences, speed changes), then `Voila`, the end of
+   the turn; at the end of a game, the events of the players quitting
+   follow it;
+2. if the world does not wait, the animations, if
+   `now >= previous_animation + animation_delay` (0.1 s);
+3. the key presses: the input point of the mode (`game`, or `menu` while
+   the game menu is open, or `text` while a command or a chat line is
+   typed), then every queued key;
+4. if the world does not wait, one server event;
 5. the voice update;
 6. a sleep of 1 ms.
 
 So the events of an update reach the interface one per loop pass, and
-`Voila` last. A pass takes 1 ms, or longer when its event is said with a
-blocking message. A key pressed in a game reaches the world with the next
-update.
+`Voila` last. A pass takes 1 ms: nothing said holds it. Important messages
+and the messages of a story are news, said before the other news waiting.
+A story ends when its last message has been said or skipped; any key but
+those of the game menu, the history, the news, help and the volume skips
+the message being said. A key pressed in a game reaches the world with the
+next update.
 
 ### Fixed orders
 
@@ -258,10 +271,13 @@ Events:
   when the message's left and right volumes are not the default (`1/√2`).
   Three decimals. The kinds:
   - `item`: says now, not kept in the history, does not block;
-  - `alert`: blocks until said; keys pressed meanwhile are dropped;
-  - `important`: blocks until said or a key is pressed; the key is used up;
-  - `confirmation`, `menu`: block until said or a key is pressed; the key
-    stays queued;
+  - `alert`: outside a game, blocks until said; keys pressed meanwhile are
+    dropped;
+  - `important`: outside a game, blocks until said or a key is pressed;
+    the key is used up;
+  - `confirmation`, `menu`: outside a game, block until said or a key is
+    pressed; the key stays queued. In a game they do not block, and the
+    next message cuts them as it cuts an `item`;
   - `info`: a queued message started by the voice update (news), or only
     its recorded sounds under the `sound` policy;
   - `history`: a message said again from the log (`F5`, the review keys,
@@ -353,15 +369,15 @@ again.
   every later message of the history, until the end (`training_jl1`: two
   quick F5 say "7 wood" again, then "1 footman enemy at c 2" follows by
   itself).
-- An `info` message cut by another message (`item`, `confirmation`,
-  `important`) is said again afterwards, from the start, however long it
-  had been playing. Several blocking messages in a row repeat it several
-  times (`campaign`: "barracks 1 at b 1" three times).
+- An `info` message cut by another message (`item`, `menu`,
+  `confirmation`) is said again afterwards, from the start, however long
+  it had been playing.
 - An empty login says an `item` message with one empty text part (it ends
   at once), then the "bad login" alert (`menus_options`).
-- Stopping the sounds (volume keys, cut scenes, the game menu) stops the
-  speech but leaves the remaining parts of the message queued in the voice
-  channel: they play on at the next voice update.
+- Stopping the sounds with the volume keys stops the speech but leaves the
+  remaining parts of the message queued in the voice channel: they play on
+  at the next voice update. A story or the game menu in single-player stops
+  only the sounds of the world.
 - Choosing a mod or a soundpack opens a new main menu inside the old one.
   Quitting it exits the client (`menus_options`).
 - In the mods menu, Back also closes the options menu.
@@ -372,12 +388,13 @@ again.
   first world update, up to 100 ms after the game starts, and interrupts
   whatever the first key said (`training_jl1`).
 - Server events are handled one per loop pass. An entity event handled
-  later than `next_update + 3 s` plays no sound, so a long blocking message
-  can make the interface skip the sounds that the event would have
-  produced. Its news ("peasant 2 ready!") is still said.
-- Saying the time reports the measured speed (`speed 0.1` right after the
-  game menu was open for a while: the average turn duration includes the
-  pause; `training_jl1`).
+  later than `next_update + 3 s` plays no sound, so the events that wait
+  while a long story is told or the game menu is open in single-player can
+  be handled without the sounds they would have produced. Their news
+  ("peasant 2 ready!") is still said.
+- Saying the time reports the measured speed (`speed 1.1` a few turns
+  after the game menu was open for a while: the average turn duration
+  includes the pause; `training_jl1`).
 - A modifier key pressed alone in a game is a command (`LCTRL` examines,
   `LSHIFT` and `LALT` stop the history). In a menu, CTRL alone says the
   "press Tab to select" explanation, ALT alone skips the current message,

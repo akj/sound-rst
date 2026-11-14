@@ -197,8 +197,9 @@ impl Session {
         }
     }
 
-    /// Builds the world and the interface, plays the intro and says the
-    /// objective. `None` if the map cannot be built (a beep and the error
+    /// Builds the world and the interface, and tells the intro and the
+    /// objective as a story: in single-player the first turn waits until
+    /// it is told. `None` if the map cannot be built (a beep and the error
     /// are said).
     pub fn start(&mut self, cx: &mut Client) -> Option<GameInterface> {
         cx.res.set_map(Some(&self.map));
@@ -253,8 +254,15 @@ impl Session {
         }
         cx.input.set_game(Some(game.progress()));
         game.update_orders_list(cx);
-        self.pre_run(cx, &game);
-        game.say_objective(cx);
+        if self.kind == SessionKind::Multiplayer && self.humans() > 1 {
+            countdown(cx);
+        }
+        let story = self
+            .intro(&game)
+            .into_iter()
+            .chain(game.objective())
+            .collect();
+        game.tell_story(cx, story);
         game.load_bindings(cx);
         if self.net.is_some() {
             crate::net::send(cx, ClientMsg::Loaded);
@@ -262,20 +270,22 @@ impl Session {
         Some(game)
     }
 
-    fn pre_run(&self, cx: &mut Client, game: &GameInterface) {
-        if self.kind == SessionKind::Multiplayer && self.humans() > 1 {
-            countdown(cx);
+    /// A mission's intro: its sounds or texts, in order.
+    fn intro(&self, game: &GameInterface) -> Vec<Msg> {
+        if self.kind != SessionKind::Mission {
+            return Vec::new();
         }
-        if self.kind == SessionKind::Mission {
-            let intro: Vec<String> = game.view().map_intro().iter().map(i64::to_string).collect();
-            if !intro.is_empty() {
-                cx.play_sequence(&intro);
-            }
-        }
+        game.view()
+            .map_intro()
+            .iter()
+            .map(|n| vec![MsgPart::from(n.to_string().as_str())])
+            .collect()
     }
 
-    /// Says the score and waits until it is said (a key skips ahead).
+    /// Says what the end of the game left to say, then the score, and
+    /// waits until it is said (a key skips ahead).
     pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
+        cx.voice.flush(true);
         for m in score_msgs(game.view(), cx.res.style()) {
             cx.news(News::new(Category::System, m));
         }
