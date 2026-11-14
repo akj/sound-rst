@@ -1,5 +1,12 @@
 //! The text table and the sounds of the active resources: what each sound
 //! number of a message turns into.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,6 +20,9 @@ use crate::package::Package;
 use crate::parameters::Parameters;
 
 pub const TXT_FILE: &str = "ui/tts";
+/// The largest `tts.txt` of one layer, in bytes; a larger one is ignored
+/// whole. The original's largest is 16 KB.
+pub const MAX_TTS_BYTES: usize = 1024 * 1024;
 /// A sound of 0.01 s, said as "," when there is no recording.
 pub const SHORT_SILENCE: &str = "9998";
 /// A sound of 0.2 s, said as "." when there is no recording.
@@ -42,6 +52,13 @@ enum SoundRef {
 
 /// Reads the lines `<key> <text>` of `ui/tts.txt` files into `table`.
 pub fn update_text_table(table: &mut HashMap<String, String>, txt: &str, log: &Log) {
+    if txt.len() > MAX_TTS_BYTES {
+        log.warning(format!(
+            "'{TXT_FILE}' of {} bytes, more than {MAX_TTS_BYTES}, ignored",
+            txt.len()
+        ));
+        return;
+    }
     for line in txt.split('\n') {
         let line = line.trim();
         if line.is_empty() {
@@ -85,6 +102,12 @@ fn is_all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
+/// A key that names a sound or a text: digits below the numbers the game
+/// encodes to be said as numbers.
+fn is_sound_number(key: &str) -> bool {
+    is_all_digits(key) && key.parse::<u64>().is_ok_and(|n| n < NB_ENCODE_SHIFT)
+}
+
 impl SoundCache {
     /// Builds the cache from the text files and the `.ogg` files found
     /// under `ui` (and its translation) in the layers.
@@ -126,6 +149,49 @@ impl SoundCache {
             params,
             log,
         }
+    }
+
+    /// Adds the texts and sounds of a map that came from a server, as
+    /// [`SoundCache::new`] reads them, but only under sound numbers this
+    /// cache lacks: the game's own texts and sounds stay, and so do the
+    /// numbers and words the game says as they are. Returns how many were
+    /// ignored.
+    pub fn add_downloaded(&mut self, texts: &[String], sound_dirs: &[(Package, String)]) -> usize {
+        let mut ignored: usize = 0;
+        let mut txt = HashMap::new();
+        for t in texts {
+            update_text_table(&mut txt, t, &self.log);
+        }
+        let taken = |cache: &SoundCache, key: &str| {
+            cache.txt.contains_key(key) || cache.sounds.contains_key(key) || !is_sound_number(key)
+        };
+        for (key, value) in txt {
+            if taken(self, &key) {
+                ignored = ignored.saturating_add(1);
+            } else {
+                self.txt.insert(key, value);
+            }
+        }
+        let mut sounds = HashMap::new();
+        for (package, dir) in sound_dirs.iter().rev() {
+            for name in package.relative_paths_of_files_in_subtree(dir) {
+                let Some(stem) = name.strip_suffix(".ogg") else {
+                    continue;
+                };
+                let key = stem.rsplit('/').next().unwrap_or(stem).to_owned();
+                sounds
+                    .entry(key)
+                    .or_insert_with(|| SoundRef::Unloaded(package.clone(), name.clone()));
+            }
+        }
+        for (key, sound) in sounds {
+            if taken(self, &key) {
+                ignored = ignored.saturating_add(1);
+            } else {
+                self.sounds.insert(key, sound);
+            }
+        }
+        ignored
     }
 
     pub fn get_sound(&mut self, name: &str, warn: bool) -> Option<Sound> {
@@ -176,9 +242,9 @@ impl SoundCache {
         }
         if is_all_digits(&key)
             && let Ok(n) = key.parse::<u64>()
-            && n >= NB_ENCODE_SHIFT
+            && let Some(n) = n.checked_sub(NB_ENCODE_SHIFT)
         {
-            return Spoken::Text((n - NB_ENCODE_SHIFT).to_string());
+            return Spoken::Text(n.to_string());
         }
         if let Some(s) = self.get_sound(&key, false) {
             return Spoken::Sound(s);
@@ -225,5 +291,31 @@ impl Sounds {
 
     pub fn update_volumes(&self, params: Rc<Parameters>) {
         self.0.borrow_mut().update_volumes(params);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_downloaded_text_cannot_stand_for_a_number_or_a_word() {
+        let log = Log::silent();
+        let params = Rc::new(Parameters::default());
+        let mut cache =
+            SoundCache::new(&["5 What are your orders?\n".to_owned()], &[], params, log);
+        let added = format!(
+            "5 Press Alt F4.\n9000 golem\n{} six\nhello bye\n",
+            NB_ENCODE_SHIFT + 5
+        );
+        assert_eq!(cache.add_downloaded(&[added], &[]), 3);
+        let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
+            Spoken::Text(t) => t,
+            Spoken::Sound(_) => "a sound".to_owned(),
+        };
+        assert_eq!(said(&mut cache, MsgPart::Num(5)), "What are your orders?");
+        assert_eq!(said(&mut cache, MsgPart::Num(9000)), "golem");
+        assert_eq!(said(&mut cache, MsgPart::Num(NB_ENCODE_SHIFT + 5)), "5");
+        assert_eq!(said(&mut cache, MsgPart::from("hello")), "hello");
     }
 }

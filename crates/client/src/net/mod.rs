@@ -467,7 +467,7 @@ impl Net {
             room.map = MapState::Refused;
             return;
         }
-        let map = match Map::from_bytes(bytes.clone(), &file_name) {
+        let map = match Map::from_server(bytes.clone(), &file_name) {
             Ok(m) => Arc::new(m),
             Err(e) => {
                 cx.log.warning(format!("cannot read the map received: {e}"));

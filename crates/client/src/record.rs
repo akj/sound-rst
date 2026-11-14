@@ -6,15 +6,42 @@
 //! The text is JSON lines: the setup on the first line, then one turn a
 //! line, so that a plain diff of two players' records starts at the first
 //! turn where they differ.
+//!
+//! A record is a file anyone can hand over, so reading one is bounded by
+//! the limits below, and a record that makes the simulation fail is
+//! reported as invalid like any other.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::fmt;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use soundrts_protocol::{Digest, SlotIndex, Turn};
+use soundrts_protocol::{Digest, MAX_ORDER_BYTES, MAX_TURN_ORDER_BYTES, SlotIndex, Turn};
 use soundrts_world::{Controller, ControllerKind, GameSetup, Host, SIM_VERSION};
 
+use crate::package::read_file;
 use crate::session::SessionKind;
+
+/// The largest record file read, in bytes. A turn with no order takes
+/// about 50 bytes, so a game of 40 hours at the fastest speed (75 ms a
+/// turn) takes about 100 MB.
+pub const MAX_RECORD_BYTES: u64 = 256 * 1024 * 1024;
+
+/// The most turns a record may hold: more than 41 hours at the fastest
+/// speed.
+pub const MAX_RECORD_TURNS: usize = 2_000_000;
+
+/// The most orders a turn may hold. A server passes on at most
+/// [`MAX_TURN_ORDER_BYTES`] of orders from each of at most 255 players
+/// for a turn, and an order is at least one byte.
+pub const MAX_RECORD_ORDERS_PER_TURN: usize = 255 * MAX_TURN_ORDER_BYTES;
 
 /// What a game's world was built from, and who recorded it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,6 +213,10 @@ impl GameRecord {
     }
 
     /// The record as JSON lines.
+    #[expect(
+        clippy::expect_used,
+        reason = "strings, numbers and lists of them always serialize"
+    )]
     pub fn to_text(&self) -> String {
         let mut text =
             serde_json::to_string(&SetupLine::V1(self.setup.clone())).expect("a setup is JSON");
@@ -197,16 +228,35 @@ impl GameRecord {
         text
     }
 
-    /// Reads the text of [`GameRecord::to_text`].
+    /// Reads the text of [`GameRecord::to_text`], within
+    /// [`MAX_RECORD_TURNS`], [`MAX_RECORD_ORDERS_PER_TURN`] and
+    /// [`MAX_ORDER_BYTES`].
     pub fn parse(text: &str) -> Result<GameRecord, String> {
+        Self::parse_within(text, MAX_RECORD_TURNS, MAX_RECORD_ORDERS_PER_TURN)
+    }
+
+    fn parse_within(text: &str, max_turns: usize, max_orders: usize) -> Result<GameRecord, String> {
         let mut lines = text.lines();
         let first = lines.next().ok_or("the record is empty")?;
         let SetupLine::V1(setup) =
             serde_json::from_str(first).map_err(|e| format!("line 1: {e}"))?;
-        let turns = lines
-            .enumerate()
-            .map(|(i, line)| serde_json::from_str(line).map_err(|e| format!("line {}: {e}", i + 2)))
-            .collect::<Result<_, _>>()?;
+        let mut turns: Vec<RecordedTurn> = Vec::new();
+        for (n, line) in (2_usize..).zip(lines) {
+            if turns.len() >= max_turns {
+                return Err(format!("more than {max_turns} turns"));
+            }
+            let turn: RecordedTurn =
+                serde_json::from_str(line).map_err(|e| format!("line {n}: {e}"))?;
+            if turn.orders.len() > max_orders {
+                return Err(format!("line {n}: more than {max_orders} orders"));
+            }
+            if turn.orders.iter().any(|o| o.order.len() > MAX_ORDER_BYTES) {
+                return Err(format!(
+                    "line {n}: an order longer than {MAX_ORDER_BYTES} bytes"
+                ));
+            }
+            turns.push(turn);
+        }
         Ok(GameRecord { setup, turns })
     }
 
@@ -214,16 +264,23 @@ impl GameRecord {
         std::fs::write(path, self.to_text())
     }
 
+    /// Reads a record file of at most [`MAX_RECORD_BYTES`].
     pub fn read(path: &Path) -> Result<GameRecord, String> {
-        let text = std::fs::read_to_string(path)
+        let bytes = read_file(path, MAX_RECORD_BYTES)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let text =
+            String::from_utf8(bytes).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         GameRecord::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// Builds the world as the game did, runs each turn with its orders,
     /// and compares each digest with the recorded one, up to the first that
-    /// differs.
+    /// differs. A record that makes the simulation fail is invalid.
     pub fn check(&self) -> Check {
+        guarded(|| self.replay())
+    }
+
+    fn replay(&self) -> Check {
         let s = &self.setup;
         if s.sim_version != SIM_VERSION {
             return Check::OtherVersion {
@@ -263,7 +320,7 @@ impl GameRecord {
             let replayed = host.digest();
             if replayed != t.digest {
                 return Check::Replayed {
-                    turns: i + 1,
+                    turns: i.saturating_add(1),
                     first_difference: Some(Difference {
                         turn: t.turn,
                         recorded: t.digest,
@@ -279,7 +336,24 @@ impl GameRecord {
     }
 }
 
+/// The check `f` makes, or an invalid record if it panics.
+fn guarded(f: impl FnOnce() -> Check) -> Check {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|panic| {
+        let reason = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or("no reason given");
+        Check::Invalid(format!("the simulation failed: {reason}"))
+    })
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
 
@@ -367,5 +441,46 @@ mod tests {
             .replace("soundrts-game-record-1", "soundrts-game-record-2");
         let e = GameRecord::parse(&text).unwrap_err();
         assert!(e.starts_with("line 1: unknown variant"), "{e}");
+    }
+
+    #[test]
+    fn a_record_over_the_limits_is_refused() {
+        let text = record().to_text();
+        assert!(GameRecord::parse_within(&text, 2, 1).is_ok());
+        let e = GameRecord::parse_within(&text, 1, 1).unwrap_err();
+        assert_eq!(e, "more than 1 turns");
+        let e = GameRecord::parse_within(&text, 2, 0).unwrap_err();
+        assert_eq!(e, "line 2: more than 0 orders");
+        let mut r = record();
+        r.turns[0].orders[0].order = "x".repeat(MAX_ORDER_BYTES + 1);
+        let e = GameRecord::parse(&r.to_text()).unwrap_err();
+        assert_eq!(
+            e,
+            format!("line 2: an order longer than {MAX_ORDER_BYTES} bytes")
+        );
+    }
+
+    #[test]
+    fn a_record_that_makes_the_simulation_fail_is_invalid() {
+        let check = guarded(|| panic!("boom"));
+        assert_eq!(check, Check::Invalid("the simulation failed: boom".into()));
+        assert_eq!(
+            check.to_string(),
+            "The record cannot be replayed: the simulation failed: boom."
+        );
+        let check = guarded(|| panic!("{}", 7));
+        assert_eq!(check, Check::Invalid("the simulation failed: 7".into()));
+    }
+
+    #[test]
+    fn a_record_file_that_is_not_text_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("r.jsonl");
+        std::fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(
+            GameRecord::read(&path)
+                .unwrap_err()
+                .starts_with("cannot read")
+        );
     }
 }

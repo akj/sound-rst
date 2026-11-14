@@ -3,6 +3,17 @@
 //! A line is `#define NAME value`, or `[CTRL] [ALT] [SHIFT] key: command
 //! args`, with pygame key names. Bindings match the key's position, as
 //! upstream matched pygame scancodes.
+//!
+//! Definitions are applied to every later line, so a line can grow with
+//! each definition it uses. A line past one of the limits below is refused
+//! with a warning; past [`MAX_BINDINGS_BYTES`], the rest of the text is.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::collections::HashMap;
 use std::fmt;
@@ -12,8 +23,20 @@ use soundrts_world::defs::preprocess;
 
 use crate::input::{Key, KeyDown, Mods};
 use crate::log::Log;
-use crate::package::universal_newlines;
+use crate::package::{read_file, universal_newlines};
 use crate::resource::Resources;
+
+/// The most bytes of lines the bindings read, every layer and the
+/// player's file together, counted once definitions are applied, and the
+/// largest player's file read. The original's bindings are 5.8 KB.
+pub const MAX_BINDINGS_BYTES: usize = 1024 * 1024;
+
+/// The longest line, before or after its definitions are applied, in
+/// bytes. The original's longest is 101 bytes.
+pub const MAX_BINDING_LINE_BYTES: usize = 4096;
+
+/// The most names `#define` may give. The original defines one.
+pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
 /// and chat to the allies.
@@ -21,14 +44,16 @@ pub const CLIENT_BINDINGS: &str =
     "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
-/// resource layers (translations included), this client's own additions,
+/// resource layers (translations included) but a map that came from a
+/// server, this client's own additions,
 /// then the player's own `bindings.txt` if there is one, so the player's
 /// lines win.
 pub fn game_bindings_text(res: &Resources, custom: &Path) -> String {
     let mut text = res.text_appended("ui/bindings", true);
     text.push('\n');
     text.push_str(CLIENT_BINDINGS);
-    if let Ok(bytes) = std::fs::read(custom) {
+    let limit = u64::try_from(MAX_BINDINGS_BYTES).unwrap_or(u64::MAX);
+    if let Ok(bytes) = read_file(custom, limit) {
         text.push('\n');
         text.push_str(&universal_newlines(&String::from_utf8_lossy(&bytes)));
     }
@@ -96,28 +121,34 @@ fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// Replaces each whole-word `name` in `line` with `value`.
-fn replace_word(line: &str, name: &str, value: &str) -> String {
+/// Replaces each whole-word `name` in `line` with `value`; `None` if the
+/// result would be longer than [`MAX_BINDING_LINE_BYTES`].
+fn replace_word(line: &str, name: &str, value: &str) -> Option<String> {
     if name.is_empty() {
-        return line.to_owned();
+        return Some(line.to_owned());
     }
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
     let mut previous: Option<char> = None;
     while let Some(i) = rest.find(name) {
-        let before = rest[..i].chars().next_back().or(previous);
-        let after = rest[i + name.len()..].chars().next();
-        out.push_str(&rest[..i]);
+        let (head, found) = rest.split_at_checked(i)?;
+        let tail = found.get(name.len()..)?;
+        let before = head.chars().next_back().or(previous);
+        let after = tail.chars().next();
+        out.push_str(head);
         if !before.is_some_and(is_word) && !after.is_some_and(is_word) {
             out.push_str(value);
         } else {
             out.push_str(name);
         }
+        if out.len() > MAX_BINDING_LINE_BYTES {
+            return None;
+        }
         previous = name.chars().next_back();
-        rest = &rest[i + name.len()..];
+        rest = tail;
     }
     out.push_str(rest);
-    out
+    (out.len() <= MAX_BINDING_LINE_BYTES).then_some(out)
 }
 
 /// The bindings, from chord to command. A command is parsed once, when its
@@ -146,12 +177,20 @@ impl<C> Bindings<C> {
         Bindings::default()
     }
 
-    fn apply_definitions(&self, line: &str) -> String {
+    /// The line with the definitions applied, and the most bytes it held
+    /// on the way, or `None` if it held more than
+    /// [`MAX_BINDING_LINE_BYTES`].
+    fn apply_definitions(&self, line: &str) -> Option<(String, usize)> {
+        if line.len() > MAX_BINDING_LINE_BYTES {
+            return None;
+        }
+        let mut peak = line.len();
         let mut line = line.to_owned();
         for (name, value) in &self.definitions {
-            line = replace_word(&line, name, value);
+            line = replace_word(&line, name, value)?;
+            peak = peak.max(line.len());
         }
-        line
+        Some((line, peak))
     }
 
     fn add_definition(&mut self, line: &str) -> Result<(), BindingError> {
@@ -160,15 +199,25 @@ impl<C> Bindings<C> {
         let (Some(name), Some(value)) = (name, value) else {
             return Err(BindingError("the defined value is missing".into()));
         };
+        let count = self.definitions.len();
         match self.definitions.iter_mut().find(|(n, _)| n == name) {
             Some(d) => d.1 = value.to_owned(),
-            None => self.definitions.push((name.to_owned(), value.to_owned())),
+            None if count < MAX_DEFINITIONS => {
+                self.definitions.push((name.to_owned(), value.to_owned()))
+            }
+            None => {
+                return Err(BindingError(format!(
+                    "more than {MAX_DEFINITIONS} definitions"
+                )));
+            }
         }
         Ok(())
     }
 
     fn add_binding(&mut self, line: &str, parse: CommandParser<C>) -> Result<(), BindingError> {
-        let (key, command) = line.trim().split_once(':').expect("checked by the caller");
+        let Some((key, command)) = line.trim().split_once(':') else {
+            return Err(BindingError("the colon is missing".into()));
+        };
         let chord = Chord::parse(key)?;
         let mut words = command.split_whitespace();
         let name = words.next().unwrap_or("").to_owned();
@@ -181,8 +230,29 @@ impl<C> Bindings<C> {
     /// Adds the bindings of `text`, each command read by `parse`. A line
     /// with an error is reported and ignored.
     pub fn load(&mut self, text: &str, parse: CommandParser<C>, log: &Log) {
-        for line in preprocess(text).split('\n') {
-            let line = self.apply_definitions(line);
+        // Each line costs the most bytes it held, a refused line the most
+        // it could, so the work of applying the definitions stays bounded.
+        let mut left = MAX_BINDINGS_BYTES;
+        for raw in preprocess(text).split('\n') {
+            let expanded = self.apply_definitions(raw);
+            let cost = expanded
+                .as_ref()
+                .map_or(MAX_BINDING_LINE_BYTES, |(_, peak)| *peak)
+                .max(1);
+            let Some(l) = left.checked_sub(cost) else {
+                log.warning(format!(
+                    "bindings.txt: more than {MAX_BINDINGS_BYTES} bytes; the rest is ignored"
+                ));
+                return;
+            };
+            left = l;
+            let Some((line, _)) = expanded else {
+                let start: String = raw.chars().take(80).collect();
+                log.warning(format!(
+                    "error in bindings.txt (line ignored):\n{start}\n(longer than {MAX_BINDING_LINE_BYTES} bytes once its definitions are applied)"
+                ));
+                continue;
+            };
             let result = if line.starts_with("#define ") {
                 self.add_definition(&line)
             } else if line.contains(':') {
@@ -226,6 +296,11 @@ impl<C> Bindings<C> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use crate::testkit::upstream_root;
@@ -334,5 +409,60 @@ mod tests {
         );
         assert_eq!(b.len(), 1);
         assert_eq!(b.get(&chord("c")), Some(&command("known", "")));
+    }
+
+    /// Definitions that double at each step: `Z1` is `Z0 Z0`, `Z2` is
+    /// `Z1 Z1`, and so on up to `Z<n>`.
+    fn doubling(n: usize) -> String {
+        let mut text = "#define Z0 x\n".to_owned();
+        for i in 1..=n {
+            text.push_str(&format!("#define Z{i} Z{} Z{}\n", i - 1, i - 1));
+        }
+        text
+    }
+
+    #[test]
+    fn a_line_that_grows_too_long_through_definitions_is_refused() {
+        // Z10 is 1,024 words, 2,047 bytes: within the limit. Twice that is
+        // not.
+        let text = format!("{}a: one Z10\nb: two Z10 Z10\nc: three\n", doubling(10));
+        let mut b = Bindings::new();
+        b.load(&text, &any, &Log::silent());
+        assert_eq!(b.get(&chord("a")).map(|c| c.1.len()), Some(1024));
+        assert_eq!(b.get(&chord("b")), None);
+        assert_eq!(b.get(&chord("c")), Some(&command("three", "")));
+    }
+
+    #[test]
+    fn definitions_that_double_without_end_stop_at_the_limit() {
+        // The definition of Z11, 4,095 bytes, is refused, and so is every
+        // one past the limit of names, so Z40 means nothing. Without the
+        // limits, Z40 would be 4 TB.
+        let text = format!("{}a: one Z40\n", doubling(40));
+        let mut b = Bindings::new();
+        b.load(&text, &any, &Log::silent());
+        assert_eq!(b.get(&chord("a")), Some(&command("one", "Z40")));
+    }
+
+    #[test]
+    fn at_most_the_limit_of_names_can_be_defined() {
+        let mut text: String = (0..=MAX_DEFINITIONS)
+            .map(|i| format!("#define N{i} x{i}\n"))
+            .collect();
+        text.push_str("a: one N0 N31 N32\n");
+        let mut b = Bindings::new();
+        b.load(&text, &any, &Log::silent());
+        assert_eq!(b.get(&chord("a")), Some(&command("one", "x0 x31 N32")));
+    }
+
+    #[test]
+    fn lines_past_the_limit_of_bytes_are_ignored() {
+        let long = format!("a: one {}\n", "x ".repeat(2000));
+        let count = MAX_BINDINGS_BYTES / long.len() + 1;
+        let text = format!("{}b: two\n", long.repeat(count));
+        let mut b = Bindings::new();
+        b.load(&text, &any, &Log::silent());
+        assert!(b.get(&chord("a")).is_some());
+        assert_eq!(b.get(&chord("b")), None);
     }
 }

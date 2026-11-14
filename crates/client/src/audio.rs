@@ -10,6 +10,11 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+/// The most frames (a sample for each channel) a sound may decode to:
+/// five minutes at 48 kHz. A longer sound is refused. The original's
+/// longest sound is 51 seconds.
+pub const MAX_SOUND_FRAMES: usize = 5 * 60 * 48_000;
+
 /// The volume of each speaker for a sound "in front of you" (about 0.7).
 pub const DEFAULT_VOLUME: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
@@ -55,19 +60,54 @@ impl SoundBuffer {
     /// Decodes an Ogg Vorbis file. Mono becomes two equal channels; beyond
     /// two channels, the first two are kept. The sound ends where the
     /// stream says it ends (its last granule position), not at the end of
-    /// the last decoded block.
+    /// the last decoded block. A sound longer than [`MAX_SOUND_FRAMES`] is
+    /// refused, without decoding more than that, and so is a file the
+    /// decoder fails on, even by panicking.
     pub fn decode(bytes: Vec<u8>, key: &str, mod_name: &str, volume: f64) -> Result<Self, String> {
+        std::panic::catch_unwind(|| {
+            Self::decode_within(bytes, key, mod_name, volume, MAX_SOUND_FRAMES)
+        })
+        .unwrap_or_else(|_| Err("the decoder failed on this file".to_owned()))
+    }
+
+    #[deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::string_slice,
+        clippy::arithmetic_side_effects
+    )]
+    fn decode_within(
+        bytes: Vec<u8>,
+        key: &str,
+        mod_name: &str,
+        volume: f64,
+        max_frames: usize,
+    ) -> Result<Self, String> {
         let end = last_granule_position(&bytes);
         let decoder =
             rodio::Decoder::new(std::io::Cursor::new(bytes)).map_err(|e| e.to_string())?;
         let channels = usize::from(rodio::Source::channels(&decoder).get());
         let rate = rodio::Source::sample_rate(&decoder).get();
-        let raw: Vec<f32> = decoder.collect();
-        let mut samples: Vec<f32> = match channels {
-            1 => raw.iter().flat_map(|&s| [s, s]).collect(),
-            2 => raw,
-            n => raw.chunks(n).flat_map(|f| [f[0], f[1]]).collect(),
-        };
+        let mut samples: Vec<f32> = Vec::new();
+        let mut frame: Vec<f32> = Vec::with_capacity(channels);
+        for s in decoder {
+            frame.push(s);
+            if frame.len() < channels {
+                continue;
+            }
+            if samples.len() >= max_frames.saturating_mul(2) {
+                return Err(format!(
+                    "longer than {max_frames} frames, the most a sound may have"
+                ));
+            }
+            match frame.as_slice() {
+                [mono] => samples.extend([*mono, *mono]),
+                [left, right, ..] => samples.extend([*left, *right]),
+                [] => {}
+            }
+            frame.clear();
+        }
         if let Some(frames) = end.and_then(|e| usize::try_from(e).ok()) {
             samples.truncate(frames.saturating_mul(2));
         }
@@ -93,13 +133,20 @@ impl SoundBuffer {
 /// The granule position of the last page of an Ogg stream: for Vorbis, the
 /// number of samples per channel in the whole stream. `None` if the bytes
 /// end without a valid page.
+#[deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 fn last_granule_position(bytes: &[u8]) -> Option<u64> {
     let start = bytes.windows(4).rposition(|w| w == b"OggS")?;
-    let header = bytes.get(start..start + 14)?;
-    if header[4] != 0 {
+    let header = bytes.get(start..start.checked_add(14)?)?;
+    if header.get(4) != Some(&0) {
         return None; // unknown version
     }
-    let granule = i64::from_le_bytes(header[6..14].try_into().ok()?);
+    let granule = i64::from_le_bytes(header.get(6..14)?.try_into().ok()?);
     u64::try_from(granule).ok().filter(|&g| g > 0)
 }
 
@@ -357,5 +404,71 @@ mod tests {
         let s = SoundBuffer::decode(std::fs::read(path).unwrap(), "1003", "default", 1.0).unwrap();
         assert_eq!(s.samples.len(), 2 * 804);
         assert_eq!((s.duration() * 1e6).round(), 18231.0);
+    }
+
+    #[test]
+    fn a_sound_longer_than_the_limit_is_refused() {
+        // The original's longest sound: 2,261,768 frames.
+        let path = crate::testkit::upstream_root().join("res/ui/effects/1342.ogg");
+        let bytes = std::fs::read(path).unwrap();
+        let sound = SoundBuffer::decode(bytes.clone(), "1342", "default", 1.0).unwrap();
+        assert_eq!(sound.samples.len(), 2 * 2_261_768);
+        let e = SoundBuffer::decode_within(bytes, "1342", "default", 1.0, 2_261_767).unwrap_err();
+        assert_eq!(e, "longer than 2261767 frames, the most a sound may have");
+    }
+
+    #[test]
+    fn an_ogg_page_cut_short_gives_no_end() {
+        assert_eq!(last_granule_position(b"OggS\0"), None);
+        assert_eq!(last_granule_position(b"xxOggS\x01aaaaaaaaaa"), None);
+        let mut page = b"OggS\0\0".to_vec();
+        page.extend(7_i64.to_le_bytes());
+        assert_eq!(last_granule_position(&page), Some(7));
+    }
+
+    /// Ogg's CRC-32 of a page.
+    fn ogg_crc(page: &[u8]) -> u32 {
+        let mut crc = 0_u32;
+        for &byte in page {
+            crc ^= u32::from(byte) << 24;
+            for _ in 0..8 {
+                crc = if crc & 0x8000_0000 != 0 {
+                    (crc << 1) ^ 0x04c1_1db7
+                } else {
+                    crc << 1
+                };
+            }
+        }
+        crc
+    }
+
+    #[test]
+    fn a_sound_the_decoder_fails_on_is_refused() {
+        // A shipped sound whose sixth codebook is given no dimension, with
+        // its page's checksum made right again: the decoder panics on it.
+        let path = crate::testkit::upstream_root().join("res/ui/effects/1003.ogg");
+        let mut bytes = std::fs::read(path).unwrap();
+        let codebook = (0..bytes.len() - 3)
+            .filter(|&i| &bytes[i..i + 3] == b"BCV")
+            .nth(5)
+            .unwrap();
+        bytes[codebook + 3] = 0;
+        bytes[codebook + 4] = 0;
+        let page = bytes[..codebook]
+            .windows(4)
+            .rposition(|w| w == b"OggS")
+            .unwrap();
+        let segments = usize::from(bytes[page + 26]);
+        let size = 27
+            + segments
+            + bytes[page + 27..page + 27 + segments]
+                .iter()
+                .map(|&n| usize::from(n))
+                .sum::<usize>();
+        bytes[page + 22..page + 26].fill(0);
+        let crc = ogg_crc(&bytes[page..page + size]);
+        bytes[page + 22..page + 26].copy_from_slice(&crc.to_le_bytes());
+        let e = SoundBuffer::decode(bytes, "1003", "default", 1.0).unwrap_err();
+        assert_eq!(e, "the decoder failed on this file");
     }
 }

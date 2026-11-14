@@ -1,6 +1,16 @@
 //! The resource stack: which file is read depends on the preferred
 //! language, the active mods and soundpacks, the campaign and the map.
 //! Sounds are replaced by later layers; some text files are merged.
+//!
+//! A map that came from a server is the top layer for the game's rules,
+//! but not for the interface: see [`Resources::set_map`].
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -9,7 +19,7 @@ use std::sync::Arc;
 use crate::campaign::Campaign;
 use crate::log::Log;
 use crate::mapfile::Map;
-use crate::package::{Package, PackageStack};
+use crate::package::{Package, PackageStack, read_file};
 use crate::parameters::Parameters;
 use crate::sound_cache::{SoundCache, Sounds, TXT_FILE};
 use crate::style::Style;
@@ -21,13 +31,17 @@ fn is_word(c: char) -> bool {
 /// The path for this language: `ui` becomes `ui-fr`, when `ui` is a whole
 /// word of the path.
 pub fn localized_path(path: &str, lang: &str) -> String {
-    let mut out = String::with_capacity(path.len() + lang.len() + 1);
+    let mut out = String::with_capacity(path.len());
     let mut rest = path;
     let mut previous: Option<char> = None;
     while let Some(i) = rest.find("ui") {
-        let before = rest[..i].chars().next_back().or(previous);
-        let after = rest[i + 2..].chars().next();
-        out.push_str(&rest[..i]);
+        let Some((head, found)) = rest.split_at_checked(i) else {
+            break;
+        };
+        let tail = found.get(2..).unwrap_or_default();
+        let before = head.chars().next_back().or(previous);
+        let after = tail.chars().next();
+        out.push_str(head);
         if !before.is_some_and(is_word) && !after.is_some_and(is_word) {
             out.push_str("ui-");
             out.push_str(lang);
@@ -35,7 +49,7 @@ pub fn localized_path(path: &str, lang: &str) -> String {
             out.push_str("ui");
         }
         previous = Some('i');
-        rest = &rest[i + 2..];
+        rest = tail;
     }
     out.push_str(rest);
     out
@@ -81,7 +95,7 @@ pub fn best_language_match<S: AsRef<str>>(lang: Option<&str>, available: &[S]) -
 /// The language the player asked for in `cfg/language.txt`, else the
 /// system's.
 pub fn preferred_language(language_file: &std::path::Path, log: &Log) -> Option<String> {
-    let Ok(bytes) = std::fs::read(language_file) else {
+    let Ok(bytes) = read_file(language_file, 4096) else {
         log.warning("couldn't read cfg/language.txt");
         return Some("en".to_owned());
     };
@@ -108,12 +122,16 @@ pub struct Resources {
     downloaded: PathBuf,
     pub packages: PackageStack,
     layers: Vec<Package>,
-    previous_layers: Option<Vec<Package>>,
+    /// The layers and whether the map came from a server, when the style
+    /// and sounds were last read.
+    previous_layers: Option<(Vec<Package>, bool)>,
     /// The active mods, as a comma separated list of those that exist.
     pub mods: String,
     pub soundpacks: String,
     campaign: Option<Package>,
     map: Option<Package>,
+    /// The map came from a server.
+    map_downloaded: bool,
     /// The language of the texts and sounds.
     pub language: String,
     preferred_language: Option<String>,
@@ -146,6 +164,7 @@ impl Resources {
             soundpacks: String::new(),
             campaign: None,
             map: None,
+            map_downloaded: false,
             language: "en".to_owned(),
             preferred_language,
             style: Style::new(log.clone()),
@@ -213,9 +232,24 @@ impl Resources {
             .collect()
     }
 
+    /// The map's layer, if the map came from a server.
+    fn downloaded_map(&self) -> Option<&Package> {
+        self.map.as_ref().filter(|_| self.map_downloaded)
+    }
+
+    /// The layers the interface reads its style, texts, sounds, key
+    /// bindings and help from: every layer but a map that came from a
+    /// server, which is the last layer.
+    fn interface_layers(&self) -> &[Package] {
+        match (self.downloaded_map(), self.layers.split_last()) {
+            (Some(_), Some((_, below))) => below,
+            _ => &self.layers,
+        }
+    }
+
     fn available_languages(&self) -> Vec<String> {
         let mut result = vec!["en".to_owned()];
-        for package in &self.layers {
+        for package in self.interface_layers() {
             for name in package.dirnames() {
                 if let Some(lang) = name.strip_prefix("ui-")
                     && !result.iter().any(|r| r == lang)
@@ -268,7 +302,8 @@ impl Resources {
         if let Some(m) = self.map.clone() {
             self.layers.push(m);
         }
-        if self.previous_layers.as_ref() != Some(&self.layers) {
+        let current = (self.layers.clone(), self.map_downloaded);
+        if self.previous_layers.as_ref() != Some(&current) {
             self.language = best_language_match(
                 self.preferred_language.as_deref(),
                 &self.available_languages(),
@@ -277,7 +312,7 @@ impl Resources {
             if let Some(f) = self.on_change.as_mut() {
                 f(&self.mods, &self.soundpacks);
             }
-            self.previous_layers = Some(self.layers.clone());
+            self.previous_layers = Some(current);
         }
     }
 
@@ -288,12 +323,27 @@ impl Resources {
         self.style.load(&refs);
         let texts = self.texts(TXT_FILE, true, None);
         let dirs: Vec<(Package, String)> = self.paths("ui", None, true);
-        self.sounds.replace(SoundCache::new(
-            &texts,
-            &dirs,
-            self.params.clone(),
-            self.log.clone(),
-        ));
+        let mut cache = SoundCache::new(&texts, &dirs, self.params.clone(), self.log.clone());
+        if let Some(map) = self.downloaded_map().cloned() {
+            let style_texts = self.texts("ui/style", true, Some(&map));
+            let refs: Vec<&str> = style_texts.iter().map(String::as_str).collect();
+            let style = self.style.add_downloaded(&refs);
+            let texts = self.texts(TXT_FILE, true, Some(&map));
+            let sounds = cache.add_downloaded(&texts, &self.paths("ui", Some(&map), true));
+            if style > 0 || sounds > 0 {
+                self.log.warning(format!(
+                    "downloaded map {}: ignored {style} style attributes and {sounds} texts or sounds the game already has",
+                    map.name
+                ));
+            }
+            for name in ["ui/bindings", "ui/menu_help", "ui/game_help"] {
+                if !self.texts(name, true, Some(&map)).is_empty() {
+                    self.log
+                        .warning(format!("downloaded map {}: {name}.txt ignored", map.name));
+                }
+            }
+        }
+        self.sounds.replace(cache);
     }
 
     /// Changes the language, as if it were the best match.
@@ -317,8 +367,15 @@ impl Resources {
     }
 
     /// Adds the map's resources as the top layer, or removes them.
+    ///
+    /// A map that came from a server gives the game its map, rules and
+    /// computer players, and adds to the style, texts and sounds only
+    /// what the other layers lack, such as its own unit types. Its key
+    /// bindings and help are ignored, and so is anything that would change
+    /// the game's own style, texts or sounds.
     pub fn set_map(&mut self, map: Option<&Map>) {
         self.map = map.and_then(|m| m.resources.clone());
+        self.map_downloaded = map.is_some_and(|m| m.downloaded);
         self.reload();
     }
 
@@ -328,7 +385,8 @@ impl Resources {
         self.reload();
     }
 
-    /// The (package, path) pairs to look `path` up in, in priority order.
+    /// The (package, path) pairs to look `path` up in, in priority order:
+    /// in `root`, or else in the interface's layers.
     pub fn paths(
         &self,
         path: &str,
@@ -338,7 +396,7 @@ impl Resources {
         let lang = localize.then_some(self.language.as_str());
         let roots: Vec<&Package> = match root {
             Some(r) => vec![r],
-            None => self.layers.iter().collect(),
+            None => self.interface_layers().iter().collect(),
         };
         roots
             .into_iter()
@@ -350,7 +408,8 @@ impl Resources {
             .collect()
     }
 
-    /// The contents of every `<name>.txt` of the layers, in priority order.
+    /// The contents of every `<name>.txt` of `root`, or else of the
+    /// interface's layers, in priority order.
     pub fn texts(&self, name: &str, localize: bool, root: Option<&Package>) -> Vec<String> {
         self.paths(&format!("{name}.txt"), root, localize)
             .into_iter()
@@ -368,14 +427,24 @@ impl Resources {
         self.texts(name, localize, None).join("\n")
     }
 
+    /// The contents of every `<name>.txt` of every layer, the map's
+    /// included, joined by line ends.
+    fn game_text(&self, name: &str) -> String {
+        self.layers
+            .iter()
+            .flat_map(|p| self.texts(name, false, Some(p)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     /// The rules for a new world: every `rules.txt` of the layers.
     pub fn rules_text(&self) -> String {
-        self.text_appended("rules", false)
+        self.game_text("rules")
     }
 
     /// The computer players for a new world: every `ai.txt` of the layers.
     pub fn ai_text(&self) -> String {
-        self.text_appended("ai", false)
+        self.game_text("ai")
     }
 
     /// The official maps, from the base package's `multi` folder.
@@ -399,10 +468,20 @@ impl Resources {
         maps
     }
 
+    /// The maps of the other packages, then those downloaded from servers.
+    /// The folder of downloaded maps can also be one of the packages; it is
+    /// read once, as downloaded.
     fn custom_multiplayer_maps(&self) -> Vec<Map> {
         let mut maps = Vec::new();
-        let downloaded = Package::from_path(&self.downloaded).ok();
-        for package in self.packages.0.iter().skip(1).chain(downloaded.iter()) {
+        let installed = self
+            .packages
+            .0
+            .iter()
+            .skip(1)
+            .filter(|p| p.folder() != Some(self.downloaded.as_path()))
+            .map(|p| (p.clone(), false));
+        let downloaded = Package::from_path(&self.downloaded).ok().map(|p| (p, true));
+        for (package, is_downloaded) in installed.chain(downloaded) {
             let Some(multi) = package.subpackage("multi") else {
                 continue;
             };
@@ -411,6 +490,7 @@ impl Resources {
                     Ok(mut m) => {
                         // The heal sound tells the player this map is not official.
                         m.title.insert(0, crate::mapfile::CUSTOM_MAP_SOUND.into());
+                        m.downloaded = is_downloaded;
                         maps.push(m);
                     }
                     Err(e) => self.log.warning(format!("couldn't load map {n}: {e}")),
@@ -492,6 +572,7 @@ impl Resources {
             self.reload();
         }
         let hash = soundrts_protocol::MapHash::of(text.as_bytes());
+        #[expect(clippy::expect_used, reason = "a SHA-256 is 64 hex digits")]
         soundrts_protocol::ContentHash::new(hash.as_str()).expect("64 hex digits")
     }
 
@@ -512,6 +593,11 @@ impl Resources {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 mod tests {
     use super::*;
     use crate::testkit::{upstream_root, upstream_tests_dir};
@@ -672,5 +758,151 @@ mod tests {
             recommended.iter().map(String::as_str).collect::<Vec<_>>()
         );
         assert!(maps[recommended.len()..].iter().all(|m| m.official));
+    }
+
+    fn zipped(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, bytes) in entries {
+            w.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            w.write_all(bytes).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    /// A map that brings a new unit type, and tries to change the game's
+    /// keys, a prompt, the help, a unit's name and a sound.
+    fn intrusive_map() -> Vec<u8> {
+        let sound = std::fs::read(upstream_root().join("res/ui/effects/1003.ogg")).unwrap();
+        zipped(&[
+            ("map.txt", b"title 9000\n".to_vec()),
+            ("rules.txt", b"def golem\nclass soldier\n".to_vec()),
+            ("ui/bindings.txt", b"CTRL SHIFT F12: quit\n".to_vec()),
+            ("ui/tts.txt", b"5 Press Alt F4 now.\n9000 golem\n".to_vec()),
+            ("ui/menu_help.txt", b"9000\n".to_vec()),
+            (
+                "ui/style.txt",
+                b"def footman\ntitle 9000\n\ndef golem\nis_a footman\ntitle 9000\n".to_vec(),
+            ),
+            ("ui/1002.ogg", sound.clone()),
+            ("ui/9001.ogg", sound),
+        ])
+    }
+
+    fn upstream_stack() -> Resources {
+        let root = upstream_root();
+        Resources::new(
+            vec![root.join("res"), root.clone()],
+            root.join("no-downloads"),
+            Some("en".into()),
+            Rc::new(Parameters::default()),
+            Log::silent(),
+        )
+    }
+
+    fn sound_layer(r: &Resources, key: &str) -> String {
+        r.sounds().get_sound(key).unwrap().mod_name.clone()
+    }
+
+    #[test]
+    fn a_downloaded_map_adds_to_the_interface_and_changes_nothing_in_it() {
+        let mut r = upstream_stack();
+        let bindings = |r: &Resources| {
+            crate::bindings::game_bindings_text(r, std::path::Path::new("no bindings.txt"))
+        };
+        let base_bindings = bindings(&r);
+        let base_help = r.text("ui/menu_help", false);
+        let map = Map::from_server(intrusive_map(), "intrusive.zip").unwrap();
+        assert!(map.downloaded);
+        r.set_map(Some(&map));
+        // The game gets the map's rules.
+        assert!(r.rules_text().ends_with("def golem\nclass soldier\n"));
+        // The interface gets what it lacked.
+        assert_eq!(r.sounds().text("9000").as_deref(), Some("golem"));
+        assert_eq!(r.style().words("golem", "title"), ["9000"]);
+        assert_eq!(sound_layer(&r, "9001"), "intrusive");
+        // And nothing it had changes.
+        assert_eq!(bindings(&r), base_bindings);
+        assert_eq!(r.text("ui/menu_help", false), base_help);
+        assert_eq!(
+            r.sounds().text("5").as_deref(),
+            Some("What are your orders?")
+        );
+        assert_eq!(r.style().words("footman", "title"), ["86"]);
+        assert_eq!(sound_layer(&r, "1002"), "default");
+        // Without the map, the interface is the game's again.
+        r.set_map(None);
+        assert_eq!(r.sounds().text("9000"), None);
+        assert!(!r.style().has("golem", "title"));
+    }
+
+    #[test]
+    fn a_map_the_player_installed_keeps_its_powers() {
+        let mut r = upstream_stack();
+        let map = Map::from_bytes(intrusive_map(), "intrusive.zip").unwrap();
+        assert!(!map.downloaded);
+        r.set_map(Some(&map));
+        let bindings =
+            crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
+        assert!(bindings.contains("CTRL SHIFT F12: quit"));
+        assert_eq!(r.text("ui/menu_help", false).as_deref(), Some("9000\n"));
+        assert_eq!(r.sounds().text("5").as_deref(), Some("Press Alt F4 now."));
+        assert_eq!(r.style().words("footman", "title"), ["9000"]);
+        assert_eq!(sound_layer(&r, "1002"), "intrusive");
+    }
+
+    #[test]
+    fn the_shipped_folder_map_works_as_before_when_local_and_adds_when_downloaded() {
+        let bytes = std::fs::read(upstream_root().join("res/multi/jl4.zip")).unwrap();
+        for downloaded in [false, true] {
+            let mut r = upstream_stack();
+            let map = if downloaded {
+                Map::from_server(bytes.clone(), "jl4.zip").unwrap()
+            } else {
+                Map::from_bytes(bytes.clone(), "jl4.zip").unwrap()
+            };
+            r.set_map(Some(&map));
+            let bindings =
+                crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
+            assert_eq!(bindings.contains("SHIFT z: resource_status 2"), !downloaded);
+            assert_eq!(r.sounds().text("9000").as_deref(), Some("stone golem"));
+            assert_eq!(r.style().words("stone_golem", "title"), ["9000"]);
+            assert_eq!(r.style().words("parameters", "resource_2_title"), ["4308"]);
+            assert_eq!(r.style().words("quarry", "title"), ["4309"]);
+            assert_eq!(sound_layer(&r, "9001"), "jl4");
+        }
+    }
+
+    #[test]
+    fn maps_in_the_downloaded_folder_are_downloaded_maps() {
+        let root = upstream_root();
+        let user = tempfile::tempdir().unwrap();
+        let downloaded = user.path().join("downloaded");
+        std::fs::create_dir_all(downloaded.join("multi")).unwrap();
+        std::fs::write(
+            downloaded.join("multi/intrusive_0123abcd.zip"),
+            intrusive_map(),
+        )
+        .unwrap();
+        let mine = user.path().join("mine");
+        std::fs::create_dir_all(mine.join("multi")).unwrap();
+        std::fs::write(mine.join("multi/mine.zip"), intrusive_map()).unwrap();
+        // The folder of downloaded maps is also a package, as when the
+        // settings folder is inside the game folder.
+        let mut r = Resources::new(
+            vec![root.join("res"), mine, downloaded.clone()],
+            downloaded,
+            Some("en".into()),
+            Rc::new(Parameters::default()),
+            Log::silent(),
+        );
+        let maps = r.multiplayer_maps();
+        let found: Vec<(&str, bool)> = maps
+            .iter()
+            .filter(|m| !m.official)
+            .map(|m| (m.name.as_str(), m.downloaded))
+            .collect();
+        assert_eq!(found, [("intrusive_0123abcd", true), ("mine", false)]);
     }
 }
