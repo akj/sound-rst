@@ -31,6 +31,10 @@ impl std::error::Error for MapError {}
 /// two digits.
 pub const MAX_LINES: i64 = 99;
 
+/// The widest square a map may have (`square_width`). The maps of the
+/// original use 26 at most.
+pub const MAX_SQUARE_WIDTH: i64 = 100;
+
 /// The most meadows a map may put on each square (`nb_meadows_by_square`).
 /// The maps of the original put 12 at most.
 pub const MAX_MEADOWS_BY_SQUARE: i64 = 50;
@@ -310,7 +314,9 @@ impl World {
                     }
                 }
                 _ => {
-                    let (kind, digit) = o.split_at(o.len().saturating_sub(1));
+                    // The last character, which may take more than one byte.
+                    let last = o.char_indices().next_back().map_or(0, |(i, _)| i);
+                    let (kind, digit) = o.split_at(last);
                     let list = match kind {
                         "computer" => Some(&mut self.map.computers_starts),
                         "player" => Some(&mut self.map.players_starts),
@@ -624,6 +630,12 @@ impl World {
     pub fn load_and_build_map(&mut self, map_definition: &str) -> Result<(), MapError> {
         let text = map_definition.replace("\r\n", "\n").replace('\r', "\n");
         self.parse_map(&text)?;
+        let sw = self.map.square_width;
+        if !(1..=MAX_SQUARE_WIDTH).contains(&sw) {
+            return Err(MapError(format!(
+                "a square width of {sw}, not from 1 to {MAX_SQUARE_WIDTH}"
+            )));
+        }
         self.map.square_width *= PRECISION;
         self.build_map()
     }

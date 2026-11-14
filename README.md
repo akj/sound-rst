@@ -103,6 +103,34 @@ cargo run -p soundrts-server -- --port 2501 --name "My server"
 
 The server listens on TCP port 2501 for players and answers on UDP port 2501 to players who look for servers on the local network. Add `--upnp` to ask the router to forward the port to players on the internet. Run `cargo run -p soundrts-server -- --help` for every option. Press Ctrl+C to stop the server.
 
+## Listening room
+
+The listening room is a separate program that helps decide how the game's positional sound should work. It plays the game's own sounds through several renderers and asks what you hear. It prints one instruction at a time and reads your answers as typed lines, so your screen reader reads it as it reads any console program. Use headphones.
+
+The renderers are:
+
+- `current`: the game's sound as it is now, left-right placement and loudness.
+- `stereo-plus`: the same, with volume changes that cannot click, a duller tone for sounds behind you, a muffled tone through a closed exit, and a simple echo.
+- `binaural`: Steam Audio with a model of the head, for headphones. It is in the program only if you build it with `--features binaural`.
+
+```powershell
+cargo run -p listening-room -- --root vendor/soundrts-upstream
+```
+
+The script has six steps: a footstep circling you, in front or behind, a sound passing overhead, a sound moving away, a neighbour through an open exit and a closed one, and the echo of a place. Each step plays the same sounds through each renderer in a random order, and tells you the order at the end of the step. To run only one step, add `--step 3`. To compare only some renderers, add for example `--renderers current,binaural`. Type `q` at any question to stop.
+
+The program saves your answers after each step in `listening-room-results.txt`, in the current folder. Send that file back.
+
+To build the binaural renderer, you need Clang: the C++ Clang tools of Visual Studio, or LLVM. If the build cannot find Clang, set `LIBCLANG_PATH` to the folder that holds `libclang.dll`. The first build downloads Steam Audio 4.8.1 (about 180 MB) into `target/steamaudio-cache` and checks its SHA-256.
+
+```powershell
+cargo run -p listening-room --features binaural -- --root vendor/soundrts-upstream
+```
+
+To try another model of the head, add `--sofa <file>`. The file must be a SOFA file in the SimpleFreeFieldHRIR convention.
+
+With `--render-to <folder>`, the program writes each sound to a WAV file in that folder and plays nothing. The tests use this option. Run the program with `--help` for every option.
+
 ## Test
 
 ```powershell
@@ -139,6 +167,7 @@ These tests show what text the port sends to the speech device. They cannot show
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
 - `crates/protocol` is the messages between a client and a server.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
+- `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game.
 
 ## Licenses
@@ -146,3 +175,5 @@ These tests show what text the port sends to the speech device. They cannot show
 The code is a port of the SoundRTS source code and keeps its BSD 3-clause license. See [LICENSE.txt](LICENSE.txt).
 
 On Windows the program links [Tolk](https://github.com/dkager/tolk) (LGPL 3) to reach the screen reader. Tolk loads `nvdaControllerClient64.dll` (LGPL 2.1, from NV Access) and `SAAPI64.dll`. The build copies both files next to the program. Keep them there when you copy the program somewhere else.
+
+The listening room built with `--features binaural` links [Steam Audio](https://github.com/ValveSoftware/steam-audio) (Apache 2.0) through `phonon.dll`. The build copies `phonon.dll` next to `listening-room.exe`, with `phonon-THIRDPARTY.md`, which lists the licenses of the code inside the DLL. Keep both files next to the program when you copy it somewhere else.

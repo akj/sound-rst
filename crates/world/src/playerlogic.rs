@@ -711,6 +711,10 @@ impl World {
             };
             let x = py_int(parts[2]).map_err(|_| Abort::new("invalid literal for int()"))?;
             let y = py_int(parts[3]).map_err(|_| Abort::new("invalid literal for int()"))?;
+            // The interface sends the center of a subsquare of the square.
+            if !self.square(s).contains(x, y) {
+                return Err(Abort::new("the zoom is outside its square"));
+            }
             return Ok(Some(Target::Zoom(ZoomTarget {
                 place: s,
                 x,

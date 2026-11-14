@@ -627,6 +627,13 @@ impl World {
             return;
         }
         let Some(p) = self.e(unit).player else { return };
+        // An impossible order was never paid for, or was refunded when it
+        // failed; a complete one has delivered what it paid for. Either
+        // waits in the queue until the unit's next update.
+        if o.is_impossible || o.is_complete {
+            self.notify(unit, EntityEvent::OrderOk, false);
+            return;
+        }
         if unpay && let Ok(cost) = self.order_cost(unit, o) {
             self.unpay(p, &cost);
         }
@@ -2253,6 +2260,10 @@ impl World {
         let c = self.e(corpse);
         let (cp, cx, cy) = (c.place, c.x, c.y);
         if self.move_to(id, cp, Some((cx, cy)), 90).is_err() {
+            // The unit never had a place: it leaves the player and the
+            // objects updated each turn.
+            self.set_player(id, None);
+            self.unregister_entity(id);
             return Err(Abort::new("NotEnoughSpaceError"));
         }
         let decay = self.e(id).stats.decay;

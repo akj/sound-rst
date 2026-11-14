@@ -215,3 +215,32 @@ fn a_map_with_too_many_start_units_is_refused() {
         "the starts give 10001 units, more than 10000"
     );
 }
+
+#[test]
+fn a_map_with_squares_too_wide_or_empty_is_refused() {
+    assert_eq!(
+        map_error("nb_lines 3\nsquare_width 9223372036854775807\nstarting_units farm"),
+        "a square width of 9223372036854775807, not from 1 to 100"
+    );
+    assert_eq!(
+        map_error("nb_lines 3\nsquare_width 0\nstarting_units farm"),
+        "a square width of 0, not from 1 to 100"
+    );
+}
+
+#[test]
+fn a_trigger_owner_ending_in_a_wide_character_is_unknown() {
+    let text = "square_width 12\nnb_columns 3\nnb_lines 3\nstarting_squares a1\n\
+                starting_units farm\ntrigger 1é (timer 0) (victory)\n";
+    let mut w = build(
+        &joined(&["res/rules.txt"]),
+        &joined(&["res/ai.txt"]),
+        text,
+        0,
+    )
+    .unwrap();
+    assert_eq!(
+        w.drain_warnings(),
+        ["1é is unknown (in \"trigger 1é ( timer 0 ) ( victory )\")"]
+    );
+}

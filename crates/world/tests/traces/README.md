@@ -9,8 +9,24 @@ computes what `expected/` records:
 - `trace_*`: a scripted game (`scenarios/*.txt`), one line per update: the
   turn, a hash of the dump of every player and entity, and the dump's first
   line (time and random generator state).
+- `trace_*.digest.txt`: the same game, one line per update: the turn and
+  `World::digest_u64`, the hash of the whole state.
 - `trace_ai_*`: games with computer players (`easy`, `aggressive`, `ai2`),
   against each other or a scripted human (`scenarios/human.txt`).
+
+The dump has the positions, hit points, mana, resources, owners, the names
+of queued orders, the kind of each action and the random generator's state.
+It leaves out what players remember, what orders are aimed at, timers and
+the computer players' state. The digest covers all of these. The two
+answer different questions:
+
+- A change of behaviour changes the digest, and usually the dump too.
+- A change in how the state is stored, with the same behaviour, changes
+  the digest and leaves the dump the same. Re-record only the digest files
+  then, and check that no other file in `expected/` changed.
+
+Multiplayer games and the record check compare the digest, so a change of
+the digest files also needs a new `SIM_VERSION` (see Record again).
 
 The cases are listed in `cases.txt`. A player is a login or `ai_<type>`,
 then optionally `:<alliance>`. Computers are allied with each other by
@@ -42,6 +58,11 @@ and entity after that update. Find that tick in the dump.
 When a built map differs, the test prints the cases whose hash differs and
 writes their dumps to the same folder.
 
+When only a digest file differs, the dump did not see the change. The test
+prints the first turn whose digest differs. The digest has no dump to
+compare: find which part of the state differs at that turn with a debugger
+or a temporary print of the parts that `impl Hash for World` hashes.
+
 To compare with the previous behaviour, get the dump of the previous
 commit too:
 
@@ -64,7 +85,8 @@ Do this only when the change of the simulation is intended.
        cargo test -p soundrts-world --test traces
        Remove-Item Env:UPDATE_EXPECTED
 
-2. Review the diff of `expected/`.
+2. Review the diff of `expected/`. A change that is meant to keep the
+   behaviour may change only `*.digest.txt`.
 3. Increase `SIM_VERSION` in `crates/world/src/lib.rs`. Players can join the
    same game only with the same version.
 4. Run `cargo test -p soundrts-world --lib sim_version`. The test fails and

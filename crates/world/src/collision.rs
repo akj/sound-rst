@@ -53,6 +53,16 @@ impl CollisionMatrix {
         self.shape(x, y).any(|k| self.cells.contains(&k))
     }
 
+    /// Whether an object at (`x`, `y`) would collide if the cells of the
+    /// object at (`own_x`, `own_y`) were removed. The set is not changed:
+    /// removing and adding the cells back would occupy again any cell that
+    /// another object had freed.
+    pub fn would_collide_without(&self, x: i64, y: i64, own_x: i64, own_y: i64) -> bool {
+        let own: Vec<i64> = self.shape(own_x, own_y).collect();
+        self.shape(x, y)
+            .any(|k| !own.contains(&k) && self.cells.contains(&k))
+    }
+
     pub fn add(&mut self, x: i64, y: i64) {
         let keys: Vec<i64> = self.shape(x, y).collect();
         self.cells.extend(keys);
@@ -112,6 +122,28 @@ mod tests {
         assert_ne!(hash_of(&a), hash_of(&b));
         b.remove(20, 20);
         assert_eq!(hash_of(&a), hash_of(&b));
+    }
+
+    #[test]
+    fn testing_without_an_object_matches_removing_it_from_a_copy() {
+        let mut m = CollisionMatrix::new(200, 2);
+        m.add(6, 6);
+        m.add(8, 6);
+        m.add(30, 30);
+        // (8, 6) shares cells with (6, 6); freeing them leaves (6, 6) partial.
+        m.remove(8, 6);
+        for (x, y) in [(6, 6), (8, 6), (10, 6), (4, 6), (28, 30), (100, 100)] {
+            let mut copy = m.clone();
+            copy.remove(6, 6);
+            assert_eq!(
+                m.would_collide_without(x, y, 6, 6),
+                copy.would_collide(x, y),
+                "({x}, {y})"
+            );
+        }
+        assert!(!m.would_collide_without(8, 6, 6, 6));
+        assert!(m.would_collide_without(28, 30, 6, 6));
+        assert_eq!(m.len(), 8, "the set is unchanged");
     }
 
     #[test]
