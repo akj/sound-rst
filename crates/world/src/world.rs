@@ -767,7 +767,7 @@ impl World {
         }
     }
 
-    fn unregister_entity(&mut self, id: EntityId) {
+    pub(crate) fn unregister_entity(&mut self, id: EntityId) {
         if let Some(i) = self.active_objects.iter().position(|&o| o == id) {
             self.active_objects.remove(i);
         }

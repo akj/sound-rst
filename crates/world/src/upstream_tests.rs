@@ -665,6 +665,44 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "footman"), 1);
     }
 
+    /// Not from the original: a resurrection on a full square fails and
+    /// leaves no unit without a place behind.
+    #[test]
+    fn a_resurrection_without_space_leaves_no_unit_behind() {
+        // A square small enough that the search for a free space from any
+        // point in it covers all of it.
+        let mut w = world_text(&TINY_MAP.replace("square_width 12", "square_width 8"));
+        let cp = w
+            .populate_map(&[Controller::computer("timers")], true, false)
+            .unwrap()[0];
+        kill_ten_footmen(&mut w, cp);
+        // After the first turn, each search for a free space starts afresh.
+        w.update();
+        add(&mut w, cp, "a1 priest");
+        w.plm(cp).upgrades.push("u_resurrection".into());
+        let a1 = sq(&w, "a1");
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let tid = w.rules.type_id("footman").unwrap();
+        while w
+            .create_creature(tid, Some(cp), Place::Square(a1), x, y)
+            .is_ok()
+        {}
+        let footmen = nb(&w, cp, "footman");
+        let used_food = w.player(cp).used_food;
+        let p = find(&w, cp, "priest", 0).unwrap();
+        take(&mut w, p, "use a_resurrection a1");
+        w.update();
+        assert_eq!(w.drain_warnings(), ["NotEnoughSpaceError"]);
+        assert_eq!(nb(&w, cp, "footman"), footmen);
+        assert_eq!(w.player(cp).used_food, used_food);
+        let unplaced = w
+            .active_objects
+            .iter()
+            .filter(|&&o| w.e(o).place.is_none())
+            .count();
+        assert_eq!(unplaced, 0);
+    }
+
     struct Setup {
         w: World,
         cp: PlayerId,

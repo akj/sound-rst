@@ -2260,6 +2260,10 @@ impl World {
         let c = self.e(corpse);
         let (cp, cx, cy) = (c.place, c.x, c.y);
         if self.move_to(id, cp, Some((cx, cy)), 90).is_err() {
+            // The unit never had a place: it leaves the player and the
+            // objects updated each turn.
+            self.set_player(id, None);
+            self.unregister_entity(id);
             return Err(Abort::new("NotEnoughSpaceError"));
         }
         let decay = self.e(id).stats.decay;
