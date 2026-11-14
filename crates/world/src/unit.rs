@@ -627,9 +627,9 @@ impl World {
                 "'Inside' object has no attribute 'would_collide'",
             ));
         }
-        let mut m = self.collision(e.airground_type).clone();
-        m.remove(e.x, e.y);
-        Ok(m.would_collide(x, y))
+        Ok(self
+            .collision(e.airground_type)
+            .would_collide_without(x, y, e.x, e.y))
     }
 
     fn try_move(&mut self, id: EntityId, rotation: i64, target_d: i64) -> Res<bool> {
