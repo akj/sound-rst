@@ -148,7 +148,7 @@ The script has seven steps:
 
 Steps 2, 3 and 4 have 4 trials for each renderer, half in front and half behind. With every renderer, a session has 40 of these trials. The other steps ask for a rating from 1 to 5.
 
-Each step plays the same sounds through each renderer in a random order, and tells you the order at the end of the step. To run only one step, add `--step 3`. To compare only some renderers, add for example `--renderers current,binaural`. Type `q` at any question to stop.
+Each step plays the same sounds through each renderer in a random order, and tells you the order at the end of the step. To run only one step, add `--step 4`. To compare only some renderers, add for example `--renderers current,binaural`. Type `q` at any question to stop.
 
 The program saves your answers after each step in `listening-room-results.txt`, in the current folder. For steps 2, 3 and 4, the file records every trial: where the sound was, and what you answered. Send that file back.
 
