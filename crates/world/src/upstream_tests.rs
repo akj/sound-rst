@@ -1804,4 +1804,29 @@ starting_squares a1 b1
         // The dragon's damage of 4, less the footman's armor of 0.5.
         assert_eq!(w.e(beside).hp, max - 3500);
     }
+
+    const THREE_SQUARES: &str = "
+square_width 12
+nb_columns 3
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 3
+nb_players_max 3
+starting_squares a1 b1 c1
+";
+
+    #[test]
+    fn a_victory_defeats_every_other_player_when_the_losers_quit() {
+        let mut w = world_text(THREE_SQUARES);
+        let humans = ["a", "b", "c"].map(|n| Controller::human(n, false));
+        let ps = w.populate_map(&humans, false, false).unwrap();
+        for &p in &ps {
+            w.plm(p).observer_if_defeated = false;
+        }
+        w.victory(ps[0]);
+        assert!(w.player(ps[0]).has_victory);
+        assert!(w.player(ps[1]).has_been_defeated);
+        assert!(w.player(ps[2]).has_been_defeated);
+        assert_eq!(w.players, [ps[0]]);
+    }
 }

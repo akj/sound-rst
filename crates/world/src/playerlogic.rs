@@ -992,11 +992,8 @@ impl World {
     /// `victory`: the player and its allies win; the others lose.
     pub fn victory(&mut self, p: PlayerId) {
         let time = self.time;
-        // The list shrinks while it is walked when a loser quits, so the
-        // next player is skipped, as in the original.
-        let mut i = 0;
-        while i < self.players.len() {
-            let op = self.players[i];
+        // A loser who quits leaves the list, so walk a copy.
+        for op in self.players.clone() {
             if self.pl(op).is_playing() {
                 if self.pl(p).allied.contains(&op) {
                     self.plm(op).has_victory = true;
@@ -1005,7 +1002,6 @@ impl World {
                     self.defeat(op, false);
                 }
             }
-            i += 1;
         }
     }
 
