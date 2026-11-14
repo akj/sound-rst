@@ -278,12 +278,11 @@ fn join(messages: impl Iterator<Item = Msg>) -> Msg {
 mod tests {
     use soundrts_world::{Cheat, Command, EntityId, PlayerId, SquareId};
 
-    use super::super::testing::{
-        cheat, enemy, run_until, training, training_allied, training_on, unit,
-    };
+    use super::super::testing::{cheat, enemy, run_until, training, training_allied, unit};
     use super::Balance;
+    use crate::clock::Clock;
     use crate::input::{Key, Mods};
-    use crate::testkit::{Harness, TestGame};
+    use crate::testkit::{Harness, LiveKeys, Script, TestGame};
 
     /// The square of the player's town hall, and its name.
     fn home(g: &TestGame, p: PlayerId) -> (SquareId, String) {
@@ -423,11 +422,19 @@ mod tests {
 
     #[test]
     fn every_resource_of_the_rules_is_said() {
-        let (mut h, mut g) = training_on("jl4");
-        assert_eq!(
-            ask(&mut h, &mut g, Key::X, Mods::SHIFT),
-            "10 gold , 10 wood , 0 stone"
-        );
+        // jl4 adds stone. The keys are pressed as a player presses them:
+        // Shift down, X, Shift up.
+        let live = LiveKeys::default();
+        let mut h = Harness::new("en", Script::new().keep_open().with_live(live.clone()));
+        let mut g = h.start_training("jl4", &["easy"], 1);
+        h.run_until_turn(&mut g, 3);
+        h.run_until_voice_idle(&mut g);
+        let (from, t) = (h.utterances().len(), h.clock.now());
+        live.down_at(t, Key::LShift, Mods::SHIFT);
+        live.tap_at(t + 0.1, Key::X, Mods::SHIFT);
+        live.up_at(t + 0.2, Key::LShift);
+        h.run_for(&mut g, 0.3);
+        assert_eq!(h.said_since(from)[0], "10 gold , 10 wood , 0 stone");
     }
 
     #[test]

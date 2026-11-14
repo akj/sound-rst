@@ -44,8 +44,7 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// questions: what is in production, the workers and the fight here
 /// beside the original's status keys Z to V, every resource on Shift X,
 /// and the other players beside F11. Each key is one the original leaves
-/// free and that neither Windows nor a screen reader takes. Most need no
-/// modifier: a modifier pressed alone is a command of its own. Shift Z is
+/// free and that neither Windows nor a screen reader takes. Shift Z is
 /// left to maps, which bind it to a third resource.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
