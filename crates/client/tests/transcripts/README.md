@@ -374,10 +374,11 @@ again.
   it had been playing.
 - An empty login says an `item` message with one empty text part (it ends
   at once), then the "bad login" alert (`menus_options`).
-- Stopping the sounds with the volume keys stops the speech but leaves the
-  remaining parts of the message queued in the voice channel: they play on
-  at the next voice update. A story or the game menu in single-player stops
-  only the sounds of the world.
+- Stopping the sounds before a campaign's cut scene (`campaign`, the
+  prologue) stops the speech but leaves the remaining parts of the message
+  queued in the voice channel: they play on at the next voice update. A
+  story or the game menu in single-player stops only the sounds of the
+  world.
 - Choosing a mod or a soundpack opens a new main menu inside the old one.
   Quitting it exits the client (`menus_options`).
 - In the mods menu, Back also closes the options menu.
