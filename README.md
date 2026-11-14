@@ -51,6 +51,10 @@ cargo run -p soundrts -- --root vendor/soundrts-upstream --probe
 
 The keys are those of the original. `vendor/soundrts-upstream/res/ui/bindings.txt` lists every key. To change keys, put your own `bindings.txt` in the settings folder.
 
+### Key help
+
+To hear what a key does without doing it, press Control F1 in a game. The game says "key help on". Each key or chord you press then says its name and what it does, for example "Control Tab: next useful target", and does nothing else. A key with no command says "no command". A modifier pressed alone, such as Left Control, is described when you release it, because it acts then. Escape or Control F1 turns key help off. The game goes on while key help is on, as it does on a server.
+
 The settings folder is `user` inside the data folder if that folder exists. Otherwise the settings folder is `%APPDATA%\SoundRTS`. It holds `SoundRTS.ini`, the campaign bookmarks, and the log `tmp/client.log`.
 
 To get a written record of everything the game says, set `debug_mode = 1` in `SoundRTS.ini`. The log then has one `SAID:` line for each message.

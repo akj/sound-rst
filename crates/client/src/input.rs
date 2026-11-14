@@ -8,7 +8,7 @@ use std::rc::Rc;
 use crate::clock::ClockRef;
 
 macro_rules! keys {
-    ($($variant:ident => [$($name:literal),+]),* $(,)?) => {
+    ($($variant:ident => [$first:literal $(, $name:literal)*]),* $(,)?) => {
         /// A key. As a physical key it names a position on the keyboard by
         /// its US label; as a logical key it follows the keyboard layout.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -31,8 +31,17 @@ macro_rules! keys {
                     name
                 };
                 match name {
-                    $($($name)|+ => Some(Key::$variant),)*
+                    $($first $(| $name)* => Some(Key::$variant),)*
                     _ => None,
+                }
+            }
+
+            /// The key's name in `bindings.txt` (the first of its names
+            /// above); none for a layout character or an unknown key.
+            pub fn pygame_name(self) -> Option<&'static str> {
+                match self {
+                    $(Key::$variant => Some($first),)*
+                    Key::Char(_) | Key::Unknown => None,
                 }
             }
         }

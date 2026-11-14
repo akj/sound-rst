@@ -40,17 +40,18 @@ pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
 /// chat to the allies, the news log (what did I miss, a category's
-/// messages and changing the category, the last alerts' squares), and the
+/// messages and changing the category, the last alerts' squares), the
 /// questions: what is in production, the workers and the fight here
 /// beside the original's status keys Z to V, every resource on Shift X,
-/// and the other players beside F11. Each key is one the original leaves
-/// free and that neither Windows nor a screen reader takes. Shift Z is
-/// left to maps, which bind it to a third resource.
+/// and the other players beside F11; and key help on Control F1, beside
+/// help on F1. Each key is one the original leaves free and that neither
+/// Windows nor a screen reader takes. Shift Z is left to maps, which bind
+/// it to a third resource.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
     DELETE: jump_to_alert\n\
     b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
-    F12: players_status\n";
+    F12: players_status\nCTRL F1: key_help\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
 /// resource layers (translations included) but a map that came from a
@@ -114,6 +115,94 @@ impl Chord {
             key: e.physical,
         }
     }
+
+    /// The chord as a player names it: "Control Shift Tab".
+    pub fn spoken(self) -> String {
+        let mut words: Vec<&str> = Vec::new();
+        for (held, word) in [
+            (self.mods.ctrl, "Control"),
+            (self.mods.alt, "Alt"),
+            (self.mods.shift, "Shift"),
+        ] {
+            if held {
+                words.push(word);
+            }
+        }
+        let key = key_name(self.key);
+        words.push(&key);
+        words.join(" ")
+    }
+}
+
+/// A key as a player names it, in English.
+fn key_name(key: Key) -> String {
+    use Key as K;
+    let name = match key {
+        K::Char(c) => return c.to_uppercase().collect(),
+        K::Unknown => "unknown key",
+        K::Return => "Enter",
+        K::Escape => "Escape",
+        K::Backspace => "Backspace",
+        K::Tab => "Tab",
+        K::Space => "Space",
+        K::Minus => "Minus",
+        K::Equals => "Equals",
+        K::LeftBracket => "Left Bracket",
+        K::RightBracket => "Right Bracket",
+        K::Backslash => "Backslash",
+        K::NonUsHash => "Hash",
+        K::Semicolon => "Semicolon",
+        K::Quote => "Apostrophe",
+        K::Backquote => "Grave",
+        K::Comma => "Comma",
+        K::Period => "Period",
+        K::Slash => "Slash",
+        K::NonUsBackslash => "Less Than",
+        K::CapsLock => "Caps Lock",
+        K::PrintScreen => "Print Screen",
+        K::ScrollLock => "Scroll Lock",
+        K::Pause => "Pause",
+        K::Insert => "Insert",
+        K::Home => "Home",
+        K::PageUp => "Page Up",
+        K::Delete => "Delete",
+        K::End => "End",
+        K::PageDown => "Page Down",
+        K::Right => "Right Arrow",
+        K::Left => "Left Arrow",
+        K::Down => "Down Arrow",
+        K::Up => "Up Arrow",
+        K::NumLock => "Num Lock",
+        K::KpDivide => "Keypad Slash",
+        K::KpMultiply => "Keypad Star",
+        K::KpMinus => "Keypad Minus",
+        K::KpPlus => "Keypad Plus",
+        K::KpEnter => "Keypad Enter",
+        K::KpPeriod => "Keypad Period",
+        K::KpEquals => "Keypad Equals",
+        K::Kp0 => "Keypad 0",
+        K::Kp1 => "Keypad 1",
+        K::Kp2 => "Keypad 2",
+        K::Kp3 => "Keypad 3",
+        K::Kp4 => "Keypad 4",
+        K::Kp5 => "Keypad 5",
+        K::Kp6 => "Keypad 6",
+        K::Kp7 => "Keypad 7",
+        K::Kp8 => "Keypad 8",
+        K::Kp9 => "Keypad 9",
+        K::Application => "Applications",
+        K::LCtrl => "Left Control",
+        K::LShift => "Left Shift",
+        K::LAlt => "Left Alt",
+        K::LGui => "Left Windows",
+        K::RCtrl => "Right Control",
+        K::RShift => "Right Shift",
+        K::RAlt => "Right Alt",
+        K::RGui => "Right Windows",
+        // Letters, digits and function keys are named as written.
+        other => return other.pygame_name().unwrap_or("unknown key").to_owned(),
+    };
+    name.to_owned()
 }
 
 /// Why a line of `bindings.txt` was ignored.

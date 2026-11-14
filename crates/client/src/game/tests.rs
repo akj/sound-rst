@@ -233,3 +233,28 @@ fn cancelling_the_game_from_the_menu_during_a_cut_scene_ends_the_game() {
     h.run_for(&mut g, 2.0);
     assert!(g.game.end_loop, "the game is over");
 }
+
+#[test]
+fn key_help_turns_on_during_a_story_and_the_story_is_still_said() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "the end"]));
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Story(_)));
+    let from = h.utterances().len();
+    h.press(Key::F1, Mods::CTRL);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::KeyHelp));
+    assert!(!g.game.world_waits());
+    run_until_said(&mut h, &mut g, from, 3);
+    assert_eq!(
+        h.said_since(from)[..3],
+        [
+            "key help on: press a key to hear what it does, Escape to leave",
+            "once upon a time",
+            "the end"
+        ]
+    );
+}

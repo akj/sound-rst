@@ -53,11 +53,12 @@ use soundrts_world::{
     Command, EntityId, Host, KnownEntity, Place, PlayerId, SquareId, View, Voila,
 };
 
-use crate::bindings::{Bindings, game_bindings_text};
+use crate::bindings::{Bindings, Chord, game_bindings_text};
 use crate::client::Client;
-use crate::input::{Event as InputEvent, GameProgress, InputPoint, KeyDown};
+use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, Mods};
 use crate::menu::{Exit, TextEntry};
 use crate::message::{Category, News, Subject};
+use crate::net::words;
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
 use crate::voice::EntryId;
@@ -165,13 +166,17 @@ pub(crate) enum Mode {
     Chat(misc::Chat),
     /// A command of the console is being typed.
     Console(TextEntry),
+    /// Key help: a key says what it does instead of doing it.
+    KeyHelp,
 }
 
 impl Mode {
     /// Where the keys of this mode are read.
     fn input_point(&self) -> InputPoint {
         match self {
-            Mode::Playing | Mode::OrderShortcut | Mode::Story(_) => InputPoint::Game,
+            Mode::Playing | Mode::OrderShortcut | Mode::Story(_) | Mode::KeyHelp => {
+                InputPoint::Game
+            }
             Mode::GameMenu(_) => InputPoint::Menu,
             Mode::Chat(_) | Mode::Console(_) => InputPoint::Text,
         }
@@ -495,7 +500,7 @@ impl GameInterface {
     pub fn world_waits(&self) -> bool {
         self.net.is_none()
             && match self.mode {
-                Mode::Playing | Mode::OrderShortcut | Mode::Chat(_) => false,
+                Mode::Playing | Mode::OrderShortcut | Mode::Chat(_) | Mode::KeyHelp => false,
                 Mode::Story(_) | Mode::GameMenu(_) | Mode::Console(_) => true,
             }
     }
@@ -503,7 +508,7 @@ impl GameInterface {
     /// Tells a story: each message as story news, said before the other
     /// news waiting. In single-player the world waits until every message
     /// has been said or skipped, and its sounds stop; in a game on a
-    /// server, nothing waits.
+    /// server or while key help is on, nothing waits.
     pub(crate) fn tell_story(&mut self, cx: &mut Client, messages: Vec<Msg>) {
         let policy = cx.config.news.of(Category::Story);
         let story = Story(
@@ -512,7 +517,7 @@ impl GameInterface {
                 .filter_map(|m| cx.voice.news(News::new(Category::Story, m), policy))
                 .collect(),
         );
-        if self.net.is_some() || story.is_told(cx) {
+        if self.net.is_some() || matches!(self.mode, Mode::KeyHelp) || story.is_told(cx) {
             return;
         }
         cx.stop_sound(false);
@@ -521,7 +526,7 @@ impl GameInterface {
             Mode::Playing | Mode::OrderShortcut => self.mode = Mode::Story(story),
             // The world waits while these are open, and chat is only typed
             // on a server: no story comes meanwhile.
-            Mode::GameMenu(_) | Mode::Chat(_) | Mode::Console(_) => {}
+            Mode::GameMenu(_) | Mode::Chat(_) | Mode::Console(_) | Mode::KeyHelp => {}
         }
     }
 
@@ -600,12 +605,43 @@ impl GameInterface {
                 Ok(())
             }
             Mode::Console(entry) => Ok(self.console_key(cx, entry, &k)?),
+            Mode::KeyHelp => {
+                self.key_help_key(cx, &k);
+                Ok(())
+            }
         }
     }
 
+    /// Turns key help on.
+    pub(crate) fn start_key_help(&mut self, cx: &mut Client) {
+        self.mode = Mode::KeyHelp;
+        cx.voice.item(&words::text(words::KEY_HELP_ON));
+    }
+
+    /// A key pressed while key help is on: Escape, or the key that turns
+    /// key help on, turns it off; any other key or chord says its name and
+    /// what it does, without doing it. A modifier pressed alone comes when
+    /// it is released, as it acts then.
+    fn key_help_key(&mut self, cx: &mut Client, k: &KeyDown) {
+        let chord = Chord::of(k);
+        let command = self.bindings.get(&chord);
+        let escape = Chord {
+            mods: Mods::NONE,
+            key: Key::Escape,
+        };
+        if chord == escape || command == Some(&GameCommand::KeyHelp) {
+            cx.voice.item(&words::text(words::KEY_HELP_OFF));
+            return;
+        }
+        self.mode = Mode::KeyHelp;
+        let what = command.map_or_else(|| words::NO_COMMAND.to_owned(), GameCommand::description);
+        cx.voice
+            .item(&words::text(&format!("{}: {what}", chord.spoken())));
+    }
+
     /// A key pressed while a story is told: the keys of the game menu,
-    /// the history, the news, help and the volume do as in the game; any
-    /// other key skips the message being said.
+    /// the history, the news, help, key help and the volume do as in the
+    /// game; any other key skips the message being said.
     fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
@@ -618,6 +654,7 @@ impl GameInterface {
                 | C::ReviewNext
                 | C::ReviewCategory
                 | C::Help(_)
+                | C::KeyHelp
                 | C::Volume(_)),
             ) => self.execute(cx, &c),
             _ => {
