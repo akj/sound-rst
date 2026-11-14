@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{EntityId, KeywordOrder, View};
+use soundrts_world::{EntityId, KeywordOrder, SeatView};
 
 use crate::style::Style;
 
@@ -101,7 +101,7 @@ impl OrderTypeView {
     pub fn new(
         order: &str,
         unit: EntityId,
-        view: View,
+        view: &SeatView,
         style: &Style,
         log: &crate::log::Log,
     ) -> Option<OrderTypeView> {
@@ -167,7 +167,7 @@ impl OrderTypeView {
     }
 
     /// An ability with a long range: the target may be any square.
-    pub fn target_shouldnt_collide(&self, view: View) -> bool {
+    pub fn target_shouldnt_collide(&self, view: &SeatView) -> bool {
         self.keyword == Keyword::Use
             && self
                 .type_name
@@ -179,7 +179,7 @@ impl OrderTypeView {
     /// The missing requirements, else the costs, after "requires". A
     /// requirement of a unit whose owner the player does not control
     /// counts as missing.
-    fn requirements_msg(&self, view: View, style: &Style) -> Msg {
+    fn requirements_msg(&self, view: &SeatView, style: &Style) -> Msg {
         let missing: Vec<&String> = self
             .requirements
             .iter()
@@ -221,7 +221,7 @@ impl OrderTypeView {
     }
 
     /// The comment, then the requirements or costs.
-    pub fn full_comment(&self, view: View, style: &Style) -> Msg {
+    pub fn full_comment(&self, view: &SeatView, style: &Style) -> Msg {
         let mut m = self.comment.clone();
         m.extend(self.requirements_msg(view, style));
         m

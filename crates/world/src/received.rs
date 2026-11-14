@@ -88,14 +88,9 @@ impl GameStart {
         for &s in named {
             self.square(s)?;
         }
-        let events = m.events.iter().map(|e| match e {
-            Event::Entity { entity, .. } => Ok(Some(&**entity)),
-            Event::Voila(_) => Err(Malformed("the end of a turn among events".into())),
-            _ => Ok(None),
-        });
-        for e in events {
-            if let Some(e) = e? {
-                self.entity(e)?;
+        for e in &m.events {
+            if let Event::Entity { entity, .. } = e {
+                self.entity(entity)?;
             }
         }
         let lists = [&m.perceived, &m.remembered, &m.unperceived_units];

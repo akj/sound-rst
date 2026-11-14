@@ -204,7 +204,7 @@ impl GameInterface {
 
     /// Keeps in the group the units still known and controlled.
     pub fn update_group(&mut self) {
-        let view = self.host.view(self.me);
+        let view = &self.seat;
         let group = std::mem::take(&mut self.group);
         self.group = group
             .into_iter()

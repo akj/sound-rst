@@ -1,6 +1,6 @@
 //! The score said at the end of a game, from the player's statistics.
 
-use soundrts_world::View;
+use soundrts_world::SeatView;
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::nofloat::floordiv;
@@ -12,9 +12,12 @@ use super::order::PRECISION;
 use super::style_msg;
 
 /// The messages of the score: the outcome and the duration, units and
-/// buildings, each resource, then the score.
-pub fn score_msgs(view: View, style: &Style) -> Vec<Msg> {
-    let stats = view.stats();
+/// buildings, each resource, then the score. None before the game is over
+/// for the player: the statistics come with its end.
+pub fn score_msgs(view: &SeatView, style: &Style) -> Vec<Msg> {
+    let Some(stats) = view.stats() else {
+        return Vec::new();
+    };
     let resources = view.resources();
     let outcome = if view.has_victory() {
         mp::VICTORY

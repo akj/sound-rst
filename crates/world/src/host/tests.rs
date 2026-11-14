@@ -118,10 +118,11 @@ fn a_map_error_is_the_old_one() {
 fn game() -> (Host, PlayerId) {
     let mut host = Host::new(&training("res/multi/jl1.txt", 5)).unwrap();
     let me = host.seats()[0];
-    host.queue(
+    let told = host.queue(
         me,
         Command::Cheat(Cheat::Trigger("add_units a1 2 priest".into())),
     );
+    assert!(told.is_none(), "a trigger waits for the step");
     for _ in 0..5 {
         host.step(me);
     }
@@ -136,7 +137,10 @@ fn same_as_old_write(cheat: Cheat, old_write: impl FnOnce(&mut World, PlayerId))
     assert_eq!(host.world.digest_u64(), old.world.digest_u64());
     let before = host.world.digest_u64();
     old_write(&mut old.world, me);
-    host.queue(me, Command::Cheat(cheat.clone()));
+    let told = host.queue(me, Command::Cheat(cheat.clone()));
+    let told = told.unwrap_or_else(|| panic!("{cheat:?} is told at once"));
+    let seat = told.seat;
+    assert_eq!(told.state, host.message(seat).state, "{cheat:?}");
     assert_ne!(host.world.digest_u64(), before, "{cheat:?} changed nothing");
     assert_eq!(host.world.digest_u64(), old.world.digest_u64(), "{cheat:?}");
     for _ in 0..20 {
@@ -158,9 +162,11 @@ fn the_resources_cheat_does_what_the_console_did() {
     });
     let (mut host, me) = game();
     let before = host.world.player(me).resources.clone();
-    host.queue(me, Command::Cheat(Cheat::Resources));
+    let told = host.queue(me, Command::Cheat(Cheat::Resources)).unwrap();
     let after: Vec<i64> = before.iter().map(|r| r + 1_000_000).collect();
     assert_eq!(host.world.player(me).resources, after);
+    // The seat is told at once, between turns.
+    assert_eq!((told.seat, told.state.resources), (me, after));
 }
 
 #[test]
@@ -180,7 +186,8 @@ fn the_mana_cheat_does_what_the_console_did() {
         }
     });
     let (mut host, me) = game();
-    host.queue(me, Command::Cheat(Cheat::InfiniteMana));
+    let told = host.queue(me, Command::Cheat(Cheat::InfiniteMana));
+    assert_eq!(told.map(|m| m.seat), Some(me));
     let regen: Vec<i64> = host
         .world
         .player(me)
@@ -206,7 +213,11 @@ fn playing_as_another_player_does_what_the_interface_did() {
         }
     });
     let (mut host, _) = game();
-    host.queue(me, Command::Cheat(Cheat::PlayAs(other)));
+    let told = host
+        .queue(me, Command::Cheat(Cheat::PlayAs(other)))
+        .unwrap();
+    // The seat is now the other player's.
+    assert_eq!(told.seat, other);
     assert_eq!(
         host.world.player(other).controller.kind,
         ControllerKind::Human {
@@ -221,10 +232,11 @@ fn playing_as_another_player_does_what_the_interface_did() {
             local: false
         }
     );
-    // The events now go to the other player.
+    // The events and the end of the turn now go to the other player.
     let report = host.step(other);
-    assert!(!report.events.is_empty());
-    assert!(host.step(me).events.is_empty());
+    assert_eq!(report.end_of_turn.map(|m| m.seat), Some(other));
+    let report = host.step(me);
+    assert!(report.end_of_turn.is_none() && report.then.is_empty());
 }
 
 #[test]
@@ -241,7 +253,7 @@ fn a_game_without_cheats_refuses_them() {
         Cheat::InfiniteMana,
         Cheat::PlayAs(host.seats()[1]),
     ] {
-        host.queue(me, Command::Cheat(c));
+        assert!(host.queue(me, Command::Cheat(c)).is_none());
     }
     assert_eq!(host.world.digest_u64(), before);
     let warnings = host.drain_warnings();
@@ -255,16 +267,16 @@ fn commands_run_at_the_next_step_in_the_order_given() {
     let me = host.seats()[0];
     host.step(me);
     for s in [2.0, 0.5, 4.0] {
-        host.queue(me, Command::Speed(s));
+        assert!(host.queue(me, Command::Speed(s)).is_none());
     }
     // Nothing runs before the step.
     assert_eq!(host.world.turn(), 1);
-    let speeds: Vec<f64> = host
-        .step(me)
+    let end = host.step(me).end_of_turn.unwrap();
+    let speeds: Vec<f64> = end
         .events
-        .into_iter()
+        .iter()
         .filter_map(|e| match e {
-            Event::Speed(s) => Some(s),
+            &Event::Speed(s) => Some(s),
             _ => None,
         })
         .collect();
@@ -285,8 +297,8 @@ fn a_typed_command_and_its_old_line_play_the_same_game() {
         .collect();
     let b2 = typed.world.square_by_name("b2").unwrap();
     let ids: Vec<String> = peasants.iter().map(|u| u.0.to_string()).collect();
-    typed.queue(me, Command::Control(peasants));
-    typed.queue(
+    let _ = typed.queue(me, Command::Control(peasants));
+    let _ = typed.queue(
         me,
         Command::Order {
             order: Order::Keyword(
@@ -307,4 +319,42 @@ fn a_typed_command_and_its_old_line_play_the_same_game() {
         assert_eq!(typed.world.digest_u64(), text.world.digest_u64());
     }
     assert_ne!(typed.world.digest_u64(), before);
+}
+
+#[test]
+fn a_turn_ends_with_what_the_seat_knows_then_and_the_game_may_end_after() {
+    let (mut host, me) = game();
+    let report = host.step(me);
+    let end = report.end_of_turn.unwrap();
+    // On an ordinary turn the end is what the seat knows after the step.
+    assert!(Arc::ptr_eq(&end, &report.message));
+    assert!(report.then.is_empty());
+    assert_eq!(end.time, host.world.time);
+
+    // A victory ends the game at the end of the turn: every player leaves
+    // it after, and the seat's units with it.
+    let _ = host.queue(me, Command::Cheat(Cheat::Victory));
+    let report = host.step(me);
+    let end = report.end_of_turn.unwrap();
+    assert!(end.state.players.contains(&me));
+    assert!(end.state.has_victory);
+    let own = |m: &TurnMessage| {
+        m.perceived
+            .iter()
+            .filter(|e| e.player == Some(me) && e.place.is_some())
+            .count()
+    };
+    assert!(own(&end) > 0, "the units are there at the end of the turn");
+    assert!(
+        matches!(report.then[..], [Event::Quit]),
+        "{:?}",
+        report.then
+    );
+    let after = &report.message;
+    assert!(after.state.players.is_empty());
+    assert_eq!(own(after), 0, "the units left with the player");
+    assert_eq!(after.time, end.time);
+    // The game is over: no more ends of turn.
+    let report = host.step(me);
+    assert!(report.end_of_turn.is_none());
 }

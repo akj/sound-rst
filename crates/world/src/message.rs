@@ -194,9 +194,8 @@ pub struct TurnMessage {
     pub time: i64,
     /// What the seat perceived during the turn, in order. An event about
     /// an entity carries the entity as the seat knew it at that moment.
-    /// The end of the turn, which [`Event::Voila`] tells, is the rest of
-    /// this message and is not among them. Only a local human receives
-    /// events: for any other seat this is empty.
+    /// The end of the turn is the rest of this message. Only a local human
+    /// receives events: for any other seat this is empty.
     pub events: Vec<Event>,
     pub state: SeatState,
     pub squares: KnownSquares,

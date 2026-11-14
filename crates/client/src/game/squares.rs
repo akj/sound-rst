@@ -112,32 +112,12 @@ impl GameInterface {
         cx.audio.stop(false);
     }
 
-    /// Notes the terrain of every square the player observes, fully or
-    /// partly from the next square, at the end of a turn: forests are cut,
-    /// and a square in the fog keeps the terrain the player last saw.
-    pub(crate) fn note_terrain(&mut self) {
-        let view = self.host.view(self.me);
-        let seen = self.scouted_squares.iter();
-        for &s in seen.chain(view.partly_observed_squares()) {
-            let t = view.terrain(s);
-            if self.seen_terrain.get(&s).is_none_or(|k| k != t) {
-                self.seen_terrain.insert(s, t.to_owned());
-            }
-        }
-    }
-
-    /// The terrain of a square as the player knows it: as it was at the
-    /// end of the last turn the player observed it, none if never.
-    pub fn known_terrain(&self, square: SquareId) -> &str {
-        self.seen_terrain.get(&square).map_or("", String::as_str)
-    }
-
     /// The terrain of a square as the player knows it, and whether it is
     /// high ground.
     fn square_terrain(&self, cx: &Client, place: SquareId) -> Msg {
         let mut result = Vec::new();
         let view = self.view();
-        let terrain = self.known_terrain(place);
+        let terrain = view.terrain(place);
         if !terrain.is_empty() {
             let title = style_msg(cx.res.style(), terrain, "title");
             if !title.is_empty() {
@@ -693,7 +673,7 @@ impl GameInterface {
             if kept.iter().any(|(k, _)| *k == s) {
                 continue;
             }
-            let t = self.known_terrain(s);
+            let t = self.view().terrain(s);
             if t.is_empty() {
                 continue;
             }
@@ -723,7 +703,7 @@ mod tests {
         let home = home.unwrap();
         // Observed: the terrain noted at the end of each turn.
         assert!(game.scouted_squares.contains(&home));
-        assert_eq!(game.seen_terrain[&home], "_meadows");
+        assert_eq!(game.view().terrain(home), "_meadows");
         let m = game.square_postfix(&h.client, home);
         assert_eq!(said(&mut h, &m), ", meadows");
         // Glimpsed from the next square: its terrain too, in the fog.
@@ -734,20 +714,10 @@ mod tests {
         assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
         // Never observed nor glimpsed: unknown, with no terrain.
         let b3 = game.view().square_at(1, 2).unwrap();
-        assert_eq!(game.view().terrain(b3), "_meadows");
-        assert!(!game.seen_terrain.contains_key(&b3));
-        assert_eq!(game.known_terrain(b3), "");
+        assert_eq!(game.host.world().square(b3).type_name, "_meadows");
+        assert_eq!(game.view().terrain(b3), "");
         let m = game.square_postfix(&h.client, b3);
         assert_eq!(said(&mut h, &m), ", unknown");
-        // Last noted as a forest: a forest, whatever it is now.
-        game.seen_terrain.insert(a1, "_forest".into());
-        let m = game.square_postfix(&h.client, a1);
-        assert_eq!(said(&mut h, &m), ", forest , in the fog of war");
-        // Observed: as noted at the end of the last turn handled, not as
-        // the game may have changed since.
-        game.seen_terrain.insert(home, "_forest".into());
-        let m = game.square_postfix(&h.client, home);
-        assert_eq!(said(&mut h, &m), ", forest");
     }
 
     #[test]
@@ -784,7 +754,7 @@ mod tests {
         run_until(&mut h, &mut g, |g| glimpsed(g, a4));
         let turn = g.game.view().turn() + 1;
         h.run_until_turn(&mut g, turn);
-        assert_eq!(g.game.seen_terrain[&a4], "_forest");
+        assert_eq!(g.game.view().terrain(a4), "_forest");
         go(&mut g, me, peasant, home);
         run_until(&mut h, &mut g, |g| !glimpsed(g, a4));
         // The computer cuts the only wood of a 4, out of the player's sight.
@@ -816,7 +786,8 @@ mod tests {
             let next = g.game.view().turn() + 1;
             h.run_until_turn(&mut g, next);
         }
-        assert_eq!(g.game.view().terrain(a4), "_meadows");
+        assert_eq!(g.game.host.world().square(a4).type_name, "_meadows");
+        assert_eq!(g.game.view().terrain(a4), "_forest");
         assert!(!glimpsed(&g.game, a4));
         let m = g.game.square_postfix(&h.client, a4);
         assert_eq!(said(&mut h, &m), ", forest , in the fog of war");

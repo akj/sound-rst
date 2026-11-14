@@ -1,17 +1,35 @@
 //! What one player knows of a game, made only of what its seat was sent.
 //!
-//! A [`SeatView`] answers every question a [`View`](crate::View) answers,
-//! with the same methods, from the [`GameStart`] sent once, the latest
-//! [`TurnMessage`], and what the interface keeps of earlier turns: the
-//! terrain of squares it no longer sees, and the upgrades of a unit as it
-//! last perceived the unit. It never asks the host anything. The order
-//! menus, costs, requirements, default orders, blocked exits and comrades
-//! are computed by the same functions the simulation uses.
+//! A [`SeatView`] answers every question the interface asks during a game
+//! from the [`GameStart`] sent once, the latest [`TurnMessage`], the
+//! [`GameEnd`] once the game is over, and what the interface keeps of
+//! earlier turns: the terrain of squares it no longer sees, and the
+//! upgrades of a unit as it last perceived the unit. It never asks the
+//! host anything. The order menus, costs, requirements, default orders,
+//! blocked exits and comrades are computed by the same functions the
+//! simulation uses.
 //!
-//! Like a view, it answers the questions of groups 1, 3 and 5 for the
-//! arguments the interface asks them for: the squares it observes or
-//! partly observes, and the units it controls. For other arguments it
-//! answers from what the seat knows: nothing, an empty list, or `None`.
+//! The questions come in five groups, each answered from one source:
+//!
+//! 1. **The game, known to everyone**: the map, the rules, the clock and
+//!    whether cheats are allowed. From the [`GameStart`], and the time
+//!    from the turn's message.
+//! 2. **The player's own state**: resources, food, units, recallable
+//!    groups, objectives, alliances, cheat mode, victory, and at the end
+//!    the statistics.
+//! 3. **What everyone may know of the other players**: names, who is
+//!    allied with whom, who is still playing.
+//! 4. **Entities the player perceives or remembers**, and what follows
+//!    from them alone: whether an exit is closed, the units beside one that
+//!    died, what a remembered unit was busy with.
+//! 5. **Questions computed from what the player was sent** about the
+//!    units it perceives or controls: order menus, order costs, what a
+//!    unit is busy with, its upgrades, the default order for a target.
+//!
+//! The interface asks the questions of groups 1, 3 and 5 for the squares
+//! the player observes or partly observes and the units it controls. For
+//! other arguments a seat view answers from what the seat knows: nothing,
+//! an empty list, or `None`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -19,13 +37,13 @@ use std::sync::Arc;
 use crate::command::OrderTarget;
 use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::known::{KnownEntity, KnownOrder, KnownTarget};
+use crate::message::SquareInfo;
 use crate::message::{ControlledPlayer, GameEnd, GameStart, TurnMessage};
 use crate::msg::Msg;
 use crate::orders::{Keyword, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
 use crate::rules::{Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
-use crate::view::{Comrades, MapSquare};
 use crate::world::{Abort, Res};
 
 /// What one seat knows of a game, from what it was sent: see the
@@ -33,34 +51,35 @@ use crate::world::{Abort, Res};
 #[derive(Clone, Debug)]
 pub struct SeatView {
     start: Arc<GameStart>,
-    turn: TurnMessage,
+    turn: Arc<TurnMessage>,
     end: Option<GameEnd>,
-    /// The terrain of every square as the seat last saw it.
+    /// The terrain of every square as the seat last took note of it.
     terrain: BTreeMap<SquareId, String>,
     /// The upgrades of every known creature with an owner, as the seat
-    /// last perceived it.
+    /// last took note of them while it perceived the creature.
     upgrades: BTreeMap<EntityId, Vec<String>>,
 }
 
 impl SeatView {
     /// The view of a seat that has been sent the start of the game and a
-    /// first message: the state when it joins.
-    pub fn new(start: Arc<GameStart>, first: TurnMessage) -> SeatView {
-        let mut v = SeatView {
+    /// first message: the state when it joins. It remembers nothing yet:
+    /// see [`SeatView::remember`].
+    pub fn new(start: Arc<GameStart>, first: impl Into<Arc<TurnMessage>>) -> SeatView {
+        SeatView {
             start,
-            turn: first,
+            turn: first.into(),
             end: None,
             terrain: BTreeMap::new(),
             upgrades: BTreeMap::new(),
-        };
-        v.remember();
-        v
+        }
     }
 
-    /// Takes a turn's message: every answer is from it from now on.
-    pub fn install(&mut self, message: TurnMessage) {
-        self.turn = message;
-        self.remember();
+    /// Takes a message: a turn's, or one the host sends between turns
+    /// after a change made at once. Every answer is from it from now on,
+    /// except what the seat remembers, which waits for
+    /// [`SeatView::remember`].
+    pub fn install(&mut self, message: impl Into<Arc<TurnMessage>>) {
+        self.turn = message.into();
     }
 
     /// Takes the end of the game: the statistics.
@@ -77,8 +96,14 @@ impl SeatView {
         &self.start
     }
 
-    /// Keeps what the interface remembers of the turn just installed.
-    fn remember(&mut self) {
+    /// Takes note of what the latest message shows: the terrain of the
+    /// squares the seat observes or partly observes, and the upgrades of
+    /// the creatures it perceives. Forgets the upgrades of the entities it
+    /// no longer perceives or remembers. The interface calls it when it
+    /// handles the end of a turn, which may come a few passes of its loop
+    /// after the turn's message was installed: until then it describes the
+    /// squares and remembered units as it knew them before.
+    pub fn remember(&mut self) {
         for (s, t) in &self.turn.squares.terrain {
             if self.terrain.get(s) != Some(t) {
                 self.terrain.insert(*s, t.clone());
@@ -421,6 +446,90 @@ impl SeatView {
     }
 }
 
+/// A square of the map, as everyone knows it: its place, name and shape.
+/// What is on the square is not part of it. Coordinates are in
+/// millimeters.
+#[derive(Clone, Copy)]
+pub struct MapSquare<'a> {
+    square: &'a SquareInfo,
+}
+
+impl<'a> MapSquare<'a> {
+    /// The square's id in the text protocol.
+    pub fn protocol_id(&self) -> u32 {
+        self.square.protocol_id
+    }
+
+    /// The column, from 0.
+    pub fn col(&self) -> i64 {
+        self.square.col
+    }
+
+    /// The row, from 0.
+    pub fn row(&self) -> i64 {
+        self.square.row
+    }
+
+    /// `a1`, `b3`...
+    pub fn name(&self) -> &'a str {
+        &self.square.name
+    }
+
+    /// The column sound and the row number.
+    pub fn title(&self) -> &'a Msg {
+        &self.square.title
+    }
+
+    /// The center.
+    pub fn center(&self) -> (i64, i64) {
+        self.square.center
+    }
+
+    /// The smallest x and y inside the square.
+    pub fn min(&self) -> (i64, i64) {
+        self.square.min
+    }
+
+    /// The x and y just past the square.
+    pub fn max(&self) -> (i64, i64) {
+        self.square.max
+    }
+
+    pub fn high_ground(&self) -> bool {
+        self.square.high_ground
+    }
+
+    pub fn is_water(&self) -> bool {
+        self.square.is_water
+    }
+
+    /// The eight squares around, fewer at an edge.
+    pub fn neighbors(&self) -> &'a [SquareId] {
+        &self.square.neighbors
+    }
+}
+
+impl<'a> MapSquare<'a> {
+    /// The square `id` of a map. A square id comes from the same map.
+    pub(crate) fn of(start: &'a GameStart, id: SquareId) -> MapSquare<'a> {
+        let square = start
+            .map
+            .square(id)
+            .expect("a square id names a square of its map");
+        MapSquare { square }
+    }
+}
+
+/// The units of a player that the player perceives on the place where one
+/// of theirs died: see [`SeatView::comrades`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Comrades {
+    /// How many there are.
+    pub units: usize,
+    /// How many of them can fight.
+    pub soldiers: usize,
+}
+
 /// The entity of this id in a list by id.
 fn find(list: &[KnownEntity], id: EntityId) -> Option<&KnownEntity> {
     let i = list.binary_search_by_key(&id, |e| e.id).ok()?;
@@ -528,4 +637,4 @@ impl<'a> Knowledge<'a> for &'a SeatView {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

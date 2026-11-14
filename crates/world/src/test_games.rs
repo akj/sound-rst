@@ -326,11 +326,7 @@ impl Game {
             self.players
                 .iter()
                 .map(|&p| {
-                    let events = w
-                        .drain_events(p)
-                        .into_iter()
-                        .filter(|e| !matches!(e, crate::events::Event::Voila(_)))
-                        .collect();
+                    let events = w.drain_events(p);
                     w.turn_message(p, events)
                 })
                 .collect(),

@@ -1,9 +1,7 @@
 //! What the simulation tells a player's interface: the typed form of the
 //! original's `player.push(...)` and `send_event(...)`.
 
-use std::collections::BTreeSet;
-
-use crate::entity::{EntityId, SquareId};
+use crate::entity::EntityId;
 use crate::known::KnownEntity;
 use crate::msg::Msg;
 
@@ -135,26 +133,4 @@ pub enum Event {
     Speed(f64),
     /// The player left the game.
     Quit,
-    /// The turn is over: what the player knows at its end, before the game
-    /// may end.
-    ///
-    /// Never sent: a seat is sent the end of a turn as a
-    /// [`TurnMessage`](crate::TurnMessage).
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Voila(Box<Voila>),
-}
-
-/// What a player knows at the end of a turn: the entities it remembers
-/// and perceives, as it knows them, and the squares it observes.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Voila {
-    /// The world's time after the turn, in milliseconds.
-    pub time: i64,
-    /// The remembered entities, each with when it was last seen, by id.
-    pub memory: Vec<KnownEntity>,
-    /// The perceived entities, by id.
-    pub perception: Vec<KnownEntity>,
-    pub observed_squares: BTreeSet<SquareId>,
-    /// Every square in cheat mode.
-    pub observed_before_squares: BTreeSet<SquareId>,
 }

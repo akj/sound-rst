@@ -263,7 +263,7 @@ impl GameInterface {
     fn upgrades_status(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
         let upgrades = if v.is_memory() {
-            self.seen_upgrades.get(&v.id()).cloned().unwrap_or_default()
+            self.view().remembered_upgrades(v.id()).to_vec()
         } else {
             self.view().unit_upgrades(v.id())
         };
@@ -271,22 +271,6 @@ impl GameInterface {
             .iter()
             .flat_map(|u| style_msg(style, u, "title"))
             .collect()
-    }
-
-    /// Notes the upgrades of every creature the player perceives at the
-    /// end of a turn, and forgets those of entities it no longer knows.
-    /// Called every turn, so that a remembered creature has the upgrades
-    /// it had when last seen.
-    pub(crate) fn note_upgrades(&mut self) {
-        let view = self.host.view(self.me);
-        for v in self.dobjets.values() {
-            if !v.is_memory() && v.is_creature() && v.player().is_some() {
-                self.seen_upgrades
-                    .insert(v.id(), view.unit_upgrades(v.id()));
-            }
-        }
-        let known = &self.dobjets;
-        self.seen_upgrades.retain(|id, _| known.contains_key(id));
     }
 
     pub fn description(&self, cx: &Client, v: &EntityView) -> Msg {
@@ -919,7 +903,7 @@ impl GameInterface {
     fn terrain_footstep(&self, cx: &Client, v: &EntityView) -> Option<Vec<String>> {
         let style = cx.res.style();
         let s = v.place()?.square()?;
-        let t = self.known_terrain(s);
+        let t = self.view().terrain(s);
         if t.is_empty() {
             return None;
         }
@@ -1099,7 +1083,7 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{cheat, enemy, go, run_until, said, training, unit};
+    use super::super::testing::{cheat, enemy, go, run_until, said, step, training, unit};
     use super::*;
 
     /// The player's peasant as the player knows it, with its first order, a
@@ -1114,7 +1098,7 @@ mod tests {
         g.game
             .host
             .queue_line(me, &format!("order 0 0 go {}", farm.0));
-        g.game.host.step(me);
+        step(g);
         let mut model = g.game.view().perceived(peasant).unwrap();
         model.own.as_mut().unwrap().orders[0].target = Some(target);
         EntityView {
@@ -1213,7 +1197,7 @@ mod tests {
             if has_site(&g) {
                 break;
             }
-            g.game.host.step(me);
+            step(&mut g);
         }
         // The player's memory of a farm's site that is no longer there.
         let site = unit(&g, me, "buildingsite");

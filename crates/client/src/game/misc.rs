@@ -322,11 +322,14 @@ impl GameInterface {
         Ok(())
     }
 
-    /// A cheat that changes the game at once. It is the player's even out
-    /// of the game, as the console's always were; the console is open only
-    /// in a game that allows cheats.
-    fn cheat_at_once(&mut self, cheat: Cheat) {
-        self.host.queue(self.me, Command::Cheat(cheat));
+    /// A cheat that changes the game at once, even while the game waits:
+    /// what the player hears next is told by the host at once. It is the
+    /// player's even out of the game, as the console's always were; the
+    /// console is open only in a game that allows cheats.
+    pub(crate) fn cheat_at_once(&mut self, cheat: Cheat) {
+        if let Some(told) = self.host.queue(self.me, Command::Cheat(cheat)) {
+            self.install_at_once(told);
+        }
     }
 
     /// Starts typing a command of the console, in a game that allows
@@ -363,9 +366,6 @@ impl GameInterface {
         let new = players[(i + 1) % players.len()];
         if new != self.me {
             self.cheat_at_once(Cheat::PlayAs(new));
-            self.me = new;
-            self.seen_upgrades.clear();
-            self.seen_terrain.clear();
         }
         // Upstream refreshes the fog of war here from the previous player's
         // last perception: nothing changes until the next turn.

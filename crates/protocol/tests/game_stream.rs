@@ -103,13 +103,19 @@ fn play(case: &Case, count: &mut Count) {
     let first = game.messages();
     let mut host_views: Vec<SeatView> = first
         .iter()
-        .map(|m| SeatView::new(Arc::clone(&host_start), m.clone()))
+        .map(|m| {
+            let mut v = SeatView::new(Arc::clone(&host_start), m.clone());
+            v.remember();
+            v
+        })
         .collect();
     let mut seat_views: Vec<SeatView> = first
         .iter()
         .map(|m| {
             let m = decode_turn(&encode_turn(m).unwrap(), &start).unwrap();
-            SeatView::new(Arc::clone(&start), m)
+            let mut v = SeatView::new(Arc::clone(&start), m);
+            v.remember();
+            v
         })
         .collect();
     // Each seat's last 50 messages as sent whole, with their events.
@@ -137,7 +143,9 @@ fn play(case: &Case, count: &mut Count) {
             assert_eq!(&applied, m, "{at}: change");
             count.changes += 1;
             seat_views[s].install(applied);
+            seat_views[s].remember();
             host_views[s].install(m.clone());
+            host_views[s].remember();
             same_answers(count, &host_views[s], &seat_views[s], &at);
 
             let h = &history[s];
