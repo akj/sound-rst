@@ -1,14 +1,15 @@
 //! What a player asks of the game, as typed values.
 //!
-//! A [`Command`] is given to a [`crate::Host`] for a player. The world
-//! still runs commands from text: [`crate::Host::line`] writes the line
-//! the world reads, and a game on a server sends that line to the other
-//! players. Temporary: the text goes once the world takes commands as
-//! values.
+//! A [`Command`] is given to a [`crate::Host`] for a player, and the world
+//! carries it out as it is. Text is read in one place, [`Command::parse`],
+//! for the commands that arrive as text: the orders of a game on a server
+//! and of a game record. A game on a server sends the line
+//! [`Command::line`] writes; temporary, until it sends commands as values.
 
 use crate::World;
 use crate::entity::{EntityId, PlayerId, SquareId};
-use crate::orders::Keyword;
+use crate::nofloat::py_float;
+use crate::orders::{Keyword, TargetRef};
 
 /// Something a player asks of the game.
 #[derive(Clone, Debug, PartialEq)]
@@ -159,27 +160,110 @@ pub enum Cheat {
 }
 
 impl OrderTarget {
-    /// The id the world's `order` command reads: a square's protocol id, a
+    /// The target as a line of text writes it: a square's protocol id, a
     /// point as `zoom-<square>-<x>-<y>`, or an entity's id.
     pub(crate) fn text(self, world: &World) -> String {
-        match self {
-            OrderTarget::Square(s) => world.square(s).id.to_string(),
-            OrderTarget::Point { square, x, y } => {
-                format!("zoom-{}-{x}-{y}", world.square(square).id)
-            }
-            OrderTarget::Entity(e) => e.0.to_string(),
-        }
+        TargetRef::from(self).text(world)
+    }
+
+    /// Reads a target written in a line of text. A square may also be
+    /// written by its name. The error is a word that names no target.
+    fn parse(world: &World, word: &str) -> Result<OrderTarget, String> {
+        Ok(match TargetRef::parse(world, word).map_err(|a| a.0)? {
+            TargetRef::Square(s) | TargetRef::SquareNamed(s) => OrderTarget::Square(s),
+            TargetRef::Point { square, x, y } => OrderTarget::Point { square, x, y },
+            TargetRef::Entity(e) => OrderTarget::Entity(e),
+            TargetRef::Nothing => return Err(format!("not a target: {word:?}")),
+        })
     }
 }
 
 impl Command {
-    /// The text line of the command, as the world reads it and a game on a
-    /// server sends it. `None` for the cheats the host carries out itself
-    /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
-    /// [`Cheat::PlayAs`]), which have no text; a game on a server allows
-    /// no cheat. `world` names the squares.
+    /// Reads a line of text, the inverse of [`Command::line`]. The error
+    /// says why the line is not a command. The warning is about a line read
+    /// in part: a `control` whose list of ids cannot be read chooses no
+    /// unit.
+    pub(crate) fn parse(line: &str, world: &World) -> Result<(Command, Option<String>), String> {
+        let mut words = line.split_whitespace();
+        let Some(first) = words.next() else {
+            return Err("list index out of range".to_owned());
+        };
+        let rest: Vec<&str> = words.collect();
+        let command = match first.to_lowercase().as_str() {
+            "control" => {
+                return Ok(match crate::group::decode(&rest.join(" ")) {
+                    Ok(ids) => {
+                        // An id beyond those of entities chooses nothing.
+                        let ids = ids.into_iter().filter_map(|i| u32::try_from(i).ok());
+                        (Command::Control(ids.map(EntityId).collect()), None)
+                    }
+                    Err(m) => (Command::Control(Vec::new()), Some(m)),
+                });
+            }
+            "order" => Command::parse_order(&rest, world)?,
+            "speed" => {
+                let s = rest.first().ok_or("list index out of range")?;
+                let f =
+                    py_float(s).map_err(|_| format!("could not convert string to float: {s:?}"))?;
+                Command::Speed(f)
+            }
+            "quit" => Command::Quit,
+            "toggle_cheatmode" => Command::Cheat(Cheat::ToggleMode),
+            // The words of the map language: `cmd victory`, `cmd add_units
+            // a1 footman`...
+            "cmd" => Command::Cheat(Cheat::Trigger(rest.join(" "))),
+            other => return Err(format!("unknown command: 'cmd_{other}' ({line})")),
+        };
+        Ok((command, None))
+    }
+
+    /// Reads the words after `order`: the queue, the imperative, then the
+    /// order.
+    fn parse_order(words: &[&str], world: &World) -> Result<Command, String> {
+        let [queue, imperative, order @ ..] = words else {
+            return Err("list index out of range".to_owned());
+        };
+        let order = match order {
+            ["reset_group", name] => Order::ResetGroup((*name).to_owned()),
+            ["join_group", name] => Order::JoinGroup((*name).to_owned()),
+            ["default", target] => Order::Default(OrderTarget::parse(world, target)?),
+            [keyword, rest @ ..] => {
+                let unknown = || format!("unknown order: {order:?}");
+                let keyword = Keyword::parse(keyword).ok_or_else(unknown)?;
+                let (o, rest) = match (keyword.is_complex(), rest) {
+                    (false, rest) => (KeywordOrder::new(keyword), rest),
+                    (true, [t, rest @ ..]) => (KeywordOrder::typed(keyword, *t), rest),
+                    (true, []) => return Err(format!("an order without its type: {order:?}")),
+                };
+                let o = o.ok_or_else(unknown)?;
+                Order::Keyword(match rest {
+                    [] => o,
+                    [t] => o.at(OrderTarget::parse(world, t)?),
+                    _ => return Err(format!("too many words in an order: {order:?}")),
+                })
+            }
+            [] => return Err("list index out of range".to_owned()),
+        };
+        Ok(Command::Order {
+            order,
+            // As the original reads them: `0` replaces, `1` is imperative.
+            queue: if *queue == "0" {
+                Queue::Replace
+            } else {
+                Queue::Append
+            },
+            imperative: *imperative == "1",
+        })
+    }
+
+    /// The text line of the command, as a game on a server sends it and
+    /// [`Command::parse`] reads it. `None` for the cheats the host carries
+    /// out itself ([`Cheat::Resources`], [`Cheat::AllTechs`],
+    /// [`Cheat::InfiniteMana`], [`Cheat::PlayAs`]), which have no text; a
+    /// game on a server allows no cheat. `world` names the squares.
     ///
-    /// Temporary: the text goes when the world takes commands as values.
+    /// Temporary: the text goes when a game on a server sends commands as
+    /// values.
     pub(crate) fn line(&self, world: &World) -> Option<String> {
         Some(match self {
             Command::Control(units) => {

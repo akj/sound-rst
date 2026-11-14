@@ -27,9 +27,9 @@ pub fn encode(ids: &[i64]) -> String {
 /// enough that a list sent by another player cannot exhaust memory.
 pub const MAX_IDS: usize = 10_000;
 
-/// Decodes ids into their text form. Fails on an empty item, as the
-/// original does on two spaces in a row, and on more than [`MAX_IDS`] ids.
-pub fn decode(s: &str) -> Result<Vec<String>, String> {
+/// Decodes ids. Fails on an empty item, as the original does on two spaces
+/// in a row, and on more than [`MAX_IDS`] ids.
+pub fn decode(s: &str) -> Result<Vec<i64>, String> {
     if s.is_empty() {
         return Ok(Vec::new());
     }
@@ -48,12 +48,12 @@ pub fn decode(s: &str) -> Result<Vec<String>, String> {
             if len > (MAX_IDS - result.len()) as i128 {
                 return Err(format!("too many ids: {r:?}"));
             }
-            result.extend((a..=b).map(|i| i.to_string()));
+            result.extend(a..=b);
         } else {
             if result.len() == MAX_IDS {
                 return Err(format!("too many ids: {r:?}"));
             }
-            result.push(int(r)?.to_string());
+            result.push(int(r)?);
         }
     }
     Ok(result)
@@ -75,11 +75,10 @@ mod tests {
         ];
         for (ids, text) in cases {
             assert_eq!(encode(ids), text);
-            let back: Vec<String> = ids.iter().map(i64::to_string).collect();
-            assert_eq!(decode(text).unwrap(), back);
+            assert_eq!(decode(text).unwrap(), ids);
         }
         assert_eq!(encode(&[]), "");
-        assert_eq!(decode("").unwrap(), Vec::<String>::new());
+        assert_eq!(decode("").unwrap(), Vec::<i64>::new());
         assert!(decode("1  2").is_err());
     }
 
@@ -91,6 +90,6 @@ mod tests {
         assert!(decode("1-10000 10001").is_err());
         assert!(decode("1-5000 6000-11000").is_err());
         // A reversed range is empty, as in the original.
-        assert_eq!(decode("5-1").unwrap(), Vec::<String>::new());
+        assert_eq!(decode("5-1").unwrap(), Vec::<i64>::new());
     }
 }

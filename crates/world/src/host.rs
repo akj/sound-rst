@@ -66,14 +66,13 @@ impl Host {
         {
             return;
         }
-        if let Some(line) = command.line(&self.world) {
-            self.world.queue_command(player, &line);
-        }
+        self.world.queue(player, command);
     }
 
     /// Queues a command of `player` received as text: the orders of a game
-    /// on a server, and those of a game record. Temporary: it goes when a
-    /// game on a server sends commands as values.
+    /// on a server, and those of a game record. A line that is not a
+    /// command is a warning. Temporary: it goes when a game on a server
+    /// sends commands as values.
     pub fn queue_line(&mut self, player: PlayerId, line: &str) {
         self.world.queue_command(player, line);
     }
@@ -100,8 +99,8 @@ impl Host {
         View::new(&self.world, player)
     }
 
-    /// The text line of a command, as the world reads it and a game on a
-    /// server sends it. `None` for the cheats the host carries out itself
+    /// The text line of a command, as a game on a server sends it and the
+    /// world reads it. `None` for the cheats the host carries out itself
     /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
     /// [`Cheat::PlayAs`]), which have no text; a game on a server allows no
     /// cheat. Temporary: it goes when a game on a server sends commands as

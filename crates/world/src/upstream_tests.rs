@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::nofloat::PRECISION;
-use crate::orders::Keyword;
+use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::Controller;
 use crate::rules::{AiScripts, AirGround, Rules};
 use crate::world::World;
@@ -80,8 +80,14 @@ fn nb(w: &World, p: PlayerId, t: &str) -> usize {
         .count()
 }
 
+/// An order written in the map language: `go b1`, `build barracks a1`.
+fn request(w: &World, order: &str) -> Request {
+    Request::parse(w, &words(order)).unwrap()
+}
+
 fn take(w: &mut World, u: EntityId, order: &str) {
-    w.take_order(u, words(order), true, false, None).unwrap();
+    let r = request(w, order);
+    w.take_order(u, r, true, false, None).unwrap();
 }
 
 fn keywords(w: &World, u: EntityId) -> Vec<&'static str> {
@@ -562,8 +568,8 @@ starting_resources 10 10
         for p in [p1, p2] {
             assert!(w.e(p).orders.is_empty());
             take(&mut w, p, "build barracks a1");
-            w.take_order(p, words("build barracks a1"), false, false, None)
-                .unwrap();
+            let r = request(&w, "build barracks a1");
+            w.take_order(p, r, false, false, None).unwrap();
             assert_eq!(w.e(p).orders.len(), 2);
         }
         run_until_idle(&mut w, &[p1, p2], 1000);
@@ -1324,8 +1330,8 @@ starting_resources 10 10
         let w = &mut s.w;
         let th = find(w, cp, "townhall", 0).unwrap();
         let f = find(w, cp, attacker, 0).unwrap();
-        w.take_order(f, words(&format!("go {th}")), true, true, None)
-            .unwrap();
+        let r = request(w, &format!("go {th}"));
+        w.take_order(f, r, true, true, None).unwrap();
         assert_eq!(w.e(th).hp, w.e(th).stats.hp_max);
         for _ in 0..100 {
             if world_update {
@@ -1658,7 +1664,7 @@ player 10 10 a1 guardtower b1 peasant
             .unwrap()[0];
         let units = w.player(p).units.clone();
         let (tower, unit) = (units[0], units[1]);
-        w.take_default_order(unit, &tower.to_string(), true, false, None)
+        w.take_default_order(unit, TargetRef::Entity(tower), true, false, None)
             .unwrap();
         assert!(!w.e(unit).orders.is_empty());
         assert!(!w.e(tower).orders.is_empty());

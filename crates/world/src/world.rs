@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::collision::CollisionMatrix;
+use crate::command::Command;
 use crate::entity::{
     Action, ActionKind, COLLISION_RADIUS, Entity, EntityId, MemoryRef, Place, PlayerId, SquareId,
     Target,
@@ -121,7 +122,7 @@ pub struct World {
     /// Groups joined with `join_group`, shared by all players as in the
     /// original (where the dict is a class attribute).
     pub groups: Vec<(String, Vec<EntityId>)>,
-    pending_commands: Vec<(PlayerId, String)>,
+    pending_commands: Vec<(PlayerId, Command)>,
     warnings: Vec<String>,
 }
 
@@ -932,11 +933,26 @@ impl World {
 
     // update
 
-    /// Queues a text command for a player. Commands run in order at the
-    /// start of the next [`World::update`], unless the player has left the
-    /// game by then.
-    pub fn queue_command(&mut self, player: PlayerId, command: &str) {
-        self.pending_commands.push((player, command.to_owned()));
+    /// Queues a command of a player. Commands run in order at the start of
+    /// the next [`World::update`], unless the player has left the game by
+    /// then.
+    pub fn queue(&mut self, player: PlayerId, command: Command) {
+        self.pending_commands.push((player, command));
+    }
+
+    /// Queues a command of a player received as a line of text: the orders
+    /// of a game on a server and of a game record (see
+    /// [`Command::parse`]). A line that is not a command is a warning.
+    pub fn queue_command(&mut self, player: PlayerId, line: &str) {
+        match Command::parse(line, self) {
+            Ok((command, warning)) => {
+                if let Some(m) = warning {
+                    self.warn(format!("command {line:?}: {m}"));
+                }
+                self.queue(player, command);
+            }
+            Err(m) => self.warn(format!("command {line:?}: {m}")),
+        }
     }
 
     /// Runs the queued commands, then advances the world by one turn of

@@ -1,12 +1,13 @@
 //! Orders given to units (`worldorders.py`).
 //!
-//! An order is a keyword with arguments, as in the text protocol
-//! (`go 12`, `train footman`, `build farm 25`). A unit keeps a queue of
-//! orders and executes the first one.
+//! An order is given as a [`Request`]: a keyword, a type for the keywords
+//! that take one, and a target (`go 12`, `train footman`, `build farm
+//! 25`). A unit keeps a queue of orders and executes the first one.
 
-use crate::entity::{EntityId, Place, SquareId, Target};
+use crate::command::{KeywordOrder, OrderTarget};
+use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Reason};
-use crate::nofloat::{square_of_distance, to_int};
+use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::rules::{AirGround, VIRTUAL_TIME_INTERVAL};
 use crate::world::{Abort, Res, TPlace, World};
 
@@ -169,6 +170,279 @@ impl Keyword {
     }
 }
 
+/// What an order aims at when it is given, before anything is resolved.
+/// The ordering player's knowledge resolves it when the unit takes the
+/// order ([`World::resolve_target`]): an entity it names may then be
+/// perceived, remembered, or nothing.
+///
+/// The order as stored keeps its target as the text of
+/// [`TargetRef::text`], which [`TargetRef::parse`] reads back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum TargetRef {
+    /// A square, written as its protocol id.
+    Square(SquareId),
+    /// A square, written as its name (`b1`), as the map language names
+    /// squares: the stored order keeps the name it was given.
+    SquareNamed(SquareId),
+    /// A point of a square, in millimeters: `zoom-<square id>-<x>-<y>`.
+    Point { square: SquareId, x: i64, y: i64 },
+    /// An entity, by id. An id that is a square's protocol id names the
+    /// square.
+    Entity(EntityId),
+    /// Nothing: the place inside a unit, or a word of the map language that
+    /// names nothing. An order aimed at it has no target. Written `None`, as
+    /// the original writes that place.
+    Nothing,
+}
+
+impl TargetRef {
+    /// The target as the order stores it.
+    pub(crate) fn text(self, w: &World) -> String {
+        match self {
+            TargetRef::Square(s) => w.square(s).id.to_string(),
+            TargetRef::SquareNamed(s) => w.square(s).name.clone(),
+            TargetRef::Point { square, x, y } => format!("zoom-{}-{x}-{y}", w.square(square).id),
+            TargetRef::Entity(e) => e.to_string(),
+            TargetRef::Nothing => "None".to_owned(),
+        }
+    }
+
+    /// Reads a target written as the map language, a line of text or a
+    /// stored order write it: a point (`zoom-<square>-<x>-<y>`, the square
+    /// by name or id), a square's name, a number, or any other word, which
+    /// names nothing. The error is a point that cannot be read.
+    pub(crate) fn parse(w: &World, word: &str) -> Res<TargetRef> {
+        if word.starts_with("zoom") {
+            let parts: Vec<&str> = word.split('-').collect();
+            let [_, square, x, y] = parts[..] else {
+                return Err(Abort::new("not enough values to unpack"));
+            };
+            let (TargetRef::Square(square) | TargetRef::SquareNamed(square)) =
+                TargetRef::parse(w, square)?
+            else {
+                return Err(Abort::new("object has no attribute 'title'"));
+            };
+            let int = |s: &str| py_int(s).map_err(|_| Abort::new("invalid literal for int()"));
+            let (x, y) = (int(x)?, int(y)?);
+            return Ok(TargetRef::Point { square, x, y });
+        }
+        if let Some(s) = w.square_by_name(word) {
+            return Ok(TargetRef::SquareNamed(s));
+        }
+        let Some(n) = word.parse::<u32>().ok().filter(|n| n.to_string() == word) else {
+            return Ok(TargetRef::Nothing);
+        };
+        Ok(match w.square_by_obj_id(n) {
+            Some(s) => TargetRef::Square(s),
+            None => TargetRef::Entity(EntityId(n)),
+        })
+    }
+}
+
+impl From<OrderTarget> for TargetRef {
+    fn from(t: OrderTarget) -> TargetRef {
+        match t {
+            OrderTarget::Square(s) => TargetRef::Square(s),
+            OrderTarget::Point { square, x, y } => TargetRef::Point { square, x, y },
+            OrderTarget::Entity(e) => TargetRef::Entity(e),
+        }
+    }
+}
+
+/// An order given to a unit: its keyword, the type for the keywords that
+/// take one (see [`Keyword::is_complex`]), and what follows. A keyword
+/// that takes a type always has one, and no other keyword has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Request {
+    keyword: Keyword,
+    type_name: Option<String>,
+    arg: Option<Arg>,
+}
+
+/// What follows the keyword and the type of an order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Arg {
+    Target(TargetRef),
+    /// The name of a recallable group (`join_group`).
+    Group(String),
+}
+
+impl Request {
+    /// An order of a keyword without a type. `None` if the keyword needs
+    /// one.
+    pub(crate) fn plain(keyword: Keyword) -> Option<Request> {
+        (!keyword.is_complex()).then_some(Request {
+            keyword,
+            type_name: None,
+            arg: None,
+        })
+    }
+
+    /// An order of a keyword with a type. `None` if the keyword takes none.
+    pub(crate) fn typed(keyword: Keyword, type_name: impl Into<String>) -> Option<Request> {
+        keyword.is_complex().then(|| Request {
+            keyword,
+            type_name: Some(type_name.into()),
+            arg: None,
+        })
+    }
+
+    /// The order, aimed at a target.
+    pub(crate) fn at(self, target: TargetRef) -> Request {
+        Request {
+            arg: Some(Arg::Target(target)),
+            ..self
+        }
+    }
+
+    fn of(keyword: Keyword, type_name: Option<String>, target: Option<TargetRef>) -> Request {
+        Request {
+            keyword,
+            type_name,
+            arg: target.map(Arg::Target),
+        }
+    }
+
+    pub(crate) fn stop() -> Request {
+        Request::of(Keyword::Stop, None, None)
+    }
+
+    pub(crate) fn auto_explore() -> Request {
+        Request::of(Keyword::AutoExplore, None, None)
+    }
+
+    pub(crate) fn go(target: TargetRef) -> Request {
+        Request::of(Keyword::Go, None, Some(target))
+    }
+
+    pub(crate) fn gather(target: TargetRef) -> Request {
+        Request::of(Keyword::Gather, None, Some(target))
+    }
+
+    pub(crate) fn repair(target: TargetRef) -> Request {
+        Request::of(Keyword::Repair, None, Some(target))
+    }
+
+    pub(crate) fn load(target: TargetRef) -> Request {
+        Request::of(Keyword::Load, None, Some(target))
+    }
+
+    pub(crate) fn build_phase_two(target: TargetRef) -> Request {
+        Request::of(Keyword::BuildPhaseTwo, None, Some(target))
+    }
+
+    pub(crate) fn train(type_name: impl Into<String>) -> Request {
+        Request::of(Keyword::Train, Some(type_name.into()), None)
+    }
+
+    pub(crate) fn research(type_name: impl Into<String>) -> Request {
+        Request::of(Keyword::Research, Some(type_name.into()), None)
+    }
+
+    pub(crate) fn upgrade_to(type_name: impl Into<String>) -> Request {
+        Request::of(Keyword::UpgradeTo, Some(type_name.into()), None)
+    }
+
+    pub(crate) fn build(type_name: impl Into<String>, target: TargetRef) -> Request {
+        Request::of(Keyword::Build, Some(type_name.into()), Some(target))
+    }
+
+    /// `use` of an ability; [`Request::at`] aims it.
+    pub(crate) fn use_ability(ability: impl Into<String>) -> Request {
+        Request::of(Keyword::Use, Some(ability.into()), None)
+    }
+
+    pub(crate) fn join_group(name: impl Into<String>) -> Request {
+        Request {
+            keyword: Keyword::JoinGroup,
+            type_name: None,
+            arg: Some(Arg::Group(name.into())),
+        }
+    }
+
+    /// Reads an order of the map language: `go b1`, `train footman`,
+    /// `join_group 1`. The error says why the words are not an order.
+    pub(crate) fn parse(w: &World, words: &[String]) -> Result<Request, String> {
+        let Some((first, rest)) = words.split_first() else {
+            return Err("an order without a keyword".to_owned());
+        };
+        let keyword = Keyword::parse(first).ok_or_else(|| format!("unknown order: {words:?}"))?;
+        let (type_name, rest) = match (keyword.is_complex(), rest.split_first()) {
+            (false, _) => (None, rest),
+            (true, Some((t, rest))) => (Some(t.clone()), rest),
+            (true, None) => return Err(format!("an order without its type: {words:?}")),
+        };
+        let arg = match rest {
+            [] => None,
+            [name] if keyword == Keyword::JoinGroup => Some(Arg::Group(name.clone())),
+            [word] => Some(Arg::Target(TargetRef::parse(w, word).map_err(|a| a.0)?)),
+            _ => return Err(format!("too many words in an order: {words:?}")),
+        };
+        Ok(Request {
+            keyword,
+            type_name,
+            arg,
+        })
+    }
+
+    pub(crate) fn keyword(&self) -> Keyword {
+        self.keyword
+    }
+
+    pub(crate) fn type_name(&self) -> Option<&str> {
+        self.type_name.as_deref()
+    }
+
+    /// The target, if the order has one.
+    pub(crate) fn target(&self) -> Option<&TargetRef> {
+        match &self.arg {
+            Some(Arg::Target(t)) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// What follows the type, as the order stores it.
+    fn args(&self, w: &World) -> Vec<String> {
+        match &self.arg {
+            None => Vec::new(),
+            Some(Arg::Target(t)) => vec![t.text(w)],
+            Some(Arg::Group(name)) => vec![name.clone()],
+        }
+    }
+
+    /// The order in words, as a computer player keeps track of it:
+    /// `["build", "farm", "25"]`.
+    pub(crate) fn words(&self, w: &World) -> Vec<String> {
+        let mut words = vec![self.keyword.as_str().to_owned()];
+        words.extend(self.type_name.iter().cloned());
+        words.extend(self.args(w));
+        words
+    }
+
+    /// The order as a menu lists it: `go`, `train footman`.
+    fn menu_entry(&self) -> String {
+        match &self.type_name {
+            Some(t) => format!("{} {t}", self.keyword.as_str()),
+            None => self.keyword.as_str().to_owned(),
+        }
+    }
+
+    /// The order as a unit stores it.
+    fn stored(&self, uid: u64, w: &World) -> Order {
+        Order::new(uid, self.keyword, self.type_name.clone(), self.args(w))
+    }
+}
+
+impl From<&KeywordOrder> for Request {
+    fn from(o: &KeywordOrder) -> Request {
+        Request::of(
+            o.keyword(),
+            o.type_name().map(str::to_owned),
+            o.target().copied().map(TargetRef::from),
+        )
+    }
+}
+
 /// The step an order is at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -227,12 +501,7 @@ pub struct Order {
 }
 
 impl Order {
-    fn new(uid: u64, keyword: Keyword, args: &[String]) -> Order {
-        let (type_name, args) = if keyword.is_complex() {
-            (args.first().cloned(), args.get(1..).unwrap_or(&[]).to_vec())
-        } else {
-            (None, args.to_vec())
-        };
+    fn new(uid: u64, keyword: Keyword, type_name: Option<String>, args: Vec<String>) -> Order {
         Order {
             uid,
             keyword,
@@ -378,8 +647,7 @@ impl World {
         keyword: Keyword,
         type_name: Option<&str>,
     ) -> Option<OrderInfo> {
-        let args: Vec<String> = type_name.map(str::to_owned).into_iter().collect();
-        let o = Order::new(0, keyword, &args);
+        let o = Order::new(0, keyword, type_name.map(str::to_owned), Vec::new());
         let nb_args = if keyword == Keyword::Use {
             let t = self.complex_type(&o).ok()?;
             usize::from(t.effect_target == ["ask"])
@@ -456,29 +724,25 @@ impl World {
     }
 
     /// Whether a unit may receive an order now (`cls.is_allowed(unit,
-    /// *args)`): `args` starts with the type for `train`, `build`... A
-    /// complex order without its type raises in the original.
-    pub fn is_order_allowed(&self, unit: EntityId, kw: Keyword, args: &[String]) -> Res<bool> {
-        self.order_is_allowed_res(unit, kw, args)
-    }
-
-    pub(crate) fn order_is_allowed_res(
+    /// *args)`), with its type for `train`, `build`... A complex order
+    /// without its type raises in the original.
+    pub(crate) fn is_order_allowed(
         &self,
         unit: EntityId,
         kw: Keyword,
-        args: &[String],
+        type_name: Option<&str>,
     ) -> Res<bool> {
         if kw.is_complex() {
-            let t = args.first().ok_or_else(|| {
+            let t = type_name.ok_or_else(|| {
                 Abort::new("is_allowed() missing 1 required positional argument: 'type_name'")
             })?;
             return Ok(self.complex_is_allowed(unit, kw, t));
         }
-        Ok(self.order_is_allowed(unit, kw, args))
+        Ok(self.order_is_allowed(unit, kw))
     }
 
     /// Whether a unit may receive an order without a type.
-    pub(crate) fn order_is_allowed(&self, unit: EntityId, kw: Keyword, _args: &[String]) -> bool {
+    pub(crate) fn order_is_allowed(&self, unit: EntityId, kw: Keyword) -> bool {
         let e = self.e(unit);
         match kw {
             Keyword::Stop => !e.is_idle() || !e.orders.is_empty(),
@@ -511,12 +775,20 @@ impl World {
     /// `train footman`, `train archer`... With `strict`, the requirements
     /// must be met too.
     pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<String> {
+        self.menu_requests(unit, kw, strict)
+            .iter()
+            .map(Request::menu_entry)
+            .collect()
+    }
+
+    /// The orders of one kind that [`World::order_menu`] lists, without
+    /// their target.
+    pub(crate) fn menu_requests(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<Request> {
         let Some(attr) = kw.menu_attribute() else {
-            return if self.order_is_allowed(unit, kw, &[]) {
-                vec![kw.as_str().to_owned()]
-            } else {
-                Vec::new()
-            };
+            return Request::plain(kw)
+                .filter(|_| self.order_is_allowed(unit, kw))
+                .into_iter()
+                .collect();
         };
         self.type_list(unit, attr)
             .into_iter()
@@ -527,7 +799,7 @@ impl World {
                     self.is_almost_allowed(unit, kw, t)
                 }
             })
-            .map(|t| format!("{} {t}", kw.as_str()))
+            .filter_map(|t| Request::typed(kw, t))
             .collect()
     }
 
@@ -541,12 +813,12 @@ impl World {
 
     // giving orders
 
-    /// `take_order`: gives an order to a unit (`["go", "12"]`). An
-    /// imperative `go` toward a unit becomes `attack`.
-    pub fn take_order(
+    /// `take_order`: gives an order to a unit. An imperative `go` toward a
+    /// unit becomes `attack`.
+    pub(crate) fn take_order(
         &mut self,
         unit: EntityId,
-        mut o: Vec<String>,
+        mut request: Request,
         forget_previous: bool,
         imperative: bool,
         order_id: Option<u64>,
@@ -556,29 +828,15 @@ impl World {
                 "'NoneType' object has no attribute 'get_object_by_id'",
             ));
         };
-        if imperative && o.first().map(String::as_str) == Some("go") {
-            let id = o
-                .get(1)
-                .cloned()
-                .ok_or_else(|| Abort::new("list index out of range"))?;
-            let target = self.get_object_by_id(p, &id)?;
-            if target
-                .as_ref()
-                .and_then(|t| self.t_entity(t))
-                .is_some_and(|e| e.player.is_some())
-            {
-                o[0] = "attack".into();
-            }
+        if imperative {
+            self.imperative_go(p, &mut request)?;
         }
         if self.e(unit).is_inside() {
             self.notify(unit, EntityEvent::OrderImpossible(None), false);
             return Ok(());
         }
-        let Some(kw) = o.first().and_then(|k| Keyword::parse(k)) else {
-            self.warn(format!("unknown order: {o:?}"));
-            return Ok(());
-        };
-        if !self.order_is_allowed_res(unit, kw, &o[1..])? {
+        let kw = request.keyword;
+        if !self.is_order_allowed(unit, kw, request.type_name())? {
             self.notify(unit, EntityEvent::OrderImpossible(None), false);
             return Ok(());
         }
@@ -586,7 +844,7 @@ impl World {
             self.cancel_all_orders(unit, true);
         }
         let uid = self.next_order_uid();
-        let mut order = Order::new(uid, kw, &o[1..]);
+        let mut order = request.stored(uid, self);
         order.id = order_id;
         if imperative {
             order.is_imperative = true;
@@ -594,19 +852,43 @@ impl World {
         self.immediate_action(unit, order)
     }
 
+    /// An imperative `go` toward a unit that has an owner becomes `attack`.
+    /// The target is resolved through what `p` perceives or remembers now.
+    pub(crate) fn imperative_go(&self, p: PlayerId, request: &mut Request) -> Res {
+        if request.keyword != Keyword::Go {
+            return Ok(());
+        }
+        let t = request
+            .target()
+            .ok_or_else(|| Abort::new("list index out of range"))?;
+        if self
+            .resolve_target(p, t)?
+            .as_ref()
+            .and_then(|t| self.t_entity(t))
+            .is_some_and(|e| e.player.is_some())
+        {
+            request.keyword = Keyword::Attack;
+        }
+        Ok(())
+    }
+
     /// `take_default_order`: the order a click on a target means.
-    pub fn take_default_order(
+    pub(crate) fn take_default_order(
         &mut self,
         unit: EntityId,
-        target_id: &str,
+        target: TargetRef,
         forget_previous: bool,
         imperative: bool,
         order_id: Option<u64>,
     ) -> Res {
-        if let Some(kw) = self.get_default_order(unit, target_id)? {
+        // A default order is always one without a type.
+        if let Some(request) = self
+            .default_keyword(unit, &target)?
+            .and_then(Request::plain)
+        {
             self.take_order(
                 unit,
-                vec![kw.to_owned(), target_id.to_owned()],
+                request.at(target),
                 forget_previous,
                 imperative,
                 order_id,
@@ -769,14 +1051,15 @@ impl World {
                 };
                 self.take_order(
                     tid,
-                    vec!["load".into(), unit.to_string()],
+                    Request::load(TargetRef::Entity(unit)),
                     false,
                     false,
                     None,
                 )?;
                 let water_target = self.e(tid).airground_type == AirGround::Water;
                 if !(self.e(unit).airground_type == AirGround::Ground && water_target) {
-                    self.take_order(unit, vec!["go".into(), tid.to_string()], true, false, None)?;
+                    let go = Request::go(TargetRef::Entity(tid));
+                    self.take_order(unit, go, true, false, None)?;
                 }
             }
             _ => {}
@@ -909,7 +1192,7 @@ impl World {
                     let p = self.e(unit).player.expect("checked by take_order");
                     t = match self.t_place(&tt) {
                         TPlace::At(Place::Square(s)) => {
-                            self.get_object_by_id(p, &self.square(s).id.to_string())?
+                            self.resolve_target(p, &TargetRef::Square(s))?
                         }
                         TPlace::At(Place::Inside(_)) => None,
                         _ => {
@@ -1683,9 +1966,14 @@ impl World {
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
                     .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
                 self.notify(u, EntityEvent::Complete, false);
+                // The rallying point keeps the text of the target it was
+                // given, which reads back as that target.
                 let rp = self.e(unit).rallying_point.clone();
                 match rp {
-                    Some(rp) => self.take_default_order(u, &rp, true, false, None)?,
+                    Some(rp) => {
+                        let t = TargetRef::parse(self, &rp)?;
+                        self.take_default_order(u, t, true, false, None)?;
+                    }
                     None => {
                         // `get_object_by_id(None)` finds nothing.
                     }
@@ -1974,7 +2262,7 @@ impl World {
         let Some(order) = self.ord(unit, uid).cloned() else {
             return Ok(());
         };
-        let site_id = site.to_string();
+        let phase_two = Request::build_phase_two(TargetRef::Entity(site));
         for u in self.pl(p).units.clone() {
             if u == unit {
                 continue;
@@ -1982,15 +2270,14 @@ impl World {
             for n in 0..self.e(u).orders.len() {
                 if self.order_eq(&self.e(u).orders[n], &order) {
                     let nuid = self.next_order_uid();
-                    let new =
-                        Order::new(nuid, Keyword::BuildPhaseTwo, std::slice::from_ref(&site_id));
+                    let new = phase_two.stored(nuid, self);
                     self.em(u).orders[n] = new;
                     self.order_on_queued(u, nuid)?;
                 }
             }
         }
         let nuid = self.next_order_uid();
-        let new = Order::new(nuid, Keyword::BuildPhaseTwo, std::slice::from_ref(&site_id));
+        let new = phase_two.stored(nuid, self);
         if let Some(i) = self.find_order(unit, uid) {
             self.em(unit).orders[i] = new;
             self.order_on_queued(unit, nuid)?;
@@ -2283,3 +2570,6 @@ impl World {
             .map(|t| t.stats.effect_range)
     }
 }
+
+#[cfg(test)]
+mod tests;

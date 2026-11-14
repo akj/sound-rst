@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
-use crate::orders::{Keyword, Order};
+use crate::orders::{Keyword, Order, Request, TargetRef};
 use crate::pathfinding::Viewer;
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass};
@@ -321,7 +321,7 @@ impl World {
         v
     }
 
-    fn random_order(&mut self, unit: EntityId, targets: &[EntityId]) -> Res<Option<Vec<String>>> {
+    fn random_order(&mut self, unit: EntityId, targets: &[EntityId]) -> Res<Option<Request>> {
         let orders = Self::computer2_orders();
         let i = self
             .random
@@ -330,17 +330,17 @@ impl World {
         let kw = orders[i];
         // `UseOrder.nb_args` is a property, true when read on the class.
         let args = kw == Keyword::Use || kw.nb_args() > 0;
-        let menu = self.order_menu(unit, kw, true);
+        let mut menu = self.menu_requests(unit, kw, true);
         if menu.is_empty() {
             return Ok(None);
         }
         let i = self.random.choice_index(menu.len()).expect("not empty");
-        let mut order: Vec<String> = menu[i].split_whitespace().map(str::to_owned).collect();
+        let mut order = menu.swap_remove(i);
         if args {
             let Some(j) = self.random.choice_index(targets.len()) else {
                 return Err(Abort::new("Cannot choose from an empty sequence"));
             };
-            order.push(targets[j].to_string());
+            order = order.at(TargetRef::Entity(targets[j]));
         }
         Ok(Some(order))
     }
@@ -549,7 +549,7 @@ impl World {
                 _ => {}
             }
             for a in self.can_use(u) {
-                if !self.is_order_allowed(u, Keyword::Use, std::slice::from_ref(&a))? {
+                if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
                     continue;
                 }
                 let Some(effect) = self.rules.get_words(&a, "effect") else {
@@ -676,13 +676,8 @@ impl World {
                     .is_some_and(|o| matches!(o.target, Some(Target::Entity(t)) if t == site))
             });
             if !served {
-                self.order(
-                    p,
-                    4,
-                    Sel::Workers,
-                    vec!["repair".into(), site.to_string()],
-                    true,
-                )?;
+                let repair = Request::repair(TargetRef::Entity(site));
+                self.order(p, 4, Sel::Workers, repair, true)?;
                 break;
             }
         }
@@ -703,7 +698,8 @@ impl World {
                 return Ok(());
             };
             let id = self.t_entity(&deposit).expect("an entity").id;
-            self.take_order(u, vec!["gather".into(), id.to_string()], true, false, None)?;
+            let gather = Request::gather(TargetRef::Entity(id));
+            self.take_order(u, gather, true, false, None)?;
             add_count(&mut self.csm(p).gathered_deposits, &Some(deposit), 1);
         }
         Ok(())
@@ -755,10 +751,10 @@ impl World {
                 return Ok(());
             }
             let first = self.pl(p).units[0];
-            let id = self.place_id(self.e(first).place)?;
-            self.take_order(explorer, vec!["go".into(), id], true, false, None)?;
+            let t = self.square_target(self.e(first).place)?;
+            self.take_order(explorer, Request::go(t), true, false, None)?;
         }
-        self.take_order(best, vec!["auto_explore".into()], true, false, None)
+        self.take_order(best, Request::auto_explore(), true, false, None)
     }
 
     /// `_idle_fighters`: soldiers without orders, or only going to a square
@@ -785,9 +781,10 @@ impl World {
     }
 
     /// The id of a square, as an order argument.
-    fn place_id(&self, place: Option<Place>) -> Res<String> {
+    /// A place as the target of an order: only a square is one.
+    fn square_target(&self, place: Option<Place>) -> Res<TargetRef> {
         match place {
-            Some(Place::Square(s)) => Ok(self.square(s).id.to_string()),
+            Some(Place::Square(s)) => Ok(TargetRef::Square(s)),
             _ => Err(Abort::new("the place has no id")),
         }
     }
@@ -846,14 +843,15 @@ impl World {
                 false,
             )?;
             if path.len() > 2 {
-                let id = self.square(path[path.len() - 2]).id.to_string();
-                self.take_order(u, vec!["go".into(), id], false, false, None)?;
+                let before = TargetRef::Square(path[path.len() - 2]);
+                self.take_order(u, Request::go(before), false, false, None)?;
             }
-            let id = self.place_id(last)?;
-            self.take_order(u, vec!["use".into(), a.clone(), id], false, false, None)?;
+            let t = self.square_target(last)?;
+            let cataclysm = Request::use_ability(a.clone()).at(t);
+            self.take_order(u, cataclysm, false, false, None)?;
             if self.e(u).orders.first().is_some_and(|o| !o.is_impossible) {
-                let id = self.place_id(self.e(u).place)?;
-                self.take_order(u, vec!["go".into(), id], false, false, None)?;
+                let t = self.square_target(self.e(u).place)?;
+                self.take_order(u, Request::go(t), false, false, None)?;
             }
         }
         Ok(())
@@ -939,8 +937,8 @@ impl World {
         }
         let mut used_teleportation = false;
         for (u, a) in self.cs(p).teleportation_users.clone() {
-            let id = self.place_id(Some(place))?;
-            self.take_order(u, vec!["use".into(), a, id], true, false, None)?;
+            let t = self.square_target(Some(place))?;
+            self.take_order(u, Request::use_ability(a).at(t), true, false, None)?;
             if self.e(u).orders.first().is_some_and(|o| !o.is_impossible) {
                 used_teleportation = true;
             }
@@ -959,31 +957,32 @@ impl World {
                 false,
             )?;
             if !used_teleportation && path.len() > 2 {
-                let id = self.square(path[path.len() - 2]).id.to_string();
-                self.take_order(u, vec!["go".into(), id], false, false, None)?;
+                let before = TargetRef::Square(path[path.len() - 2]);
+                self.take_order(u, Request::go(before), false, false, None)?;
                 if !self.friendly_presence(p, Some(place)) {
                     for (u_, a) in self.cs(p).cataclysm_users.clone() {
                         if u_ == u && self.cataclysm_is_efficient(p, &a, &mut enemies) {
-                            let id = self.place_id(Some(place))?;
-                            self.take_order(u, vec!["use".into(), a, id], false, false, None)?;
+                            let t = self.square_target(Some(place))?;
+                            let cataclysm = Request::use_ability(a).at(t);
+                            self.take_order(u, cataclysm, false, false, None)?;
                         }
                     }
                 }
             }
             for (u_, a) in self.cs(p).summon_users.clone() {
                 if u_ == u {
-                    let id = self.place_id(Some(place))?;
-                    self.take_order(u, vec!["use".into(), a, id], false, false, None)?;
+                    let t = self.square_target(Some(place))?;
+                    self.take_order(u, Request::use_ability(a).at(t), false, false, None)?;
                 }
             }
             for (u_, a) in self.cs(p).detector_users.clone() {
                 if u_ == u {
-                    let id = self.place_id(Some(place))?;
-                    self.take_order(u, vec!["use".into(), a, id], false, false, None)?;
+                    let t = self.square_target(Some(place))?;
+                    self.take_order(u, Request::use_ability(a).at(t), false, false, None)?;
                 }
             }
-            let id = self.place_id(Some(place))?;
-            self.take_order(u, vec!["go".into(), id], false, false, None)?;
+            let t = self.square_target(Some(place))?;
+            self.take_order(u, Request::go(t), false, false, None)?;
         }
         Ok(())
     }
@@ -1043,13 +1042,8 @@ impl World {
                 && self.ai_gather(p, &gate_cost, 0, 0)?
             {
                 for w in self.cs(p).workers.clone() {
-                    self.take_order(
-                        w,
-                        vec!["build".into(), "gate".into(), exit.to_string()],
-                        true,
-                        false,
-                        None,
-                    )?;
+                    let gate = Request::build("gate", TargetRef::Entity(exit));
+                    self.take_order(w, gate, true, false, None)?;
                 }
             }
         }
@@ -1071,7 +1065,7 @@ impl World {
                     && self.missing_resources(p, &cost)?.is_empty()
                     && self.potential(p, &cost)? > 3
                 {
-                    self.take_order(u, vec!["research".into(), t], true, false, None)?;
+                    self.take_order(u, Request::research(t), true, false, None)?;
                 }
             }
         }
@@ -1083,8 +1077,8 @@ impl World {
             if let Some(Place::Square(s)) = self.e(u).place
                 && self.pl(p).places_with_corpses.contains(&s)
             {
-                let id = self.square(s).id.to_string();
-                self.take_order(u, vec!["use".into(), a, id], true, false, None)?;
+                let raise = Request::use_ability(a).at(TargetRef::Square(s));
+                self.take_order(u, raise, true, false, None)?;
             }
         }
         Ok(())
@@ -1162,7 +1156,8 @@ impl World {
             && self.e(wh).class == EntityClass::BuildingSite
         {
             for v in nearby {
-                self.take_order(v, vec!["repair".into(), wh.to_string()], true, false, None)?;
+                let repair = Request::repair(TargetRef::Entity(wh));
+                self.take_order(v, repair, true, false, None)?;
             }
             return Ok(());
         }
@@ -1179,15 +1174,10 @@ impl World {
             let (name, _) = self
                 .best_warehouse(p)
                 .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'type_name'"))?;
-            let id = self.t_entity(&meadow).expect("an entity").id.to_string();
+            let id = self.t_entity(&meadow).expect("an entity").id;
             for v in nearby {
-                self.take_order(
-                    v,
-                    vec!["build".into(), name.clone(), id.clone()],
-                    true,
-                    false,
-                    None,
-                )?;
+                let build = Request::build(name.clone(), TargetRef::Entity(id));
+                self.take_order(v, build, true, false, None)?;
             }
         }
         Ok(())
@@ -1577,7 +1567,7 @@ impl World {
                     .map(|i| t.cost[i] - mc.cost.get(i).copied().unwrap_or(0))
                     .collect();
                 if self.ai_gather(p, &cost, t.stats.food_cost - mc.stats.food_cost, depth)? {
-                    self.order(p, nb, maker_sel, vec!["upgrade_to".into(), name], false)?;
+                    self.order(p, nb, maker_sel, Request::upgrade_to(name), false)?;
                 }
             } else {
                 self.get_types(p, nb, vec![maker], depth)?;
@@ -1612,8 +1602,9 @@ impl World {
                 self.choose(p, Kind::Meadow, None, bp, false)?
             };
             if let Some(m) = meadow {
-                let id = self.t_entity(&m).expect("an entity").id.to_string();
-                self.order(p, 4, maker_sel, vec!["build".into(), name, id], true)?;
+                let id = self.t_entity(&m).expect("an entity").id;
+                let build = Request::build(name, TargetRef::Entity(id));
+                self.order(p, 4, maker_sel, build, true)?;
             }
         } else if mc.can_train.contains(&name) {
             let nb_maker = self.nb(p, &maker_sel);
@@ -1625,11 +1616,11 @@ impl World {
                 self.build_or_train_or_upgradeto_or_summon(p, &maker, 1, depth)?;
             }
             if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
-                self.order(p, nb, maker_sel, vec!["train".into(), name], false)?;
+                self.order(p, nb, maker_sel, Request::train(name), false)?;
             }
         } else if mc.can_research.contains(&name) {
             if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
-                self.order(p, 1, maker_sel, vec!["research".into(), name], false)?;
+                self.order(p, 1, maker_sel, Request::research(name), false)?;
             }
         } else {
             for ability in &mc.can_use {
@@ -1637,12 +1628,12 @@ impl World {
                     continue;
                 };
                 if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
-                    let mut order = vec!["use".into(), ability.clone()];
+                    let mut order = Request::use_ability(ability.clone());
                     if self.rules.get_words(ability, "effect_target").as_deref()
                         == Some(&["ask".to_owned()][..])
                     {
                         let first = self.pl(p).units[0];
-                        order.push(first.to_string());
+                        order = order.at(TargetRef::Entity(first));
                     }
                     self.order(p, 1, maker_sel, order, false)?;
                     break;
@@ -1681,15 +1672,8 @@ impl World {
     /// `order`: gives the order to units of a type until `nb` of them
     /// follow it. With `requisition`, busy workers may be taken, the least
     /// useful first.
-    fn order(
-        &mut self,
-        p: PlayerId,
-        nb: i64,
-        sel: Sel,
-        order: Vec<String>,
-        requisition: bool,
-    ) -> Res {
-        let key = (sel.clone(), order.clone());
+    fn order(&mut self, p: PlayerId, nb: i64, sel: Sel, order: Request, requisition: bool) -> Res {
+        let key = (sel.clone(), order.words(self));
         let mut tracked = self.csm(p).orders.remove(&key).unwrap_or_default();
         tracked.retain_mut(|t| self.tracked_is_alive(t));
         let enough = tracked.len() as i64 >= nb;
@@ -1714,10 +1698,10 @@ impl World {
                 units = keyed.into_iter().map(|(_, u)| u).collect();
             }
             let u = units.remove(0);
-            if order[0] == "upgrade_to"
+            if order.keyword() == Keyword::UpgradeTo
                 && self.e(u).orders.first().map(|o| o.keyword) == Some(Keyword::AutoExplore)
             {
-                self.take_order(u, vec!["stop".into()], true, false, None)?;
+                self.take_order(u, Request::stop(), true, false, None)?;
             }
             if requisition || self.e(u).orders.is_empty() {
                 let first = self
@@ -1739,7 +1723,7 @@ impl World {
                 }
                 self.take_order(u, order.clone(), true, false, None)?;
                 if let Some(o) = self.e(u).orders.first()
-                    && o.keyword.as_str() == order[0]
+                    && o.keyword == order.keyword()
                 {
                     let t = Tracked {
                         unit: u,
@@ -1773,6 +1757,9 @@ fn is_digits(s: &str) -> bool {
 fn is_signed_number(s: &str) -> bool {
     matches!(s.as_bytes().first(), Some(b'+' | b'-')) && is_digits(&s[1..])
 }
+
+#[cfg(test)]
+mod order_sites;
 
 #[cfg(test)]
 mod tests {
