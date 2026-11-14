@@ -5,7 +5,7 @@
 //! A test runs the real menus or game interface against [`Harness`] and
 //! checks [`Harness::spoken`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -24,7 +24,7 @@ use crate::net::conn::{Connection, Link, NetEvent};
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::session::Session;
-use crate::tts::SpeechBackend;
+use crate::tts::{Progress, SpeechBackend};
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
 use soundrts_protocol::{ClientMsg, LobbyPlayer, LobbySnapshot, Login, ServerMsg, Whereabouts};
 
@@ -75,16 +75,19 @@ pub enum SpeechEvent {
 
 /// The record of a [`RecordingSpeech`].
 #[derive(Clone, Default)]
-pub struct SpeechLog(Rc<RefCell<Vec<SpeechEvent>>>);
+pub struct SpeechLog {
+    events: Rc<RefCell<Vec<SpeechEvent>>>,
+    progress: Rc<Cell<Progress>>,
+}
 
 impl SpeechLog {
     pub fn events(&self) -> Vec<SpeechEvent> {
-        self.0.borrow().clone()
+        self.events.borrow().clone()
     }
 
     /// The texts spoken, in order.
     pub fn spoken(&self) -> Vec<String> {
-        self.0
+        self.events
             .borrow()
             .iter()
             .filter_map(|e| match e {
@@ -95,7 +98,14 @@ impl SpeechLog {
     }
 
     pub fn clear(&self) {
-        self.0.borrow_mut().clear();
+        self.events.borrow_mut().clear();
+    }
+
+    /// Reports `progress` for the last utterance, as a screen reader that
+    /// tells when speech ends would. Until a test reports something, the
+    /// device cannot tell, and the end is estimated.
+    pub fn report(&self, progress: Progress) {
+        self.progress.set(progress);
     }
 }
 
@@ -114,15 +124,21 @@ impl RecordingSpeech {
 impl SpeechBackend for RecordingSpeech {
     fn speak(&mut self, text: &str) -> Result<(), String> {
         self.log
-            .0
+            .events
             .borrow_mut()
             .push(SpeechEvent::Speak(text.to_owned()));
+        self.log.progress.set(Progress::Unknown);
         Ok(())
     }
 
     fn stop(&mut self) -> Result<(), String> {
-        self.log.0.borrow_mut().push(SpeechEvent::Stop);
+        self.log.events.borrow_mut().push(SpeechEvent::Stop);
+        self.log.progress.set(Progress::Unknown);
         Ok(())
+    }
+
+    fn progress(&self) -> Progress {
+        self.log.progress.get()
     }
 }
 

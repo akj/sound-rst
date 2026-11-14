@@ -6,6 +6,7 @@ use soundrts::clock::Clock;
 use soundrts::input::Key;
 use soundrts::message::InfoOptions;
 use soundrts::testkit::{Harness, Script, SpeechEvent};
+use soundrts::tts::{Progress, SpeechEnd};
 use soundrts_world::msg::{Msg, MsgPart};
 
 fn t(s: &str) -> Msg {
@@ -169,4 +170,54 @@ fn identical_chat_lines_are_all_said_and_an_idle_voice_says_chat_at_once() {
         h.client.voice.update();
     }
     assert_eq!(h.spoken(), ["hello", "hello", "hello", "info"]);
+}
+
+#[test]
+fn a_finished_report_starts_the_next_queued_message_without_waiting_for_the_estimate() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.clock.advance(0.1);
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    // The screen reader says it has finished, 0.9 s before the estimate.
+    h.speech.report(Progress::Ended(SpeechEnd::Finished));
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "bbbbb"]);
+}
+
+#[test]
+fn a_report_that_speech_goes_on_keeps_the_next_message_waiting_past_the_estimate() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.speech.report(Progress::Speaking);
+    for _ in 0..20 {
+        h.clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    h.speech.report(Progress::Ended(SpeechEnd::Finished));
+    h.client.voice.update();
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "bbbbb"]);
+}
+
+#[test]
+fn a_message_cancelled_at_the_screen_reader_is_dismissed_and_not_repeated() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.info(&t("aaaaaaaaaa"));
+    h.client.voice.info(&t("bbbbb"));
+    h.clock.advance(0.5);
+    h.client.voice.update();
+    // The player silences it at the screen reader; the key also reaches
+    // the game, which says an item before the voice update.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    h.client.voice.item(&t("x"));
+    for _ in 0..20 {
+        h.clock.advance(0.1);
+        h.client.voice.update();
+    }
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "x", "bbbbb"]);
+    let said: Vec<_> = h.client.voice.history().map(|(_, said)| said).collect();
+    assert_eq!(said, [true, true]);
 }

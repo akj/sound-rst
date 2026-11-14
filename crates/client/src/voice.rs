@@ -250,12 +250,23 @@ impl VoiceChannel {
         }
     }
 
-    /// Starts the next part when the previous one is over.
+    /// Whether the player silenced the message at the screen reader.
+    pub fn was_cancelled(&self) -> bool {
+        self.tts.was_cancelled()
+    }
+
+    /// Starts the next part when the previous one is over. A message the
+    /// player silenced at the screen reader is dismissed with its other
+    /// parts.
     pub fn update(&mut self) {
-        if !self.audio.voice_busy()
-            && !self.tts.is_speaking()
-            && let Some((part, lv, rv)) = self.queue.pop_front()
-        {
+        if self.audio.voice_busy() || self.tts.is_speaking() {
+            return;
+        }
+        // Read after the end: a cancel reported in between still counts.
+        if self.tts.was_cancelled() {
+            self.queue.clear();
+        }
+        if let Some((part, lv, rv)) = self.queue.pop_front() {
             match part {
                 Spoken::Text(t) => self.tts.speak(&t),
                 Spoken::Sound(s) => self.audio.voice_play(&s, lv, rv),
@@ -331,9 +342,12 @@ impl Voice {
     }
 
     /// A message cut short after a second counts as said, so it does not
-    /// come back again and again.
+    /// come back again and again; so does a message the player silenced
+    /// at the screen reader.
     fn give_up_current_if_partially_said(&mut self) {
-        if self.current_message_is_unsaid() && self.channel.is_almost_done() {
+        if self.current_message_is_unsaid()
+            && (self.channel.is_almost_done() || self.channel.was_cancelled())
+        {
             self.mark_current_as_said();
         }
     }

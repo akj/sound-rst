@@ -37,7 +37,20 @@ fn test_load_defaults_if_file_doesnt_exist() {
         "[general]\nlogin = player\nmods = \nsoundpacks = \nnum_channels = 16\nspeed = 1\n\
          verbosity = menu_changed,unit_added,unit_complete,scout_info,food,resources,resource_exhausted\n\
          debug_mode = 0\nannounce_arrivals = 1\n\n[server]\ntimeout = 60.0\nfpct_coef = 2.3\nfpct_max = 3\nrequire_humans = 0\n\n\
-         [tts]\nwait_delay_per_character = 0.1\n\n"
+         [tts]\nwait_delay_per_character = 0.1\nnvda_direct = 0\n\n"
+    );
+}
+
+#[test]
+fn nvda_direct_is_off_unless_set_and_survives_a_save() {
+    let log = Log::silent();
+    let (c, _) = Config::from_ini("[tts]\nwait_delay_per_character = 0.1\n", &log);
+    assert_eq!(c.nvda_direct, 0);
+    let (c, _) = Config::from_ini("[tts]\nnvda_direct = 1\n", &log);
+    assert_eq!(c.nvda_direct, 1);
+    assert!(
+        c.to_ini()
+            .contains("[tts]\nwait_delay_per_character = 0.1\nnvda_direct = 1\n")
     );
 }
 

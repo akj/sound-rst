@@ -1,10 +1,40 @@
 //! Speech: through the running screen reader, else the system voice.
 //!
-//! A screen reader does not say when it has finished speaking, so the end of
-//! an utterance is estimated from its length, as upstream did.
+//! Screen reader calls run on a thread of their own ([`worker`]). Most
+//! screen readers do not say when they have finished speaking, so the end
+//! of an utterance is estimated from its length, as upstream did. NVDA
+//! called directly ([`nvda`]) says when speech has finished or was
+//! cancelled, and that report replaces the estimate.
+
+mod nvda;
+mod worker;
+
+pub use nvda::{Controller, DirectSpeaker, ERROR_CANCELLED, ERROR_SUCCESS, RPC_S_UNKNOWN_IF, ssml};
+pub use worker::{Command, Link, Report, Speaker, SpeechThread};
 
 use crate::clock::ClockRef;
 use crate::log::Log;
+
+/// How an utterance ended, when the screen reader can tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpeechEnd {
+    /// It was said to the end.
+    Finished,
+    /// It was silenced by something other than the game: the player's
+    /// key at the screen reader.
+    Cancelled,
+}
+
+/// What a backend knows of the last utterance it was given.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Progress {
+    /// It cannot tell: the end is estimated.
+    #[default]
+    Unknown,
+    /// It is being said, and the backend will report its end.
+    Speaking,
+    Ended(SpeechEnd),
+}
 
 /// Where speech goes.
 pub trait SpeechBackend {
@@ -12,18 +42,39 @@ pub trait SpeechBackend {
     fn speak(&mut self, text: &str) -> Result<(), String>;
     /// Silences speech.
     fn stop(&mut self) -> Result<(), String>;
+    /// What is known of the last utterance given to `speak`. Only
+    /// meaningful until the next `speak` or `stop`.
+    fn progress(&self) -> Progress {
+        Progress::Unknown
+    }
 }
 
-/// Speech with an estimated end: each character takes
-/// `wait_delay_per_character` seconds, a digit `tts_digit_coefficient`
-/// times as long. The end is kept in whole microseconds.
+/// A reported end is waited for until three times the estimate and two
+/// seconds more. Past that, the speech counts as ended: a screen reader
+/// that drops the text (NVDA with speech off) never reports, and the voice
+/// must not wait for ever.
+const REPORT_WAIT_FACTOR: i64 = 3;
+const REPORT_WAIT_EXTRA_US: i64 = 2_000_000;
+
+/// The utterance in progress, in whole microseconds of the clock.
+#[derive(Clone, Copy)]
+struct Said {
+    /// The estimated end.
+    end_us: i64,
+    /// The latest end a backend's report is waited for.
+    limit_us: i64,
+}
+
+/// Speech with an end reported by the backend, or else estimated: each
+/// character takes `wait_delay_per_character` seconds, a digit
+/// `tts_digit_coefficient` times as long.
 pub struct Tts {
     backend: Box<dyn SpeechBackend>,
     clock: ClockRef,
     log: Log,
     wait_delay_per_character: f64,
     digit_coefficient: f64,
-    end_us: Option<i64>,
+    said: Option<Said>,
 }
 
 fn microseconds(seconds: f64) -> i64 {
@@ -44,7 +95,7 @@ impl Tts {
             log,
             wait_delay_per_character,
             digit_coefficient,
-            end_us: None,
+            said: None,
         }
     }
 
@@ -66,21 +117,39 @@ impl Tts {
         if let Err(e) = self.backend.speak(text) {
             self.log.error(format!("error during speak({text:?}): {e}"));
         }
-        self.end_us = Some(microseconds(self.clock.now()) + self.estimate_us(text));
+        let now = microseconds(self.clock.now());
+        let estimate = self.estimate_us(text);
+        self.said = Some(Said {
+            end_us: now + estimate,
+            limit_us: now + estimate * REPORT_WAIT_FACTOR + REPORT_WAIT_EXTRA_US,
+        });
     }
 
-    /// Silences speech, unless the estimate says it has already ended.
+    /// Silences speech.
     pub fn stop(&mut self) {
         if self.is_speaking() {
             // An error here shows again at the next speak.
             let _ = self.backend.stop();
         }
-        self.end_us = None;
+        self.said = None;
     }
 
     pub fn is_speaking(&self) -> bool {
-        self.end_us
-            .is_some_and(|end| end > microseconds(self.clock.now()))
+        let Some(said) = self.said else {
+            return false;
+        };
+        let now = microseconds(self.clock.now());
+        match self.backend.progress() {
+            Progress::Unknown => said.end_us > now,
+            Progress::Speaking => said.limit_us > now,
+            Progress::Ended(_) => false,
+        }
+    }
+
+    /// Whether the last utterance was silenced at the screen reader, and
+    /// not by the game.
+    pub fn was_cancelled(&self) -> bool {
+        self.said.is_some() && self.backend.progress() == Progress::Ended(SpeechEnd::Cancelled)
     }
 }
 
@@ -94,128 +163,167 @@ pub struct SpeechReport {
 }
 
 #[cfg(windows)]
-pub use windows_speech::{ScreenReaderSpeech, probe_speech};
+pub use windows_speech::{probe_speech, screen_reader_speech};
 
 #[cfg(windows)]
 mod windows_speech {
-    use super::{SpeechBackend, SpeechReport};
     use std::sync::Arc;
+    use std::sync::mpsc::Sender;
+
+    use super::nvda::{CLIENT_DLL, NvdaDll};
+    use super::{DirectSpeaker, Report, Speaker, SpeechReport, SpeechThread};
+    use crate::log::Log;
 
     /// Speech through Tolk: JAWS, NVDA and other screen readers, with SAPI
-    /// as the fallback when none runs. Tolk loads
-    /// `nvdaControllerClient64.dll` from the executable's folder.
-    pub struct ScreenReaderSpeech {
-        tolk: Arc<tolk::Tolk>,
+    /// as the fallback when none runs, on the speech thread. Tolk loads
+    /// `nvdaControllerClient64.dll` from the executable's folder. With
+    /// `nvda_direct`, speech goes to NVDA through its own controller client
+    /// first, and Tolk is the fallback.
+    pub fn screen_reader_speech(nvda_direct: bool, log: Log) -> SpeechThread {
+        // Tolk is made on the speech thread, and called only from it.
+        SpeechThread::spawn(nvda_direct, move |link| {
+            let tolk = Box::new(TolkSpeaker::new(link.reports.clone()));
+            if !nvda_direct {
+                return tolk as Box<dyn Speaker>;
+            }
+            let dll = std::env::current_exe()
+                .map_err(|e| e.to_string())
+                .and_then(|exe| {
+                    let path = exe.with_file_name(CLIENT_DLL);
+                    NvdaDll::load(&path).map(|dll| Arc::new(dll) as _)
+                });
+            DirectSpeaker::choose(dll, tolk, link, log)
+        })
     }
 
-    impl ScreenReaderSpeech {
-        pub fn new() -> ScreenReaderSpeech {
+    /// The screen reader Tolk speaks through ("SAPI" for the system
+    /// voice), without saying anything.
+    fn detect() -> Option<String> {
+        let tolk = tolk::Tolk::new();
+        tolk.try_sapi(true);
+        // SAFETY: Tolk is loaded while `tolk` lives. It returns null or a
+        // pointer to a static, nul-terminated wide string naming the
+        // active driver.
+        unsafe {
+            let p = tolk_sys::Tolk_DetectScreenReader();
+            if p.is_null() {
+                return None;
+            }
+            let mut len = 0;
+            while *p.add(len) != 0 && len < 256 {
+                len += 1;
+            }
+            let units = std::slice::from_raw_parts(p.cast::<u16>(), len);
+            Some(String::from_utf16_lossy(units))
+        }
+    }
+
+    /// Tolk on the speech thread. It cannot tell when speech ends.
+    struct TolkSpeaker {
+        tolk: Arc<tolk::Tolk>,
+        reports: Sender<Report>,
+    }
+
+    impl TolkSpeaker {
+        fn new(reports: Sender<Report>) -> TolkSpeaker {
             let tolk = tolk::Tolk::new();
             tolk.try_sapi(true);
             tolk.prefer_sapi(false);
-            ScreenReaderSpeech { tolk }
-        }
-
-        /// The screen reader Tolk speaks through ("SAPI" for the system
-        /// voice), without saying anything.
-        pub fn detect(&self) -> Option<String> {
-            // SAFETY: Tolk returns null or a pointer to a static,
-            // nul-terminated wide string naming the active driver.
-            unsafe {
-                let p = tolk_sys::Tolk_DetectScreenReader();
-                if p.is_null() {
-                    return None;
-                }
-                let mut len = 0;
-                while *p.add(len) != 0 && len < 256 {
-                    len += 1;
-                }
-                let units = std::slice::from_raw_parts(p.cast::<u16>(), len);
-                Some(String::from_utf16_lossy(units))
-            }
+            TolkSpeaker { tolk, reports }
         }
     }
 
-    impl Default for ScreenReaderSpeech {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl SpeechBackend for ScreenReaderSpeech {
-        fn speak(&mut self, text: &str) -> Result<(), String> {
+    impl Speaker for TolkSpeaker {
+        fn speak(&mut self, id: u64, text: &str) {
             self.tolk.output(text, true);
-            Ok(())
+            let _ = self.reports.send((id, None));
         }
 
-        fn stop(&mut self) -> Result<(), String> {
+        fn stop(&mut self) {
             self.tolk.silence();
-            Ok(())
         }
     }
 
     pub fn probe_speech() -> SpeechReport {
         let mut notes = Vec::new();
-        let dll = std::env::current_exe()
+        let folder = std::env::current_exe()
             .ok()
-            .and_then(|e| e.parent().map(|d| d.join("nvdaControllerClient64.dll")));
-        match dll {
-            Some(p) if p.is_file() => {
-                notes.push(format!("NVDA controller client: {}", p.display()))
-            }
-            _ => notes.push(
+            .and_then(|e| e.parent().map(|d| d.to_path_buf()));
+        let file = |name: &str| {
+            folder
+                .as_ref()
+                .map(|d| d.join(name))
+                .filter(|p| p.is_file())
+        };
+        match file("nvdaControllerClient64.dll") {
+            Some(p) => notes.push(format!("NVDA controller client: {}", p.display())),
+            None => notes.push(
                 "NVDA controller client: nvdaControllerClient64.dll is not next to the program; \
                  NVDA cannot be used"
                     .to_owned(),
             ),
         }
-        let speech = ScreenReaderSpeech::new();
+        match file(CLIENT_DLL) {
+            Some(p) => notes.push(format!(
+                "NVDA controller client for nvda_direct: {}",
+                p.display()
+            )),
+            None => notes.push(format!(
+                "NVDA controller client for nvda_direct: {CLIENT_DLL} is not next to the \
+                 program; nvda_direct = 1 falls back to Tolk"
+            )),
+        }
         SpeechReport {
             backend: "Tolk (screen reader, else SAPI)".to_owned(),
-            output: speech.detect(),
+            output: detect(),
             notes,
         }
     }
 }
 
 #[cfg(not(windows))]
-pub use other_speech::{ScreenReaderSpeech, probe_speech};
+pub use other_speech::{probe_speech, screen_reader_speech};
 
 #[cfg(not(windows))]
 mod other_speech {
-    use super::{SpeechBackend, SpeechReport};
+    use std::sync::mpsc::Sender;
 
-    /// Speech through the system's speech service.
-    pub struct ScreenReaderSpeech {
-        tts: Option<tts::Tts>,
-    }
+    use super::{Report, Speaker, SpeechReport, SpeechThread};
+    use crate::log::Log;
 
-    impl ScreenReaderSpeech {
-        pub fn new() -> ScreenReaderSpeech {
-            ScreenReaderSpeech {
+    /// Speech through the system's speech service, on the speech thread.
+    /// `nvda_direct` has no effect here.
+    pub fn screen_reader_speech(_nvda_direct: bool, log: Log) -> SpeechThread {
+        SpeechThread::spawn(false, move |link| {
+            Box::new(SystemSpeaker {
                 tts: tts::Tts::default().ok(),
-            }
-        }
+                reports: link.reports,
+                log,
+            }) as Box<dyn Speaker>
+        })
     }
 
-    impl Default for ScreenReaderSpeech {
-        fn default() -> Self {
-            Self::new()
-        }
+    struct SystemSpeaker {
+        tts: Option<tts::Tts>,
+        reports: Sender<Report>,
+        log: Log,
     }
 
-    impl SpeechBackend for ScreenReaderSpeech {
-        fn speak(&mut self, text: &str) -> Result<(), String> {
-            match self.tts.as_mut() {
+    impl Speaker for SystemSpeaker {
+        fn speak(&mut self, id: u64, text: &str) {
+            let result = match self.tts.as_mut() {
                 Some(t) => t.speak(text, true).map(|_| ()).map_err(|e| e.to_string()),
                 None => Err("no speech service".to_owned()),
+            };
+            if let Err(e) = result {
+                self.log.error(format!("error during speak({text:?}): {e}"));
             }
+            let _ = self.reports.send((id, None));
         }
 
-        fn stop(&mut self) -> Result<(), String> {
-            match self.tts.as_mut() {
-                Some(t) => t.stop().map(|_| ()).map_err(|e| e.to_string()),
-                None => Ok(()),
+        fn stop(&mut self) {
+            if let Some(t) = self.tts.as_mut() {
+                let _ = t.stop();
             }
         }
     }
@@ -261,5 +369,35 @@ mod tests {
                 SpeechEvent::Stop
             ]
         );
+    }
+
+    #[test]
+    fn a_reported_end_replaces_the_estimate() {
+        let clock = Rc::new(ManualClock::new());
+        let (backend, log) = RecordingSpeech::new();
+        let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
+        // Ended before the estimate.
+        tts.speak("abcdefghij");
+        log.report(Progress::Ended(SpeechEnd::Finished));
+        assert!(!tts.is_speaking());
+        assert!(!tts.was_cancelled());
+        // Still speaking past the estimate, up to three times it and two
+        // seconds.
+        tts.speak("abcdefghij");
+        log.report(Progress::Speaking);
+        clock.advance(2.0);
+        assert!(tts.is_speaking());
+        clock.advance(2.9);
+        assert!(tts.is_speaking());
+        clock.advance(0.2);
+        assert!(!tts.is_speaking());
+        // Cancelled at the screen reader.
+        tts.speak("abc");
+        log.report(Progress::Ended(SpeechEnd::Cancelled));
+        assert!(!tts.is_speaking());
+        assert!(tts.was_cancelled());
+        // A stop by the game is not a cancel at the screen reader.
+        tts.stop();
+        assert!(!tts.was_cancelled());
     }
 }
