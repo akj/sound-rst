@@ -1293,8 +1293,7 @@ impl World {
     }
 
     /// `_remove_far_candidates`: the candidates met first in a breadth
-    /// first walk of the squares from `start`. A square met twice before
-    /// its exits are walked is counted twice, as in the original.
+    /// first walk of the squares from `start`.
     fn remove_far_candidates(
         &self,
         candidates: &[Target],
@@ -1311,6 +1310,10 @@ impl World {
         let mut done: Vec<SquareId> = Vec::new();
         while c.len() < limit {
             let Some(room) = queue.pop_front() else { break };
+            // A square may be queued twice before it is walked.
+            if done.contains(&room) {
+                continue;
+            }
             for o in &self.square(room).objects {
                 if let Some(t) = ids.get(o) {
                     c.push(t.clone());
@@ -1318,9 +1321,6 @@ impl World {
                         break;
                     }
                 }
-            }
-            if done.contains(&room) {
-                continue;
             }
             for &e in &self.square(room).exits {
                 let os = self
@@ -1758,6 +1758,56 @@ mod order_sites;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A world with the original's rules and this map.
+    fn world(map: &str) -> World {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        let read = |f: &str| {
+            let bytes = std::fs::read(dir.join(f))
+                .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let rules = crate::Rules::load(&[read("res/rules.txt")]);
+        let ai = crate::AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(rules, ai, Vec::new(), 0);
+        w.load_and_build_map(map).unwrap();
+        w
+    }
+
+    #[test]
+    fn a_square_reached_by_two_ways_gives_its_candidates_once() {
+        // a1 leads to b1 and a2, which both lead to b2.
+        let w = world(
+            "
+square_width 12
+nb_columns 2
+nb_lines 2
+west_east_paths a1 a2
+south_north_paths a1 b1
+nb_meadows_by_square 3
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let b2 = w.square_by_name("b2").unwrap();
+        let meadows: Vec<Target> = w
+            .square(b2)
+            .objects
+            .iter()
+            .filter(|&&o| w.e(o).is_meadow())
+            .map(|&o| Target::Entity(o))
+            .collect();
+        assert_eq!(meadows.len(), 3);
+        let a1 = w.square_by_name("a1").unwrap();
+        let near = w
+            .remove_far_candidates(&meadows, Some(Place::Square(a1)), 10)
+            .unwrap();
+        let ids: Vec<EntityId> = near.iter().filter_map(Target::entity_id).collect();
+        let expected: Vec<EntityId> = meadows.iter().filter_map(Target::entity_id).collect();
+        assert_eq!(ids, expected);
+    }
 
     #[test]
     fn computer2_chooses_from_the_original_list_of_orders() {
