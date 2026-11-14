@@ -257,19 +257,36 @@ impl GameInterface {
         Ok([self.title(cx, v)?, msg(mp::AT), self.place_title(cx, place)].concat())
     }
 
-    /// The upgrades of a creature's player that apply to it.
+    /// The upgrades of a creature's player that apply to it: for a
+    /// remembered creature, those it had when the player last perceived
+    /// it.
     fn upgrades_status(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
-        let view = self.view();
         let upgrades = if v.is_memory() {
-            view.leaks().remembered_unit_upgrades(v.id())
+            self.seen_upgrades.get(&v.id()).cloned().unwrap_or_default()
         } else {
-            view.unit_upgrades(v.id())
+            self.view().unit_upgrades(v.id())
         };
         upgrades
             .iter()
             .flat_map(|u| style_msg(style, u, "title"))
             .collect()
+    }
+
+    /// Notes the upgrades of every creature the player perceives at the
+    /// end of a turn, and forgets those of entities it no longer knows.
+    /// Called every turn, so that a remembered creature has the upgrades
+    /// it had when last seen.
+    pub(crate) fn note_upgrades(&mut self) {
+        let view = self.host.view(self.me);
+        for v in self.dobjets.values() {
+            if !v.is_memory() && v.is_creature() && v.player().is_some() {
+                self.seen_upgrades
+                    .insert(v.id(), view.unit_upgrades(v.id()));
+            }
+        }
+        let known = &self.dobjets;
+        self.seen_upgrades.retain(|id, _| known.contains_key(id));
     }
 
     pub fn description(&self, cx: &Client, v: &EntityView) -> Msg {
@@ -1120,5 +1137,85 @@ mod tests {
             direction_msg(c, 12.0, 2.0, 2.0),
             [msg(mp::TO_THE), msg(mp::SOUTHWEST)].concat()
         );
+    }
+
+    /// Gives `p` a command in the map language, as the console does.
+    fn cheat(g: &mut crate::testkit::TestGame, p: PlayerId, line: &str) {
+        g.game.host.queue_line(p, &format!("cmd {line}"));
+    }
+
+    /// Orders `unit` of `p` to go to the center of `square`.
+    fn go(g: &mut crate::testkit::TestGame, p: PlayerId, unit: EntityId, square: SquareId) {
+        let to = g.game.view().square(square).protocol_id();
+        g.game.host.queue_line(p, &format!("control {}", unit.0));
+        g.game.host.queue_line(p, &format!("order 0 0 go {to}"));
+    }
+
+    /// Runs the game a turn at a time until `done`, at most 400 turns.
+    fn run_until(
+        h: &mut crate::testkit::Harness,
+        g: &mut crate::testkit::TestGame,
+        done: impl Fn(&GameInterface) -> bool,
+    ) {
+        for _ in 0..400 {
+            if done(&g.game) {
+                return;
+            }
+            let next = g.game.view().turn() + 1;
+            h.run_until_turn(g, next);
+        }
+        panic!("not done after 400 turns");
+    }
+
+    #[test]
+    fn a_remembered_unit_has_the_upgrades_it_had_when_last_seen() {
+        let (mut h, mut g) = training();
+        let (me, them) = (g.game.me, enemy(&g));
+        let w = g.game.host.world();
+        let mine = w
+            .entity(unit(&g, me, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let theirs = w
+            .entity(unit(&g, them, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let name = g.game.view().square(mine).name().to_owned();
+        // An enemy footman with one upgrade, on the player's square.
+        cheat(
+            &mut g,
+            them,
+            &format!("add_units {name} footman melee_weapon"),
+        );
+        let footman = {
+            run_until(&mut h, &mut g, |g| {
+                g.dobjets.values().any(|v| v.type_name() == "footman")
+            });
+            unit(&g, them, "footman")
+        };
+        let upgrades = |h: &mut crate::testkit::Harness, g: &crate::testkit::TestGame| {
+            let m = g.game.upgrades_status(&h.client, &g.game.dobjets[&footman]);
+            said(h, &m)
+        };
+        assert!(!g.game.dobjets[&footman].is_memory());
+        assert_eq!(upgrades(&mut h, &g), "swords");
+
+        // Out of sight, its owner gains a second upgrade.
+        go(&mut g, them, footman, theirs);
+        run_until(&mut h, &mut g, |g| g.dobjets[&footman].is_memory());
+        cheat(&mut g, them, "add_units melee_armor");
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        assert!(g.game.dobjets[&footman].is_memory());
+        let w = g.game.host.world();
+        assert_eq!(w.unit_upgrades(footman), ["melee_weapon", "melee_armor"]);
+        assert_eq!(upgrades(&mut h, &g), "swords");
+
+        // Seen again.
+        go(&mut g, them, footman, mine);
+        run_until(&mut h, &mut g, |g| !g.dobjets[&footman].is_memory());
+        assert_eq!(upgrades(&mut h, &g), "swords footmen armors");
     }
 }

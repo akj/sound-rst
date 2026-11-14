@@ -33,7 +33,7 @@ pub mod stats;
 #[cfg(test)]
 mod testing;
 
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use indexmap::{IndexMap, IndexSet};
 use soundrts_world::events::{EntityEvent, Event};
@@ -224,6 +224,9 @@ pub struct GameInterface {
     pub(crate) already_asked_to_quit: bool,
     pub forced_quit: bool,
     pub(crate) terrain_noises: Vec<(SquareId, NoiseSource)>,
+    /// The upgrades of each known creature when the player last perceived
+    /// it.
+    pub(crate) seen_upgrades: HashMap<EntityId, Vec<String>>,
     pub(crate) previous_animation: f64,
     pub(crate) bindings: Bindings<GameCommand>,
     pub(crate) srv_queue: VecDeque<SrvEvent>,
@@ -293,6 +296,7 @@ impl GameInterface {
             already_asked_to_quit: false,
             forced_quit: false,
             terrain_noises: Vec::new(),
+            seen_upgrades: HashMap::new(),
             previous_animation: 0.0,
             bindings: Bindings::new(),
             srv_queue: VecDeque::new(),
@@ -539,6 +543,7 @@ impl GameInterface {
         self.squares_alert_if_needed(cx);
         self.scout_info_if_needed(cx)?;
         self.update_fog_of_war(cx, v.memory, v.perception);
+        self.note_upgrades();
         self.update_group();
         if self.bell_enabled {
             self.eventually_play_bell(cx);

@@ -243,23 +243,27 @@ fn the_comrades_of_a_unit_are_its_owners_units_the_player_sees_beside_it() {
 }
 
 #[test]
-fn a_remembered_units_upgrades_are_its_owners_now() {
+fn only_a_perceived_unit_has_upgrades() {
     let (mut w, me, them) = game();
-    let square = w
-        .square(square_of(&w, unit(&w, them, "townhall")))
-        .name
-        .clone();
-    command(&mut w, them, &[format!("cmd add_units {square} footman")]);
-    let footman = unit(&w, them, "footman");
-    remember(&mut w, me, footman);
-    w.player_mut(them).upgrades.push("melee_weapon".into());
+    for p in [me, them] {
+        let square = w
+            .square(square_of(&w, unit(&w, p, "townhall")))
+            .name
+            .clone();
+        command(&mut w, p, &[format!("cmd add_units {square} footman")]);
+        w.player_mut(p).upgrades.push("melee_weapon".into());
+    }
+    let theirs = unit(&w, them, "footman");
+    let mine = unit(&w, me, "footman");
+    remember(&mut w, me, theirs);
     let v = View::new(&w, me);
-    assert!(v.perceived(footman).is_none());
-    assert_eq!(w.unit_upgrades(footman), ["melee_weapon"]);
-    assert_eq!(
-        v.leaks().remembered_unit_upgrades(footman),
-        ["melee_weapon"]
-    );
+    // The computer's footman, remembered: its owner's upgrades now are
+    // not the player's to know (the interface keeps those it saw).
+    assert!(v.perceived(theirs).is_none());
+    assert_eq!(w.unit_upgrades(theirs), ["melee_weapon"]);
+    assert_eq!(v.unit_upgrades(theirs), Vec::<String>::new());
+    // The player's own footman.
+    assert_eq!(v.unit_upgrades(mine), ["melee_weapon"]);
 }
 
 #[test]

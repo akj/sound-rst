@@ -415,10 +415,14 @@ impl<'a> View<'a> {
         self.world.activity(unit)
     }
 
-    /// The upgrades of its owner that apply to a unit, for its
-    /// description. For a unit the player perceives; for a remembered one
-    /// the interface reads [`Leaks::remembered_unit_upgrades`].
+    /// The upgrades of its owner that apply to a unit the player
+    /// perceives, for its description. None for a unit the player does not
+    /// perceive: the interface describes a remembered unit with those it
+    /// was told when it last perceived the unit.
     pub fn unit_upgrades(&self, unit: EntityId) -> Vec<String> {
+        if self.perceived(unit).is_none() {
+            return Vec::new();
+        }
         self.world.unit_upgrades(unit)
     }
 
@@ -476,15 +480,6 @@ impl<'a> Leaks<'a> {
     /// that target in the unit's orders.
     pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
         self.world.player(owner).memory.get(&id)
-    }
-
-    /// The upgrades of its owner that apply to a remembered unit, as they
-    /// are now, not as they were when the unit was seen.
-    ///
-    /// Used in the description of a remembered unit ("footman, enemy, in
-    /// the fog, ..., melee weapon 1").
-    pub fn remembered_unit_upgrades(&self, unit: EntityId) -> Vec<String> {
-        self.world.unit_upgrades(unit)
     }
 
     /// What a remembered unit is busy with now, as [`View::activity`]
