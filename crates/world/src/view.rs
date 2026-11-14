@@ -7,7 +7,7 @@
 //! the game. Its answers are facts: small owned values, ids, or borrowed
 //! data that a copy sent over a network could carry as well.
 //!
-//! The methods come in six groups. The groups are the contract for a view
+//! The methods come in five groups. The groups are the contract for a view
 //! that is sent rather than borrowed: each says where its answers would
 //! come from.
 //!
@@ -16,31 +16,31 @@
 //!    the rules (unit types and costs), the clock and whether cheats are
 //!    allowed. A host sends the map and the rules once, at the start.
 //! 2. **The player's own state**: resources, food, units, upgrades,
-//!    objectives, alliances, cheat mode, victory and statistics. Sent to
-//!    that player only.
+//!    recallable groups, objectives, alliances, cheat mode, victory and
+//!    statistics. Sent to that player only.
 //! 3. **What everyone may know of the other players**: names, who is
 //!    allied with whom, who is still playing.
 //! 4. **Entities the player perceives or remembers**, looked up through
-//!    that knowledge: nothing else is returned.
+//!    that knowledge, and what follows from them alone: whether an exit
+//!    is closed, the units beside one that died, what a remembered unit
+//!    was busy with. Nothing else is returned or read.
 //! 5. **Questions computed on demand** about units the player perceives or
 //!    controls: order menus, order costs, what a unit is busy with, its
 //!    upgrades, the default order for a target. A host in the same process
 //!    answers them from the world; a host over a network has to send the
 //!    answers or the inputs they are computed from.
-//! 6. **What the interface reads today that its player should not know**,
-//!    under [`View::leaks`]. Each of those reads goes past what the player
-//!    perceives or remembers, and each is to be removed.
 //!
-//! The methods of groups 1, 2, 3 and 5 do not check their arguments
-//! against what the player knows: they answer for the square, player or
-//! unit they are given. Their documentation says for which arguments the
-//! answer is the player's knowledge; a read outside that belongs in
-//! group 6.
+//! The methods of groups 1, 3 and 5 do not check their arguments against
+//! what the player knows: they answer for the square, player or unit they
+//! are given. Their documentation says for which arguments the answer is
+//! the player's knowledge, and the interface asks them only for those.
+
+use std::collections::BTreeSet;
 
 use crate::command::OrderTarget;
-use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId};
+use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::msg::Msg;
-use crate::orders::{Keyword, OrderInfo};
+use crate::orders::{Keyword, Mode, OrderInfo};
 use crate::player::{Objective, PlayerStats, Remembrance};
 use crate::rules::{TypeId, UnitType};
 use crate::square::Square;
@@ -186,8 +186,8 @@ impl<'a> View<'a> {
     /// The terrain style of a square: the map's `terrain`, or for a square
     /// without one, `_meadows`, `_forest`, `_dense_forest` or nothing,
     /// from the woods and meadows on it now. The player knows it for a
-    /// square it observes now; for another square the interface reads
-    /// [`Leaks::unobserved_terrain`].
+    /// square it observes now: the interface keeps the terrain of a square
+    /// in the fog as it last observed it.
     pub fn terrain(&self, square: SquareId) -> &'a str {
         &self.world.square(square).type_name
     }
@@ -256,6 +256,32 @@ impl<'a> View<'a> {
             .filter_map(move |&u| w.entity(u))
     }
 
+    /// The units of a recallable group that the player may give orders
+    /// to, in the group's order. The groups of a game are shared by every
+    /// player, as in the original: a group of this name may also hold
+    /// other players' units, which are left out.
+    pub fn recallable_group(&self, name: &str) -> Vec<EntityId> {
+        let w = self.world;
+        let units = w.group_list(name).map_or(&[][..], Vec::as_slice);
+        units
+            .iter()
+            .copied()
+            .filter(|&u| {
+                w.entity(u)
+                    .and_then(|e| e.player)
+                    .is_some_and(|p| self.controls(p))
+            })
+            .collect()
+    }
+
+    /// The squares the player sees only partly at the end of the turn,
+    /// from a unit on the next square: not observed, but seen enough to
+    /// know their terrain. The squares it observes come with each turn's
+    /// report.
+    pub fn partly_observed_squares(&self) -> &'a BTreeSet<SquareId> {
+        &self.world.player(self.player).partly_observed_squares
+    }
+
     /// Whether `p` is the player or one of its allies.
     pub fn is_ally(&self, p: PlayerId) -> bool {
         self.allied(self.player, p)
@@ -314,6 +340,84 @@ impl<'a> View<'a> {
         self.world.player(self.player).memory.get(&id)
     }
 
+    /// The entity as the player knows it: as it is now if the player
+    /// perceives it, else as it was last seen, with when.
+    pub fn known(&self, id: EntityId) -> Option<(&'a Entity, Option<i64>)> {
+        match self.perceived(id) {
+            Some(e) => Some((e, None)),
+            None => self
+                .remembered(id)
+                .map(|r| (&*r.snapshot, Some(r.time_stamp))),
+        }
+    }
+
+    /// The units of `owner` that the player perceives on `place`, `except`
+    /// one that died there: what the player sees left of its side of the
+    /// fight.
+    pub fn comrades(&self, owner: PlayerId, place: Option<Place>, except: EntityId) -> Comrades {
+        let w = self.world;
+        let mut c = Comrades {
+            units: 0,
+            soldiers: 0,
+        };
+        let perceived = w.player(self.player).perception.iter();
+        for u in perceived.filter_map(|&u| w.entity(u)) {
+            if u.player == Some(owner) && u.place == place && u.id != except {
+                c.units += 1;
+                if u.menace() != 0 {
+                    c.soldiers += 1;
+                }
+            }
+        }
+        c
+    }
+
+    /// What a remembered unit was busy with when the player last saw it,
+    /// as [`View::activity`] says it of a perceived one, from the
+    /// remembered copy's first order. What it gathers from is named as the
+    /// player knows it: `None` if the player knows nothing of it.
+    pub fn remembered_activity(&self, unit: EntityId) -> Option<String> {
+        let o = self.remembered(unit)?.snapshot.orders.first()?;
+        match o.mode {
+            Mode::Build => Some("building".into()),
+            Mode::Gather => {
+                let name = match o.target.as_ref()? {
+                    Target::Entity(id) => &self.known(*id)?.0.type_name,
+                    Target::Memory(m) => &m.snapshot.type_name,
+                    _ => return None,
+                };
+                Some(format!("exploiting_{name}"))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether an exit is closed as far as the player knows: by dense
+    /// forests, or by a blocker on either side, as the player perceives or
+    /// remembers the exits and the blockers. With `friendly_gates_open`, a
+    /// gate of the player or an ally does not close it. An exit the player
+    /// knows nothing of is open.
+    pub fn exit_is_blocked(&self, exit: EntityId, friendly_gates_open: bool) -> bool {
+        let Some(x) = self.known(exit).and_then(|(e, _)| e.exit.as_ref()) else {
+            return false;
+        };
+        if x.is_blocked_by_forests {
+            return true;
+        }
+        let other = x
+            .other_side
+            .and_then(|o| self.known(o))
+            .and_then(|(o, _)| o.exit.as_ref())
+            .map_or(&[][..], |o| &o.blockers);
+        x.blockers.iter().chain(other).any(|&b| {
+            let Some((b, _)) = self.known(b) else {
+                return false;
+            };
+            let enemy = !friendly_gates_open || b.player.is_some_and(|bp| !self.is_ally(bp));
+            b.stats.is_a_gate == 0 || enemy
+        })
+    }
+
     // 5. Questions computed on demand.
 
     /// The entries of a unit's order menu for one keyword: `go`, or `train
@@ -341,26 +445,31 @@ impl<'a> View<'a> {
 
     /// Whether the owner of a unit has a type, built or researched: what
     /// an order of that unit requires. `None` unless the player controls
-    /// the owner's units; the interface then reads
-    /// [`Leaks::unit_owner_has`].
+    /// the owner's units: another player's state is not the player's to
+    /// know.
     pub fn owner_has(&self, unit: EntityId, type_name: &str) -> Option<bool> {
         let owner = self.world.entity(unit)?.player?;
         self.controls(owner)
             .then(|| self.world.has(owner, type_name))
     }
 
-    /// What a unit is busy with, for its noise: `building`, or
-    /// `exploiting_` and what it gathers from. For a unit the player
-    /// perceives; for a remembered one the interface reads
-    /// [`Leaks::live_activity`].
+    /// What a unit the player perceives is busy with, for its noise:
+    /// `building`, or `exploiting_` and what it gathers from. None for a
+    /// unit the player does not perceive; for a remembered one, see
+    /// [`View::remembered_activity`].
     pub fn activity(&self, unit: EntityId) -> Option<String> {
+        self.perceived(unit)?;
         self.world.activity(unit)
     }
 
-    /// The upgrades of its owner that apply to a unit, for its
-    /// description. For a unit the player perceives; for a remembered one
-    /// the interface reads [`Leaks::remembered_unit_upgrades`].
+    /// The upgrades of its owner that apply to a unit the player
+    /// perceives, for its description. None for a unit the player does not
+    /// perceive: the interface describes a remembered unit with those it
+    /// was told when it last perceived the unit.
     pub fn unit_upgrades(&self, unit: EntityId) -> Vec<String> {
+        if self.perceived(unit).is_none() {
+            return Vec::new();
+        }
         self.world.unit_upgrades(unit)
     }
 
@@ -379,199 +488,16 @@ impl<'a> View<'a> {
             .get_default_order(unit, &id)?
             .and_then(Keyword::parse))
     }
-
-    // 6. What the interface reads that its player should not know.
-
-    /// The reads of the interface that go past what the player perceives
-    /// or remembers. See [`Leaks`].
-    pub fn leaks(&self) -> Leaks<'a> {
-        Leaks {
-            world: self.world,
-            player: self.player,
-        }
-    }
 }
 
-/// What the interface reads today that its player should not know: each
-/// method reads the game as it truly is, without going through what the
-/// player perceives or remembers. Each one keeps an announcement or a
-/// sound as it is until a decision is made about what the player should
-/// hear instead; each is to be removed then. A view sent over a network
-/// does not carry these.
-#[derive(Clone, Copy)]
-pub struct Leaks<'a> {
-    world: &'a World,
-    player: PlayerId,
-}
-
-/// The units of a player that are on the same place as one of theirs that
-/// died: see [`Leaks::comrades`].
+/// The units of a player that the player perceives on the place where one
+/// of theirs died: see [`View::comrades`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Comrades {
     /// How many there are.
     pub units: usize,
     /// How many of them can fight.
     pub soldiers: usize,
-}
-
-impl<'a> Leaks<'a> {
-    /// The entity an order's target names, as it is now, perceived or not.
-    ///
-    /// Used to say a unit's orders ("go to footman, enemy, ...") and the
-    /// building a second build phase makes: the target's title is read from
-    /// the live entity.
-    pub fn order_target(&self, id: EntityId) -> Option<&'a Entity> {
-        self.world.entity(id)
-    }
-
-    /// The memory of another player: when `owner` last saw an entity.
-    ///
-    /// An order of an ally's unit that the player controls names its target
-    /// as the ally remembers it. Used to say "in the fog, 3 minutes" for
-    /// that target in the unit's orders.
-    pub fn memory_of(&self, owner: PlayerId, id: EntityId) -> Option<&'a Remembrance> {
-        self.world.player(owner).memory.get(&id)
-    }
-
-    /// Whether an exit is closed: by dense forests, or by a blocker on
-    /// either side of it, seen or not. With `friendly_gates_open`, a gate
-    /// of the player or an ally does not close it.
-    ///
-    /// Used to hide a closed exit from the targets of a square, to choose
-    /// the sound of moving through an exit, and to say "no path in this
-    /// direction".
-    pub fn exit_is_blocked(&self, exit: EntityId, friendly_gates_open: bool) -> bool {
-        let w = self.world;
-        let Some(x) = w.entity(exit).and_then(|e| e.exit.as_ref()) else {
-            return false;
-        };
-        if x.is_blocked_by_forests {
-            return true;
-        }
-        let other = x
-            .other_side
-            .and_then(|o| w.entity(o))
-            .and_then(|o| o.exit.as_ref())
-            .map(|o| o.blockers.clone())
-            .unwrap_or_default();
-        x.blockers.iter().chain(&other).any(|&b| {
-            let Some(b) = w.entity(b) else {
-                return false;
-            };
-            let enemy = !friendly_gates_open
-                || b.player
-                    .is_some_and(|bp| !w.player(self.player).allied.contains(&bp));
-            b.stats.is_a_gate == 0 || enemy
-        })
-    }
-
-    /// The other units of `owner` on `place` now, `except` the one that
-    /// died there, whoever the owner is.
-    ///
-    /// Used when a unit dies, to say whether a fight was won or lost: the
-    /// "lose fight" and "win fight" sounds and the units alert that follows.
-    /// For the player's own units this is its own state; for another
-    /// player's it reads that player's units.
-    pub fn comrades(&self, owner: PlayerId, place: Option<Place>, except: EntityId) -> Comrades {
-        let w = self.world;
-        let mut c = Comrades {
-            units: 0,
-            soldiers: 0,
-        };
-        for u in w.player(owner).units.iter().filter_map(|&u| w.entity(u)) {
-            if u.place == place && u.id != except {
-                c.units += 1;
-                if u.menace() != 0 {
-                    c.soldiers += 1;
-                }
-            }
-        }
-        c
-    }
-
-    /// The upgrades of its owner that apply to a remembered unit, as they
-    /// are now, not as they were when the unit was seen.
-    ///
-    /// Used in the description of a remembered unit ("footman, enemy, in
-    /// the fog, ..., melee weapon 1").
-    pub fn remembered_unit_upgrades(&self, unit: EntityId) -> Vec<String> {
-        self.world.unit_upgrades(unit)
-    }
-
-    /// What a remembered unit is busy with now, as [`View::activity`]
-    /// says it of a perceived one.
-    ///
-    /// Used to choose the noise of a remembered unit or building
-    /// (`noise_when_building`, `noise_when_exploiting_...`).
-    pub fn live_activity(&self, unit: EntityId) -> Option<String> {
-        self.world.activity(unit)
-    }
-
-    /// Every entity truly on a square, in arrival order, seen or not.
-    ///
-    /// Used to choose the sound of a unit's footsteps: on the ground of the
-    /// nearest still object (a bridge, a meadow...).
-    pub fn objects_on(&self, square: SquareId) -> Vec<&'a Entity> {
-        let w = self.world;
-        w.square(square)
-            .objects
-            .iter()
-            .filter_map(|&o| w.entity(o))
-            .collect()
-    }
-
-    /// The place of a container, as it is now, perceived or not.
-    ///
-    /// Used for the square of a unit inside a transport or a building: in
-    /// a square's summary and targets, in an alert's position, and in a
-    /// unit's place. The player perceives the container of its own units;
-    /// for a remembered unit last seen going into a container, this tells
-    /// where the container is now.
-    pub fn container_place(&self, container: EntityId) -> Option<Place> {
-        self.world.entity(container)?.place
-    }
-
-    /// The type of a container, perceived or not.
-    ///
-    /// Used to say the place of a unit inside a transport or a building
-    /// ("footman 1 at farm").
-    pub fn container_type(&self, container: EntityId) -> Option<&'a str> {
-        self.world.entity(container).map(|e| &*e.type_name)
-    }
-
-    /// The terrain of a square the player does not observe now, as it is
-    /// now, not as the player last saw it: forests are cut while nobody
-    /// watches.
-    ///
-    /// Used to say a square in the fog ("a 2, forest, in the fog"), for its
-    /// ambient noise, and for the footsteps of a unit the player perceives
-    /// on a square it does not observe (an attacker it sees from afar).
-    pub fn unobserved_terrain(&self, square: SquareId) -> &'a str {
-        &self.world.square(square).type_name
-    }
-
-    /// Whether the owner of a unit has a type, built or researched, when
-    /// the player does not control that owner's units: the unit an order
-    /// was listed for may since have been converted, or have no owner.
-    ///
-    /// Used to say the missing requirements or the costs of an order
-    /// selected again ("do again").
-    pub fn unit_owner_has(&self, unit: EntityId, type_name: &str) -> bool {
-        self.world
-            .entity(unit)
-            .and_then(|e| e.player)
-            .is_some_and(|p| self.world.has(p, type_name))
-    }
-
-    /// The units of a recallable group. The groups of a game are shared by
-    /// every player, as in the original: a group of this name may hold
-    /// other players' units.
-    ///
-    /// Used to recall a group; the interface then keeps only the units it
-    /// controls and knows, so nothing of another player's is heard.
-    pub fn recallable_group(&self, name: &str) -> &'a [EntityId] {
-        self.world.group_list(name).map_or(&[], Vec::as_slice)
-    }
 }
 
 #[cfg(test)]

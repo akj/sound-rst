@@ -399,6 +399,7 @@ impl World {
             }
             let pl = self.plm(p);
             pl.observed_squares = all;
+            pl.partly_observed_squares.clear();
             pl.perception = perception;
             return Ok(());
         }
@@ -430,6 +431,7 @@ impl World {
             pl.observed_before_squares.extend(partially.iter().copied());
             pl.strictly_observed_before_squares
                 .extend(observed.iter().copied());
+            pl.partly_observed_squares = partially.clone();
         }
         for &s in &observed {
             for &o in &self.square(s).objects {

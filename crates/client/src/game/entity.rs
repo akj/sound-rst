@@ -257,19 +257,36 @@ impl GameInterface {
         Ok([self.title(cx, v)?, msg(mp::AT), self.place_title(cx, place)].concat())
     }
 
-    /// The upgrades of a creature's player that apply to it.
+    /// The upgrades of a creature's player that apply to it: for a
+    /// remembered creature, those it had when the player last perceived
+    /// it.
     fn upgrades_status(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
-        let view = self.view();
         let upgrades = if v.is_memory() {
-            view.leaks().remembered_unit_upgrades(v.id())
+            self.seen_upgrades.get(&v.id()).cloned().unwrap_or_default()
         } else {
-            view.unit_upgrades(v.id())
+            self.view().unit_upgrades(v.id())
         };
         upgrades
             .iter()
             .flat_map(|u| style_msg(style, u, "title"))
             .collect()
+    }
+
+    /// Notes the upgrades of every creature the player perceives at the
+    /// end of a turn, and forgets those of entities it no longer knows.
+    /// Called every turn, so that a remembered creature has the upgrades
+    /// it had when last seen.
+    pub(crate) fn note_upgrades(&mut self) {
+        let view = self.host.view(self.me);
+        for v in self.dobjets.values() {
+            if !v.is_memory() && v.is_creature() && v.player().is_some() {
+                self.seen_upgrades
+                    .insert(v.id(), view.unit_upgrades(v.id()));
+            }
+        }
+        let known = &self.dobjets;
+        self.seen_upgrades.retain(|id, _| known.contains_key(id));
     }
 
     pub fn description(&self, cx: &Client, v: &EntityView) -> Msg {
@@ -376,11 +393,15 @@ impl GameInterface {
             }
         } else if let Some(t) = &order.target {
             if order.keyword == Keyword::BuildPhaseTwo {
-                let e = self
-                    .target_entity(t)
-                    .ok_or_else(|| Oops::new("'Square' object has no attribute 'type'"))?;
-                let tn = self.site_type_name(&e).unwrap_or_default();
-                result.extend(style_msg(style, &tn, "title"));
+                match self.target_entity(t) {
+                    Some(e) => {
+                        let tn = self.site_type_name(&e).unwrap_or_default();
+                        result.extend(style_msg(style, &tn, "title"));
+                    }
+                    // A site the player does not know: no building said.
+                    None if matches!(t, Target::Entity(_) | Target::Memory(_)) => {}
+                    None => return Err(Oops::new("'Square' object has no attribute 'type'")),
+                }
             } else {
                 result.extend(self.target_title(cx, t)?);
             }
@@ -388,16 +409,14 @@ impl GameInterface {
         Ok([msg(mp::COMMA), result].concat())
     }
 
-    /// The entity an order's target shows: the live one or the remembered
-    /// copy.
+    /// The entity an order's target shows: as the player perceives or
+    /// remembers it, or the copy the player's own order remembers.
     fn target_entity(&self, t: &Target) -> Option<Arc<Entity>> {
+        let known = |id| self.view().known(id).map(|(e, _)| Arc::new(e.clone()));
         match t {
-            Target::Entity(id) => self
-                .view()
-                .leaks()
-                .order_target(*id)
-                .map(|e| Arc::new(e.clone())),
-            Target::Memory(m) => Some(m.snapshot.clone()),
+            Target::Entity(id) => known(*id),
+            Target::Memory(m) if m.owner == self.me => Some(m.snapshot.clone()),
+            Target::Memory(m) => known(m.snapshot.id),
             _ => None,
         }
     }
@@ -415,32 +434,33 @@ impl GameInterface {
     }
 
     /// The title of an order's target, made as the original makes a view
-    /// of it (the view draws its footstep offset first). A square or a
-    /// subsquare gives the square's title (see
-    /// [`GameInterface::place_view_title`]); a point has no title.
+    /// of it (the view draws its footstep offset first). An entity is
+    /// described as the player perceives or remembers it, and has no title
+    /// if the player knows nothing of it; so is the remembered target of
+    /// an ally's order. The remembered target of the player's own order is
+    /// its own memory. A square or a subsquare gives the square's title
+    /// (see [`GameInterface::place_view_title`]); a point has no title.
     fn target_title(&self, cx: &Client, t: &Target) -> R<Msg> {
-        match t {
-            Target::Entity(id) => {
-                let e = self
-                    .view()
-                    .leaks()
-                    .order_target(*id)
-                    .ok_or_else(|| Oops::new("unknown target"))?;
-                let v = EntityView::new(Arc::new(e.clone()), None, &cx.rng);
+        let known_title = |id: EntityId| match self.view().known(id) {
+            Some((e, ts)) => {
+                let v = EntityView::new(Arc::new(e.clone()), ts, &cx.rng);
                 self.title(cx, &v)
             }
-            Target::Memory(m) => {
-                // The target as the order's owner remembers it.
+            None => {
+                EntityView::footstep_offset(&cx.rng);
+                Ok(Vec::new())
+            }
+        };
+        match t {
+            Target::Entity(id) => known_title(*id),
+            Target::Memory(m) if m.owner == self.me => {
                 let view = self.view();
-                let remembered = if m.owner == self.me {
-                    view.remembered(m.snapshot.id)
-                } else {
-                    view.leaks().memory_of(m.owner, m.snapshot.id)
-                };
+                let remembered = view.remembered(m.snapshot.id);
                 let ts = remembered.map_or(view.time(), |r| r.time_stamp);
                 let v = EntityView::new(m.snapshot.clone(), Some(ts), &cx.rng);
                 self.title(cx, &v)
             }
+            Target::Memory(m) => known_title(m.snapshot.id),
             Target::Square(s) => self.place_view_title(cx, Some(Place::Square(*s))),
             Target::Zoom(z) => self.place_view_title(cx, Some(Place::Square(z.place))),
             Target::Xy(..) => {
@@ -497,7 +517,9 @@ impl GameInterface {
     }
 
     /// Whether the entity is on `place`. A unit in a transport is on the
-    /// transport's square; a blocker is also on the other side of its exit.
+    /// transport's square, as the player knows the transport, and on no
+    /// square if the player knows nothing of it; a blocker is also on the
+    /// other side of its exit.
     pub fn is_in(&self, v: &EntityView, place: Option<SquareId>) -> bool {
         self.model_is_in(&v.model, place)
     }
@@ -505,7 +527,7 @@ impl GameInterface {
     pub fn model_is_in(&self, e: &Entity, place: Option<SquareId>) -> bool {
         match e.place {
             Some(Place::Inside(c)) => {
-                return self.view().leaks().container_place(c).map(|p| p.square()) == Some(place);
+                return self.container_place(c).map(|p| p.square()) == Some(place);
             }
             Some(Place::Square(s)) if Some(s) == place => return true,
             None if place.is_none() => return true,
@@ -643,7 +665,7 @@ impl GameInterface {
     /// Plays an alert sound from the entity's square, as on a minimap.
     fn launch_alert_of(&self, cx: &Client, v: &EntityView, sound: &str) {
         let place = match v.place() {
-            Some(Place::Inside(c)) => self.view().leaks().container_place(c),
+            Some(Place::Inside(c)) => self.container_place(c),
             p => p,
         };
         self.launch_alert(cx, self.outer_square(place), sound);
@@ -809,7 +831,7 @@ impl GameInterface {
         let owner = v
             .player()
             .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'units'"))?;
-        let friends = self.view().leaks().comrades(owner, v.place(), v.id());
+        let friends = self.view().comrades(owner, v.place(), v.id());
         let friend_soldiers = friends.soldiers > 0;
         if !friend_soldiers && v.model.menace() != 0 || friends.units == 0 {
             if v.player() == Some(self.me) {
@@ -865,12 +887,7 @@ impl GameInterface {
     fn terrain_footstep(&self, cx: &Client, v: &EntityView) -> Option<Vec<String>> {
         let style = cx.res.style();
         let s = v.place()?.square()?;
-        let view = self.view();
-        let t = if self.scouted_squares.contains(&s) {
-            view.terrain(s)
-        } else {
-            view.leaks().unobserved_terrain(s)
-        };
+        let t = self.known_terrain(s);
         if t.is_empty() {
             return None;
         }
@@ -882,7 +899,8 @@ impl GameInterface {
     }
 
     /// The footstep sounds of the entity: on the terrain, else on the
-    /// nearest still object with a ground, else its own.
+    /// nearest still object with a ground that the player knows on its
+    /// square, else its own.
     fn footstep_noise(&self, cx: &Client, v: &EntityView) -> Vec<String> {
         let style = cx.res.style();
         let mut result = style.words(v.type_name(), "move");
@@ -895,16 +913,20 @@ impl GameInterface {
         let Some(s) = v.place().and_then(|p| p.square()) else {
             return result;
         };
-        let objects = self.view().leaks().objects_on(s);
+        let objects: Vec<&EntityView> = self
+            .dobjets
+            .values()
+            .filter(|o| o.place() == Some(Place::Square(s)))
+            .collect();
         if objects.len() >= 30 {
             return result;
         }
         let mut d_min = 9_999_999.0;
-        for m in objects {
-            if m.stats.speed != 0 {
+        for o in objects {
+            if o.model.stats.speed != 0 {
                 continue;
             }
-            let g = style.words(&m.type_name, "ground");
+            let g = style.words(o.type_name(), "ground");
             let Some(g0) = g.first() else { continue };
             let attr = format!("move_on_{g0}");
             if !style.has(v.type_name(), &attr) {
@@ -914,9 +936,6 @@ impl GameInterface {
                 .get(1)
                 .and_then(|k| soundrts_world::nofloat::py_float(k).ok())
                 .unwrap_or(1.0);
-            let Some(o) = self.dobjets.get(&m.id) else {
-                continue;
-            };
             if k == 0.0 {
                 continue;
             }
@@ -961,7 +980,7 @@ impl GameInterface {
     fn noise_style(&self, cx: &Client, v: &EntityView) -> (String, Noise) {
         let view = self.view();
         let activity = if v.is_memory() {
-            view.leaks().live_activity(v.id())
+            view.remembered_activity(v.id())
         } else {
             view.activity(v.id())
         };
@@ -1048,7 +1067,150 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
+    use super::super::testing::{cheat, enemy, go, run_until, said, training, unit};
     use super::*;
+
+    /// A copy of the player's peasant whose first order, a real one, aims
+    /// at `target`.
+    fn peasant_aiming_at(g: &mut crate::testkit::TestGame, target: Target) -> EntityView {
+        let me = g.game.me;
+        let peasant = unit(g, me, "peasant");
+        let farm = unit(g, me, "farm");
+        g.game
+            .host
+            .queue_line(me, &format!("control {}", peasant.0));
+        g.game
+            .host
+            .queue_line(me, &format!("order 0 0 go {}", farm.0));
+        g.game.host.step(me);
+        let mut model = g.game.host.world().entity(peasant).unwrap().clone();
+        model.orders[0].target = Some(target);
+        EntityView {
+            model: Arc::new(model),
+            time_stamp: None,
+            o_override: None,
+            footstep_random: 0.0,
+            anim: AnimState::default(),
+        }
+    }
+
+    #[test]
+    fn footsteps_sound_on_the_objects_the_player_knows() {
+        let (h, mut g) = training();
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let v = &g.game.dobjets[&peasant];
+        // On its meadows the peasant steps on the grass of the nearest
+        // building or meadow.
+        assert_eq!(g.game.footstep_noise(&h.client, v), ["1053", "1054"]);
+        // The player remembers a wood under its feet, which is not there:
+        // the steps are on leaves.
+        let wood = g
+            .game
+            .dobjets
+            .values()
+            .find(|o| o.type_name() == "wood")
+            .unwrap();
+        let mut model = wood.model.as_ref().clone();
+        (model.id, model.place, model.x, model.y) =
+            (EntityId(999_999), v.place(), v.model.x, v.model.y);
+        let remembered = EntityView::new(Arc::new(model), Some(0), &h.client.rng);
+        g.game.dobjets.insert(EntityId(999_999), remembered);
+        let v = &g.game.dobjets[&peasant];
+        assert_eq!(g.game.footstep_noise(&h.client, v), ["1069", "1070"]);
+    }
+
+    #[test]
+    fn a_unit_inside_a_container_the_player_does_not_know_is_nowhere() {
+        let (h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        let there = g.game.host.world().entity(townhall).unwrap().square();
+        assert!(there.is_some());
+        assert!(g.game.view().known(townhall).is_none());
+        // The player remembers a unit going into the computer's town hall,
+        // which it has never seen.
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let mut model = g.game.dobjets[&peasant].model.as_ref().clone();
+        (model.id, model.player) = (EntityId(999_999), Some(them));
+        model.place = Some(Place::Inside(townhall));
+        let v = EntityView::new(Arc::new(model), Some(0), &h.client.rng);
+        assert!(!g.game.is_in(&v, there));
+        assert!(!g.game.is_in(&v, None));
+        assert_eq!(g.game.outer_square(v.place()), None);
+        assert_eq!(g.game.place_title(&h.client, Place::Inside(townhall)), []);
+        g.game.dobjets.insert(v.id(), v);
+        let m = g.game.place_summary(&h.client, there, true, None, false);
+        assert_eq!(m, []);
+    }
+
+    #[test]
+    fn an_order_names_its_target_as_the_player_knows_it() {
+        let (mut h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        let v = peasant_aiming_at(&mut g, Target::Entity(townhall));
+        // The computer's town hall is there, unseen: the order has no
+        // target title.
+        assert!(g.game.view().known(townhall).is_none());
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", go to ,");
+    }
+
+    #[test]
+    fn an_allys_remembered_target_is_named_as_the_player_knows_it() {
+        let (mut h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        // An order that aims at the town hall as its owner, another player,
+        // remembers it; the player knows nothing of it.
+        let snapshot = Arc::new(g.game.host.world().entity(townhall).unwrap().clone());
+        let memory = soundrts_world::entity::MemoryRef {
+            owner: them,
+            snapshot,
+        };
+        let mut v = peasant_aiming_at(&mut g, Target::Memory(memory));
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", go to ,");
+        // The same for the building a second build phase makes: the ally
+        // remembers a farm's site, which the player knows nothing of.
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let meadow = g.game.dobjets.values().find(|o| o.type_name() == "meadow");
+        let meadow = meadow.unwrap().id();
+        g.game
+            .host
+            .queue_line(me, &format!("control {}", peasant.0));
+        g.game
+            .host
+            .queue_line(me, &format!("order 0 0 build farm {}", meadow.0));
+        let has_site = |g: &crate::testkit::TestGame| {
+            let w = g.game.host.world();
+            let units = &w.player(me).units;
+            units
+                .iter()
+                .any(|&u| &*w.entity(u).unwrap().type_name == "buildingsite")
+        };
+        for _ in 0..300 {
+            if has_site(&g) {
+                break;
+            }
+            g.game.host.step(me);
+        }
+        let site = unit(&g, me, "buildingsite");
+        let mut snapshot = g.game.host.world().entity(site).unwrap().clone();
+        snapshot.id = EntityId(999_999);
+        let memory = soundrts_world::entity::MemoryRef {
+            owner: them,
+            snapshot: Arc::new(snapshot),
+        };
+        let model = Arc::get_mut(&mut v.model).unwrap();
+        model.orders[0].keyword = Keyword::BuildPhaseTwo;
+        model.orders[0].target = Some(Target::Memory(memory));
+        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        assert_eq!(said(&mut h, &m), ", build ,");
+    }
 
     #[test]
     fn directions_round_to_the_nearest_compass_point_as_python_does() {
@@ -1079,5 +1241,57 @@ mod tests {
             direction_msg(c, 12.0, 2.0, 2.0),
             [msg(mp::TO_THE), msg(mp::SOUTHWEST)].concat()
         );
+    }
+
+    #[test]
+    fn a_remembered_unit_has_the_upgrades_it_had_when_last_seen() {
+        let (mut h, mut g) = training();
+        let (me, them) = (g.game.me, enemy(&g));
+        let w = g.game.host.world();
+        let mine = w
+            .entity(unit(&g, me, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let theirs = w
+            .entity(unit(&g, them, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let name = g.game.view().square(mine).name().to_owned();
+        // An enemy footman with one upgrade, on the player's square.
+        cheat(
+            &mut g,
+            them,
+            &format!("add_units {name} footman melee_weapon"),
+        );
+        let footman = {
+            run_until(&mut h, &mut g, |g| {
+                g.dobjets.values().any(|v| v.type_name() == "footman")
+            });
+            unit(&g, them, "footman")
+        };
+        let upgrades = |h: &mut crate::testkit::Harness, g: &crate::testkit::TestGame| {
+            let m = g.game.upgrades_status(&h.client, &g.game.dobjets[&footman]);
+            said(h, &m)
+        };
+        assert!(!g.game.dobjets[&footman].is_memory());
+        assert_eq!(upgrades(&mut h, &g), "swords");
+
+        // Out of sight, its owner gains a second upgrade.
+        go(&mut g, them, footman, theirs);
+        run_until(&mut h, &mut g, |g| g.dobjets[&footman].is_memory());
+        cheat(&mut g, them, "add_units melee_armor");
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        assert!(g.game.dobjets[&footman].is_memory());
+        let w = g.game.host.world();
+        assert_eq!(w.unit_upgrades(footman), ["melee_weapon", "melee_armor"]);
+        assert_eq!(upgrades(&mut h, &g), "swords");
+
+        // Seen again.
+        go(&mut g, them, footman, mine);
+        run_until(&mut h, &mut g, |g| !g.dobjets[&footman].is_memory());
+        assert_eq!(upgrades(&mut h, &g), "swords footmen armors");
     }
 }

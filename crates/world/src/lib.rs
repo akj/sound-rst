@@ -102,7 +102,7 @@ pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use setup::GameSetup;
-pub use view::{Comrades, Leaks, MapSquare, View};
+pub use view::{Comrades, MapSquare, View};
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with

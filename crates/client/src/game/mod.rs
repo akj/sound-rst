@@ -30,8 +30,10 @@ pub mod order;
 pub mod selection;
 pub mod squares;
 pub mod stats;
+#[cfg(test)]
+mod testing;
 
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use indexmap::{IndexMap, IndexSet};
 use soundrts_world::events::{EntityEvent, Event};
@@ -222,6 +224,11 @@ pub struct GameInterface {
     pub(crate) already_asked_to_quit: bool,
     pub forced_quit: bool,
     pub(crate) terrain_noises: Vec<(SquareId, NoiseSource)>,
+    /// The terrain of each square when the player last observed it.
+    pub(crate) seen_terrain: HashMap<SquareId, String>,
+    /// The upgrades of each known creature when the player last perceived
+    /// it.
+    pub(crate) seen_upgrades: HashMap<EntityId, Vec<String>>,
     pub(crate) previous_animation: f64,
     pub(crate) bindings: Bindings<GameCommand>,
     pub(crate) srv_queue: VecDeque<SrvEvent>,
@@ -291,6 +298,8 @@ impl GameInterface {
             already_asked_to_quit: false,
             forced_quit: false,
             terrain_noises: Vec::new(),
+            seen_terrain: HashMap::new(),
+            seen_upgrades: HashMap::new(),
             previous_animation: 0.0,
             bindings: Bindings::new(),
             srv_queue: VecDeque::new(),
@@ -529,6 +538,7 @@ impl GameInterface {
         self.waiting_for_world_update = false;
         self.scouted_squares = v.observed_squares;
         self.scouted_before_squares = v.observed_before_squares;
+        self.note_terrain();
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);
@@ -537,6 +547,7 @@ impl GameInterface {
         self.squares_alert_if_needed(cx);
         self.scout_info_if_needed(cx)?;
         self.update_fog_of_war(cx, v.memory, v.perception);
+        self.note_upgrades();
         self.update_group();
         if self.bell_enabled {
             self.eventually_play_bell(cx);
@@ -593,23 +604,30 @@ impl GameInterface {
     }
 
     /// The title of a place: the square's, or the container's type title.
+    /// Nothing for a container the player knows nothing of.
     pub fn place_title(&self, cx: &Client, place: Place) -> Msg {
         match place {
             Place::Square(s) => self.view().square(s).title().clone(),
             Place::Inside(c) => self
                 .view()
-                .leaks()
-                .container_type(c)
-                .map(|t| style_msg(cx.res.style(), t, "title"))
+                .known(c)
+                .map(|(e, _)| style_msg(cx.res.style(), &e.type_name, "title"))
                 .unwrap_or_default(),
         }
     }
 
-    /// The square of a place, through containers.
+    /// The place of a container, as the player perceives or remembers it.
+    /// `None` if the player knows nothing of it.
+    pub fn container_place(&self, container: EntityId) -> Option<Place> {
+        self.view().known(container).and_then(|(e, _)| e.place)
+    }
+
+    /// The square of a place, through containers as the player knows
+    /// them.
     pub fn outer_square(&self, place: Option<Place>) -> Option<SquareId> {
         match place? {
             Place::Square(s) => Some(s),
-            Place::Inside(c) => self.outer_square(self.view().leaks().container_place(c)),
+            Place::Inside(c) => self.outer_square(self.container_place(c)),
         }
     }
 

@@ -116,6 +116,19 @@ These matter for how the seam is built. A view that hides them changes what is s
 1. **Neutral.** The view carries exactly what the client reads today, with these five marked by name as things the player should not have. Every existing recording stays byte-identical. That proves the move changed nothing, for what the recordings cover.
 2. **Corrections, one at a time.** Each leak is closed with a decision about what you should hear instead, and a transcript difference that is expected and read.
 
+**Closed in pull request 18.** The neutral move found twelve reads, not five. Each now reads only what the player perceives now, remembers, or was told about its own units:
+
+- **Order targets**, of the player's units and of an ally's it controls: described as the player perceives or remembers the target, else the order is said with no target.
+- **Exit blockers**: an exit is closed only by dense forests or by a blocker the player perceives or remembers, on either side.
+- **Fight announcements**: only the dead unit's comrades that the player perceives on that place count.
+- **A remembered unit's upgrades**: those it had when the player last perceived it, noted by the interface every turn.
+- **Footstep sounds**: from the objects the player perceives or remembers on the square.
+- **The place and name of a container** a unit is inside: as the player knows the container, else the unit is on no known square.
+- **A remembered unit's noise**: from what its remembered copy was doing.
+- **Terrain in the fog**: as the player last saw the square, fully or partly from the next square, noted by the interface every turn.
+- **"Do again"** after its unit changed sides: the group's own order and the player's requirements, else a beep.
+- **Recallable groups**: the view returns only the units the player controls.
+
 ### What enforces it
 
 In the first step, the crate boundary that already exists. The client is a separate crate from the simulation, so making the world's fields private and exporting only commands, views and events is enough for the compiler to stop the client reaching in. No new crate is needed for that, and Sol was right that my first draft asked for them too early.
