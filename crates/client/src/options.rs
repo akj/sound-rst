@@ -13,6 +13,8 @@ pub struct Options {
     /// Overrides the soundpacks of `SoundRTS.ini` for this run.
     pub soundpacks: Option<String>,
     pub probe: bool,
+    /// A game record to replay and check, instead of starting the game.
+    pub check_record: Option<PathBuf>,
 }
 
 /// A command line the program cannot follow.
@@ -23,7 +25,7 @@ impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe]",
+            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--check-record <file>]",
             self.0
         )
     }
@@ -57,6 +59,9 @@ impl Options {
                     options.soundpacks = Some(value("--soundpacks")?.to_string_lossy().into_owned())
                 }
                 "--probe" => options.probe = true,
+                "--check-record" => {
+                    options.check_record = Some(PathBuf::from(value("--check-record")?))
+                }
                 _ => {}
             }
         }
@@ -82,6 +87,8 @@ mod tests {
                 "orc",
                 "--soundpacks=sp",
                 "--probe",
+                "--check-record",
+                "out-of-sync.jsonl",
                 "x"
             ]),
             Ok(Options {
@@ -89,8 +96,14 @@ mod tests {
                 mods: Some("orc".into()),
                 soundpacks: Some("sp".into()),
                 probe: true,
+                check_record: Some("out-of-sync.jsonl".into()),
             })
         );
+        assert_eq!(
+            parse(&["--check-record=a b.jsonl"]).map(|o| o.check_record),
+            Ok(Some("a b.jsonl".into()))
+        );
         assert!(parse(&["--mods"]).is_err());
+        assert!(parse(&["--check-record"]).is_err());
     }
 }

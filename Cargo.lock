@@ -2355,6 +2355,8 @@ dependencies = [
  "futures-util",
  "indexmap",
  "rodio",
+ "serde",
+ "serde_json",
  "soundrts",
  "soundrts-protocol",
  "soundrts-server",

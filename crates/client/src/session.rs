@@ -9,7 +9,8 @@ use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::player::ControllerKind;
 use soundrts_world::{
-    AiScripts, Controller, DefaultTrigger, Rules, World, multiplayer_default_triggers,
+    AiScripts, Controller, DefaultTrigger, PlayerId, Rules, SIM_VERSION, World,
+    multiplayer_default_triggers,
 };
 
 use crate::client::Client;
@@ -19,6 +20,7 @@ use crate::game::stats::score_msgs;
 use crate::mapfile::Map;
 use crate::menu::Exit;
 use crate::net::GameLink;
+use crate::record::{GameRecord, RecordedPlayer, Setup};
 
 /// The kind of a session, which decides its rules of victory, whether
 /// factions replace the start units, and what happens before and after.
@@ -30,6 +32,21 @@ pub enum SessionKind {
     Mission,
     /// On a server, with other players.
     Multiplayer,
+}
+
+impl SessionKind {
+    /// The triggers of a map that has none of its own.
+    pub fn default_triggers(&self) -> Vec<DefaultTrigger> {
+        match self {
+            SessionKind::Training | SessionKind::Multiplayer => multiplayer_default_triggers(),
+            SessionKind::Mission => Vec::new(),
+        }
+    }
+
+    /// Whether the factions replace the start units with their own.
+    pub fn equivalents(&self) -> bool {
+        *self != SessionKind::Mission
+    }
 }
 
 /// What a game on a server adds to a session.
@@ -143,13 +160,6 @@ impl Session {
         cx.game.seed.unwrap_or(drawn)
     }
 
-    fn default_triggers(&self) -> Vec<DefaultTrigger> {
-        match self.kind {
-            SessionKind::Training | SessionKind::Multiplayer => multiplayer_default_triggers(),
-            SessionKind::Mission => Vec::new(),
-        }
-    }
-
     /// Plays the game to its end and says the score.
     pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
         let Some(mut game) = self.start(cx) else {
@@ -185,20 +195,21 @@ impl Session {
     /// are said).
     pub fn start(&mut self, cx: &mut Client) -> Option<GameInterface> {
         cx.res.set_map(Some(&self.map));
-        let rules = Rules::load(&[cx.res.rules_text()]);
-        let ai = AiScripts::load(&[cx.res.ai_text()]);
-        let mut world = World::new(rules, ai, self.default_triggers(), self.seed);
-        world.allow_cheatmode = self.allow_cheatmode;
-        let built = world
-            .load_and_build_map(&self.map.definition)
-            .map_err(|e| e.0)
-            .and_then(|()| {
-                world
-                    .populate_map(&self.players, true, self.kind != SessionKind::Mission)
-                    .map_err(|e| e.0)
-            });
-        let players = match built {
-            Ok(p) => p,
+        let rules = cx.res.rules_text();
+        let ai = cx.res.ai_text();
+        let built = build_world(WorldInputs {
+            rules: &rules,
+            ai: &ai,
+            default_triggers: self.kind.default_triggers(),
+            seed: self.seed,
+            allow_cheatmode: self.allow_cheatmode,
+            map_definition: &self.map.definition,
+            controllers: &self.players,
+            random_starts: true,
+            equivalents: self.kind.equivalents(),
+        });
+        let (mut world, players) = match built {
+            Ok(built) => built,
             Err(e) => {
                 let e = format!("map error: {e}");
                 cx.log.warning(&e);
@@ -214,11 +225,20 @@ impl Session {
         let mut game = GameInterface::new(cx, world, players[local]);
         if let Some(n) = &self.net {
             game.speed = n.speed.factor();
+            let setup = Setup {
+                sim_version: SIM_VERSION,
+                rules,
+                ai,
+                map: self.map.definition.clone(),
+                seed: self.seed,
+                players: self.players.iter().map(RecordedPlayer::of).collect(),
+                you: n.you,
+            };
             game.net = Some(NetDriver {
                 you: n.you,
                 slots: players[..self.players.len()].to_vec(),
                 interval: n.speed.turn_interval().as_secs_f64(),
-                digests: Vec::new(),
+                record: GameRecord::new(setup),
             });
             if let Some(net) = &mut cx.net {
                 net.game = Some(GameLink::new(n.you));
@@ -256,6 +276,43 @@ impl Session {
         game.stop_noises(cx);
         self.has_victory = game.world.player(game.me).has_victory;
     }
+}
+
+/// What a world is built from. A game and the replay of its record build
+/// their world from these with [`build_world`], so that both build the
+/// same world.
+pub struct WorldInputs<'a> {
+    /// Every `rules.txt` of the layers, joined.
+    pub rules: &'a str,
+    /// Every `ai.txt` of the layers, joined.
+    pub ai: &'a str,
+    pub default_triggers: Vec<DefaultTrigger>,
+    pub seed: i64,
+    pub allow_cheatmode: bool,
+    pub map_definition: &'a str,
+    /// The players, in slot order.
+    pub controllers: &'a [Controller],
+    /// The players start at random starting places.
+    pub random_starts: bool,
+    /// The factions replace the start units with their own.
+    pub equivalents: bool,
+}
+
+/// Builds a world and its map, and creates the players. Returns the world
+/// and its players, those of the controllers first, in order; the error
+/// is the map's.
+pub fn build_world(inputs: WorldInputs) -> Result<(World, Vec<PlayerId>), String> {
+    let rules = Rules::load(&[inputs.rules]);
+    let ai = AiScripts::load(&[inputs.ai]);
+    let mut world = World::new(rules, ai, inputs.default_triggers, inputs.seed);
+    world.allow_cheatmode = inputs.allow_cheatmode;
+    world
+        .load_and_build_map(inputs.map_definition)
+        .map_err(|e| e.0)?;
+    let players = world
+        .populate_map(inputs.controllers, inputs.random_starts, inputs.equivalents)
+        .map_err(|e| e.0)?;
+    Ok((world, players))
 }
 
 /// "The game will start in 5 seconds", then the seconds, as the original

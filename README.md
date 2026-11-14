@@ -83,6 +83,14 @@ In a game room, the host invites players and computers, sets the alliances and f
 
 A chat message plays a short sound, then the game says who wrote it and what they wrote, after the message that is being said. In a game, the game goes on while you type. The multiplayer menu has an option that stops the game from saying when players arrive on the server or leave it.
 
+In a game on a server, every player's computer runs the same game. If one computer computes something different, the game is out of sync: the players whose game differs leave it, and the others play on. Each player's game then saves a record in the `replays` folder of the settings folder, for example `out-of-sync-andrew-seed1234-turn56.jsonl`. The record holds the rules, the map, the players' logins and every order. It replays the game on any computer, without the game data.
+
+To see whether a computer computes the same game, check the record on that computer. The check prints how many turns it replayed, and the first turn that differs if there is one. To compare the records of two players, compare the two files: each turn is one line.
+
+```powershell
+cargo run -p soundrts -- --check-record out-of-sync-andrew-seed1234-turn56.jsonl
+```
+
 Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
 
 ## Run a server

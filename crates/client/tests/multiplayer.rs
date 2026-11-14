@@ -514,6 +514,140 @@ fn out_of_sync_says_whether_the_player_leaves_the_game() {
     );
 }
 
+/// The orders that send each slot's peasants to a square: the next square
+/// east or west of their own with `away`, else their own.
+fn peasant_orders(g: &soundrts::testkit::TestGame, away: bool) -> Vec<SlotOrders> {
+    let world = &g.game.world;
+    let net = g.game.net.as_ref().unwrap();
+    net.slots
+        .iter()
+        .enumerate()
+        .map(|(slot, &p)| {
+            let peasants: Vec<_> = world
+                .player(p)
+                .units
+                .iter()
+                .filter_map(|&u| world.entity(u))
+                .filter(|e| &*e.type_name == "peasant")
+                .collect();
+            let home = world.square(peasants[0].square().unwrap());
+            let target = if away {
+                let next = world
+                    .square_at(home.col + 1, home.row)
+                    .or_else(|| world.square_at(home.col - 1, home.row))
+                    .unwrap();
+                world.square(next).name.clone()
+            } else {
+                home.name.clone()
+            };
+            let ids: Vec<String> = peasants.iter().map(|e| e.id.0.to_string()).collect();
+            let orders = [
+                format!("control {}", ids.join(" ")),
+                format!("order 0 0 go {target}"),
+            ]
+            .map(|o| Order::new(o).unwrap());
+            SlotOrders {
+                slot,
+                orders: Orders::new(orders.to_vec()).unwrap(),
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn a_game_out_of_sync_saves_a_record_that_replays_the_same_game() {
+    use soundrts::record::{Check, Difference, GameRecord, RecordedPlayer, Who};
+
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &["bob"]);
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
+    let (away, back) = (peasant_orders(&g, true), peasant_orders(&g, false));
+    let t0 = h.clock.now();
+    for n in 0..40 {
+        let orders = match n {
+            5 => away.clone(),
+            20 => back.clone(),
+            _ => Vec::new(),
+        };
+        server.at(t0 + 0.3 * f64::from(n), ServerMsg::Turn { turn: n, orders });
+    }
+    server.at(
+        t0 + 13.0,
+        ServerMsg::OutOfSync {
+            turn: 39,
+            slots: vec![1],
+        },
+    );
+    h.run_for(&mut g, 14.0);
+    assert_eq!(g.game.world.turn(), 40);
+
+    let path = h
+        .client
+        .paths
+        .replays()
+        .join("out-of-sync-andrew-seed1-turn39.jsonl");
+    let record = GameRecord::read(&path).unwrap();
+    assert_eq!(&record, &g.game.net.as_ref().unwrap().record);
+    assert!(
+        h.log_text()
+            .contains(&format!("game record written to {}", path.display())),
+        "{}",
+        h.log_text()
+    );
+    assert_eq!(record.setup.you, 0);
+    assert_eq!(record.setup.seed, 1);
+    assert_eq!(
+        record.setup.players,
+        [("andrew", "1"), ("bob", "2")].map(|(login, alliance)| RecordedPlayer {
+            who: Who::Human(login.into()),
+            faction: "random_faction".into(),
+            alliance: Some(alliance.into()),
+        })
+    );
+    let turns: Vec<Turn> = record.turns.iter().map(|t| t.turn).collect();
+    assert_eq!(turns, (0..40).collect::<Vec<Turn>>());
+    assert_eq!(record.turns[5].orders.len(), 4);
+    assert_eq!(record.turns[5].orders[3].slot, 1);
+    assert!(record.turns[5].orders[3].order.starts_with("order 0 0 go "));
+    assert_eq!(
+        record.check(),
+        Check::Replayed {
+            turns: 40,
+            first_difference: None
+        }
+    );
+
+    // A digest changed: the check names that turn.
+    let mut changed = record.clone();
+    let digest = record.turns[12].digest;
+    changed.turns[12].digest ^= 1;
+    assert_eq!(
+        changed.check(),
+        Check::Replayed {
+            turns: 13,
+            first_difference: Some(Difference {
+                turn: 12,
+                recorded: digest ^ 1,
+                replayed: digest,
+            })
+        }
+    );
+
+    // Bob's order to go away at turn 5 removed: that turn differs at once.
+    let mut missing = record.clone();
+    missing.turns[5].orders.remove(3);
+    let Check::Replayed {
+        turns: 6,
+        first_difference: Some(d),
+    } = missing.check()
+    else {
+        panic!("{:?}", missing.check());
+    };
+    assert_eq!(d.turn, 5);
+    assert_eq!(d.recorded, record.turns[5].digest);
+}
+
 #[test]
 fn turns_that_come_together_are_spread_out() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
