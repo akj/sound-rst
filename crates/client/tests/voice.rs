@@ -8,8 +8,8 @@ use soundrts::message::{Category, News, Policy, Subject};
 use soundrts::testkit::{Harness, Script, SpeechEvent};
 use soundrts::tts::{Progress, SpeechEnd};
 use soundrts::voice::{Heard, LOG_LIMIT, Voice};
+use soundrts_world::SquareId;
 use soundrts_world::msg::{Msg, MsgPart};
-use soundrts_world::{Place, SquareId};
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::from(s)]
@@ -441,10 +441,11 @@ fn each_policy_does_what_it_says() {
 fn a_story_message_not_spoken_does_not_stop_the_game() {
     let mut h = Harness::new("en", Script::new());
     let before = h.clock.now();
-    h.client.voice.confirmation_story(&t(LONG), Policy::Log);
+    let story = || News::new(Category::Story, t(LONG));
+    h.client.voice.confirmation_news(story(), Policy::Log);
     assert_eq!(h.clock.now(), before);
     assert_eq!(h.spoken(), Vec::<String>::new());
-    h.client.voice.confirmation_story(&t(LONG), Policy::Speak);
+    h.client.voice.confirmation_news(story(), Policy::Speak);
     assert!(h.clock.now() >= before + 5.0);
     assert_eq!(
         log(&h),
@@ -467,19 +468,4 @@ fn giving_up_the_queue_keeps_its_news_unheard() {
             ("bbbbb".to_owned(), Heard::No)
         ]
     );
-}
-
-#[test]
-fn units_lost_at_a_place_unheard_are_counted_again_by_newer_news() {
-    // The interface keeps the units it told of while their news is
-    // unheard; the voice says whether it still is.
-    let mut h = Harness::new("en", Script::new());
-    let lost = Subject::Lost(Place::Square(SquareId(3)));
-    info(&mut h.client.voice, "aaaaaaaaaa");
-    let news = News::new(Category::Alert, t("1 footman lost")).about(lost.clone());
-    h.client.voice.news(news, Policy::Speak);
-    assert!(h.client.voice.is_unheard(&lost));
-    run(&mut h, 1.2);
-    // Being said, it can no longer be replaced.
-    assert!(!h.client.voice.is_unheard(&lost));
 }

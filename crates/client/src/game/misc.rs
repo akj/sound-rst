@@ -133,9 +133,9 @@ impl GameInterface {
         Ok(())
     }
 
-    /// Moves the cursor to the square of the last alert and says it.
-    /// Pressed again on that square, goes to the alert before, and stays
-    /// on the oldest.
+    /// Moves the cursor to the square of the last alert of this game and
+    /// says it. Pressed again on that square, goes to the alert before,
+    /// and stays on the oldest.
     fn cmd_jump_to_alert(&mut self, cx: &mut Client) -> R {
         let before = match self.alert_jump {
             Some((id, square)) if self.place == Some(square) => Some(id),
@@ -144,6 +144,7 @@ impl GameInterface {
         let Some((id, square)) = cx
             .voice
             .alert_before(before)
+            .filter(|&(id, _)| id >= self.log_start)
             .or(before.and(self.alert_jump))
         else {
             cx.voice.item(&msg(mp::NOTHING));

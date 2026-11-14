@@ -555,22 +555,21 @@ impl Voice {
         self.say_now(msg, VoiceKind::Menu, Content::Now(msg.clone()));
     }
 
-    /// A message of the story, as its policy says: spoken as
+    /// News the game says now, as its policy says: spoken as
     /// [`Voice::important`], or else taken as other news.
-    pub fn important_story(&mut self, msg: &Msg, policy: Policy) {
-        self.story(msg, policy, VoiceKind::Important);
+    pub fn important_news(&mut self, news: News, policy: Policy) {
+        self.news_now(news, policy, VoiceKind::Important);
     }
 
-    /// A message of the story, as its policy says: spoken as
+    /// News the game says now, as its policy says: spoken as
     /// [`Voice::confirmation`], or else taken as other news.
-    pub fn confirmation_story(&mut self, msg: &Msg, policy: Policy) {
-        self.story(msg, policy, VoiceKind::Confirmation);
+    pub fn confirmation_news(&mut self, news: News, policy: Policy) {
+        self.news_now(news, policy, VoiceKind::Confirmation);
     }
 
-    fn story(&mut self, msg: &Msg, policy: Policy, kind: VoiceKind) {
-        let news = News::new(Category::Story, msg.clone());
+    fn news_now(&mut self, news: News, policy: Policy, kind: VoiceKind) {
         match policy {
-            Policy::Speak => self.say_now(msg, kind, Content::News(news)),
+            Policy::Speak => self.say_now(&news.parts.clone(), kind, Content::News(news)),
             other => self.news(news, other),
         }
     }
@@ -758,6 +757,11 @@ impl Voice {
             at: None,
         };
         self.answer(&category_title(self.review.category), CENTERED);
+    }
+
+    /// The place in the log of the next message.
+    pub fn next_entry_id(&self) -> EntryId {
+        EntryId(self.next_id)
     }
 
     /// The newest alert tied to a square, older than the alert `before`

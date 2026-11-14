@@ -48,7 +48,7 @@ use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, KeyDown};
 use crate::menu::{Exit, TextEntry, Typed};
-use crate::message::{Category, Subject};
+use crate::message::{Category, News, Subject};
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
 use crate::voice::EntryId;
@@ -142,6 +142,22 @@ pub enum SrvEvent {
     Voila(Box<Voila>),
 }
 
+/// The category of a message the world says now. Objectives and the end of
+/// a mission are the story; the rest (players defeated or leaving, answers
+/// to the console) is about the game itself.
+fn important_category(m: &Msg) -> Category {
+    let story = [
+        mp::NEW_OBJECTIVE,
+        mp::OBJECTIVE_COMPLETE,
+        mp::MISSION_COMPLETE,
+    ];
+    if story.iter().any(|s| m.starts_with(&msg(s))) {
+        Category::Story
+    } else {
+        Category::System
+    }
+}
+
 /// The words of `obj.attr` in style as text parts (with a warning, once,
 /// if it is missing). For an `if_me` value, the words for the player.
 pub fn style_msg(style: &Style, obj: &str, attr: &str) -> Msg {
@@ -220,6 +236,8 @@ pub struct GameInterface {
     pub(crate) known_resource_places: HashSet<Option<Place>>,
     /// The units each piece of news about units counts.
     pub(crate) told_units: HashMap<Subject, Vec<Msg>>,
+    /// The first message of the log that is about this game.
+    pub(crate) log_start: EntryId,
     /// The alert the cursor last jumped to, and its square.
     pub(crate) alert_jump: Option<(EntryId, SquareId)>,
     pub(crate) previous_resources: Option<Vec<i64>>,
@@ -295,6 +313,7 @@ impl GameInterface {
             scout_info: IndexSet::new(),
             known_resource_places: HashSet::new(),
             told_units: HashMap::new(),
+            log_start: cx.voice.next_entry_id(),
             alert_jump: None,
             previous_resources: None,
             previous_available_food: 0,
@@ -515,8 +534,9 @@ impl GameInterface {
         match e {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
             SrvEvent::VoiceImportant(m) => {
-                let policy = cx.config.news.of(Category::Story);
-                cx.voice.confirmation_story(&m, policy);
+                let news = News::new(important_category(&m), m);
+                let policy = cx.config.news.of(news.category);
+                cx.voice.confirmation_news(news, policy);
             }
             SrvEvent::Sequence(parts) => cx.play_sequence(&parts),
             // In a game on a server, the server keeps the time.
@@ -654,7 +674,8 @@ impl GameInterface {
             let mut m = msg(mp::OBJECTIVE);
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
             let policy = cx.config.news.of(Category::Story);
-            cx.voice.confirmation_story(&m, policy);
+            cx.voice
+                .confirmation_news(News::new(Category::Story, m), policy);
         }
     }
 

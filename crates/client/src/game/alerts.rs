@@ -120,7 +120,7 @@ impl GameInterface {
 
     /// Says the resources that changed to a round count, and the food when
     /// it is almost all used. A count the player has not heard yet is
-    /// replaced by the new one, round or not.
+    /// replaced by the new one, whatever it is.
     pub(crate) fn send_resource_alerts_if_needed(&mut self, cx: &mut Client) {
         let resources = self.resources();
         let previous = self
@@ -146,16 +146,19 @@ impl GameInterface {
         }
         self.previous_resources = Some(previous);
         let (available, used) = (self.available_food(), self.used_food());
+        let changed = available != self.previous_available_food || used != self.previous_used_food;
+        let mut short = false;
         if available != self.previous_available_food
             || used > self.previous_used_food
             || used < self.previous_used_food && self.previous_used_food == available
         {
-            if 0 <= available - used && (available - used) as f64 <= available as f64 * 0.20 {
-                let m = self.food_msg(cx);
-                self.economy_news(cx, m, Subject::Food);
-            }
+            short = 0 <= available - used && (available - used) as f64 <= available as f64 * 0.20;
             self.previous_available_food = available;
             self.previous_used_food = used;
+        }
+        if short || changed && cx.voice.is_unheard(&Subject::Food) {
+            let m = self.food_msg(cx);
+            self.economy_news(cx, m, Subject::Food);
         }
     }
 
@@ -535,6 +538,83 @@ mod tests {
         h.key(&mut g, Key::Right, Mods::NONE);
         h.key(&mut g, Key::Delete, Mods::NONE);
         assert_eq!(g.game.place, Some(other));
+    }
+
+    /// What the voice says until it is idle, without running the game.
+    fn said_until_idle(h: &mut Harness) -> Vec<String> {
+        let from = h.utterances().len();
+        drain(h);
+        h.said_since(from)
+    }
+
+    #[test]
+    fn units_lost_while_their_news_waits_are_counted_in_it() {
+        let (mut h, mut g) = training();
+        drain(&mut h);
+        let square = g.game.place.unwrap();
+        let place = Place::Square(square);
+        let peasant = || (msg(mp::NOTHING), Some(place));
+        cx_news(&mut h, "a long message of news");
+        g.game.lost_units.push(peasant());
+        g.game.units_alert_if_needed(&mut h.client, None);
+        g.game.lost_units.extend([peasant(), peasant()]);
+        g.game.units_alert_if_needed(&mut h.client, None);
+        assert_eq!(said_until_idle(&mut h), ["3 nothing! lost at b 1"]);
+        // Heard, the next loss is news of its own.
+        let from = h.utterances().len();
+        g.game.lost_units.push(peasant());
+        g.game.units_alert_if_needed(&mut h.client, None);
+        drain(&mut h);
+        assert_eq!(h.said_since(from), ["1 nothing! lost at b 1"]);
+    }
+
+    /// Queues news that keeps the voice busy for a while.
+    fn cx_news(h: &mut Harness, s: &str) {
+        let m = vec![soundrts_world::msg::MsgPart::from(s)];
+        h.client.news(News::new(Category::Production, m));
+    }
+
+    #[test]
+    fn unheard_food_news_follows_the_food() {
+        let (mut h, mut g) = training();
+        drain(&mut h);
+        g.game.last_virtual_time = 1.0;
+        cx_news(&mut h, "a long message of news");
+        // Food news waits to be said...
+        let old = News::new(Category::Economy, msg(mp::NOTHING)).about(Subject::Food);
+        h.client.news(old);
+        // ...when the food changes, even to no shortage.
+        g.game.previous_used_food += 1;
+        g.game.send_resource_alerts_if_needed(&mut h.client);
+        assert_eq!(said_until_idle(&mut h), ["9 food to 1"]);
+    }
+
+    #[test]
+    fn the_jump_ignores_the_alerts_of_an_earlier_game() {
+        let (mut h, mut g) = training();
+        let start = g.game.place.unwrap();
+        g.game.attack_alert(&mut h.client, Place::Square(start));
+        g.game.srv_quit(&mut h.client);
+        let mut g = h.start_training("jl1", &["quiet"], 1);
+        h.run_until_turn(&mut g, 3);
+        let place = g.game.place;
+        let said = h.key(&mut g, Key::Delete, Mods::NONE);
+        assert_eq!(said[0], "nothing!");
+        assert_eq!(g.game.place, place);
+    }
+
+    #[test]
+    fn the_worlds_messages_said_now_are_story_or_system_news() {
+        let objective = [msg(mp::OBJECTIVE_COMPLETE), msg(mp::OK)].concat();
+        assert_eq!(
+            super::super::important_category(&objective),
+            Category::Story
+        );
+        let defeated = [msg(mp::YOU_HAVE_BEEN_DEFEATED)].concat();
+        assert_eq!(
+            super::super::important_category(&defeated),
+            Category::System
+        );
     }
 
     #[test]

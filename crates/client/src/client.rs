@@ -251,8 +251,8 @@ impl Client {
             self.stop_sound(true);
         }
         for name in names {
-            self.voice
-                .important_story(&vec![MsgPart::from(name.as_str())], policy);
+            let news = News::new(Category::Story, vec![MsgPart::from(name.as_str())]);
+            self.voice.important_news(news, policy);
         }
     }
 
