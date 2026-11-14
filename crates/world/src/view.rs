@@ -429,8 +429,8 @@ impl<'a> View<'a> {
 
     /// Whether the owner of a unit has a type, built or researched: what
     /// an order of that unit requires. `None` unless the player controls
-    /// the owner's units; the interface then reads
-    /// [`Leaks::unit_owner_has`].
+    /// the owner's units: another player's state is not the player's to
+    /// know.
     pub fn owner_has(&self, unit: EntityId, type_name: &str) -> Option<bool> {
         let owner = self.world.entity(unit)?.player?;
         self.controls(owner)
@@ -504,19 +504,6 @@ pub struct Comrades {
 }
 
 impl<'a> Leaks<'a> {
-    /// Whether the owner of a unit has a type, built or researched, when
-    /// the player does not control that owner's units: the unit an order
-    /// was listed for may since have been converted, or have no owner.
-    ///
-    /// Used to say the missing requirements or the costs of an order
-    /// selected again ("do again").
-    pub fn unit_owner_has(&self, unit: EntityId, type_name: &str) -> bool {
-        self.world
-            .entity(unit)
-            .and_then(|e| e.player)
-            .is_some_and(|p| self.world.has(p, type_name))
-    }
-
     /// The units of a recallable group. The groups of a game are shared by
     /// every player, as in the original: a group of this name may hold
     /// other players' units.

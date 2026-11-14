@@ -398,20 +398,16 @@ fn the_default_order_is_the_worlds() {
 }
 
 #[test]
-fn a_requirement_of_another_players_unit_is_a_leak() {
+fn a_requirement_is_known_only_for_a_controlled_owner() {
     let (w, me, them) = game();
     let mine = unit(&w, me, "peasant");
     let theirs = unit(&w, them, "peasant");
     let v = View::new(&w, me);
     assert_eq!(v.owner_has(mine, "farm"), Some(true));
     assert_eq!(v.owner_has(mine, "barracks"), Some(false));
+    // The other player has a farm: not the player's to know.
+    assert!(w.has(them, "farm"));
     assert_eq!(v.owner_has(theirs, "farm"), None);
-    assert_eq!(
-        v.leaks().unit_owner_has(theirs, "farm"),
-        w.has(them, "farm")
-    );
-    assert!(v.leaks().unit_owner_has(theirs, "farm"));
-    assert!(!v.leaks().unit_owner_has(theirs, "barracks"));
 }
 
 #[test]

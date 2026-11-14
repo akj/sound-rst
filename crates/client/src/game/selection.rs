@@ -582,10 +582,25 @@ impl GameInterface {
         Ok(())
     }
 
+    /// Selects the previous order again, and with `now` gives it if it
+    /// needs no target. If the unit it was listed for has since gone to a
+    /// player the player does not control, the order is the group's own,
+    /// as one of its units lists it; if none does, it cannot be given.
     pub(crate) fn cmd_do_again(&mut self, cx: &mut Client, now: bool, flags: OrderFlags) -> R {
-        if let Some(o) = self.previous_order.clone()
+        if let Some(mut o) = self.previous_order.clone()
             && !self.group.is_empty()
         {
+            let owner = self.dobjets.get(&o.unit).and_then(EntityView::player);
+            if owner.is_some_and(|p| !self.view().controls(p)) {
+                let listed = self.orders(cx, OrderMenu::Included);
+                match listed.into_iter().find(|x| *x == o) {
+                    Some(x) => o = x,
+                    None => {
+                        cx.voice.item(&msg(mp::BEEP));
+                        return Ok(());
+                    }
+                }
+            }
             let no_target = o.nb_args == 0;
             self.select_order(cx, o, true);
             if now && no_target {
@@ -769,5 +784,62 @@ impl GameInterface {
         }
         self.order = None;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::testing::{enemy, training, unit};
+    use super::*;
+
+    #[test]
+    fn do_again_reads_nothing_of_a_player_the_player_does_not_control() {
+        let (mut h, mut g) = training();
+        let (me, them) = (g.game.me, enemy(&g));
+        let peasant = unit(&g, me, "peasant");
+        let townhall = unit(&g, them, "townhall");
+        let theirs = unit(&g, them, "peasant");
+        // The computer has a keep, which stables require; the player has
+        // none.
+        let w = g.game.host.world();
+        let square = w.entity(townhall).unwrap().square().unwrap();
+        let name = g.game.view().square(square).name().to_owned();
+        g.game
+            .host
+            .queue_line(them, &format!("cmd add_units {name} keep"));
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        assert!(g.game.host.world().has(them, "keep"));
+        // Orders last listed for units the player now sees as the
+        // computer's: one the player's peasant cannot give, one it can.
+        for u in [townhall, theirs] {
+            let e = g.game.host.world().entity(u).unwrap().clone();
+            let v = EntityView::new(std::sync::Arc::new(e), None, &h.client.rng);
+            g.game.dobjets.insert(u, v);
+        }
+        let style = h.client.res.style();
+        let listed = |order: &str, unit: EntityId| {
+            OrderTypeView::new(order, unit, g.game.view(), style, &h.client.log).unwrap()
+        };
+        let recruit = listed("train peasant", townhall);
+        let stables = listed("build stables", theirs);
+        g.game.group = vec![peasant];
+        let mut said = |g: &mut crate::testkit::TestGame, o: OrderTypeView| {
+            g.game.previous_order = Some(o);
+            let from = h.utterances().len();
+            g.game
+                .cmd_do_again(&mut h.client, false, OrderFlags::default())
+                .unwrap();
+            h.said_since(from)
+        };
+        // The beep.
+        assert_eq!(said(&mut g, recruit), ["<1029>"]);
+        assert_eq!(
+            said(&mut g, stables),
+            [
+                "build stables on , requires keep , press tab to select the target and then press enter to confirm"
+            ]
+        );
+        assert_eq!(g.game.order.as_ref().map(|o| o.unit), Some(peasant));
     }
 }

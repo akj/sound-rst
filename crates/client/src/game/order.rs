@@ -176,16 +176,14 @@ impl OrderTypeView {
                 .is_some_and(|t| t.stats.effect_range > 12 * PRECISION)
     }
 
-    /// The missing requirements, else the costs, after "requires".
+    /// The missing requirements, else the costs, after "requires". A
+    /// requirement of a unit whose owner the player does not control
+    /// counts as missing.
     fn requirements_msg(&self, view: View, style: &Style) -> Msg {
         let missing: Vec<&String> = self
             .requirements
             .iter()
-            .filter(|r| {
-                !view
-                    .owner_has(self.unit, r)
-                    .unwrap_or_else(|| view.leaks().unit_owner_has(self.unit, r))
-            })
+            .filter(|r| !view.owner_has(self.unit, r).unwrap_or(false))
             .collect();
         let mut and_index = 0;
         let mut m: Msg = Vec::new();
