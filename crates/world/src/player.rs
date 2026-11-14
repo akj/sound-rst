@@ -227,9 +227,7 @@ pub struct Player {
     pub controller: Controller,
     pub neutral: bool,
     pub faction: String,
-    /// The allies, the player included. A player in an alliance appears
-    /// twice, like in the original, which counts its own units twice when
-    /// healing.
+    /// The allies, the player included, each once.
     pub allied: Vec<super::entity::PlayerId>,
     /// 1 for the first non-neutral player, and so on.
     pub number: Option<u32>,

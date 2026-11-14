@@ -1727,3 +1727,34 @@ mod test_definitions {
         assert!(copy.unit_type("number").is_some());
     }
 }
+
+/// Bugs the original has and the port no longer copies.
+mod bugs_of_the_original {
+    use super::*;
+
+    /// Two computers on `jl1_extended`, in the given alliances.
+    fn two_computers(alliance: (&str, &str), ai: &str) -> (World, PlayerId, PlayerId) {
+        let mut w = world("soundrts/tests/jl1_extended.txt");
+        let mut c1 = Controller::computer(ai);
+        let mut c2 = Controller::computer(ai);
+        c1.alliance = Some(alliance.0.into());
+        c2.alliance = Some(alliance.1.into());
+        let ps = w.populate_map(&[c1, c2], false, false).unwrap();
+        w.update_buckets();
+        (w, ps[0], ps[1])
+    }
+
+    #[test]
+    fn a_healer_heals_its_own_allied_units_once_per_turn() {
+        let (mut w, cp, cp2) = two_computers(("1", "1"), "easy");
+        assert_eq!(w.player(cp).allied, [cp, cp2]);
+        let th = find(&w, cp, "townhall", 0).unwrap();
+        let p = find(&w, cp, "peasant", 0).unwrap();
+        // 1 heal level heals 1000 / 25 = 40 hit points each turn.
+        w.em(th).stats.heal_level = 1;
+        let max = w.e(p).stats.hp_max;
+        w.em(p).hp = max - 200;
+        w.creature_update(th).unwrap();
+        assert_eq!(w.e(p).hp, max - 160);
+    }
+}

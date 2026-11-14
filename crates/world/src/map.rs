@@ -1071,7 +1071,7 @@ impl World {
             return;
         };
         for op in self.players.clone() {
-            if self.pl(op).controller.alliance.as_deref() == Some(a.as_str()) {
+            if op != p && self.pl(op).controller.alliance.as_deref() == Some(a.as_str()) {
                 self.plm(p).allied.push(op);
             }
         }
