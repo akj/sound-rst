@@ -353,7 +353,11 @@ fn a_held_key_that_starts_the_sentence_does_not_end_it_by_repeating() {
     // 0.05 seconds a character.
     let mut keys = to_speech_rate().tap(Key::Return);
     keys.time += 5.0;
-    keys.script = keys.script.at(keys.time).key_down(Key::Space);
+    keys.script = keys
+        .script
+        .repeat(0.5, 0.1)
+        .at(keys.time)
+        .key_down(Key::Space);
     let script = keys
         .tap_after(6.5, Key::Return)
         .tap_after(1.0, Key::Escape)
