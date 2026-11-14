@@ -855,8 +855,9 @@ impl Voice {
     /// and stays in the log unheard. The news said ahead of the others
     /// (what players say, news of the game itself, the story) is still
     /// said, since the end of a game is often what it tells; so is the
-    /// message being said.
+    /// message being said. A walk through the history ends with it.
     pub fn end_game(&mut self) {
+        self.history = false;
         let being_said = self.active.then_some(self.current);
         for (i, e) in self.log.iter_mut().enumerate() {
             let ahead = e.category().is_some_and(|c| Category::AHEAD.contains(&c));

@@ -171,6 +171,21 @@ fn the_end_of_a_game_gives_up_its_news_but_what_it_is_about() {
 }
 
 #[test]
+fn the_end_of_a_game_ends_a_walk_through_the_history() {
+    let mut h = Harness::new("en", Script::new());
+    for m in ["one", "two", "three"] {
+        info(&mut h.client.voice, m);
+    }
+    run(&mut h, 3.0);
+    h.client.voice.previous();
+    h.client.voice.previous();
+    h.client.voice.end_game();
+    run(&mut h, 3.0);
+    // "two" again from the history, and not "three" after it.
+    assert_eq!(h.spoken(), ["one", "two", "three", "three", "two"]);
+}
+
+#[test]
 fn a_key_press_does_not_cut_an_alert_and_is_dropped() {
     let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Down));
     h.client.voice.alert(&t(LONG));

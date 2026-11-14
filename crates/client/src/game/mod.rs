@@ -460,11 +460,7 @@ impl GameInterface {
 
     fn try_step(&mut self, cx: &mut Client) -> Result<(), Stop> {
         crate::net::pump(cx);
-        if let Mode::Story(s) = &self.mode
-            && s.is_told(cx)
-        {
-            self.mode = Mode::Playing;
-        }
+        self.end_story_if_told(cx);
         let waits = self.world_waits();
         if self.net.is_some() {
             self.net_update(cx);
@@ -483,6 +479,15 @@ impl GameInterface {
         }
         cx.voice.update();
         Ok(())
+    }
+
+    /// Goes back to playing once the story being told is told.
+    fn end_story_if_told(&mut self, cx: &Client) {
+        if let Mode::Story(s) = &self.mode
+            && s.is_told(cx)
+        {
+            self.mode = Mode::Playing;
+        }
     }
 
     /// Whether the world waits for the player: in single-player, while a
@@ -580,6 +585,8 @@ impl GameInterface {
 
     /// Gives a key press to the mode, which may change.
     fn route_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
+        // The key before may have skipped the story's last message.
+        self.end_story_if_told(cx);
         match std::mem::replace(&mut self.mode, Mode::Playing) {
             Mode::Playing => self.process_keydown(cx, &k),
             Mode::OrderShortcut => Ok(self.execute_order_shortcut(cx, &k)?),
