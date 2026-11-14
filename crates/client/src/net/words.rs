@@ -64,6 +64,32 @@ pub const STRONGER: &str = "stronger";
 pub const EVEN: &str = "evenly matched";
 pub const WEAKER: &str = "weaker";
 
+// The sound and speech settings of the options menu.
+
+pub const SOUND_AND_SPEECH: &str = "sound and speech";
+pub const VOLUME: &str = "volume";
+pub const PERCENT: &str = "percent";
+pub const VOLUME_KEYS: &str = "Enter or Home raises it, End lowers it";
+pub const SPOKEN: &str = "spoken";
+pub const SOUND_ONLY: &str = "its sound only";
+pub const LOG_ONLY: &str = "kept silently in the log";
+pub const DROPPED: &str = "dropped";
+pub const NVDA_DIRECT: &str = "NVDA tells the game when it has finished speaking";
+pub const NVDA_DIRECT_EXPLANATION: &str = "this needs NVDA's current controller client and works from the next start: turn it off if messages stop, overlap, or wait too long";
+pub const SPEECH_RATE: &str = "speech rate";
+pub const CHARACTERS_A_SECOND: &str = "characters a second";
+pub const MEASURE_IT: &str = "press Enter to measure it";
+pub const MEASURE_HOW: &str =
+    "press a key to hear a sentence, then press a key the moment it ends. Escape cancels.";
+/// Said to measure the speech rate: no digits, which take longer.
+pub const MEASURE_SENTENCE: &str = "This sentence measures how fast your screen reader speaks, so that each message of the game can follow the last one without a gap.";
+pub const MEASURED: &str = "measured:";
+pub const MEASURE_AGAIN: &str = "to measure again, press Enter";
+pub const TOO_EARLY: &str = "the key came too early to be the end of the sentence";
+pub const TOO_LATE: &str = "the key came too late to be the end of the sentence";
+pub const NOTHING_CHANGED: &str = "nothing changed";
+pub const TRY_AGAIN: &str = "to try again, press Enter";
+
 // The categories of news, as the log's review keys name them. An alert is
 // the original's own word.
 

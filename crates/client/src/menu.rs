@@ -29,6 +29,10 @@ pub enum Flow {
 }
 
 pub type ActionFn = Rc<dyn Fn(&mut Client) -> Result<Flow, Exit>>;
+/// Changes a setting and gives what to say about the change.
+pub type ChangeFn = Rc<dyn Fn(&mut Client) -> Result<Msg, Exit>>;
+/// The current value of a setting.
+pub type ValueFn = Rc<dyn Fn(&Client) -> Msg>;
 
 /// What choosing an item does.
 #[derive(Clone)]
@@ -38,6 +42,9 @@ pub enum Action {
     /// Ends a looping menu.
     CloseMenu,
     Run(ActionFn),
+    /// Changes a setting in place: the menu says what the change gives,
+    /// stays on the item, and does not say its title again.
+    Change(ChangeFn),
 }
 
 impl Action {
@@ -46,13 +53,14 @@ impl Action {
     }
 }
 
-/// A menu item: what it says, what it does, and an explanation said after
-/// it.
+/// A menu item: what it says, the current value of its setting if it has
+/// one, what it does, and an explanation said after it.
 #[derive(Clone)]
 pub struct Choice {
     pub label: Msg,
     pub action: Action,
     pub explanation: Option<Msg>,
+    pub value: Option<ValueFn>,
 }
 
 impl Choice {
@@ -61,14 +69,27 @@ impl Choice {
             label,
             action,
             explanation: None,
+            value: None,
         }
     }
 
     pub fn explained(label: Msg, action: Action, explanation: Msg) -> Choice {
         Choice {
-            label,
-            action,
             explanation: Some(explanation),
+            ..Choice::new(label, action)
+        }
+    }
+
+    /// An item for a setting: its name, then its current value. Choosing it
+    /// runs `change`, which says what it gives (see [`Action::Change`]).
+    pub fn setting(
+        label: Msg,
+        value: impl Fn(&Client) -> Msg + 'static,
+        change: impl Fn(&mut Client) -> Result<Msg, Exit> + 'static,
+    ) -> Choice {
+        Choice {
+            value: Some(Rc::new(value)),
+            ..Choice::new(label, Action::Change(Rc::new(change)))
         }
     }
 
@@ -133,6 +154,9 @@ pub struct Menu {
     /// [`crate::net::interrupts`] when the menu opened: by [`Menu::run`],
     /// or else by the first event it handled.
     opened_at: Option<u64>,
+    /// A setting was changed: the next run stays on its item without
+    /// saying the title.
+    resume: bool,
 }
 
 impl Menu {
@@ -148,6 +172,7 @@ impl Menu {
             end_loop: false,
             escape_on_interrupt: true,
             opened_at: None,
+            resume: false,
         }
     }
 
@@ -163,11 +188,11 @@ impl Menu {
     /// Adds an item (with an empty explanation if none).
     pub fn append(&mut self, label: Msg, action: Action, explanation: Option<Msg>) {
         let remembered = self.remember.is_some() && self.remembered_choice == py_repr(&label);
-        self.choices.push(Choice {
-            label: label.clone(),
-            action: action.clone(),
-            explanation: Some(explanation.unwrap_or_default()),
-        });
+        self.choices.push(Choice::explained(
+            label.clone(),
+            action.clone(),
+            explanation.unwrap_or_default(),
+        ));
         if remembered {
             self.choices.insert(0, Choice::new(label, action));
         }
@@ -185,6 +210,10 @@ impl Menu {
         );
         let choice = &self.choices[self.index(self.choice_index.unwrap_or(0))];
         let mut m = choice.label.clone();
+        if let Some(value) = &choice.value {
+            m.extend(msg(mp::COMMA));
+            m.extend(value(cx));
+        }
         if let Some(explanation) = &choice.explanation {
             m.extend(msg(mp::COMMA));
             m.extend(explanation.iter().cloned());
@@ -234,10 +263,12 @@ impl Menu {
             0.0,
         );
         if self.choice_exists() {
-            let label = self.choices[self.index(self.choice_index.unwrap_or(0))]
-                .label
-                .clone();
-            cx.voice.confirmation(&label);
+            let choice = &self.choices[self.index(self.choice_index.unwrap_or(0))];
+            // A setting says its new value instead.
+            if !matches!(choice.action, Action::Change(_)) {
+                let label = choice.label.clone();
+                cx.voice.confirmation(&label);
+            }
             self.choice_done = true;
         }
     }
@@ -319,6 +350,12 @@ impl Menu {
             Action::Nothing => Flow::Stay,
             Action::CloseMenu => Flow::CloseMenu,
             Action::Run(f) => f(cx)?,
+            Action::Change(f) => {
+                let said = f(cx)?;
+                cx.voice.item(&said);
+                self.resume = true;
+                return Ok(());
+            }
         };
         if flow == Flow::CloseMenu {
             self.end_loop = true;
@@ -402,10 +439,13 @@ impl Menu {
         }
     }
 
-    /// Says the title, waits for a choice, and runs it.
+    /// Says the title, waits for a choice, and runs it. After a setting
+    /// changed, the title is not said again.
     pub fn run(&mut self, cx: &mut Client) -> Result<(), Exit> {
         self.opened_at = Some(crate::net::interrupts(cx));
-        self.say_title(cx);
+        if !std::mem::take(&mut self.resume) {
+            self.say_title(cx);
+        }
         self.get_choice_from_static_menu(cx)?;
         self.execute_choice(cx)
     }

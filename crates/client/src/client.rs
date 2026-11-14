@@ -19,7 +19,7 @@ use crate::resource::Resources;
 use crate::rng::ClientRng;
 use crate::sound::Audio;
 use crate::sound_cache::Sounds;
-use crate::tts::{SpeechBackend, Tts};
+use crate::tts::{CharDelay, SpeechBackend, Tts};
 use crate::voice::{UtteranceLog, Voice, VoiceChannel};
 
 /// The version of the game this client ports, said in the window title.
@@ -101,6 +101,8 @@ pub struct Client {
     /// The server the player is on, if any.
     pub net: Option<crate::net::Net>,
     pub net_config: crate::net::NetConfig,
+    /// The speech's seconds per character, shared with the speech.
+    char_delay: CharDelay,
     fullscreen: bool,
     help: Help,
 }
@@ -148,14 +150,16 @@ impl Client {
             clock.clone(),
             params.flattening_factor(),
             rng.clone(),
+            f64::from(config.main_volume) / 100.0,
         );
         let input = Input::new(devices.input, clock.clone());
         let sounds = res.sounds();
+        let char_delay = CharDelay::new(config.wait_delay_per_character);
         let tts = Tts::new(
             devices.speech,
             clock.clone(),
             log.clone(),
-            config.wait_delay_per_character,
+            char_delay.clone(),
             params.tts_digit_coefficient(),
         );
         let channel = VoiceChannel::new(
@@ -195,6 +199,7 @@ impl Client {
             game: GameSettings::default(),
             net: None,
             net_config: crate::net::NetConfig::default(),
+            char_delay,
             fullscreen: false,
             help,
         }
@@ -217,14 +222,31 @@ impl Client {
         self.audio.stop(voice_too);
     }
 
-    /// Raises (1) or lowers (-1) the main volume by a tenth, and says it.
+    /// Raises (1) or lowers (-1) the main volume by a tenth, saves it, and
+    /// says it. The level is an answer: it interrupts what is being said,
+    /// and news it cuts off is said again after it. No sound is stopped.
     pub fn modify_volume(&mut self, incr: i32) {
-        let v = (self.audio.main_volume() + 0.1 * f64::from(incr)).clamp(0.0, 1.0);
-        self.audio.set_main_volume(v);
-        self.stop_sound(true);
-        let percent = (v * 100.0).round_ties_even() as i64;
+        let percent = (i32::from(self.config.main_volume) + 10 * incr).clamp(0, 100);
+        self.set_main_volume(percent as u8);
         self.voice
-            .item(&[nb2msg(percent), msg(mp::PERCENT_VOLUME)].concat());
+            .item(&[nb2msg(i64::from(percent)), msg(mp::PERCENT_VOLUME)].concat());
+    }
+
+    /// Sets the main volume, in percent, and saves it.
+    pub fn set_main_volume(&mut self, percent: u8) {
+        self.audio.set_main_volume(f64::from(percent) / 100.0);
+        if self.config.main_volume != percent {
+            self.config.main_volume = percent;
+            self.save_config();
+        }
+    }
+
+    /// Sets the speech's seconds per character, which the end of speech is
+    /// estimated from, and saves it.
+    pub fn set_wait_delay_per_character(&mut self, seconds: f64) {
+        self.char_delay.set(seconds);
+        self.config.wait_delay_per_character = seconds;
+        self.save_config();
     }
 
     /// Switches the full screen flag and says it. The window shows nothing,

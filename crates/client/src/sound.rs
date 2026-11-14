@@ -339,13 +339,15 @@ impl AudioState {
 
 impl Audio {
     /// The engine, with `num_channels` mixer channels (the first for the
-    /// voice). Ambient volumes are drawn from `rng`.
+    /// voice), at `main_volume` (0 to 1). Ambient volumes are drawn from
+    /// `rng`.
     pub fn new(
         output: Box<dyn AudioOutput>,
         num_channels: usize,
         clock: ClockRef,
         flattening_factor: f64,
         rng: ClientRng,
+        main_volume: f64,
     ) -> Audio {
         Audio(Rc::new(RefCell::new(AudioState {
             mixer: Mixer::new(output, num_channels),
@@ -357,7 +359,7 @@ impl Audio {
             start_times: HashMap::new(),
             rng,
             record: None,
-            main_volume: 0.5,
+            main_volume,
             voice_volume: 1.0,
         })))
     }
@@ -384,8 +386,15 @@ impl Audio {
         self.0.borrow().main_volume
     }
 
+    /// Sets the main volume; the sources playing take it at once.
     pub fn set_main_volume(&self, v: f64) {
-        self.0.borrow_mut().main_volume = v;
+        let mut a = self.0.borrow_mut();
+        a.main_volume = v;
+        for i in 0..a.sources.len() {
+            if a.is_playing(i) {
+                a.update_volume(i, true);
+            }
+        }
     }
 
     pub fn voice_volume(&self) -> f64 {
@@ -558,7 +567,7 @@ mod tests {
     fn audio() -> (Audio, AudioLog) {
         let clock = Rc::new(ManualClock::new());
         let (output, log) = RecordingAudio::new(clock.clone());
-        let audio = Audio::new(Box::new(output), 16, clock, 2.0, ClientRng::new(1));
+        let audio = Audio::new(Box::new(output), 16, clock, 2.0, ClientRng::new(1), 0.5);
         (audio, log)
     }
 
@@ -602,6 +611,27 @@ mod tests {
             "{}",
             sent[3].1
         );
+    }
+
+    #[test]
+    fn a_new_main_volume_reaches_the_loops_playing() {
+        let (a, log) = audio();
+        a.play_loop(sound("loop"), Placement::new(1.0, 0.0, 2.0, 0));
+        let before = log.events().len();
+        a.set_main_volume(0.0);
+        let gains: Vec<(usize, f32, f32)> = log.events()[before..]
+            .iter()
+            .filter_map(|e| match e {
+                AudioEvent::Gains {
+                    channel,
+                    left,
+                    right,
+                    ..
+                } => Some((*channel, *left, *right)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(gains, [(1, 0.0, 0.0)]);
     }
 
     #[test]

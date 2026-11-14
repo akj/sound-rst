@@ -12,6 +12,9 @@ mod worker;
 pub use nvda::{Controller, DirectSpeaker, ERROR_CANCELLED, ERROR_SUCCESS, RPC_S_UNKNOWN_IF, ssml};
 pub use worker::{Command, Link, Report, Speaker, SpeechThread};
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use crate::clock::ClockRef;
 use crate::log::Log;
 
@@ -65,6 +68,26 @@ struct Said {
     limit_us: i64,
 }
 
+/// How long the screen reader takes to say one character, in seconds.
+/// Clones share the value, so that a new measurement applies to the speech
+/// at once.
+#[derive(Clone, Debug)]
+pub struct CharDelay(Rc<Cell<f64>>);
+
+impl CharDelay {
+    pub fn new(seconds: f64) -> CharDelay {
+        CharDelay(Rc::new(Cell::new(seconds)))
+    }
+
+    pub fn get(&self) -> f64 {
+        self.0.get()
+    }
+
+    pub fn set(&self, seconds: f64) {
+        self.0.set(seconds);
+    }
+}
+
 /// Speech with an end reported by the backend, or else estimated: each
 /// character takes `wait_delay_per_character` seconds, a digit
 /// `tts_digit_coefficient` times as long.
@@ -72,7 +95,7 @@ pub struct Tts {
     backend: Box<dyn SpeechBackend>,
     clock: ClockRef,
     log: Log,
-    wait_delay_per_character: f64,
+    wait_delay_per_character: CharDelay,
     digit_coefficient: f64,
     said: Option<Said>,
 }
@@ -86,7 +109,7 @@ impl Tts {
         backend: Box<dyn SpeechBackend>,
         clock: ClockRef,
         log: Log,
-        wait_delay_per_character: f64,
+        wait_delay_per_character: CharDelay,
         digit_coefficient: f64,
     ) -> Tts {
         Tts {
@@ -104,7 +127,7 @@ impl Tts {
     pub fn estimate_us(&self, text: &str) -> i64 {
         let chars = text.chars().count() as f64;
         let digits = text.chars().filter(|c| c.is_numeric()).count() as f64;
-        let delay = self.wait_delay_per_character;
+        let delay = self.wait_delay_per_character.get();
         microseconds(chars * delay) + microseconds(digits * (self.digit_coefficient - 1.0) * delay)
     }
 
@@ -348,7 +371,13 @@ mod tests {
     fn the_end_of_speech_is_estimated_from_characters_and_digits() {
         let clock = Rc::new(ManualClock::new());
         let (backend, _) = RecordingSpeech::new();
-        let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
+        let mut tts = Tts::new(
+            Box::new(backend),
+            clock.clone(),
+            Log::silent(),
+            CharDelay::new(0.1),
+            3.0,
+        );
         assert!((tts.estimate("ab12") - 0.8).abs() < 1e-9);
         tts.speak("ab12");
         clock.advance(0.79);
@@ -361,7 +390,13 @@ mod tests {
     fn stop_reaches_the_screen_reader_when_the_estimate_says_speech_is_over() {
         let clock = Rc::new(ManualClock::new());
         let (backend, log) = RecordingSpeech::new();
-        let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
+        let mut tts = Tts::new(
+            Box::new(backend),
+            clock.clone(),
+            Log::silent(),
+            CharDelay::new(0.1),
+            3.0,
+        );
         tts.speak("ab");
         clock.advance(1.0);
         assert!(!tts.is_speaking());
@@ -376,7 +411,13 @@ mod tests {
     fn a_reported_end_replaces_the_estimate() {
         let clock = Rc::new(ManualClock::new());
         let (backend, log) = RecordingSpeech::new();
-        let mut tts = Tts::new(Box::new(backend), clock.clone(), Log::silent(), 0.1, 3.0);
+        let mut tts = Tts::new(
+            Box::new(backend),
+            clock.clone(),
+            Log::silent(),
+            CharDelay::new(0.1),
+            3.0,
+        );
         // Ended before the estimate.
         tts.speak("abcdefghij");
         log.report(Progress::Ended(SpeechEnd::Finished));

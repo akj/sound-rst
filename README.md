@@ -8,7 +8,7 @@ The port reads the original game's data files unchanged: rules, maps, sounds, tr
 
 Single-player and multiplayer games work.
 
-- The main menu, the options menu (login, mods, soundpacks), and the single-player menus.
+- The main menu, the options menu (login, sound and speech, mods, soundpacks), and the single-player menus.
 - Games against the computer on every multiplayer map, with the `easy`, `aggressive`, and `ai2` computer players.
 - The campaigns, with cut scenes, objectives, and the chapter bookmark.
 - Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.
@@ -57,6 +57,19 @@ To get a written record of everything the game says, set `debug_mode = 1` in `So
 
 To play in another language, write its code, for example `fr`, in `cfg/language.txt` in the data folder.
 
+Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is said again after it, and the sounds go on playing.
+
+The speed you choose in the game menu of a single-player game is also the speed of your next single-player game.
+
+### Sound and speech settings
+
+In the options menu, Sound and speech has these items. Each item says its name, then its value. Press Enter to change the value. The game saves the change at once.
+
+- Volume: Enter raises it by a tenth, and from 100 percent goes back to 0. Home and End also change it.
+- One item for each category of news: alert, production, economy, scouting, chat, system and story. Enter goes through the four values that the next section describes: spoken, its sound only, kept silently in the log, and dropped.
+- NVDA tells the game when it has finished speaking: on or off. See [Speech that ends when NVDA says so](#speech-that-ends-when-nvda-says-so).
+- Speech rate: how many characters a second your screen reader says. Enter measures it. Press a key to hear a sentence, then press a key the moment the sentence ends. The game computes your rate from the time between the start of the sentence and your key, and says it. A key that comes too early or too late to be the end of the sentence changes nothing. Escape stops the measure. Measure again whenever you change your speech rate.
+
 ### News
 
 While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. News is never lost: a message cut off is said again, newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square), and every message is kept in a log, heard or not.
@@ -70,7 +83,7 @@ While you play, the game tells you news: alerts, production, economy, scouting, 
 | Delete | Moves to the square of the last alert and says it. Press again to go to the alert before. |
 | F5, F6 | Walk back and forth through every message, as before. |
 
-In `SoundRTS.ini`, the `[news]` section says what you hear of each category. Each of `alert`, `production`, `economy`, `scouting`, `chat`, `system` and `story` takes one of these values:
+The options menu's Sound and speech items, or the `[news]` section of `SoundRTS.ini`, say what you hear of each category. Each of `alert`, `production`, `economy`, `scouting`, `chat`, `system` and `story` takes one of these values:
 
 - `speak`: said in its turn, with its sound. This is the default.
 - `sound`: only its sound plays, for example the bell of a finished building or the chat sound. The message waits in the log, unheard.
@@ -96,7 +109,7 @@ The score is said only at the end of the game: during the game it would tell you
 
 ### Speech that ends when NVDA says so
 
-Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off.
+Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character at first, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off. To fit the estimate to your speech rate with any screen reader, JAWS included, measure it with the Speech rate item of Sound and speech in the options menu.
 
 NVDA 2024.1 and later can tell the game when speech has ended, and whether you silenced it. This route is off by default and has not yet been checked by ear. To try it:
 
@@ -106,9 +119,9 @@ NVDA 2024.1 and later can tell the game when speech has ended, and whether you s
    pwsh scripts/fetch-nvda-controller.ps1
    ```
 
-2. In `SoundRTS.ini`, in the `[tts]` section, set `nvda_direct = 1`.
+2. In the options menu, in Sound and speech, switch "NVDA tells the game when it has finished speaking" on. In `SoundRTS.ini`, that is `nvda_direct = 1` in the `[tts]` section. The change applies the next time you start the game.
 
-With `nvda_direct = 1`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, set `nvda_direct = 0`. The log `tmp/client.log` says which route the game uses.
+With `nvda_direct = 1`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = 0`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
 
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, and the current folder.
 
