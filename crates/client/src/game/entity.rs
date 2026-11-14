@@ -517,7 +517,9 @@ impl GameInterface {
     }
 
     /// Whether the entity is on `place`. A unit in a transport is on the
-    /// transport's square; a blocker is also on the other side of its exit.
+    /// transport's square, as the player knows the transport, and on no
+    /// square if the player knows nothing of it; a blocker is also on the
+    /// other side of its exit.
     pub fn is_in(&self, v: &EntityView, place: Option<SquareId>) -> bool {
         self.model_is_in(&v.model, place)
     }
@@ -525,7 +527,7 @@ impl GameInterface {
     pub fn model_is_in(&self, e: &Entity, place: Option<SquareId>) -> bool {
         match e.place {
             Some(Place::Inside(c)) => {
-                return self.view().leaks().container_place(c).map(|p| p.square()) == Some(place);
+                return self.container_place(c).map(|p| p.square()) == Some(place);
             }
             Some(Place::Square(s)) if Some(s) == place => return true,
             None if place.is_none() => return true,
@@ -663,7 +665,7 @@ impl GameInterface {
     /// Plays an alert sound from the entity's square, as on a minimap.
     fn launch_alert_of(&self, cx: &Client, v: &EntityView, sound: &str) {
         let place = match v.place() {
-            Some(Place::Inside(c)) => self.view().leaks().container_place(c),
+            Some(Place::Inside(c)) => self.container_place(c),
             p => p,
         };
         self.launch_alert(cx, self.outer_square(place), sound);
@@ -1121,6 +1123,31 @@ mod tests {
         g.game.dobjets.insert(EntityId(999_999), remembered);
         let v = &g.game.dobjets[&peasant];
         assert_eq!(g.game.footstep_noise(&h.client, v), ["1069", "1070"]);
+    }
+
+    #[test]
+    fn a_unit_inside_a_container_the_player_does_not_know_is_nowhere() {
+        let (h, mut g) = training();
+        let them = enemy(&g);
+        let townhall = unit(&g, them, "townhall");
+        let there = g.game.host.world().entity(townhall).unwrap().square();
+        assert!(there.is_some());
+        assert!(g.game.view().known(townhall).is_none());
+        // The player remembers a unit going into the computer's town hall,
+        // which it has never seen.
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        let mut model = g.game.dobjets[&peasant].model.as_ref().clone();
+        (model.id, model.player) = (EntityId(999_999), Some(them));
+        model.place = Some(Place::Inside(townhall));
+        let v = EntityView::new(Arc::new(model), Some(0), &h.client.rng);
+        assert!(!g.game.is_in(&v, there));
+        assert!(!g.game.is_in(&v, None));
+        assert_eq!(g.game.outer_square(v.place()), None);
+        assert_eq!(g.game.place_title(&h.client, Place::Inside(townhall)), []);
+        g.game.dobjets.insert(v.id(), v);
+        let m = g.game.place_summary(&h.client, there, true, None, false);
+        assert_eq!(m, []);
     }
 
     #[test]

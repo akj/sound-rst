@@ -600,23 +600,30 @@ impl GameInterface {
     }
 
     /// The title of a place: the square's, or the container's type title.
+    /// Nothing for a container the player knows nothing of.
     pub fn place_title(&self, cx: &Client, place: Place) -> Msg {
         match place {
             Place::Square(s) => self.view().square(s).title().clone(),
             Place::Inside(c) => self
                 .view()
-                .leaks()
-                .container_type(c)
-                .map(|t| style_msg(cx.res.style(), t, "title"))
+                .known(c)
+                .map(|(e, _)| style_msg(cx.res.style(), &e.type_name, "title"))
                 .unwrap_or_default(),
         }
     }
 
-    /// The square of a place, through containers.
+    /// The place of a container, as the player perceives or remembers it.
+    /// `None` if the player knows nothing of it.
+    pub fn container_place(&self, container: EntityId) -> Option<Place> {
+        self.view().known(container).and_then(|(e, _)| e.place)
+    }
+
+    /// The square of a place, through containers as the player knows
+    /// them.
     pub fn outer_square(&self, place: Option<Place>) -> Option<SquareId> {
         match place? {
             Place::Square(s) => Some(s),
-            Place::Inside(c) => self.outer_square(self.view().leaks().container_place(c)),
+            Place::Inside(c) => self.outer_square(self.container_place(c)),
         }
     }
 

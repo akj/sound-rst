@@ -295,20 +295,6 @@ fn a_remembered_units_activity_is_the_live_ones() {
 }
 
 #[test]
-fn a_container_is_read_live() {
-    let (w, me, them) = game();
-    let townhall = unit(&w, them, "townhall");
-    let v = View::new(&w, me);
-    assert!(v.perceived(townhall).is_none());
-    assert_eq!(
-        v.leaks().container_place(townhall),
-        w.entity(townhall).unwrap().place
-    );
-    assert!(v.leaks().container_place(townhall).is_some());
-    assert_eq!(v.leaks().container_type(townhall), Some("townhall"));
-}
-
-#[test]
 fn the_terrain_in_the_fog_is_the_terrain_now() {
     let (w, me, _) = game();
     let v = View::new(&w, me);

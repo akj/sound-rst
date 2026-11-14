@@ -491,25 +491,6 @@ impl<'a> Leaks<'a> {
         self.world.activity(unit)
     }
 
-    /// The place of a container, as it is now, perceived or not.
-    ///
-    /// Used for the square of a unit inside a transport or a building: in
-    /// a square's summary and targets, in an alert's position, and in a
-    /// unit's place. The player perceives the container of its own units;
-    /// for a remembered unit last seen going into a container, this tells
-    /// where the container is now.
-    pub fn container_place(&self, container: EntityId) -> Option<Place> {
-        self.world.entity(container)?.place
-    }
-
-    /// The type of a container, perceived or not.
-    ///
-    /// Used to say the place of a unit inside a transport or a building
-    /// ("footman 1 at farm").
-    pub fn container_type(&self, container: EntityId) -> Option<&'a str> {
-        self.world.entity(container).map(|e| &*e.type_name)
-    }
-
     /// The terrain of a square the player does not observe now, as it is
     /// now, not as the player last saw it: forests are cut while nobody
     /// watches.
