@@ -189,7 +189,8 @@ impl Map {
             title.extend(
                 line.split(' ')
                     .filter_map(|x| x.parse().ok())
-                    .map(MsgPart::Num),
+                    .map(MsgPart::Num)
+                    .take(MAX_TITLE_SOUNDS),
             );
         }
         let int = |keyword| {
@@ -248,5 +249,12 @@ mod tests {
     fn a_name_keeps_only_safe_characters() {
         assert_eq!(name_from_path("multi/My map (2).txt"), "Mymap2");
         assert_eq!(name_from_path("jl4.zip"), "jl4");
+    }
+
+    #[test]
+    fn a_title_keeps_at_most_the_sounds_a_title_may_have() {
+        let line = "1 ".repeat(MAX_TITLE_SOUNDS + 1);
+        let m = Map::from_bytes(format!("title {line}\n").into_bytes(), "t.txt").unwrap();
+        assert_eq!(m.title.len(), 1 + MAX_TITLE_SOUNDS);
     }
 }

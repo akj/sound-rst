@@ -61,9 +61,13 @@ impl SoundBuffer {
     /// two channels, the first two are kept. The sound ends where the
     /// stream says it ends (its last granule position), not at the end of
     /// the last decoded block. A sound longer than [`MAX_SOUND_FRAMES`] is
-    /// refused, without decoding more than that.
+    /// refused, without decoding more than that, and so is a file the
+    /// decoder fails on, even by panicking.
     pub fn decode(bytes: Vec<u8>, key: &str, mod_name: &str, volume: f64) -> Result<Self, String> {
-        Self::decode_within(bytes, key, mod_name, volume, MAX_SOUND_FRAMES)
+        std::panic::catch_unwind(|| {
+            Self::decode_within(bytes, key, mod_name, volume, MAX_SOUND_FRAMES)
+        })
+        .unwrap_or_else(|_| Err("the decoder failed on this file".to_owned()))
     }
 
     #[deny(
@@ -420,5 +424,51 @@ mod tests {
         let mut page = b"OggS\0\0".to_vec();
         page.extend(7_i64.to_le_bytes());
         assert_eq!(last_granule_position(&page), Some(7));
+    }
+
+    /// Ogg's CRC-32 of a page.
+    fn ogg_crc(page: &[u8]) -> u32 {
+        let mut crc = 0_u32;
+        for &byte in page {
+            crc ^= u32::from(byte) << 24;
+            for _ in 0..8 {
+                crc = if crc & 0x8000_0000 != 0 {
+                    (crc << 1) ^ 0x04c1_1db7
+                } else {
+                    crc << 1
+                };
+            }
+        }
+        crc
+    }
+
+    #[test]
+    fn a_sound_the_decoder_fails_on_is_refused() {
+        // A shipped sound whose sixth codebook is given no dimension, with
+        // its page's checksum made right again: the decoder panics on it.
+        let path = crate::testkit::upstream_root().join("res/ui/effects/1003.ogg");
+        let mut bytes = std::fs::read(path).unwrap();
+        let codebook = (0..bytes.len() - 3)
+            .filter(|&i| &bytes[i..i + 3] == b"BCV")
+            .nth(5)
+            .unwrap();
+        bytes[codebook + 3] = 0;
+        bytes[codebook + 4] = 0;
+        let page = bytes[..codebook]
+            .windows(4)
+            .rposition(|w| w == b"OggS")
+            .unwrap();
+        let segments = usize::from(bytes[page + 26]);
+        let size = 27
+            + segments
+            + bytes[page + 27..page + 27 + segments]
+                .iter()
+                .map(|&n| usize::from(n))
+                .sum::<usize>();
+        bytes[page + 22..page + 26].fill(0);
+        let crc = ogg_crc(&bytes[page..page + size]);
+        bytes[page + 22..page + 26].copy_from_slice(&crc.to_le_bytes());
+        let e = SoundBuffer::decode(bytes, "1003", "default", 1.0).unwrap_err();
+        assert_eq!(e, "the decoder failed on this file");
     }
 }
