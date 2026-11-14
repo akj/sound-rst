@@ -757,7 +757,7 @@ pub fn snapshot(you: &str, others: &[&str]) -> LobbySnapshot {
         whereabouts: Whereabouts::Lobby,
     };
     LobbySnapshot {
-        server_name: "test".into(),
+        server_name: soundrts_protocol::ServerName::new("test").expect("a server name"),
         you: Login::new(you).expect("a login"),
         players: std::iter::once(you)
             .chain(others.iter().copied())

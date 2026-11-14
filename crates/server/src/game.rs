@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tracing::{info, warn};
 
-use crate::connection::{ConnId, Outbox, encode};
+use crate::connection::{ConnId, Outbox, Queued, encode};
 use crate::lobby::{LobbyInput, LobbyTx};
 
 /// What the lobby passes to a game, for the slot of the player who sent it.
@@ -34,6 +34,11 @@ pub(crate) enum GameInput {
         slot: SlotIndex,
     },
 }
+
+/// Where the lobby passes inputs to a game. An input from a client comes
+/// with its bytes, counted against the client's allowance until the game
+/// has handled it.
+pub(crate) type GameTx = mpsc::UnboundedSender<(GameInput, Option<Queued>)>;
 
 pub(crate) struct Settings {
     pub turn_interval: Duration,
@@ -57,7 +62,7 @@ pub(crate) fn spawn(
     players: Vec<Player>,
     settings: Settings,
     lobby: LobbyTx,
-) -> mpsc::UnboundedSender<GameInput> {
+) -> GameTx {
     let (tx, rx) = mpsc::unbounded_channel();
     let humans = players
         .into_iter()
@@ -137,13 +142,13 @@ struct Game {
 }
 
 impl Game {
-    async fn run(mut self, mut inputs: mpsc::UnboundedReceiver<GameInput>) {
+    async fn run(mut self, mut inputs: mpsc::UnboundedReceiver<(GameInput, Option<Queued>)>) {
         info!(room = self.room.0, "game loading");
         while !self.humans.is_empty() {
             tokio::select! {
                 _ = self.phase.wake() => self.wake(Instant::now()),
                 input = inputs.recv() => match input {
-                    Some(input) => self.on_input(input),
+                    Some((input, _queued)) => self.on_input(input),
                     None => return,
                 },
             }

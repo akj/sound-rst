@@ -7,16 +7,16 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use soundrts_protocol::{
     AiLevel, CHAT_HISTORY_LINES, Channel, ChatLine, ChatText, ClientMsg, ContentHash, Faction,
-    LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_LOGIN_CHARS, MAX_TITLE_SOUNDS, MapData,
-    MapHash, MapInfo, Refusal, Rejection, RoomChange, RoomExit, RoomId, ServerMsg, SlotIndex,
-    Speed, Whereabouts,
+    LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_ALLIANCE, MAX_LOGIN_CHARS,
+    MAX_TITLE_SOUNDS, MapData, MapHash, MapInfo, Refusal, Rejection, RoomChange, RoomExit, RoomId,
+    ServerMsg, ServerName, SlotIndex, Speed, Whereabouts,
 };
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 use tracing::{info, warn};
 
 use crate::ServerConfig;
-use crate::connection::{ConnId, Outbox, encode};
+use crate::connection::{ConnId, Outbox, Queued, encode};
 use crate::game::{self, GameInput};
 use crate::room::{Member, Occupant, Phase, Room};
 
@@ -30,8 +30,13 @@ pub(crate) enum LobbyInput {
         content: ContentHash,
         outbox: Outbox,
     },
-    /// A message after the hello.
-    Msg { conn: ConnId, msg: ClientMsg },
+    /// A message after the hello, counted against its connection's
+    /// allowance until it is handled.
+    Msg {
+        conn: ConnId,
+        msg: ClientMsg,
+        queued: Queued,
+    },
     /// The connection is closed.
     Gone { conn: ConnId },
     /// A game took this human out (they asked, disconnected, or lagged).
@@ -44,7 +49,7 @@ pub(crate) enum LobbyInput {
 const MAP_CACHE_BYTES: usize = 64 * 1024 * 1024;
 
 /// The alliances a host can choose.
-const ALLIANCES: std::ops::RangeInclusive<u8> = 1..=8;
+const ALLIANCES: std::ops::RangeInclusive<u8> = 1..=MAX_ALLIANCE;
 
 pub(crate) fn spawn(config: &ServerConfig, player_count: Arc<AtomicU32>) -> LobbyTx {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -133,7 +138,7 @@ impl MapCache {
 }
 
 struct Lobby {
-    name: String,
+    name: ServerName,
     max_clients: usize,
     max_rooms: usize,
     game_settings: (u32, std::time::Duration),
@@ -162,10 +167,10 @@ impl Lobby {
                     content,
                     outbox,
                 } => self.hello(conn, login, content, outbox),
-                LobbyInput::Msg { conn, msg } => {
+                LobbyInput::Msg { conn, msg, queued } => {
                     if let Some(player) = self.players.get(&conn) {
                         let outbox = player.outbox.clone();
-                        if let Err(reason) = self.on_msg(conn, msg) {
+                        if let Err(reason) = self.on_msg(conn, msg, queued) {
                             outbox.send(&ServerMsg::Refused { reason });
                         }
                     }
@@ -258,7 +263,7 @@ impl Lobby {
             Place::Playing(id) => {
                 let room = &self.rooms[&id];
                 if let (Phase::Playing { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) {
-                    let _ = game.send(GameInput::Leave { slot });
+                    let _ = game.send((GameInput::Leave { slot }, None));
                 }
             }
         }
@@ -271,7 +276,9 @@ impl Lobby {
 
     // -- Messages ----------------------------------------------------------
 
-    fn on_msg(&mut self, conn: ConnId, msg: ClientMsg) -> Answer {
+    /// `queued` goes with what is passed to a game, and is dropped once
+    /// the message is handled otherwise.
+    fn on_msg(&mut self, conn: ConnId, msg: ClientMsg, queued: Queued) -> Answer {
         match msg {
             ClientMsg::Hello { .. } => Err(Refusal::NotNow),
             ClientMsg::Chat { channel, text } => self.chat(conn, channel, text),
@@ -280,6 +287,16 @@ impl Lobby {
             }
             ClientMsg::Map { map } => self.map_uploaded(conn, map),
             ClientMsg::GetMap { hash } => {
+                // Only for a room the player is in or invited to: the same
+                // answer as for a map the server does not have.
+                let allowed = self.rooms.values().any(|r| {
+                    r.map.hash == hash
+                        && (r.slot_of(conn).is_some()
+                            || matches!(&r.phase, Phase::Gathering { invited } if invited.contains(&conn)))
+                });
+                if !allowed {
+                    return Err(Refusal::WrongMap);
+                }
                 let msg = self.maps.get(&hash).ok_or(Refusal::WrongMap)?;
                 self.players[&conn].outbox.send_text(msg);
                 Ok(())
@@ -301,14 +318,16 @@ impl Lobby {
             ClientMsg::Start => self.start(conn),
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
-            ClientMsg::Loaded => self.pass_to_game(conn, |slot| GameInput::Loaded { slot }),
+            ClientMsg::Loaded => self.pass_to_game(conn, queued, |slot| GameInput::Loaded { slot }),
             ClientMsg::Orders { orders } => {
-                self.pass_to_game(conn, |slot| GameInput::Orders { slot, orders })
+                self.pass_to_game(conn, queued, |slot| GameInput::Orders { slot, orders })
             }
-            ClientMsg::TurnDone { turn, digest } => {
-                self.pass_to_game(conn, |slot| GameInput::TurnDone { slot, turn, digest })
+            ClientMsg::TurnDone { turn, digest } => self.pass_to_game(conn, queued, |slot| {
+                GameInput::TurnDone { slot, turn, digest }
+            }),
+            ClientMsg::LeaveGame => {
+                self.pass_to_game(conn, queued, |slot| GameInput::Leave { slot })
             }
-            ClientMsg::LeaveGame => self.pass_to_game(conn, |slot| GameInput::Leave { slot }),
         }
     }
 
@@ -521,6 +540,8 @@ impl Lobby {
         self.broadcast(LobbyChange::RoomClosed { id });
     }
 
+    /// Invites a player to the host's room, once: each invitation is said
+    /// to the player invited.
     fn invite(&mut self, conn: ConnId, login: Login) -> Answer {
         let id = self.hosted_room(conn)?;
         let (&target, guest) = self
@@ -529,8 +550,10 @@ impl Lobby {
             .find(|(_, p)| p.login == login)
             .ok_or(Refusal::NoSuchPlayer)?;
         let room = self.rooms.get_mut(&id).expect("hosted");
-        if let Phase::Gathering { invited } = &mut room.phase {
-            invited.insert(target);
+        if let Phase::Gathering { invited } = &mut room.phase
+            && !invited.insert(target)
+        {
+            return Err(Refusal::NotNow);
         }
         guest.outbox.send(&ServerMsg::Invited {
             room: id,
@@ -678,7 +701,12 @@ impl Lobby {
 
     // -- Games -------------------------------------------------------------
 
-    fn pass_to_game(&mut self, conn: ConnId, input: impl FnOnce(SlotIndex) -> GameInput) -> Answer {
+    fn pass_to_game(
+        &mut self,
+        conn: ConnId,
+        queued: Queued,
+        input: impl FnOnce(SlotIndex) -> GameInput,
+    ) -> Answer {
         let Place::Playing(id) = self.players[&conn].place else {
             return Err(Refusal::NotNow);
         };
@@ -687,7 +715,7 @@ impl Lobby {
             unreachable!("a player plays in a started room");
         };
         let slot = room.slot_of(conn).expect("a player is in their game");
-        let _ = game.send(input(slot));
+        let _ = game.send((input(slot), Some(queued)));
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
 use soundrts_protocol::{
-    DEFAULT_PORT, DISCOVERY_REQUEST, PROTOCOL_VERSION, ServerAnnouncement, Wire,
+    DEFAULT_PORT, DISCOVERY_REQUEST, PROTOCOL_VERSION, ServerAnnouncement, ServerName, Wire,
 };
 
 /// A server that answered.
@@ -14,7 +14,7 @@ pub struct FoundServer {
     /// Where players connect: the address that answered, with the port
     /// the server announced.
     pub addr: SocketAddr,
-    pub name: String,
+    pub name: ServerName,
     pub players: u32,
 }
 

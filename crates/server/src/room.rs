@@ -2,14 +2,12 @@
 
 use std::collections::BTreeSet;
 
+use crate::connection::{ConnId, Outbox, encode};
+use crate::game::GameTx;
 use soundrts_protocol::{
     AiLevel, ContentHash, Faction, Login, MapInfo, RoomChange, RoomId, RoomState, RoomSummary,
     ServerMsg, Slot, SlotIndex, SlotPlayer, Speed,
 };
-use tokio::sync::mpsc;
-
-use crate::connection::{ConnId, Outbox, encode};
-use crate::game::GameInput;
 
 pub(crate) struct Room {
     pub id: RoomId,
@@ -29,9 +27,7 @@ pub(crate) enum Phase {
         invited: BTreeSet<ConnId>,
     },
     /// The game runs; the slots no longer change.
-    Playing {
-        game: mpsc::UnboundedSender<GameInput>,
-    },
+    Playing { game: GameTx },
 }
 
 pub(crate) struct RoomSlot {

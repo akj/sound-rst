@@ -1183,3 +1183,153 @@ fn keys_send_the_lines_the_interface_always_sent() {
         ]
     );
 }
+
+// -- A server that sends more than a client keeps -------------------------
+
+/// What the client says when it leaves a server that sent too much.
+const UNEXPECTED: &str =
+    "error: unexpected data was received from the server. This is not a SoundRTS server";
+
+/// A client on a fake server, as with [`on_fake_server`], that leaves the
+/// server on its own before the window closes at 60 s.
+fn left_fake_server(
+    config: Config,
+    schedule: impl FnOnce(&mut Harness, &FakeServer),
+) -> (Harness, FakeServer) {
+    let mut h = Harness::with_config("en", Script::new().at(60.0).tap(Key::LShift), config);
+    let (server, conn) = FakeServer::new(h.clock.clone());
+    schedule(&mut h, &server);
+    let content = h.client.res.content_hash();
+    let result = play_on(
+        &mut h.client,
+        conn,
+        snapshot("andrew", &["bob"]),
+        content,
+        None,
+    );
+    assert!(result.is_ok(), "the client stayed on the server");
+    (h, server)
+}
+
+#[test]
+fn a_server_that_lists_more_players_than_a_client_keeps_is_left() {
+    let mut c = config("andrew");
+    c.announce_arrivals = 0;
+    let (h, _) = left_fake_server(c, |_, s| {
+        // With Andrew and Bob, one more than the client keeps.
+        for i in 0..soundrts::net::lobby::MAX_LOBBY_PLAYERS - 1 {
+            s.at(10.0, arrived(&format!("p{i}")));
+        }
+    });
+    assert_eq!(
+        said(&h)[2..],
+        [UNEXPECTED, "the connection was interrupted"],
+        "{:#?}",
+        said(&h)
+    );
+}
+
+#[test]
+fn a_room_with_more_players_than_a_map_can_have_is_left() {
+    let (h, _) = left_fake_server(config("andrew"), |h, s| {
+        let map = jl1(h);
+        let mut slots = vec![slot(human("andrew"), 1, true)];
+        slots.extend(
+            (0..soundrts::net::lobby::MAX_ROOM_SLOTS)
+                .map(|_| slot(SlotPlayer::Computer(AiLevel::Easy), 2, true)),
+        );
+        s.at(10.0, room(RoomChange::Entered, &room_state(&map, slots)));
+    });
+    assert_eq!(
+        said(&h)[2..],
+        [UNEXPECTED, "the connection was interrupted"],
+        "{:#?}",
+        said(&h)
+    );
+}
+
+#[test]
+fn an_invitation_to_a_room_the_server_never_told_of_is_ignored() {
+    let script = Script::new().at(30.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |_, s| {
+        s.at(
+            10.0,
+            ServerMsg::Invited {
+                room: RoomId(9),
+                by: login("bob"),
+            },
+        );
+    });
+    assert_eq!(
+        said(&h),
+        [
+            "welcome andrew on the server of test",
+            "please make a selection",
+        ]
+    );
+}
+
+#[test]
+fn a_server_that_sends_turns_far_ahead_of_the_game_is_left() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &[]);
+    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let t0 = h.clock.now();
+    for n in 0..2 * soundrts::net::MAX_QUEUED_TURNS as Turn {
+        server.at(t0, turn(n));
+    }
+    h.run_for(&mut g, 2.0);
+    assert!(g.game.end_loop, "the game went on");
+    assert!(g.game.host.world().turn() < 10);
+    let said = h.said_since(0);
+    assert!(said.contains(&UNEXPECTED.to_owned()), "{said:#?}");
+}
+
+#[test]
+fn a_turn_with_more_orders_than_a_game_can_have_is_left() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &[]);
+    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    // 17 slots' worth of orders at the server's limit for a turn.
+    let order = Order::new("x".repeat(MAX_TURN_ORDER_BYTES / MAX_ORDERS_PER_MESSAGE)).unwrap();
+    let orders = (0..17)
+        .map(|slot| SlotOrders {
+            slot,
+            orders: Orders::new(vec![order.clone(); MAX_ORDERS_PER_MESSAGE]).unwrap(),
+        })
+        .collect();
+    server.at(h.clock.now(), ServerMsg::Turn { turn: 0, orders });
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.end_loop, "the game went on");
+    assert_eq!(g.game.host.world().turn(), 0);
+    let said = h.said_since(0);
+    assert!(said.contains(&UNEXPECTED.to_owned()), "{said:#?}");
+}
+
+#[test]
+fn a_game_out_of_sync_writes_one_record_however_often_the_server_says_so() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let server = h.join_fake_server("andrew", &["bob"]);
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
+    let t0 = h.clock.now();
+    for n in 0..20 {
+        server.at(t0 + 0.3 * f64::from(n), turn(n));
+    }
+    for (i, turn) in [3, 5, 7].into_iter().enumerate() {
+        server.at(
+            t0 + 2.0 + i as f64,
+            ServerMsg::OutOfSync {
+                turn,
+                slots: vec![1],
+            },
+        );
+    }
+    h.run_for(&mut g, 6.0);
+    let records: Vec<String> = std::fs::read_dir(h.client.paths.replays())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("out-of-sync-"))
+        .collect();
+    assert_eq!(records, ["out-of-sync-andrew-seed1-turn3.jsonl"]);
+}

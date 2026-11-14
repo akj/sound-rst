@@ -5,6 +5,7 @@
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -12,11 +13,14 @@ use soundrts_protocol::{
     ClientMsg, ContentHash, Login, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, Refusal, Rejection,
     ServerMsg, Wire,
 };
+use tokio::io::{AsyncReadExt, Join, Take};
 use tokio::net::TcpStream;
-use tokio::sync::{Notify, mpsc, watch};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::{Notify, OwnedSemaphorePermit, mpsc, watch};
 use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::protocol::{CloseFrame, WebSocketConfig};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 use tracing::{debug, warn};
 
@@ -40,6 +44,34 @@ const MESSAGES_PER_SECOND: f64 = 50.0;
 /// The chat rate limit: this many lines in this window.
 const CHAT_LINES: usize = 5;
 const CHAT_WINDOW: Duration = Duration::from_secs(5);
+
+/// The invitation rate limit: this many in this window. Each is said to
+/// the player invited. A host invites at most one player for each free
+/// slot of a room: 15 on the largest maps.
+const INVITATIONS: usize = 20;
+const INVITATION_WINDOW: Duration = Duration::from_secs(60);
+
+/// The map transfer rate limit: this many maps asked for or sent in this
+/// window. A client asks for a room's map once, on entering a room whose
+/// map it lacks, and a host sends one when the server lacks its map.
+const MAP_TRANSFERS: usize = 10;
+const MAP_WINDOW: Duration = Duration::from_secs(60);
+
+/// The most bytes a connection may send before its hello is read: the
+/// WebSocket handshake (a few hundred bytes from our client) and the hello
+/// (under 200 bytes).
+const PRE_HELLO_BYTES: u64 = 16 * 1024;
+
+/// The most bytes of messages other than maps that one connection can
+/// have handed to the lobby or its game and they have not handled yet.
+/// The largest an honest client sends is a message of orders: a few
+/// hundred bytes, and at most 64 orders of 4 KB (about 260 KB). The lobby
+/// and games handle each message in far less than a millisecond.
+const MAX_QUEUED_BYTES: usize = 1024 * 1024;
+
+/// Maps have their own allowance: one map, the largest message there is.
+/// A host sends one map, when the server asks for it.
+const MAX_QUEUED_MAP_BYTES: usize = MAX_MESSAGE_BYTES;
 
 /// How long to wait for the peer to answer a close.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -85,12 +117,17 @@ pub(crate) fn encode(msg: &ServerMsg) -> Utf8Bytes {
     msg.to_json().into()
 }
 
-type Ws = WebSocketStream<TcpStream>;
+/// The socket, reading at most [`PRE_HELLO_BYTES`] until the hello is
+/// read, then as much as the WebSocket's own limits allow.
+type Ws = WebSocketStream<Join<Take<OwnedReadHalf>, OwnedWriteHalf>>;
 
+/// `pending` is this connection's place among those that have not said
+/// hello; it is given back once the hello is read.
 pub(crate) async fn serve(
     stream: TcpStream,
     peer: SocketAddr,
     conn: ConnId,
+    pending: OwnedSemaphorePermit,
     lobby: LobbyTx,
     mut stop: watch::Receiver<bool>,
     hello_timeout: Duration,
@@ -98,6 +135,8 @@ pub(crate) async fn serve(
     if let Err(e) = stream.set_nodelay(true) {
         debug!(%peer, error = %e, "cannot set TCP_NODELAY");
     }
+    let (read, write) = stream.into_split();
+    let stream = tokio::io::join(read.take(PRE_HELLO_BYTES), write);
     let deadline = Instant::now() + hello_timeout;
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE_BYTES))
@@ -141,6 +180,8 @@ pub(crate) async fn serve(
             return;
         }
     };
+    ws.get_mut().reader_mut().set_limit(u64::MAX);
+    drop(pending);
 
     let (tx, mut rx) = mpsc::channel(OUTBOX_CAPACITY);
     let kick = Arc::new(Notify::new());
@@ -156,6 +197,8 @@ pub(crate) async fn serve(
     });
 
     let mut limits = Limits::new(Instant::now());
+    let maps = Allowance::new(MAX_QUEUED_MAP_BYTES);
+    let others = Allowance::new(MAX_QUEUED_BYTES);
     let mut invalid_in_a_row = 0;
     loop {
         tokio::select! {
@@ -175,14 +218,25 @@ pub(crate) async fn serve(
                     outbox.send(&ServerMsg::Refused { reason: Refusal::SlowDown });
                     continue;
                 }
+                let bytes = text.as_ref().map_or(0, |t| t.len());
                 match text.and_then(|t| ClientMsg::from_json(&t).ok()) {
                     Some(msg) => {
                         invalid_in_a_row = 0;
-                        if matches!(msg, ClientMsg::Chat { .. }) && !limits.chat(now) {
+                        if !limits.kind(&msg, now) {
                             outbox.send(&ServerMsg::Refused { reason: Refusal::SlowDown });
                             continue;
                         }
-                        let _ = lobby.send(LobbyInput::Msg { conn, msg });
+                        let allowance = if matches!(msg, ClientMsg::Map { .. }) { &maps } else { &others };
+                        let Some(queued) = allowance.take(bytes) else {
+                            warn!(conn, bytes, "client sent more than the server can hold; disconnecting");
+                            close_with(&mut ws, Some(CloseFrame {
+                                code: CloseCode::Policy,
+                                reason: "too much sent at once".into(),
+                            }))
+                            .await;
+                            break;
+                        };
+                        let _ = lobby.send(LobbyInput::Msg { conn, msg, queued });
                     }
                     None => {
                         invalid_in_a_row += 1;
@@ -270,18 +324,67 @@ fn read_hello(text: &str) -> Result<(Login, ContentHash), Rejection> {
 /// Sends a close and waits a little for the peer's, so that what was sent
 /// before reaches it rather than being cut by a reset.
 async fn close(ws: &mut Ws) {
+    close_with(ws, None).await;
+}
+
+async fn close_with(ws: &mut Ws, frame: Option<CloseFrame>) {
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, async {
-        if ws.close(None).await.is_ok() {
+        if ws.close(frame).await.is_ok() {
             while let Some(Ok(_)) = ws.next().await {}
         }
     })
     .await;
 }
 
+/// How many bytes of messages one connection may have handed to the lobby
+/// or its game and they have not handled yet, counted as received.
+struct Allowance {
+    queued: Arc<AtomicUsize>,
+    limit: usize,
+}
+
+impl Allowance {
+    fn new(limit: usize) -> Allowance {
+        Allowance {
+            queued: Arc::new(AtomicUsize::new(0)),
+            limit,
+        }
+    }
+
+    /// Counts `bytes` as queued until the [`Queued`] given back is dropped;
+    /// `None` if that would go over the limit.
+    fn take(&self, bytes: usize) -> Option<Queued> {
+        let before = self.queued.fetch_add(bytes, Ordering::Relaxed);
+        if before + bytes > self.limit {
+            self.queued.fetch_sub(bytes, Ordering::Relaxed);
+            return None;
+        }
+        Some(Queued {
+            bytes,
+            queued: self.queued.clone(),
+        })
+    }
+}
+
+/// The bytes of one message, counted against its connection's
+/// [`Allowance`] until the lobby or game that handles it drops this.
+pub(crate) struct Queued {
+    bytes: usize,
+    queued: Arc<AtomicUsize>,
+}
+
+impl Drop for Queued {
+    fn drop(&mut self) {
+        self.queued.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
+
 struct Limits {
     tokens: f64,
     refilled: Instant,
-    chat: VecDeque<Instant>,
+    chat: Window,
+    invitations: Window,
+    maps: Window,
 }
 
 impl Limits {
@@ -289,7 +392,9 @@ impl Limits {
         Limits {
             tokens: MESSAGE_BURST,
             refilled: now,
-            chat: VecDeque::new(),
+            chat: Window::new(CHAT_LINES, CHAT_WINDOW),
+            invitations: Window::new(INVITATIONS, INVITATION_WINDOW),
+            maps: Window::new(MAP_TRANSFERS, MAP_WINDOW),
         }
     }
 
@@ -306,20 +411,67 @@ impl Limits {
         }
     }
 
-    /// Whether one more chat line is allowed now.
-    fn chat(&mut self, now: Instant) -> bool {
-        while self
-            .chat
-            .front()
-            .is_some_and(|&t| now.duration_since(t) >= CHAT_WINDOW)
-        {
-            self.chat.pop_front();
+    /// Whether a message of this kind is allowed now: chat lines,
+    /// invitations and map transfers have their own limits.
+    fn kind(&mut self, msg: &ClientMsg, now: Instant) -> bool {
+        let window = match msg {
+            ClientMsg::Chat { .. } => &mut self.chat,
+            ClientMsg::Invite { .. } => &mut self.invitations,
+            ClientMsg::Map { .. } | ClientMsg::GetMap { .. } => &mut self.maps,
+            _ => return true,
+        };
+        window.allow(now)
+    }
+}
+
+/// At most `most` events in any `period`.
+struct Window {
+    most: usize,
+    period: Duration,
+    /// The events of the last period, oldest first.
+    events: VecDeque<Instant>,
+}
+
+impl Window {
+    fn new(most: usize, period: Duration) -> Window {
+        Window {
+            most,
+            period,
+            events: VecDeque::new(),
         }
-        if self.chat.len() < CHAT_LINES {
-            self.chat.push_back(now);
+    }
+
+    /// Whether one more event is allowed now; if so, it counts.
+    fn allow(&mut self, now: Instant) -> bool {
+        while self
+            .events
+            .front()
+            .is_some_and(|&t| now.duration_since(t) >= self.period)
+        {
+            self.events.pop_front();
+        }
+        if self.events.len() < self.most {
+            self.events.push_back(now);
             true
         } else {
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_allowance_counts_what_is_queued_until_it_is_handled() {
+        let allowance = Allowance::new(100);
+        let first = allowance.take(60).expect("within the allowance");
+        assert!(allowance.take(41).is_none(), "over the allowance");
+        let second = allowance.take(40).expect("exactly the allowance");
+        drop(first);
+        let third = allowance.take(60).expect("the first was handled");
+        drop((second, third));
+        assert_eq!(allowance.queued.load(Ordering::Relaxed), 0);
     }
 }

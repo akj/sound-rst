@@ -4,8 +4,8 @@
 use std::sync::Arc;
 
 use soundrts_protocol::{
-    AiLevel, LobbyChange, LobbyPlayer, LobbySnapshot, Login, RoomChange, RoomId, RoomState,
-    RoomSummary, SlotIndex, SlotPlayer, Whereabouts,
+    AiLevel, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_TITLE_SOUNDS, MapInfo, RoomChange,
+    RoomId, RoomState, RoomSummary, ServerName, SlotIndex, SlotPlayer, Whereabouts,
 };
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
@@ -16,10 +16,59 @@ use crate::mapfile::{Map, title_of};
 use crate::sound_cache::literal;
 use crate::style::Style;
 
+/// The most players a client keeps for a server's lobby. A server takes
+/// 40 by default; its owner can raise that, but not to anywhere near this.
+pub const MAX_LOBBY_PLAYERS: usize = 1000;
+
+/// The most rooms a client keeps for a server. A server opens at most 10
+/// by default.
+pub const MAX_LOBBY_ROOMS: usize = 1000;
+
+/// The most players in a room or a game: a map names at most 255
+/// (`nb_players_max` is a byte), and the largest shipped with the game 16.
+pub const MAX_ROOM_SLOTS: usize = 255;
+
+/// What a server sent beyond what a client keeps: the client closes the
+/// connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TooMany(pub &'static str);
+
+impl std::fmt::Display for TooMany {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "too many {}", self.0)
+    }
+}
+
+/// Whether a room from the server is within what a client keeps.
+pub fn check_room(map: &MapInfo, slots: usize) -> Result<(), TooMany> {
+    if slots > MAX_ROOM_SLOTS {
+        Err(TooMany("players in a room"))
+    } else if map.title_sounds.len() > MAX_TITLE_SOUNDS {
+        Err(TooMany("sounds in a map title"))
+    } else {
+        Ok(())
+    }
+}
+
+/// Whether a server's lobby, as it sends it on arrival, is within what a
+/// client keeps.
+pub fn check_snapshot(snapshot: &LobbySnapshot) -> Result<(), TooMany> {
+    if snapshot.players.len() > MAX_LOBBY_PLAYERS {
+        return Err(TooMany("players"));
+    }
+    if snapshot.rooms.len() > MAX_LOBBY_ROOMS {
+        return Err(TooMany("rooms"));
+    }
+    for r in &snapshot.rooms {
+        check_room(&r.map, r.players.len())?;
+    }
+    Ok(())
+}
+
 /// The players and rooms of the server.
 #[derive(Clone, Debug)]
 pub struct LobbyModel {
-    pub server_name: String,
+    pub server_name: ServerName,
     /// The player's own login on this server.
     pub you: Login,
     pub players: Vec<LobbyPlayer>,
@@ -37,11 +86,18 @@ impl LobbyModel {
     }
 
     /// Applies a change, and gives what to say of it, if anything: who
-    /// arrived or left the server (unless `arrivals` is off).
-    pub fn apply(&mut self, change: LobbyChange, arrivals: bool) -> Option<Msg> {
-        match change {
+    /// arrived or left the server (unless `arrivals` is off). A change that
+    /// makes the lobby more than a client keeps is not applied.
+    pub fn apply(&mut self, change: LobbyChange, arrivals: bool) -> Result<Option<Msg>, TooMany> {
+        let player_fits = |players: &[LobbyPlayer], login: &Login| {
+            players.len() < MAX_LOBBY_PLAYERS || players.iter().any(|p| p.login == *login)
+        };
+        Ok(match change {
             LobbyChange::PlayerArrived { player } => {
                 let login = player.login.clone();
+                if !player_fits(&self.players, &login) {
+                    return Err(TooMany("players"));
+                }
                 self.players.retain(|p| p.login != login);
                 self.players.push(player);
                 (arrivals && login != self.you)
@@ -53,6 +109,9 @@ impl LobbyModel {
                     .then(|| [vec![literal(login.as_str())], msg(mp::HAS_JUST_LOGGED_OUT)].concat())
             }
             LobbyChange::PlayerMoved { player } => {
+                if !player_fits(&self.players, &player.login) {
+                    return Err(TooMany("players"));
+                }
                 match self.players.iter_mut().find(|p| p.login == player.login) {
                     Some(p) => *p = player,
                     None => self.players.push(player),
@@ -60,9 +119,11 @@ impl LobbyModel {
                 None
             }
             LobbyChange::RoomOpened { room } | LobbyChange::RoomChanged { room } => {
-                match self.rooms.iter_mut().find(|r| r.id == room.id) {
-                    Some(r) => *r = room,
-                    None => self.rooms.push(room),
+                check_room(&room.map, room.players.len())?;
+                match self.rooms.iter().position(|r| r.id == room.id) {
+                    Some(i) => self.rooms[i] = room,
+                    None if self.rooms.len() < MAX_LOBBY_ROOMS => self.rooms.push(room),
+                    None => return Err(TooMany("rooms")),
                 }
                 None
             }
@@ -70,7 +131,7 @@ impl LobbyModel {
                 self.rooms.retain(|r| r.id != id);
                 None
             }
-        }
+        })
     }
 
     pub fn room(&self, id: RoomId) -> Option<&RoomSummary> {

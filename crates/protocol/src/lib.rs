@@ -33,6 +33,13 @@ pub const MAX_LOGIN_CHARS: usize = 20;
 /// The longest chat message, in characters. Longer messages are cut.
 pub const MAX_CHAT_CHARS: usize = 400;
 
+/// The longest server name, in characters. A hosted server is named after
+/// its host's login (at most 20); a standalone server's owner picks one.
+pub const MAX_SERVER_NAME_CHARS: usize = 64;
+
+/// The highest alliance a host can choose; alliances start at 1.
+pub const MAX_ALLIANCE: u8 = 8;
+
 /// The most chat lines a server keeps for the lobby and sends on arrival.
 pub const CHAT_HISTORY_LINES: usize = 50;
 
@@ -249,6 +256,55 @@ impl TryFrom<String> for ChatText {
 impl From<ChatText> for String {
     fn from(t: ChatText) -> String {
         t.0
+    }
+}
+
+/// A server's name, as players hear it and as the lists of servers keep
+/// it: no control characters, no space at either end, not empty, at most
+/// [`MAX_SERVER_NAME_CHARS`] characters. Any language.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ServerName(String);
+
+impl ServerName {
+    /// The name exactly as given, if it is one.
+    pub fn new(s: impl Into<String>) -> Result<ServerName, Invalid> {
+        Self::try_from(s.into())
+    }
+
+    /// Cleans a name read from a file: drops control characters, trims,
+    /// and cuts to [`MAX_SERVER_NAME_CHARS`]. `None` when nothing is left.
+    pub fn clean(s: &str) -> Option<ServerName> {
+        let s: String = s.chars().filter(|c| !c.is_control()).collect();
+        let s: String = s.trim().chars().take(MAX_SERVER_NAME_CHARS).collect();
+        let s = s.trim_end();
+        (!s.is_empty()).then(|| ServerName(s.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for ServerName {
+    type Error = Invalid;
+    fn try_from(s: String) -> Result<ServerName, Invalid> {
+        match ServerName::clean(&s) {
+            Some(n) if n.0 == s => Ok(n),
+            _ => Err(Invalid(format!("bad server name: {s:?}"))),
+        }
+    }
+}
+
+impl From<ServerName> for String {
+    fn from(n: ServerName) -> String {
+        n.0
+    }
+}
+
+impl fmt::Display for ServerName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -494,7 +550,7 @@ pub struct RoomSummary {
 /// Who is in a room: the lobby's whole state, sent on arrival.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LobbySnapshot {
-    pub server_name: String,
+    pub server_name: ServerName,
     /// Your login on this server: the one you asked for, or with a number
     /// added if it was taken.
     pub you: Login,
@@ -837,7 +893,7 @@ pub enum Refusal {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerAnnouncement {
     pub protocol: u32,
-    pub name: String,
+    pub name: ServerName,
     pub port: u16,
     pub players: u32,
 }
@@ -893,6 +949,28 @@ mod tests {
     fn unclean_chat_on_the_wire_is_refused() {
         let json = r#"{"type":"chat","channel":"lobby","text":" hi"}"#;
         assert!(ClientMsg::from_json(json).is_err());
+    }
+
+    #[test]
+    fn a_server_name_is_one_short_line() {
+        assert!(ServerName::new("Andrew's server").is_ok());
+        assert!(ServerName::new("serveur d'été").is_ok());
+        assert!(ServerName::new("").is_err());
+        assert!(ServerName::new(" padded").is_err());
+        assert!(ServerName::new("two\nlines").is_err());
+        assert!(ServerName::new("é".repeat(MAX_SERVER_NAME_CHARS)).is_ok());
+        assert!(ServerName::new("é".repeat(MAX_SERVER_NAME_CHARS + 1)).is_err());
+        let cleaned = ServerName::clean(" a\r\nb\u{7} ").unwrap();
+        assert_eq!(cleaned.as_str(), "ab");
+        assert!(ServerName::clean("\n\t ").is_none());
+    }
+
+    #[test]
+    fn a_server_name_with_a_line_break_on_the_wire_is_refused() {
+        let json = r#"{"protocol":1,"name":"a\nb","port":2501,"players":0}"#;
+        assert!(ServerAnnouncement::from_json(json).is_err());
+        let json = r#"{"protocol":1,"name":"ab","port":2501,"players":0}"#;
+        assert!(ServerAnnouncement::from_json(json).is_ok());
     }
 
     #[test]

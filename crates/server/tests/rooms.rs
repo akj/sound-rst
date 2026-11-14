@@ -149,18 +149,35 @@ async fn a_map_title_with_too_many_sounds_is_refused() {
 }
 
 #[tokio::test]
-async fn a_client_gets_a_rooms_map_while_the_room_lasts() {
+async fn a_rooms_map_goes_to_its_players_and_those_invited_while_the_room_lasts() {
     let server = server(|_| {});
-    let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let mut all = clients(server.local_addr(), &["andrew", "bob", "carol"]).await;
     let (info, data) = map(2, 4);
-    let room = open_room(&mut all, 0, &(info.clone(), data.clone()), true).await;
+    let room = open_room(&mut all, 0, &(info.clone(), data.clone()), false).await;
+    let get = || ClientMsg::GetMap {
+        hash: info.hash.clone(),
+    };
 
-    all[1]
-        .send(ClientMsg::GetMap {
-            hash: info.hash.clone(),
+    // Not invited yet: as if the server had no such map.
+    all[1].send(get()).await;
+    all[1].expect(refused(Refusal::WrongMap)).await;
+    all[0]
+        .send(ClientMsg::Invite {
+            login: login("bob"),
         })
         .await;
-    all[1].expect(ServerMsg::Map { map: data }).await;
+    all[1]
+        .expect(ServerMsg::Invited {
+            room,
+            by: login("andrew"),
+        })
+        .await;
+    all[1].send(get()).await;
+    all[1].expect(ServerMsg::Map { map: data.clone() }).await;
+    all[0].send(get()).await;
+    all[0].expect(ServerMsg::Map { map: data }).await;
+    all[2].send(get()).await;
+    all[2].expect(refused(Refusal::WrongMap)).await;
     all[1]
         .send(ClientMsg::GetMap {
             hash: map(3, 4).0.hash,
@@ -178,12 +195,30 @@ async fn a_client_gets_a_rooms_map_while_the_room_lasts() {
         c.expect(lobby(LobbyChange::RoomClosed { id: room })).await;
         c.expect(moved(&login("andrew"), Whereabouts::Lobby)).await;
     }
-    all[1]
-        .send(ClientMsg::GetMap {
-            hash: info.hash.clone(),
-        })
-        .await;
+    all[1].send(get()).await;
     all[1].expect(refused(Refusal::WrongMap)).await;
+}
+
+#[tokio::test]
+async fn maps_asked_for_are_rate_limited() {
+    let server = server(|_| {});
+    let (mut c, _) = Client::hello(server.local_addr(), "andrew").await;
+    let hash = map(2, 4).0.hash;
+    // The server's MAP_TRANSFERS in a minute.
+    for _ in 0..10 {
+        c.send(ClientMsg::GetMap { hash: hash.clone() }).await;
+        c.expect(refused(Refusal::WrongMap)).await;
+    }
+    c.send(ClientMsg::GetMap { hash }).await;
+    c.expect(refused(Refusal::SlowDown)).await;
+}
+
+#[tokio::test]
+async fn a_map_larger_than_any_other_message_is_taken() {
+    let server = server(|_| {});
+    let mut all = clients(server.local_addr(), &["andrew"]).await;
+    // Twice what a connection may have waiting in other messages.
+    open_room(&mut all, 0, &large_map(2 * 1024 * 1024), true).await;
 }
 
 #[tokio::test]
@@ -290,6 +325,58 @@ async fn a_closed_room_takes_only_invited_players() {
     // Carol was not invited.
     all[2].send(ClientMsg::JoinRoom { room }).await;
     all[2].expect(refused(Refusal::NotNow)).await;
+}
+
+#[tokio::test]
+async fn a_player_is_invited_to_a_room_once() {
+    let server = server(|_| {});
+    let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let room = open_room(&mut all, 0, &map(2, 4), false).await;
+    let invite = || ClientMsg::Invite {
+        login: login("bob"),
+    };
+    all[0].send(invite()).await;
+    all[1]
+        .expect(ServerMsg::Invited {
+            room,
+            by: login("andrew"),
+        })
+        .await;
+    all[0].send(invite()).await;
+    all[0].expect(refused(Refusal::NotNow)).await;
+    // Bob hears the next chat line, not a second invitation.
+    all[0]
+        .send(ClientMsg::Chat {
+            channel: Channel::Lobby,
+            text: chat("after"),
+        })
+        .await;
+    all[1]
+        .expect(ServerMsg::Chat {
+            line: ChatLine {
+                channel: Channel::Lobby,
+                from: login("andrew"),
+                text: chat("after"),
+            },
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn invitations_are_rate_limited() {
+    let server = server(|_| {});
+    let mut all = clients(server.local_addr(), &["andrew"]).await;
+    open_room(&mut all, 0, &map(2, 4), false).await;
+    let invite = |i: usize| ClientMsg::Invite {
+        login: login(&format!("nobody{i}")),
+    };
+    // The server's INVITATIONS in a minute, here of players not on it.
+    for i in 0..20 {
+        all[0].send(invite(i)).await;
+        all[0].expect(refused(Refusal::NoSuchPlayer)).await;
+    }
+    all[0].send(invite(20)).await;
+    all[0].expect(refused(Refusal::SlowDown)).await;
 }
 
 #[tokio::test]
