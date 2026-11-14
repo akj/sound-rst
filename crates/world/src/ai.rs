@@ -322,14 +322,19 @@ impl World {
             .choice_index(orders.len())
             .expect("the order list is not empty");
         let kw = orders[i];
-        // `UseOrder.nb_args` is a property, true when read on the class.
-        let args = kw == Keyword::Use || kw.nb_args() > 0;
         let mut menu = self.menu_requests(unit, kw, true);
         if menu.is_empty() {
             return Ok(None);
         }
         let i = self.random.choice_index(menu.len()).expect("not empty");
         let mut order = menu.swap_remove(i);
+        // Of the abilities, only those that ask for a target take one.
+        let args = if kw == Keyword::Use {
+            self.order_info(unit, kw, order.type_name())
+                .is_some_and(|info| info.nb_args > 0)
+        } else {
+            kw.nb_args() > 0
+        };
         if args {
             let Some(j) = self.random.choice_index(targets.len()) else {
                 return Err(Abort::new("Cannot choose from an empty sequence"));
@@ -1801,6 +1806,41 @@ starting_squares a1
         assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
         w.csm(p).workers = vec![outside, inside];
         assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+    }
+
+    #[test]
+    fn computer2_aims_only_the_abilities_that_ask_for_a_target() {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("ai2")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let tid = w.rules.type_id("necromancer").unwrap();
+        let u = w
+            .create_creature(tid, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        let mut uses = BTreeMap::new();
+        for _ in 0..500 {
+            if let Some(o) = w.random_order(u, &[u]).unwrap()
+                && o.keyword() == Keyword::Use
+            {
+                let ability = o.type_name().unwrap().to_owned();
+                uses.insert(ability, o.target().is_some());
+            }
+        }
+        // `a_raise_dead` acts around the necromancer.
+        assert_eq!(uses, [("a_raise_dead".to_owned(), false)].into());
     }
 
     #[test]
