@@ -179,7 +179,7 @@ These tests show what text the port sends to the speech device. They cannot show
 
 ## Layout
 
-- `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, and runs the game one turn at a time.
+- `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
 - `crates/protocol` is the messages between a client and a server.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.

@@ -406,9 +406,9 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
     live.type_at(t0 + 2.0, 0.5, "gg wp");
     live.tap_at(t0 + 6.0, Key::Return, Mods::NONE);
     h.run_for(&mut g, 1.5);
-    let typing_from = g.game.host.world_until_view().turn();
+    let typing_from = g.game.host.world().turn();
     h.run_for(&mut g, 4.4);
-    let typing_to = g.game.host.world_until_view().turn();
+    let typing_to = g.game.host.world().turn();
     h.run_for(&mut g, 1.0);
     assert!(
         typing_to - typing_from >= 12,
@@ -426,7 +426,7 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
         .iter()
         .filter(|m| matches!(m, ClientMsg::TurnDone { .. }))
         .count();
-    assert_eq!(done as i64, g.game.host.world_until_view().turn());
+    assert_eq!(done as i64, g.game.host.world().turn());
     // The letters went to the line, not to the game's keys.
     let said = h.said_since(0);
     assert!(said.contains(&"g . g".to_owned()), "{said:#?}");
@@ -451,10 +451,10 @@ fn turns_keep_running_while_the_game_menu_is_open() {
     live.tap_at(t0 + 7.0, Key::Escape, Mods::NONE);
     live.tap_at(t0 + 9.0, Key::F10, Mods::NONE);
     h.run_for(&mut g, 1.5);
-    let open_from = g.game.host.world_until_view().turn();
+    let open_from = g.game.host.world().turn();
     let said_from = h.said_since(0).len();
     h.run_for(&mut g, 5.0);
-    let open_to = g.game.host.world_until_view().turn();
+    let open_to = g.game.host.world().turn();
     assert!(
         open_to - open_from >= 15,
         "turns {open_from} to {open_to} with the menu open"
@@ -466,7 +466,7 @@ fn turns_keep_running_while_the_game_menu_is_open() {
         .iter()
         .filter(|m| matches!(m, ClientMsg::TurnDone { .. }))
         .count();
-    assert_eq!(done as i64, g.game.host.world_until_view().turn());
+    assert_eq!(done as i64, g.game.host.world().turn());
     // The news went on with the menu open; Escape chose to continue, and
     // F10 then went to the game, which opened the menu again. News cut off
     // by either is said again after it.
@@ -519,7 +519,7 @@ fn out_of_sync_says_whether_the_player_leaves_the_game() {
 /// The orders that send each slot's peasants to a square: the next square
 /// east or west of their own with `away`, else their own.
 fn peasant_orders(g: &soundrts::testkit::TestGame, away: bool) -> Vec<SlotOrders> {
-    let world = g.game.host.world_until_view();
+    let world = g.game.host.world();
     let net = g.game.net.as_ref().unwrap();
     net.slots
         .iter()
@@ -582,7 +582,7 @@ fn a_game_out_of_sync_saves_a_record_that_replays_the_same_game() {
         },
     );
     h.run_for(&mut g, 14.0);
-    assert_eq!(g.game.host.world_until_view().turn(), 40);
+    assert_eq!(g.game.host.world().turn(), 40);
 
     let path = h
         .client
@@ -660,10 +660,10 @@ fn turns_that_come_together_are_spread_out() {
         server.at(t0, turn(n));
     }
     let mut times = Vec::new();
-    let mut last = g.game.host.world_until_view().turn();
+    let mut last = g.game.host.world().turn();
     while times.len() < 3 {
         h.step(&mut g);
-        let now = g.game.host.world_until_view().turn();
+        let now = g.game.host.world().turn();
         if now != last {
             times.push(h.clock.now());
             last = now;
@@ -1022,8 +1022,8 @@ fn a_players_login_is_said_as_written_in_the_game() {
     h.join_fake_server("andrew", &[]);
     let slots = vec![slot(human("andrew"), 1, true), slot(human("4000"), 2, true)];
     let g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
-    let other = g.game.host.world_until_view().players[1];
-    let name = g.game.host.world_until_view().player(other).name();
+    let other = g.game.host.world().players[1];
+    let name = g.game.host.world().player(other).name();
     assert_eq!(
         h.client.sounds.translate(&name[0]),
         soundrts::sound_cache::Spoken::Text("4000".into())
@@ -1144,7 +1144,7 @@ fn keys_send_the_lines_the_interface_always_sent() {
     h.key(&mut g, Key::Return, Mods::NONE);
     h.run_for(&mut g, 0.5);
     let peasant = g.game.group[0].0;
-    let world = g.game.host.world_until_view();
+    let world = g.game.host.world();
     assert_eq!(
         &*world
             .entity(soundrts_world::EntityId(peasant))

@@ -111,7 +111,7 @@ impl ScriptedPlayer {
                 return;
             }
             Step::Turn(t) => {
-                if g.host.world_until_view().turn() < *t {
+                if g.host.world().turn() < *t {
                     return;
                 }
             }
@@ -123,7 +123,7 @@ impl ScriptedPlayer {
                     .iter()
                     .skip(self.marks.last().map_or(0, |m| m.from))
                     .any(|u| render(u).contains(text));
-                if !found && g.host.world_until_view().turn() < max_turn {
+                if !found && g.host.world().turn() < max_turn {
                     return;
                 }
                 self.mark(&format!("said {text}"), format!("found: {found}"));

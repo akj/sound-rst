@@ -1,10 +1,10 @@
 //! The score said at the end of a game, from the player's statistics.
 
+use soundrts_world::View;
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::nofloat::floordiv;
 use soundrts_world::player::{StatEvent, StatTarget};
-use soundrts_world::{PlayerId, World};
 
 use crate::style::Style;
 
@@ -13,15 +13,15 @@ use super::style_msg;
 
 /// The messages of the score: the outcome and the duration, units and
 /// buildings, each resource, then the score.
-pub fn score_msgs(world: &World, me: PlayerId, style: &Style) -> Vec<Msg> {
-    let p = world.player(me);
-    let stats = &p.stats;
-    let outcome = if p.has_victory {
+pub fn score_msgs(view: View, style: &Style) -> Vec<Msg> {
+    let stats = view.stats();
+    let resources = view.resources();
+    let outcome = if view.has_victory() {
         mp::VICTORY
     } else {
         mp::DEFEAT
     };
-    let (minutes, seconds) = stats.game_duration_in_minutes_seconds(world.time);
+    let (minutes, seconds) = stats.game_duration_in_minutes_seconds(view.time());
     let mut msgs = vec![
         [
             msg(outcome),
@@ -54,7 +54,7 @@ pub fn score_msgs(world: &World, me: PlayerId, style: &Style) -> Vec<Msg> {
             .concat(),
         );
     }
-    for i in 0..p.resources.len() {
+    for i in 0..resources.len() {
         let gathered = stats.get(StatEvent::Gathered, StatTarget::Resource(i));
         msgs.push(
             [
@@ -62,7 +62,7 @@ pub fn score_msgs(world: &World, me: PlayerId, style: &Style) -> Vec<Msg> {
                 style_msg(style, "parameters", &format!("resource_{i}_title")),
                 msg(mp::GATHERED),
                 msg(mp::COMMA),
-                nb2msg(floordiv(stats.consumed(i, &p.resources), PRECISION)),
+                nb2msg(floordiv(stats.consumed(i, resources), PRECISION)),
                 msg(mp::CONSUMED),
             ]
             .concat(),
@@ -71,7 +71,7 @@ pub fn score_msgs(world: &World, me: PlayerId, style: &Style) -> Vec<Msg> {
     msgs.push(
         [
             msg(mp::SCORE),
-            nb2msg(stats.score(&p.resources)),
+            nb2msg(stats.score(resources)),
             msg(mp::HISTORY_EXPLANATION),
         ]
         .concat(),

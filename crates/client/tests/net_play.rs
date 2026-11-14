@@ -260,22 +260,22 @@ fn two_players_play_a_game_in_step_and_leave_it() {
                 for (slot, &p) in slots.iter().enumerate() {
                     for e in g
                         .host
-                        .world_until_view()
+                        .world()
                         .player(p)
                         .units
                         .iter()
-                        .filter_map(|&u| g.host.world_until_view().entity(u))
+                        .filter_map(|&u| g.host.world().entity(u))
                     {
                         if &*e.type_name == "peasant"
                             && let Some(sq) = e.square()
                         {
                             r.squares
-                                .insert((slot, g.host.world_until_view().square(sq).name.clone()));
+                                .insert((slot, g.host.world().square(sq).name.clone()));
                         }
                     }
                 }
             }
-            let turn = g.host.world_until_view().turn();
+            let turn = g.host.world().turn();
             if done.get() == turn || !matches!(turn, 10 | 70) && quit_at.is_none_or(|q| turn != q) {
                 return;
             }
@@ -287,11 +287,11 @@ fn two_players_play_a_game_in_step_and_leave_it() {
             let me = g.me;
             let units: Vec<_> = g
                 .host
-                .world_until_view()
+                .world()
                 .player(me)
                 .units
                 .iter()
-                .filter_map(|&u| g.host.world_until_view().entity(u))
+                .filter_map(|&u| g.host.world().entity(u))
                 .filter(|e| &*e.type_name == "peasant")
                 .map(|e| (e.id, e.square()))
                 .collect();
@@ -299,18 +299,14 @@ fn two_players_play_a_game_in_step_and_leave_it() {
                 return;
             };
             let target = if turn == 10 {
-                let sq = g.host.world_until_view().square(home);
+                let sq = g.host.world().square(home);
                 let Some(next) = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
-                    .find_map(|(dc, dr)| {
-                        g.host
-                            .world_until_view()
-                            .square_at(sq.col + dc, sq.row + dr)
-                    })
+                    .find_map(|(dc, dr)| g.host.world().square_at(sq.col + dc, sq.row + dr))
                 else {
                     return;
                 };
-                let name = g.host.world_until_view().square(next).name.clone();
+                let name = g.host.world().square(next).name.clone();
                 record.borrow_mut().target = Some((you, name));
                 next
             } else {

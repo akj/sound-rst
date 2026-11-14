@@ -174,23 +174,16 @@ impl GameInterface {
         if !e.is_deposit() {
             return None;
         }
-        self.host
-            .world_until_view()
-            .rules
+        self.view()
             .unit_type(&e.type_name)
             .and_then(|t| t.resource_type)
     }
 
     /// The type a building site becomes.
     fn site_type_name(&self, e: &Entity) -> Option<String> {
-        e.site.as_ref().map(|s| {
-            self.host
-                .world_until_view()
-                .rules
-                .ty(s.building_type)
-                .name
-                .clone()
-        })
+        e.site
+            .as_ref()
+            .map(|s| self.view().unit_type_by_id(s.building_type).name.clone())
     }
 
     pub fn short_title(&self, cx: &Client, v: &EntityView) -> Msg {
@@ -227,19 +220,13 @@ impl GameInterface {
                     .ok_or_else(|| Oops::new("int() argument must be a number, not 'NoneType'"))?;
                 title.extend(nb2msg(n));
             } else {
-                if self
-                    .host
-                    .world_until_view()
-                    .player(self.me)
-                    .allied
-                    .contains(&p)
-                {
+                if self.view().is_ally(p) {
                     title.extend(msg(mp::ALLY));
                 } else {
                     title.extend(msg(mp::ENEMY));
                 }
                 title.extend(msg(mp::COMMA));
-                title.extend(self.host.world_until_view().player(p).name());
+                title.extend(self.view().player_name(p));
                 title.extend(msg(mp::COMMA));
             }
         }
@@ -247,7 +234,7 @@ impl GameInterface {
             title.extend(msg(mp::IN_THE_FOG));
             title.extend(msg(mp::COMMA));
             if v.model.stats.speed != 0 {
-                let s = (self.host.world_until_view().time - ts).div_euclid(1000);
+                let s = (self.view().time() - ts).div_euclid(1000);
                 let m = s.div_euclid(60);
                 if m != 0 {
                     title.extend(nb2msg(m));
@@ -273,9 +260,13 @@ impl GameInterface {
     /// The upgrades of a creature's player that apply to it.
     fn upgrades_status(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
-        self.host
-            .world_until_view()
-            .unit_upgrades(v.id())
+        let view = self.view();
+        let upgrades = if v.is_memory() {
+            view.leaks().remembered_unit_upgrades(v.id())
+        } else {
+            view.unit_upgrades(v.id())
+        };
+        upgrades
             .iter()
             .flat_map(|u| style_msg(style, u, "title"))
             .collect()
@@ -334,8 +325,8 @@ impl GameInterface {
         let p = self
             .place
             .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'x'"))?;
-        let s = self.host.world_until_view().square(p);
-        Ok((s.x as f64 / 1000.0, s.y as f64 / 1000.0))
+        let (x, y) = self.view().square(p).center();
+        Ok((x as f64 / 1000.0, y as f64 / 1000.0))
     }
 
     /// The distance from the listener, in meters.
@@ -402,9 +393,9 @@ impl GameInterface {
     fn target_entity(&self, t: &Target) -> Option<Arc<Entity>> {
         match t {
             Target::Entity(id) => self
-                .host
-                .world_until_view()
-                .entity(*id)
+                .view()
+                .leaks()
+                .order_target(*id)
                 .map(|e| Arc::new(e.clone())),
             Target::Memory(m) => Some(m.snapshot.clone()),
             _ => None,
@@ -431,21 +422,22 @@ impl GameInterface {
         match t {
             Target::Entity(id) => {
                 let e = self
-                    .host
-                    .world_until_view()
-                    .entity(*id)
+                    .view()
+                    .leaks()
+                    .order_target(*id)
                     .ok_or_else(|| Oops::new("unknown target"))?;
                 let v = EntityView::new(Arc::new(e.clone()), None, &cx.rng);
                 self.title(cx, &v)
             }
             Target::Memory(m) => {
-                let ts = self
-                    .host
-                    .world_until_view()
-                    .player(m.owner)
-                    .memory
-                    .get(&m.snapshot.id)
-                    .map_or(self.host.world_until_view().time, |r| r.time_stamp);
+                // The target as the order's owner remembers it.
+                let view = self.view();
+                let remembered = if m.owner == self.me {
+                    view.remembered(m.snapshot.id)
+                } else {
+                    view.leaks().memory_of(m.owner, m.snapshot.id)
+                };
+                let ts = remembered.map_or(view.time(), |r| r.time_stamp);
                 let v = EntityView::new(m.snapshot.clone(), Some(ts), &cx.rng);
                 self.title(cx, &v)
             }
@@ -497,12 +489,10 @@ impl GameInterface {
 
     /// The order menu of a unit: the menu kinds it may receive.
     pub fn view_menu(&self, id: EntityId, strict: bool) -> Vec<String> {
-        if self.host.world_until_view().entity(id).is_none() {
-            return Vec::new();
-        }
+        let view = self.view();
         self.orders_list
             .iter()
-            .flat_map(|&k| self.host.world_until_view().order_menu(id, k, strict))
+            .flat_map(|&k| view.order_menu(id, k, strict))
             .collect()
     }
 
@@ -515,61 +505,21 @@ impl GameInterface {
     pub fn model_is_in(&self, e: &Entity, place: Option<SquareId>) -> bool {
         match e.place {
             Some(Place::Inside(c)) => {
-                return self
-                    .host
-                    .world_until_view()
-                    .entity(c)
-                    .and_then(|c| c.place)
-                    .map(|p| p.square())
-                    == Some(place);
+                return self.view().leaks().container_place(c).map(|p| p.square()) == Some(place);
             }
             Some(Place::Square(s)) if Some(s) == place => return true,
             None if place.is_none() => return true,
             _ => {}
         }
         e.blocked_exit
-            .and_then(|x| self.host.world_until_view().entity(x))
-            .and_then(|x| x.exit.as_ref())
-            .and_then(|x| x.other_side)
-            .and_then(|o| self.host.world_until_view().entity(o))
-            .is_some_and(|o| o.place.map(|p| p.square()) == Some(place))
+            .and_then(|x| self.view().other_side_of_exit(x))
+            .map(|p| p.square())
+            == Some(place)
     }
 
     /// An exit, for the interface: a type with a sound for moving through.
     pub fn is_an_exit(&self, cx: &Client, v: &EntityView) -> bool {
         cx.res.style().has(v.type_name(), "when_moving_through")
-    }
-
-    /// Whether an exit is closed by a forest or a blocker; with `player`,
-    /// a friendly gate lets the player through.
-    pub fn exit_is_blocked(&self, id: EntityId, player: Option<PlayerId>) -> bool {
-        let Some(e) = self.host.world_until_view().entity(id) else {
-            return false;
-        };
-        let Some(x) = &e.exit else {
-            return false;
-        };
-        if x.is_blocked_by_forests {
-            return true;
-        }
-        let other = x
-            .other_side
-            .and_then(|o| self.host.world_until_view().entity(o))
-            .and_then(|o| o.exit.as_ref())
-            .map(|o| o.blockers.clone())
-            .unwrap_or_default();
-        x.blockers.iter().chain(&other).any(|&b| {
-            let Some(b) = self.host.world_until_view().entity(b) else {
-                return false;
-            };
-            let enemy = match player {
-                None => true,
-                Some(p) => b
-                    .player
-                    .is_some_and(|bp| !self.host.world_until_view().player(p).allied.contains(&bp)),
-            };
-            b.stats.is_a_gate == 0 || enemy
-        })
     }
 
     /// A deposit, a building land, a damaged repairable or an exit: what a
@@ -628,12 +578,7 @@ impl GameInterface {
             Some(Place::Square(s)) if s == ip => true,
             Some(Place::Square(s)) => {
                 cx.params.flag_or("render_nearby_objects", false)
-                    && self
-                        .host
-                        .world_until_view()
-                        .square(ip)
-                        .neighbors
-                        .contains(&s)
+                    && self.view().square(ip).neighbors().contains(&s)
             }
             _ => false,
         }
@@ -677,14 +622,7 @@ impl GameInterface {
         let Some(ip) = self.place else { return };
         match v.place() {
             Some(Place::Square(s)) if s == ip => {}
-            Some(Place::Square(s))
-                if self
-                    .host
-                    .world_until_view()
-                    .square(ip)
-                    .neighbors
-                    .contains(&s) =>
-            {
+            Some(Place::Square(s)) if self.view().square(ip).neighbors().contains(&s) => {
                 priority -= 1
             }
             _ => return,
@@ -705,7 +643,7 @@ impl GameInterface {
     /// Plays an alert sound from the entity's square, as on a minimap.
     fn launch_alert_of(&self, cx: &Client, v: &EntityView, sound: &str) {
         let place = match v.place() {
-            Some(Place::Inside(c)) => self.host.world_until_view().entity(c).and_then(|c| c.place),
+            Some(Place::Inside(c)) => self.view().leaks().container_place(c),
             p => p,
         };
         self.launch_alert(cx, self.outer_square(place), sound);
@@ -871,17 +809,9 @@ impl GameInterface {
         let owner = v
             .player()
             .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'units'"))?;
-        let friends: Vec<&Entity> = self
-            .host
-            .world_until_view()
-            .player(owner)
-            .units
-            .iter()
-            .filter_map(|&u| self.host.world_until_view().entity(u))
-            .filter(|u| u.place == v.place() && u.id != v.id())
-            .collect();
-        let friend_soldiers = friends.iter().any(|u| u.menace() != 0);
-        if !friend_soldiers && v.model.menace() != 0 || friends.is_empty() {
+        let friends = self.view().leaks().comrades(owner, v.place(), v.id());
+        let friend_soldiers = friends.soldiers > 0;
+        if !friend_soldiers && v.model.menace() != 0 || friends.units == 0 {
             if v.player() == Some(self.me) {
                 self.on_lose_fight(cx, v)?;
             }
@@ -935,7 +865,12 @@ impl GameInterface {
     fn terrain_footstep(&self, cx: &Client, v: &EntityView) -> Option<Vec<String>> {
         let style = cx.res.style();
         let s = v.place()?.square()?;
-        let t = &self.host.world_until_view().square(s).type_name;
+        let view = self.view();
+        let t = if self.scouted_squares.contains(&s) {
+            view.terrain(s)
+        } else {
+            view.leaks().unobserved_terrain(s)
+        };
         if t.is_empty() {
             return None;
         }
@@ -960,15 +895,12 @@ impl GameInterface {
         let Some(s) = v.place().and_then(|p| p.square()) else {
             return result;
         };
-        let objects = &self.host.world_until_view().square(s).objects;
+        let objects = self.view().leaks().objects_on(s);
         if objects.len() >= 30 {
             return result;
         }
         let mut d_min = 9_999_999.0;
-        for &mid in objects {
-            let Some(m) = self.host.world_until_view().entity(mid) else {
-                continue;
-            };
+        for m in objects {
             if m.stats.speed != 0 {
                 continue;
             }
@@ -982,7 +914,7 @@ impl GameInterface {
                 .get(1)
                 .and_then(|k| soundrts_world::nofloat::py_float(k).ok())
                 .unwrap_or(1.0);
-            let Some(o) = self.dobjets.get(&mid) else {
+            let Some(o) = self.dobjets.get(&m.id) else {
                 continue;
             };
             if k == 0.0 {
@@ -1027,7 +959,13 @@ impl GameInterface {
     }
 
     fn noise_style(&self, cx: &Client, v: &EntityView) -> (String, Noise) {
-        if let Some(a) = self.host.world_until_view().activity(v.id()) {
+        let view = self.view();
+        let activity = if v.is_memory() {
+            view.leaks().live_activity(v.id())
+        } else {
+            view.activity(v.id())
+        };
+        if let Some(a) = activity {
             let attr = format!("noise_when_{a}");
             let st = self.get_style_noise(cx, v, &attr);
             if st != Noise::Silent {

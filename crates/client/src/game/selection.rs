@@ -165,26 +165,22 @@ impl GameInterface {
     /// The units the player controls, on the map (not inside), perceived.
     /// Without `even_if_no_menu`, only those that can be given an order.
     pub fn units(&self, cx: &Client, even_if_no_menu: bool, sort: bool) -> Vec<EntityId> {
-        let p = self.host.world_until_view().player(self.me);
+        let view = self.view();
         let mut result: Vec<EntityId> = Vec::new();
-        for &ap in &p.allied_control {
-            for &u in &self.host.world_until_view().player(ap).units {
-                let Some(e) = self.host.world_until_view().entity(u) else {
-                    continue;
-                };
-                if e.is_inside() || !self.dobjets.contains_key(&u) {
-                    continue;
-                }
-                let has_menu = even_if_no_menu || {
-                    let t = self.host.world_until_view().rules.unit_type(&e.type_name);
-                    t.is_some_and(|t| !t.can_train.is_empty() || !t.can_upgrade_to.is_empty())
-                        || !e.orders.is_empty()
-                        || !e.basic_abilities().is_empty()
-                        || !self.view_menu(u, false).is_empty()
-                };
-                if has_menu {
-                    result.push(u);
-                }
+        for e in view.controlled_units() {
+            let u = e.id;
+            if e.is_inside() || !self.dobjets.contains_key(&u) {
+                continue;
+            }
+            let has_menu = even_if_no_menu || {
+                let t = view.unit_type(&e.type_name);
+                t.is_some_and(|t| !t.can_train.is_empty() || !t.can_upgrade_to.is_empty())
+                    || !e.orders.is_empty()
+                    || !e.basic_abilities().is_empty()
+                    || !self.view_menu(u, false).is_empty()
+            };
+            if has_menu {
+                result.push(u);
             }
         }
         if sort {
@@ -207,14 +203,14 @@ impl GameInterface {
 
     /// Keeps in the group the units still known and controlled.
     pub fn update_group(&mut self) {
-        let p = self.host.world_until_view().player(self.me);
+        let view = self.host.view(self.me);
         let group = std::mem::take(&mut self.group);
         self.group = group
             .into_iter()
             .filter(|u| {
                 self.dobjets.get(u).is_some_and(|v| {
                     v.player()
-                        .is_some_and(|vp| vp == self.me || p.allied_control.contains(&vp))
+                        .is_some_and(|vp| vp == self.me || view.controls(vp))
                 })
             })
             .collect();
@@ -429,7 +425,7 @@ impl GameInterface {
             }
             None => self
                 .place
-                .map(|p| self.host.world_until_view().square(p).title.clone())
+                .map(|p| self.view().square(p).title().clone())
                 .unwrap_or_default(),
         };
         self.say_group(cx, &place_title)?;
@@ -461,14 +457,7 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) -> R {
-        self.group = self
-            .host
-            .world_until_view()
-            .groups
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, units)| units.clone())
-            .unwrap_or_default();
+        self.group = self.view().leaks().recallable_group(name).to_vec();
         self.say_group(cx, &Vec::new())
     }
 
@@ -493,13 +482,9 @@ impl GameInterface {
             };
             for o in entries {
                 if !done.contains(&o) {
-                    if let Some(v) = OrderTypeView::new(
-                        &o,
-                        *u,
-                        self.host.world_until_view(),
-                        cx.res.style(),
-                        &cx.log,
-                    ) {
+                    if let Some(v) =
+                        OrderTypeView::new(&o, *u, self.view(), cx.res.style(), &cx.log)
+                    {
                         result.push(v);
                     }
                     done.push(o);
@@ -523,7 +508,7 @@ impl GameInterface {
     pub(crate) fn select_order(&mut self, cx: &mut Client, order: OrderTypeView, help: bool) {
         let mut m = order.title.clone();
         m.extend(msg(mp::COMMA));
-        m.extend(order.full_comment(self.host.world_until_view(), cx.res.style()));
+        m.extend(order.full_comment(self.view(), cx.res.style()));
         if help {
             m.extend(msg(mp::COMMA));
             if order.nb_args == 0 {
@@ -673,7 +658,7 @@ impl GameInterface {
                 let (Some(z), Some(p)) = (&self.zoom, self.place) else {
                     unreachable!("zoom mode needs a square")
                 };
-                let (x, y) = z.point(self.host.world_until_view().square(p));
+                let (x, y) = z.point(self.view().square(p));
                 OrderTarget::Point { square: p, x, y }
             }
             UiTarget::Square(p) => OrderTarget::Square(p),
@@ -696,9 +681,9 @@ impl GameInterface {
                 let (Some(z), Some(p)) = (&self.zoom, self.place) else {
                     unreachable!("zoom mode needs a square")
                 };
-                Ok(z.title(self.host.world_until_view().square(p)))
+                Ok(z.title(self.view().square(p)))
             }
-            UiTarget::Square(p) => Ok(self.host.world_until_view().square(p).title.clone()),
+            UiTarget::Square(p) => Ok(self.view().square(p).title().clone()),
             UiTarget::Nothing => Err(Oops::new("'NoneType' object has no attribute 'title'")),
         }
     }
@@ -748,19 +733,13 @@ impl GameInterface {
                 continue;
             }
             let keyword = self
-                .host
+                .view()
                 .default_order(u, target)
                 .map_err(|e| Oops::new(e.0))?;
             if let Some(keyword) = keyword {
                 let order = keyword.as_str();
-                let o = OrderTypeView::new(
-                    order,
-                    u,
-                    self.host.world_until_view(),
-                    cx.res.style(),
-                    &cx.log,
-                )
-                .ok_or_else(|| Oops::missing(order))?;
+                let o = OrderTypeView::new(order, u, self.view(), cx.res.style(), &cx.log)
+                    .ok_or_else(|| Oops::missing(order))?;
                 let m = [o.title, self.ui_target_title(cx)?].concat();
                 if !msgs.contains(&m) {
                     msgs.push(m);

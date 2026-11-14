@@ -1,8 +1,8 @@
 //! What a player asks of the game, as typed values.
 //!
 //! A [`Command`] is given to a [`crate::Host`] for a player. The world
-//! still runs commands from text: [`Command::line`] writes the line the
-//! world reads, and a game on a server sends that line to the other
+//! still runs commands from text: [`crate::Host::line`] writes the line
+//! the world reads, and a game on a server sends that line to the other
 //! players. Temporary: the text goes once the world takes commands as
 //! values.
 
@@ -180,7 +180,7 @@ impl Command {
     /// no cheat. `world` names the squares.
     ///
     /// Temporary: the text goes when the world takes commands as values.
-    pub fn line(&self, world: &World) -> Option<String> {
+    pub(crate) fn line(&self, world: &World) -> Option<String> {
         Some(match self {
             Command::Control(units) => {
                 let ids: Vec<i64> = units.iter().map(|u| i64::from(u.0)).collect();

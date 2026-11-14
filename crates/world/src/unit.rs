@@ -2116,11 +2116,7 @@ impl World {
     }
 
     /// The default order of a unit on a target (`get_default_order`).
-    pub fn get_default_order(
-        &mut self,
-        id: EntityId,
-        target_id: &str,
-    ) -> Res<Option<&'static str>> {
+    pub fn get_default_order(&self, id: EntityId, target_id: &str) -> Res<Option<&'static str>> {
         let Some(p) = self.e(id).player else {
             return Err(Abort::new(
                 "'NoneType' object has no attribute 'get_object_by_id'",

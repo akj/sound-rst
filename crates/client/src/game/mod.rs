@@ -2,7 +2,9 @@
 //! and what the keys do.
 //!
 //! The interface owns the game's [`Host`] and gives it the player's
-//! commands. Its loop steps the host when a turn is due (every 300 ms
+//! commands. It reads the game through the host's view of what its player
+//! knows ([`GameInterface::view`]), never the world itself. Its loop steps
+//! the host when a turn is due (every 300 ms
 //! divided by the speed), then reads what happened as the original's
 //! server events: entity events, messages, and a `voila` with the
 //! perception, memory and observed squares at the end of the turn. One
@@ -36,7 +38,7 @@ use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{Command, Entity, EntityId, Host, Place, PlayerId, SquareId, Voila};
+use soundrts_world::{Command, Entity, EntityId, Host, Place, PlayerId, SquareId, View, Voila};
 
 use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
@@ -300,9 +302,14 @@ impl GameInterface {
         }
     }
 
+    /// What the player knows of the game.
+    pub fn view(&self) -> View<'_> {
+        self.host.view(self.me)
+    }
+
     /// The square width in meters.
     pub fn square_width(&self) -> f64 {
-        self.host.world_until_view().square_width() as f64 / 1000.0
+        self.view().square_width() as f64 / 1000.0
     }
 
     /// The order kinds for the menus, from the current style.
@@ -324,13 +331,12 @@ impl GameInterface {
     /// and a game on a server takes no command without a text line (a
     /// cheat the host carries out itself).
     pub fn send_command(&mut self, cx: &Client, command: Command) {
-        let world = self.host.world_until_view();
-        if !world.players.contains(&self.me) {
+        if !self.view().players().contains(&self.me) {
             cx.log.info(format!(
                 "didn't send the order for player {}: {command:?}",
                 self.me.0
             ));
-        } else if self.net.is_some() && command.line(world).is_none() {
+        } else if self.net.is_some() && self.host.line(&command).is_none() {
             cx.log
                 .warning(format!("a game on a server cannot send {command:?}"));
         } else {
@@ -420,7 +426,7 @@ impl GameInterface {
     /// How far the game has got.
     pub fn progress(&self) -> GameProgress {
         GameProgress {
-            turn: self.host.world_until_view().turn(),
+            turn: self.view().turn(),
             events_waiting: !self.srv_queue.is_empty(),
             turns_handled: self.turns_handled,
         }
@@ -578,36 +584,23 @@ impl GameInterface {
 
     /// Whether the entity belongs to an enemy of the player.
     pub fn is_an_enemy(&self, e: &Entity) -> bool {
-        e.player.is_some_and(|p| {
-            !self
-                .host
-                .world_until_view()
-                .player(self.me)
-                .allied
-                .contains(&p)
-        })
+        e.player.is_some_and(|p| !self.view().is_ally(p))
     }
 
     /// Whether `p` is the player or an ally.
     pub fn is_allied(&self, p: Option<PlayerId>) -> bool {
-        p.is_some_and(|p| {
-            self.host
-                .world_until_view()
-                .player(self.me)
-                .allied
-                .contains(&p)
-        })
+        p.is_some_and(|p| self.view().is_ally(p))
     }
 
     /// The title of a place: the square's, or the container's type title.
     pub fn place_title(&self, cx: &Client, place: Place) -> Msg {
         match place {
-            Place::Square(s) => self.host.world_until_view().square(s).title.clone(),
+            Place::Square(s) => self.view().square(s).title().clone(),
             Place::Inside(c) => self
-                .host
-                .world_until_view()
-                .entity(c)
-                .map(|e| style_msg(cx.res.style(), &e.type_name, "title"))
+                .view()
+                .leaks()
+                .container_type(c)
+                .map(|t| style_msg(cx.res.style(), t, "title"))
                 .unwrap_or_default(),
         }
     }
@@ -616,13 +609,13 @@ impl GameInterface {
     pub fn outer_square(&self, place: Option<Place>) -> Option<SquareId> {
         match place? {
             Place::Square(s) => Some(s),
-            Place::Inside(c) => self.outer_square(self.host.world_until_view().entity(c)?.place),
+            Place::Inside(c) => self.outer_square(self.view().leaks().container_place(c)),
         }
     }
 
     /// Says the objective of the map, if any.
     pub fn say_objective(&self, cx: &mut Client) {
-        let objective = &self.host.world_until_view().map.objective;
+        let objective = self.view().map_objective();
         if !objective.is_empty() {
             let mut m = msg(mp::OBJECTIVE);
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
