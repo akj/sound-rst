@@ -338,6 +338,17 @@ impl<'a> View<'a> {
         self.world.player(p).allied.contains(&q)
     }
 
+    /// Whether `p` has been defeated: every player is told when it is.
+    pub fn is_defeated(&self, p: PlayerId) -> bool {
+        self.world.player(p).has_been_defeated
+    }
+
+    /// The players who have left the game, defeated or not, in the order
+    /// they left.
+    pub fn former_players(&self) -> &'a [PlayerId] {
+        &self.world.ex_players
+    }
+
     // 4. Entities the player perceives or remembers.
 
     /// The entity as it is now, if the player perceives it.
@@ -391,6 +402,14 @@ impl<'a> View<'a> {
         let w = self.world;
         let perceived = w.player(self.player).perception.iter();
         questions::comrades(perceived.filter_map(|&u| w.entity(u)), owner, place, except)
+    }
+
+    /// The danger a unit the player perceives represents, as the
+    /// simulation weighs it to decide whether to flee: its damage, or for a
+    /// transport, what it can carry. 0 for a unit the player does not
+    /// perceive.
+    pub fn threat(&self, unit: EntityId) -> i64 {
+        self.perceived_entity(unit).map_or(0, Entity::menace)
     }
 
     /// What a remembered unit was busy with when the player last saw it,
@@ -459,6 +478,23 @@ impl<'a> View<'a> {
     pub fn activity(&self, unit: EntityId) -> Option<String> {
         self.perceived_entity(unit)?;
         self.world.activity(unit)
+    }
+
+    /// The game time left, in milliseconds, before a unit the player
+    /// controls finishes what it trains, researches or upgrades to now:
+    /// its first order, as the sounds of its progress tell. `None` for
+    /// another unit or another order.
+    pub fn production_time_left(&self, unit: EntityId) -> Option<i64> {
+        let e = self.world.entity(unit)?;
+        if !self.controls(e.player?) {
+            return None;
+        }
+        let o = e.orders.first()?;
+        matches!(
+            o.keyword,
+            Keyword::Train | Keyword::Research | Keyword::UpgradeTo
+        )
+        .then_some(o.time.max(0))
     }
 
     /// The upgrades of its owner that apply to a unit the player

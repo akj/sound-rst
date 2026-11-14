@@ -455,3 +455,58 @@ fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
             .is_empty()
     );
 }
+
+#[test]
+fn the_time_left_of_a_production_is_known_only_for_a_controlled_unit() {
+    let (mut w, me, them) = game();
+    for p in [me, them] {
+        let townhall = unit(&w, p, "townhall");
+        command(
+            &mut w,
+            p,
+            &[
+                format!("control {}", townhall.0),
+                "order 0 0 train peasant".into(),
+            ],
+        );
+    }
+    for _ in 0..10 {
+        w.update();
+    }
+    let v = View::new(&w, me);
+    // A peasant takes 10 seconds: 11 turns of 300 milliseconds have gone.
+    assert_eq!(v.production_time_left(unit(&w, me, "townhall")), Some(6700));
+    assert_eq!(v.production_time_left(unit(&w, them, "townhall")), None);
+    assert_eq!(v.production_time_left(unit(&w, me, "farm")), None);
+}
+
+#[test]
+fn a_unit_is_a_threat_by_its_damage_only_while_perceived() {
+    let (mut w, me, them) = game();
+    for p in [me, them] {
+        let square = w
+            .square(square_of(&w, unit(&w, p, "townhall")))
+            .name
+            .clone();
+        command(&mut w, p, &[format!("cmd add_units {square} footman")]);
+    }
+    let v = View::new(&w, me);
+    assert_eq!(v.threat(unit(&w, me, "footman")), 3500);
+    assert_eq!(v.threat(unit(&w, me, "farm")), 0);
+    let theirs = unit(&w, them, "footman");
+    assert_eq!(w.entity(theirs).unwrap().menace(), 3500);
+    assert_eq!(v.threat(theirs), 0);
+}
+
+#[test]
+fn a_defeated_player_who_left_is_among_the_former_players() {
+    let (mut w, me, them) = game();
+    let v = View::new(&w, me);
+    assert!(!v.is_defeated(them));
+    assert!(v.former_players().is_empty());
+    w.defeat(them, true);
+    let v = View::new(&w, me);
+    assert!(v.is_defeated(them));
+    assert_eq!(v.players(), [me]);
+    assert_eq!(v.former_players(), [them]);
+}
