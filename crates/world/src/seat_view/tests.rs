@@ -1,0 +1,957 @@
+//! The proof that a seat's view made only of what it was sent answers
+//! every question the interface asks, alike: whole games are played, and
+//! on every turn, for every player, both views are asked every question of
+//! [`View`] with every argument the interface passes.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
+
+use super::*;
+use crate::command::{Cheat, Command};
+use crate::events::Event;
+use crate::player::Controller;
+use crate::setup::GameSetup;
+use crate::view::View;
+use crate::view::tests::read;
+use crate::world::{World, multiplayer_default_triggers};
+
+/// A game to play, and what to do to it on the way.
+struct Case {
+    name: &'static str,
+    rules: Vec<&'static str>,
+    ai: Vec<&'static str>,
+    map: &'static str,
+    seed: i64,
+    controllers: Vec<Controller>,
+    turns: usize,
+    /// Every player shares control of its units with its allies.
+    shared_control: bool,
+    /// Changes made to the game at the start of a turn.
+    script: fn(&mut World, usize),
+}
+
+fn computer(ai_type: &str, alliance: &str) -> Controller {
+    let mut c = Controller::computer(ai_type);
+    c.alliance = Some(alliance.into());
+    c
+}
+
+fn with_faction(mut c: Controller, faction: &str) -> Controller {
+    c.faction = faction.into();
+    c
+}
+
+fn nothing(_: &mut World, _: usize) {}
+
+/// Builds a `kind` of `p` on an exit of the square of one of its units,
+/// makes it block the exit, and puts a unit of `p` inside it.
+fn shelter(w: &mut World, p: PlayerId, kind: &str) {
+    let units = w.player(p).units.clone();
+    let Some((square, exit)) = units.iter().find_map(|&u| {
+        let q = w.entity(u)?.square()?;
+        Some((q, *w.square(q).exits.first()?))
+    }) else {
+        panic!("no exit beside a unit of player {}", p.0);
+    };
+    let (x, y) = {
+        let e = w.entity(exit).unwrap();
+        (e.x, e.y)
+    };
+    let t = w.rules.type_id(kind).unwrap();
+    let Ok(b) = w.create_creature(t, Some(p), Place::Square(square), x, y) else {
+        panic!("no room for a {kind} on square {}", square.0);
+    };
+    w.block(b, exit);
+    let inside = units.iter().copied().find(|&u| {
+        w.entity(u)
+            .is_some_and(|e| e.class.is_unit() && !e.is_inside())
+    });
+    w.load(b, inside.expect("a unit to put inside"));
+}
+
+/// The disagreements and the number of answers compared.
+#[derive(Default)]
+struct Tally {
+    compared: u64,
+    by_question: BTreeMap<&'static str, u64>,
+    /// How often a case worth comparing came up: what the comparisons
+    /// covered beyond empty answers.
+    seen: BTreeMap<String, u64>,
+    differences: Vec<String>,
+}
+
+impl Tally {
+    fn saw(&mut self, what: impl Into<String>) {
+        *self.seen.entry(what.into()).or_default() += 1;
+    }
+
+    fn same<T: PartialEq + Debug>(&mut self, question: &'static str, args: impl Debug, a: T, b: T) {
+        self.compared += 1;
+        *self.by_question.entry(question).or_default() += 1;
+        if a != b && self.differences.len() < 40 {
+            self.differences.push(format!(
+                "{question}{args:?}: the world's view {a:?}, the seat's {b:?}"
+            ));
+        }
+    }
+}
+
+/// What the interface keeps of earlier turns, kept from the world's view
+/// as the interface keeps it today.
+#[derive(Default)]
+struct Kept {
+    terrain: BTreeMap<SquareId, String>,
+    upgrades: BTreeMap<EntityId, Vec<String>>,
+}
+
+impl Kept {
+    fn note(&mut self, v: &View, w: &World) {
+        let pl = w.player(v.player());
+        for &s in pl
+            .observed_squares
+            .iter()
+            .chain(&pl.partly_observed_squares)
+        {
+            self.terrain.insert(s, v.terrain(s).to_owned());
+        }
+        for &id in &pl.perception {
+            if let Some(e) = v.perceived(id)
+                && e.is_creature()
+                && e.player.is_some()
+            {
+                self.upgrades.insert(id, v.unit_upgrades(id));
+            }
+        }
+        self.upgrades.retain(|&id, _| v.known(id).is_some());
+    }
+}
+
+/// Asks both views every question, with every argument the interface
+/// passes, and a few it does not.
+fn compare(t: &mut Tally, w: &World, v: &View, s: &SeatView, kept: &Kept, label: &str) {
+    let me = v.player();
+    let pl = w.player(me);
+    let at = |what: &str| format!("{label} {what}");
+    if pl.cheatmode {
+        t.saw("turns of a seat in cheat mode");
+    }
+    if pl.cheat_has_all {
+        t.saw("turns of a seat that has everything");
+    }
+    if pl.has_been_defeated {
+        t.saw("turns of a defeated seat");
+    }
+    t.saw(format!(
+        "unperceived controlled units: {}",
+        s.message().unperceived_units.len().min(1)
+    ));
+    for _ in &s.message().unperceived_units {
+        t.saw("unperceived controlled unit");
+    }
+
+    // 1. The game, known to everyone.
+    t.same("player", at(""), v.player(), s.player());
+    t.same("time", at(""), v.time(), s.time());
+    t.same("turn", at(""), v.turn(), s.turn());
+    t.same(
+        "cheats_allowed",
+        at(""),
+        v.cheats_allowed(),
+        s.cheats_allowed(),
+    );
+    t.same(
+        "map_objective",
+        at(""),
+        v.map_objective(),
+        s.map_objective(),
+    );
+    t.same("map_intro", at(""), v.map_intro(), s.map_intro());
+    t.same("square_width", at(""), v.square_width(), s.square_width());
+    t.same("square_count", at(""), v.square_count(), s.square_count());
+    t.same("grid_max", at(""), v.grid_max(), s.grid_max());
+    let (cols, rows) = v.grid_max();
+    for col in -1..=cols + 1 {
+        for row in -1..=rows + 1 {
+            t.same(
+                "square_at",
+                (col, row),
+                v.square_at(col, row),
+                s.square_at(col, row),
+            );
+        }
+    }
+    let squares: Vec<SquareId> = (0..v.square_count() as u32).map(SquareId).collect();
+    for &q in &squares {
+        let (a, b) = (v.square(q), s.square(q));
+        let facts = |m: MapSquare| {
+            (
+                m.protocol_id(),
+                (m.col(), m.row()),
+                m.name().to_owned(),
+                m.title().clone(),
+                (m.center(), m.min(), m.max()),
+                (m.high_ground(), m.is_water()),
+                m.neighbors().to_vec(),
+            )
+        };
+        t.same("square", q, facts(a), facts(b));
+    }
+    // The terrain the interface asks for: the squares observed now, fully
+    // or partly. Of the others it keeps what it last saw.
+    for &q in pl
+        .observed_squares
+        .iter()
+        .chain(&pl.partly_observed_squares)
+    {
+        t.same("terrain", q, v.terrain(q), s.terrain(q));
+    }
+    for &q in &squares {
+        let k = kept.terrain.get(&q).map_or("", String::as_str);
+        if !k.is_empty() && k != v.terrain(q) {
+            t.saw("square whose terrain changed since the seat saw it");
+        }
+        t.same("terrain as last seen", q, k, s.terrain(q));
+    }
+    let exits: Vec<EntityId> = s.game_start().map.exits.iter().map(|x| x.id).collect();
+    for &x in &exits {
+        t.same(
+            "other_side_of_exit",
+            x,
+            v.other_side_of_exit(x),
+            s.other_side_of_exit(x),
+        );
+    }
+
+    // 2. The player's own state.
+    t.same("resources", at(""), v.resources(), s.resources());
+    t.same(
+        "available_food",
+        at(""),
+        v.available_food(),
+        s.available_food(),
+    );
+    t.same("used_food", at(""), v.used_food(), s.used_food());
+    let own: Vec<_> = v.own_units().collect();
+    t.same(
+        "own_units",
+        at(""),
+        &own,
+        &s.own_units().collect::<Vec<_>>(),
+    );
+    let controlled: Vec<KnownEntity> = v.controlled_units().collect();
+    t.same(
+        "controlled_units",
+        at(""),
+        &controlled,
+        &s.controlled_units().collect::<Vec<_>>(),
+    );
+    let players: Vec<PlayerId> = w.all_players().map(|(p, _)| p).collect();
+    for &p in &players {
+        t.same("controls", p, v.controls(p), s.controls(p));
+        t.same("is_ally", p, v.is_ally(p), s.is_ally(p));
+        t.same("player_name", p, v.player_name(p), s.player_name(p));
+        for &q in &players {
+            t.same("allied", (p, q), v.allied(p, q), s.allied(p, q));
+        }
+    }
+    let mut names: Vec<&str> = w.groups.iter().map(|(n, _)| n.as_str()).collect();
+    names.push("no such group");
+    for n in names {
+        if !v.recallable_group(n).is_empty() {
+            t.saw("recallable group with units");
+        }
+        t.same(
+            "recallable_group",
+            n,
+            v.recallable_group(n),
+            s.recallable_group(n),
+        );
+    }
+    t.same(
+        "partly_observed_squares",
+        at(""),
+        v.partly_observed_squares(),
+        s.partly_observed_squares(),
+    );
+    t.same("objectives", at(""), v.objectives(), s.objectives());
+    t.same("cheat_mode", at(""), v.cheat_mode(), s.cheat_mode());
+    t.same("has_victory", at(""), v.has_victory(), s.has_victory());
+
+    // 3. What everyone may know of the other players.
+    t.same("players", at(""), v.players(), s.players());
+
+    // 4. Entities the player perceives or remembers, and every other id.
+    let ids: Vec<EntityId> = w
+        .entities()
+        .map(|e| e.id)
+        .chain([EntityId(u32::MAX)])
+        .collect();
+    for &id in &ids {
+        let known = v.known(id);
+        t.same("perceived", id, v.perceived(id), s.perceived(id));
+        t.same("remembered", id, v.remembered(id), s.remembered(id));
+        t.same("known", id, &known, &s.known(id));
+        t.same("activity", id, v.activity(id), s.activity(id));
+        t.same(
+            "remembered_activity",
+            id,
+            v.remembered_activity(id),
+            s.remembered_activity(id),
+        );
+        t.same(
+            "unit_upgrades",
+            id,
+            v.unit_upgrades(id),
+            s.unit_upgrades(id),
+        );
+        if let Some(e) = &known {
+            t.saw(if e.is_memory() {
+                "remembered entity"
+            } else {
+                "perceived entity"
+            });
+            if e.activity.is_some() {
+                t.saw(if e.is_memory() {
+                    "remembered activity"
+                } else {
+                    "activity"
+                });
+            }
+            if !e.upgrades.is_empty() {
+                t.saw("perceived entity with upgrades");
+            }
+            if e.exit.as_ref().is_some_and(|x| !x.blockers.is_empty()) {
+                t.saw("exit with a blocker");
+            }
+        }
+        if let Some(e) = known {
+            if let Some(owner) = e.player {
+                t.same(
+                    "comrades",
+                    (owner, e.place, id),
+                    v.comrades(owner, e.place, id),
+                    s.comrades(owner, e.place, id),
+                );
+            }
+            if e.is_memory() {
+                let k = kept.upgrades.get(&id).cloned().unwrap_or_default();
+                t.same(
+                    "upgrades as last seen",
+                    id,
+                    &k[..],
+                    s.remembered_upgrades(id),
+                );
+            }
+        }
+    }
+    for &x in &exits {
+        if v.exit_is_blocked(x, false) {
+            t.saw("exit blocked");
+        }
+        if v.known(x)
+            .and_then(|e| e.exit)
+            .is_some_and(|e| e.is_blocked_by_forests)
+        {
+            t.saw("exit closed by forests");
+        }
+        for open in [false, true] {
+            t.same(
+                "exit_is_blocked",
+                (x, open),
+                v.exit_is_blocked(x, open),
+                s.exit_is_blocked(x, open),
+            );
+        }
+    }
+
+    // 5. Questions computed on demand, for the units the player controls.
+    let rules = &s.game_start().rules;
+    for u in &controlled {
+        let ally = u.player != Some(me);
+        if ally {
+            t.saw("ally's unit controlled");
+        }
+        if !v.order_menu(u.id, Keyword::Train, true).is_empty() {
+            t.saw("unit with a train menu");
+        }
+        let ty = rules
+            .unit_type(&u.type_name)
+            .filter(|_| !u.is_building_site());
+        for &k in Keyword::ALL {
+            for strict in [true, false] {
+                t.same(
+                    "order_menu",
+                    (u.id, k, strict),
+                    v.order_menu(u.id, k, strict),
+                    s.order_menu(u.id, k, strict),
+                );
+            }
+            let mut types: Vec<Option<&str>> = vec![None];
+            if let (Some(attr), Some(ty)) = (k.menu_attribute(), ty) {
+                let list = questions::type_list(Some(ty), attr);
+                types.extend(list.iter().map(|t| Some(t.as_str())));
+                for name in list {
+                    let requirements = rules.unit_type(name).map_or(&[][..], |t| &t.requirements);
+                    for r in requirements.iter().chain([name]) {
+                        t.same(
+                            "owner_has",
+                            (u.id, r),
+                            v.owner_has(u.id, r),
+                            s.owner_has(u.id, r),
+                        );
+                    }
+                }
+            }
+            types.push(Some("no_such_type"));
+            for ty in types {
+                t.same(
+                    "order_info",
+                    (u.id, k, ty),
+                    v.order_info(u.id, k, ty),
+                    s.order_info(u.id, k, ty),
+                );
+            }
+        }
+        for target in targets(w, v, u) {
+            let answer = v.default_order(u.id, target);
+            let kind = match &answer {
+                Ok(Some(k)) => k.as_str(),
+                Ok(None) => "nothing",
+                Err(_) => "error",
+            };
+            t.saw(format!(
+                "default order {kind}{}",
+                if ally { ", ally's unit" } else { "" }
+            ));
+            t.same(
+                "default_order",
+                (u.id, target),
+                v.default_order(u.id, target),
+                s.default_order(u.id, target),
+            );
+        }
+    }
+    // A requirement is not known for a unit of a player not controlled.
+    for e in pl.perception.iter().filter_map(|&id| v.perceived(id)) {
+        if e.player.is_some_and(|p| !v.controls(p)) {
+            t.same(
+                "owner_has",
+                (e.id, "farm"),
+                v.owner_has(e.id, "farm"),
+                s.owner_has(e.id, "farm"),
+            );
+        }
+    }
+}
+
+/// The data sent once against the world's own state, read as the world's
+/// view read it before that data existed: both views now read the data
+/// sent, so comparing them with each other could not find it wrong.
+fn compare_start(t: &mut Tally, w: &World, s: &SeatView) {
+    for (i, sq) in w.squares.iter().enumerate() {
+        let m = s.square(SquareId(i as u32));
+        t.same(
+            "square, against the world",
+            i,
+            (
+                sq.id,
+                (sq.col, sq.row),
+                sq.name.clone(),
+                sq.title.clone(),
+                ((sq.x, sq.y), (sq.xmin, sq.ymin), (sq.xmax, sq.ymax)),
+                (sq.high_ground, sq.is_water),
+                sq.neighbors.clone(),
+            ),
+            (
+                m.protocol_id(),
+                (m.col(), m.row()),
+                m.name().to_owned(),
+                m.title().clone(),
+                (m.center(), m.min(), m.max()),
+                (m.high_ground(), m.is_water()),
+                m.neighbors().to_vec(),
+            ),
+        );
+        t.same(
+            "square_at, against the world",
+            (sq.col, sq.row),
+            w.square_at(sq.col, sq.row),
+            s.square_at(sq.col, sq.row),
+        );
+    }
+    let grid = (
+        w.squares.iter().map(|s| s.col).max().unwrap_or(0),
+        w.squares.iter().map(|s| s.row).max().unwrap_or(0),
+    );
+    t.same("grid_max, against the world", (), grid, s.grid_max());
+    t.same(
+        "square_width, against the world",
+        (),
+        w.square_width(),
+        s.square_width(),
+    );
+    t.same(
+        "square_count, against the world",
+        (),
+        w.squares.len(),
+        s.square_count(),
+    );
+    t.same(
+        "map_objective, against the world",
+        (),
+        &w.map.objective[..],
+        s.map_objective(),
+    );
+    t.same(
+        "map_intro, against the world",
+        (),
+        &w.map.intro[..],
+        s.map_intro(),
+    );
+    t.same(
+        "cheats_allowed, against the world",
+        (),
+        w.allow_cheatmode,
+        s.cheats_allowed(),
+    );
+    for e in w.entities() {
+        let other = e
+            .exit
+            .as_ref()
+            .and_then(|x| x.other_side)
+            .and_then(|o| w.entity(o)?.place);
+        t.same(
+            "other_side_of_exit, against the world",
+            e.id,
+            other,
+            s.other_side_of_exit(e.id),
+        );
+    }
+    for (p, pl) in w.all_players() {
+        t.same(
+            "player_name, against the world",
+            p,
+            pl.name(),
+            s.player_name(p),
+        );
+    }
+    for (i, ty) in w.rules.types().iter().enumerate() {
+        let id = TypeId(i as u32);
+        t.same("unit_type_by_id", id, ty, s.unit_type_by_id(id));
+        t.same("unit_type", &ty.name, Some(ty), s.unit_type(&ty.name));
+    }
+    t.same(
+        "unit_type",
+        "no_such_type",
+        None,
+        s.unit_type("no_such_type"),
+    );
+}
+
+/// The targets of a default order the interface may give `u`: its square,
+/// a point of it and one outside it, the square named by its protocol id,
+/// every entity the player knows on the unit's square and around, and an
+/// id that names nothing.
+fn targets(w: &World, v: &View, u: &KnownEntity) -> Vec<OrderTarget> {
+    let here = match u.place {
+        Some(Place::Square(q)) => q,
+        Some(Place::Inside(c)) => v
+            .known(c)
+            .and_then(|c| c.place)
+            .and_then(Place::square)
+            .unwrap_or(SquareId(0)),
+        None => SquareId(0),
+    };
+    let sq = v.square(here);
+    let (x, y) = sq.center();
+    let mut out = vec![
+        OrderTarget::Square(here),
+        OrderTarget::Point { square: here, x, y },
+        OrderTarget::Point {
+            square: here,
+            x: sq.max().0,
+            y,
+        },
+        OrderTarget::Entity(EntityId(sq.protocol_id())),
+        OrderTarget::Entity(EntityId(u32::MAX)),
+    ];
+    let near: BTreeSet<SquareId> = sq.neighbors().iter().copied().chain([here]).collect();
+    let pl = w.player(v.player());
+    let known = pl.perception.iter().chain(pl.memory.keys());
+    for &id in known {
+        if v.known(id)
+            .and_then(|e| e.place)
+            .and_then(|p| match p {
+                Place::Square(q) => Some(q),
+                Place::Inside(c) => v.known(c)?.place?.square(),
+            })
+            .is_some_and(|q| near.contains(&q))
+        {
+            out.push(OrderTarget::Entity(id));
+        }
+    }
+    out
+}
+
+/// Plays a case, and compares both views of every player on every turn.
+/// Returns the tally.
+fn play(case: &Case) -> Tally {
+    let setup = GameSetup {
+        rules: case
+            .rules
+            .iter()
+            .map(|r| read(r))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        ai: case
+            .ai
+            .iter()
+            .map(|r| read(r))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        map: read(case.map),
+        seed: case.seed,
+        controllers: case.controllers.clone(),
+        default_triggers: multiplayer_default_triggers(),
+        allow_cheatmode: true,
+        random_starts: true,
+        equivalents: true,
+    };
+    let (mut w, _) = setup.build_world().unwrap();
+    let players: Vec<PlayerId> = w.all_players().map(|(p, _)| p).collect();
+    if case.shared_control {
+        for &p in &players {
+            let allied = w.player(p).allied.clone();
+            w.player_mut(p).allied_control = allied;
+        }
+    }
+    let start = Arc::new(GameStart::of(&w));
+    let mut seats: Vec<(SeatView, Kept)> = players
+        .iter()
+        .map(|&p| {
+            let mut kept = Kept::default();
+            kept.note(&View::new(&w, &start, p), &w);
+            (
+                SeatView::new(Arc::clone(&start), w.turn_message(p, Vec::new())),
+                kept,
+            )
+        })
+        .collect();
+    let mut t = Tally::default();
+    compare_start(&mut t, &w, &seats[0].0);
+    for turn in 0..case.turns {
+        (case.script)(&mut w, turn);
+        w.update();
+        let digest = turn.is_multiple_of(100).then(|| w.digest_u64());
+        for (&p, (s, kept)) in players.iter().zip(&mut seats) {
+            let events: Vec<Event> = w
+                .drain_events(p)
+                .into_iter()
+                .filter(|e| !matches!(e, Event::Voila(_)))
+                .collect();
+            s.install(w.turn_message(p, events));
+            let v = View::new(&w, &start, p);
+            kept.note(&v, &w);
+            let label = format!("{} turn {} player {}", case.name, turn + 1, p.0);
+            compare(&mut t, &w, &v, s, kept, &label);
+        }
+        if let Some(d) = digest {
+            assert_eq!(d, w.digest_u64(), "asking the views changed the world");
+        }
+        if w.true_playing_players().is_empty() {
+            break;
+        }
+    }
+    compare_start(&mut t, &w, &seats[0].0);
+    let end = GameStart::of(&w);
+    assert_eq!(end.map, start.map, "{}: the map changed", case.name);
+    assert_eq!(
+        end.player_names, start.player_names,
+        "{}: a name changed",
+        case.name
+    );
+    for (&p, (s, _)) in players.iter().zip(&mut seats) {
+        s.install_end(w.game_end(p));
+        let v = View::new(&w, &start, p);
+        t.same("stats", (case.name, p), Some(v.stats()), s.stats());
+    }
+    t
+}
+
+fn report(cases: &[Case]) {
+    let mut total = Tally::default();
+    for case in cases {
+        let t = play(case);
+        eprintln!("{}: {} answers compared", case.name, t.compared);
+        total.compared += t.compared;
+        for (q, n) in t.by_question {
+            *total.by_question.entry(q).or_default() += n;
+        }
+        for (q, n) in t.seen {
+            *total.seen.entry(q).or_default() += n;
+        }
+        total.differences.extend(t.differences);
+    }
+    eprintln!("{} answers compared in all", total.compared);
+    for (q, n) in &total.by_question {
+        eprintln!("  {q}: {n}");
+    }
+    eprintln!("cases covered:");
+    for (q, n) in &total.seen {
+        eprintln!("  {q}: {n}");
+    }
+    assert!(
+        total.differences.is_empty(),
+        "the views disagree:\n{}",
+        total.differences.join("\n")
+    );
+}
+
+/// Two alliances of computers on jl7, each player sharing control of its
+/// units with its allies: the case no measurement had covered.
+fn allies_sharing_control(turns: usize) -> Case {
+    Case {
+        name: "jl7, allies sharing control",
+        rules: vec!["res/rules.txt"],
+        ai: vec!["res/ai.txt"],
+        map: "res/multi/jl7.txt",
+        seed: 7,
+        controllers: vec![
+            computer("aggressive", "1"),
+            computer("easy", "1"),
+            computer("ai2", "1"),
+            computer("aggressive", "2"),
+            computer("easy", "2"),
+            computer("aggressive", "2"),
+        ],
+        turns,
+        shared_control: true,
+        script: |w, turn| {
+            if turn == 30 {
+                // An ally's unit inside an ally's gate: controlled, not
+                // perceived. An enemy's wall closes another exit.
+                shelter(w, PlayerId(0), "gate");
+                shelter(w, PlayerId(3), "wall");
+            }
+            if turn == 40 {
+                // Groups are shared by every player: each seat recalls
+                // only the units it controls.
+                for (p, group) in [(0, "1"), (3, "1"), (1, "2")] {
+                    let units = w.player(PlayerId(p)).units.clone();
+                    let ids: Vec<String> = units.iter().take(3).map(|u| u.0.to_string()).collect();
+                    w.queue_command(PlayerId(p), &format!("control {}", ids.join(" ")));
+                    w.queue_command(PlayerId(p), &format!("order 0 0 join_group {group}"));
+                }
+            }
+        },
+    }
+}
+
+/// A person on jl7 who turns cheat mode on with a unit in a gate, then
+/// off, and has everything for a while, against two computers, and is
+/// defeated while they play on.
+fn cheat_mode_and_defeat(turns: usize) -> Case {
+    fn script(w: &mut World, turn: usize) {
+        let me = PlayerId(0);
+        match turn {
+            20 | 400 => w.queue(me, Command::Cheat(Cheat::ToggleMode)),
+            30 => shelter(w, me, "gate"),
+            200 => w.player_mut(me).cheat_has_all = true,
+            300 => w.player_mut(me).cheat_has_all = false,
+            700 => w.defeat(me, false),
+            _ => {}
+        }
+        if (450..=700).contains(&turn) && turn.is_multiple_of(5) {
+            // Woods are cut, in sight and in the fog: the terrain changes.
+            for q in 0..w.squares.len() {
+                let wood = w.squares[q]
+                    .objects
+                    .iter()
+                    .copied()
+                    .find(|&o| w.entity(o).is_some_and(|e| &*e.type_name == "wood"));
+                if let Some(wood) = wood {
+                    w.die(wood, None).unwrap();
+                }
+            }
+        }
+    }
+    let mut me = Controller::human("me", true);
+    me.alliance = Some("1".into());
+    Case {
+        name: "jl7, cheat mode and defeat",
+        rules: vec!["res/rules.txt"],
+        ai: vec!["res/ai.txt"],
+        map: "res/multi/jl7.txt",
+        seed: 1,
+        controllers: vec![me, computer("aggressive", "2"), computer("easy", "3")],
+        turns,
+        shared_control: false,
+        script,
+    }
+}
+
+/// Orcs and humans with the teleportation mod's abilities on jl7, every
+/// player alone.
+fn mods(turns: usize) -> Case {
+    Case {
+        name: "jl7, orc and teleportation mods",
+        rules: vec![
+            "res/rules.txt",
+            "mods/orc/rules.txt",
+            "mods/teleportation/rules.txt",
+        ],
+        ai: vec!["res/ai.txt", "mods/orc/ai.txt"],
+        map: "res/multi/jl7.txt",
+        seed: 5,
+        controllers: vec![
+            with_faction(computer("aggressive", "1"), "orc_faction"),
+            with_faction(computer("easy", "2"), "orc_faction"),
+            with_faction(computer("aggressive", "3"), "human_faction"),
+            computer("ai2", "4"),
+        ],
+        turns,
+        shared_control: false,
+        script: nothing,
+    }
+}
+
+/// Sixteen computers on js13, every one alone.
+fn sixteen(turns: usize) -> Case {
+    let types = ["aggressive", "ai2", "easy"];
+    let alliances: Vec<String> = (1..=16).map(|i| i.to_string()).collect();
+    Case {
+        name: "js13, 16 computers",
+        rules: vec!["res/rules.txt"],
+        ai: vec!["res/ai.txt"],
+        map: "res/multi/js13.txt",
+        seed: 1,
+        controllers: alliances
+            .iter()
+            .enumerate()
+            .map(|(i, a)| computer(types[i % 3], a))
+            .collect(),
+        turns,
+        shared_control: false,
+        script: nothing,
+    }
+}
+
+#[test]
+fn a_seat_knows_from_what_it_is_sent_all_the_world_tells_its_view() {
+    report(&[
+        allies_sharing_control(600),
+        cheat_mode_and_defeat(1000),
+        mods(400),
+        sixteen(60),
+    ]);
+}
+
+/// The same games, longer: run by hand with `--ignored`.
+#[test]
+#[ignore = "long: run by hand"]
+fn the_longer_games_agree_too() {
+    report(&[
+        allies_sharing_control(3000),
+        cheat_mode_and_defeat(3000),
+        mods(2000),
+        sixteen(400),
+    ]);
+}
+
+/// An ally's catapult goes into the ally's tower: its owner still
+/// perceives it, the seat only remembers it as it went in. Hurt since, the
+/// ally's peasant would repair it, and the seat says so too: a unit of the
+/// owner is read as the owner perceives it, which the seat is sent.
+#[test]
+fn a_default_order_reads_the_owners_own_unit_as_it_is_now() {
+    let mut me = Controller::human("me", true);
+    me.alliance = Some("1".into());
+    let mut ally = Controller::human("ally", false);
+    ally.alliance = Some("1".into());
+    let setup = GameSetup {
+        rules: read("res/rules.txt"),
+        ai: read("res/ai.txt"),
+        map: read("res/multi/jl7.txt"),
+        seed: 2,
+        controllers: vec![me, ally, computer("timers", "2")],
+        default_triggers: multiplayer_default_triggers(),
+        allow_cheatmode: false,
+        random_starts: true,
+        equivalents: true,
+    };
+    let (mut w, seats) = setup.build_world().unwrap();
+    let (me, ally) = (seats[0], seats[1]);
+    for p in [me, ally] {
+        w.player_mut(p).allied_control = vec![me, ally];
+    }
+    w.update();
+    let peasant = crate::view::tests::unit(&w, ally, "peasant");
+    let q = w.entity(peasant).unwrap().square().unwrap();
+    let (x, y) = (w.square(q).x, w.square(q).y);
+    let make = |w: &mut World, kind: &str| {
+        let t = w.rules.type_id(kind).unwrap();
+        w.create_creature(t, Some(ally), Place::Square(q), x, y)
+            .unwrap()
+    };
+    let catapult = make(&mut w, "catapult");
+    let tower = make(&mut w, "guardtower");
+    w.update();
+    w.load(tower, catapult);
+    w.update();
+    assert!(w.player(me).memory.contains_key(&catapult));
+    w.entity_mut(catapult).unwrap().hp = 1000;
+
+    let start = Arc::new(GameStart::of(&w));
+    let v = View::new(&w, &start, me);
+    let s = SeatView::new(Arc::clone(&start), w.turn_message(me, Vec::new()));
+    let target = OrderTarget::Entity(catapult);
+    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Repair)));
+    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Repair)));
+}
+
+/// In cheat mode a player perceives only what is on the squares: its own
+/// catapult in its own tower is remembered as it went in, by the world as
+/// by the seat, though it has been hurt since.
+#[test]
+fn in_cheat_mode_the_seats_own_unit_inside_is_remembered() {
+    let mut me = Controller::human("me", true);
+    me.alliance = Some("1".into());
+    let setup = GameSetup {
+        rules: read("res/rules.txt"),
+        ai: read("res/ai.txt"),
+        map: read("res/multi/jl7.txt"),
+        seed: 2,
+        controllers: vec![me, computer("timers", "2")],
+        default_triggers: multiplayer_default_triggers(),
+        allow_cheatmode: true,
+        random_starts: true,
+        equivalents: true,
+    };
+    let (mut w, seats) = setup.build_world().unwrap();
+    let me = seats[0];
+    w.queue(me, Command::Cheat(Cheat::ToggleMode));
+    w.update();
+    assert!(w.player(me).cheatmode);
+    let peasant = crate::view::tests::unit(&w, me, "peasant");
+    let q = w.entity(peasant).unwrap().square().unwrap();
+    let (x, y) = (w.square(q).x, w.square(q).y);
+    let make = |w: &mut World, kind: &str| {
+        let t = w.rules.type_id(kind).unwrap();
+        w.create_creature(t, Some(me), Place::Square(q), x, y)
+            .unwrap()
+    };
+    let catapult = make(&mut w, "catapult");
+    let tower = make(&mut w, "guardtower");
+    w.update();
+    w.load(tower, catapult);
+    w.update();
+    assert!(w.player(me).memory.contains_key(&catapult));
+    w.entity_mut(catapult).unwrap().hp = 1000;
+
+    let start = Arc::new(GameStart::of(&w));
+    let v = View::new(&w, &start, me);
+    let s = SeatView::new(Arc::clone(&start), w.turn_message(me, Vec::new()));
+    let target = OrderTarget::Entity(catapult);
+    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Go)));
+    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Go)));
+}

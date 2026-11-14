@@ -1,5 +1,6 @@
 use super::*;
 use crate::events::{EntityEvent, Event};
+use crate::message::GameStart;
 use crate::view::View;
 use crate::view::tests::{command, game, remember, unit};
 
@@ -20,14 +21,18 @@ fn an_enemys_entity_has_no_own_part() {
     assert_eq!(w.entity(peasant).unwrap().orders.len(), 1);
     // The player is made to see the computer's peasant.
     w.player_mut(me).perception.insert(peasant);
-    let e = View::new(&w, me).perceived(peasant).unwrap();
+    let e = View::new(&w, &GameStart::of(&w), me)
+        .perceived(peasant)
+        .unwrap();
     assert_eq!(
         (&*e.type_name, e.player, e.hp, e.hp_max, e.last_seen),
         ("peasant", Some(them), 4000, 4000, None)
     );
     assert_eq!(e.own, None);
     // Its owner knows its orders.
-    let e = View::new(&w, them).perceived(peasant).unwrap();
+    let e = View::new(&w, &GameStart::of(&w), them)
+        .perceived(peasant)
+        .unwrap();
     assert_eq!(e.own.unwrap().orders.len(), 1);
 }
 
@@ -50,9 +55,19 @@ fn an_allys_entity_has_its_own_part_once_the_player_controls_the_allys_units() {
     let target = &w.entity(peasant).unwrap().orders[0].target;
     assert!(matches!(target, Some(Target::Memory(m)) if m.owner == them));
     w.player_mut(me).perception.insert(peasant);
-    assert_eq!(View::new(&w, me).perceived(peasant).unwrap().own, None);
+    assert_eq!(
+        View::new(&w, &GameStart::of(&w), me)
+            .perceived(peasant)
+            .unwrap()
+            .own,
+        None
+    );
     w.player_mut(me).allied_control.push(them);
-    let own = View::new(&w, me).perceived(peasant).unwrap().own.unwrap();
+    let own = View::new(&w, &GameStart::of(&w), me)
+        .perceived(peasant)
+        .unwrap()
+        .own
+        .unwrap();
     // The other player's memory is not the player's: the target is the
     // town hall as the player knows it.
     let targets: Vec<_> = own.orders.iter().map(|o| o.target.clone()).collect();
@@ -83,7 +98,9 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
     e.group = Some("1".into());
     let distance_to_goal = e.distance_to_goal;
 
-    let e = View::new(&w, me).perceived(peasant).unwrap();
+    let e = View::new(&w, &GameStart::of(&w), me)
+        .perceived(peasant)
+        .unwrap();
     let own = e.own.unwrap();
     let [go_farm, go_townhall] = &own.orders[..] else {
         panic!("two orders: {:?}", own.orders);
@@ -94,6 +111,7 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
             keyword: Keyword::Go,
             type_name: None,
             is_deferred: false,
+            is_imperative: false,
             target: Some(KnownTarget::Entity(farm)),
             patrol: None,
         }
@@ -138,7 +156,9 @@ fn a_remembered_entity_is_the_copy_as_remembered_with_its_time() {
     assert_eq!((e.hp, e.x), seen);
     (e.hp, e.x) = (1000, 18_500);
 
-    let r = View::new(&w, me).remembered(townhall).unwrap();
+    let r = View::new(&w, &GameStart::of(&w), me)
+        .remembered(townhall)
+        .unwrap();
     assert_eq!(
         (r.id, (r.hp, r.x), r.last_seen, r.is_memory(), &r.own),
         (townhall, seen, Some(1500), true, &None)

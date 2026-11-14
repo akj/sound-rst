@@ -1,9 +1,12 @@
 //! The host of one game: it owns the world, takes the players' commands and
 //! steps the game a turn at a time.
 
+use std::sync::Arc;
+
 use crate::command::{Cheat, Command};
 use crate::entity::PlayerId;
 use crate::events::Event;
+use crate::message::{GameEnd, GameStart, TurnMessage};
 use crate::nofloat::PRECISION;
 use crate::player::ControllerKind;
 use crate::setup::GameSetup;
@@ -23,8 +26,13 @@ use crate::world::World;
 ///
 /// Nothing steps the host on its own: the game loop and the tests call
 /// [`Host::step`] when a turn is due.
+///
+/// What a seat is told is plain data, as a host over a network would send
+/// it: [`Host::game_start`] once, a [`TurnMessage`] with each step, and
+/// [`Host::game_end`] when the game is over for the seat.
 pub struct Host {
     world: World,
+    start: Arc<GameStart>,
     seats: Vec<PlayerId>,
     warnings: Vec<String>,
 }
@@ -35,6 +43,10 @@ pub struct TurnReport {
     /// What the player perceived during the turn, in order. Only a local
     /// human receives events.
     pub events: Vec<Event>,
+    /// Everything the player is told of the turn, as of its end: the same
+    /// events without the end of turn, and what the end of turn tells and
+    /// the view answers.
+    pub message: TurnMessage,
     /// What went wrong in the game since the last step: a refused or
     /// broken command, a map problem... For the log; a player does not
     /// hear them.
@@ -47,6 +59,7 @@ impl Host {
     pub fn new(setup: &GameSetup) -> Result<Host, String> {
         let (world, seats) = setup.build_world()?;
         Ok(Host {
+            start: Arc::new(GameStart::of(&world)),
             world,
             seats,
             warnings: Vec::new(),
@@ -81,10 +94,33 @@ impl Host {
     /// Returns what `player` perceived and the warnings since the last step.
     pub fn step(&mut self, player: PlayerId) -> TurnReport {
         self.world.update();
+        let events = self.world.drain_events(player);
+        let told = events
+            .iter()
+            .filter(|e| !matches!(e, Event::Voila(_)))
+            .cloned()
+            .collect();
         TurnReport {
             warnings: self.drain_warnings(),
-            events: self.world.drain_events(player),
+            message: self.world.turn_message(player, told),
+            events,
         }
+    }
+
+    /// What every seat is sent once, when the game starts.
+    pub fn game_start(&self) -> Arc<GameStart> {
+        Arc::clone(&self.start)
+    }
+
+    /// What `seat` is told of the game as it is now, without events: what
+    /// a seat is sent when it joins, before its first step.
+    pub fn message(&self, seat: PlayerId) -> TurnMessage {
+        self.world.turn_message(seat, Vec::new())
+    }
+
+    /// What `seat` is sent when the game is over for it.
+    pub fn game_end(&self, seat: PlayerId) -> GameEnd {
+        self.world.game_end(seat)
     }
 
     /// The warnings since the last call or step.
@@ -96,7 +132,7 @@ impl Host {
 
     /// What `player` knows of the game: see [`View`].
     pub fn view(&self, player: PlayerId) -> View<'_> {
-        View::new(&self.world, player)
+        View::new(&self.world, &self.start, player)
     }
 
     /// The text line of a command, as a game on a server sends it and the

@@ -9,8 +9,9 @@ use crate::events::Event;
 use crate::msg::{Msg, msg};
 use crate::msgparts as mp;
 use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
-use crate::orders::{Keyword, Order, TargetRef};
+use crate::orders::{Order, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
+use crate::questions;
 use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES};
 use crate::world::{Abort, INF, Res, World};
 
@@ -680,18 +681,11 @@ impl World {
 
     /// `has`: an upgrade, or a unit of the type or derived from it.
     pub fn has(&self, p: PlayerId, type_name: &str) -> bool {
-        let pl = self.pl(p);
-        if pl.cheat_has_all || pl.upgrades.iter().any(|u| u == type_name) {
-            return true;
-        }
-        pl.units.iter().any(|&u| {
-            let e = self.e(u);
-            *e.type_name == *type_name || self.expanded_is_a(e).iter().any(|t| t == type_name)
-        })
+        questions::has(self, self.facts(p), type_name)
     }
 
     pub fn has_all(&self, p: PlayerId, type_names: &[String]) -> bool {
-        type_names.iter().all(|t| self.has(p, t))
+        questions::has_all(self, self.facts(p), type_names)
     }
 
     /// What a target means to a player now: a subsquare, a square, a
@@ -828,39 +822,13 @@ impl World {
     /// `future_count`: units of a type, building sites for it, and units
     /// being trained or upgraded to it.
     pub fn future_count(&self, p: PlayerId, type_name: &str) -> i64 {
-        let mut result = 0;
-        for &u in &self.pl(p).units {
-            let e = self.e(u);
-            let site_of = e
-                .site
-                .as_ref()
-                .map(|s| self.rules.ty(s.building_type).name.as_str());
-            if *e.type_name == *type_name
-                || (*e.type_name == *"buildingsite" && site_of == Some(type_name))
-            {
-                result += 1;
-            }
-            for o in &e.orders {
-                if matches!(o.keyword, Keyword::Train | Keyword::UpgradeTo)
-                    && o.type_name.as_deref() == Some(type_name)
-                {
-                    result += 1;
-                }
-            }
-        }
-        result
+        questions::future_count(self, self.facts(p), type_name)
     }
 
     /// `check_count_limit`: whether the player may have one more of the
     /// type.
     pub fn check_count_limit(&self, p: PlayerId, type_name: &str) -> bool {
-        let Some(t) = self.rules.unit_type(type_name) else {
-            return false;
-        };
-        if t.stats.count_limit == 0 {
-            return true;
-        }
-        self.future_count(p, &t.name) < t.stats.count_limit
+        questions::check_count_limit(self, self.facts(p), type_name)
     }
 
     /// `nearest_warehouse`: the allied unit storing the resource with the
