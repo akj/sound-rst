@@ -176,3 +176,42 @@ fn two_player_games_run_200_turns_on_every_multiplayer_map() {
     }
     assert!(played >= 5, "games played: {played}");
 }
+
+/// The error of a small map that asks for too much, made of `lines` and a
+/// start on a1.
+fn map_error(lines: &str) -> String {
+    let text = format!("square_width 12\nnb_columns 3\nstarting_squares a1\n{lines}\n");
+    match build(
+        &joined(&["res/rules.txt"]),
+        &joined(&["res/ai.txt"]),
+        &text,
+        0,
+    ) {
+        Ok(_) => panic!("the map built: {text}"),
+        Err(e) => e,
+    }
+}
+
+#[test]
+fn a_map_with_too_many_lines_is_refused() {
+    assert_eq!(
+        map_error("nb_lines 100\nstarting_units farm"),
+        "100 lines, more than 99"
+    );
+}
+
+#[test]
+fn a_map_with_too_many_meadows_is_refused() {
+    assert_eq!(
+        map_error("nb_lines 3\nnb_meadows_by_square 1000000000\nstarting_units farm"),
+        "1000000000 meadows by square, more than 50"
+    );
+}
+
+#[test]
+fn a_map_with_too_many_start_units_is_refused() {
+    assert_eq!(
+        map_error("nb_lines 3\nstarting_units 9000 footman 1001 peasant"),
+        "the starts give 10001 units, more than 10000"
+    );
+}

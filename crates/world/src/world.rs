@@ -2,6 +2,7 @@
 //! loop (`world.py`).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::collision::CollisionMatrix;
@@ -45,7 +46,7 @@ pub struct NotEnoughSpace;
 
 /// A default trigger of a game type: owners (`players`, `computers`,
 /// `all`, `player1`...), condition and action.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DefaultTrigger {
     pub owners: String,
     pub condition: Vec<String>,
@@ -84,6 +85,9 @@ pub struct World {
     pub ai_scripts: AiScripts,
     pub(crate) default_triggers: Vec<DefaultTrigger>,
     pub seed: i64,
+    /// Whether `toggle_cheatmode` and `cmd` commands run. Off by default:
+    /// the world ignores them, with a warning.
+    pub allow_cheatmode: bool,
     /// The world's own id: 1.
     pub id: u32,
     next_id: u32,
@@ -127,6 +131,146 @@ impl std::fmt::Debug for World {
     }
 }
 
+/// The state that a later turn depends on. The rules, the AI scripts and
+/// the map are the same for a whole game and are compared when players
+/// join; the indexes and caches are derived from the rest; the commands
+/// waiting and the warnings belong to one machine.
+impl Hash for World {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let World {
+            rules: _,
+            ai_scripts: _,
+            default_triggers,
+            seed,
+            allow_cheatmode,
+            id,
+            next_id,
+            next_order_id,
+            next_order_uid,
+            current_player_number,
+            random,
+            time,
+            squares,
+            grid_names: _,
+            grid_xy: _,
+            square_by_obj: _,
+            entities,
+            active_objects,
+            players_arena,
+            players,
+            ex_players,
+            harm_target_types: _,
+            map: _,
+            collision_ground,
+            collision_air,
+            graphs: _,
+            path_cache: _,
+            observed_cache: _,
+            previous_slow_update,
+            groups,
+            pending_commands: _,
+            warnings: _,
+        } = self;
+        default_triggers.hash(state);
+        seed.hash(state);
+        allow_cheatmode.hash(state);
+        id.hash(state);
+        next_id.hash(state);
+        next_order_id.hash(state);
+        next_order_uid.hash(state);
+        current_player_number.hash(state);
+        random.hash(state);
+        time.hash(state);
+        squares.hash(state);
+        entities.hash(state);
+        active_objects.hash(state);
+        players_arena.hash(state);
+        players.hash(state);
+        ex_players.hash(state);
+        collision_ground.hash(state);
+        collision_air.hash(state);
+        previous_slow_update.hash(state);
+        groups.hash(state);
+    }
+}
+
+// Slices of integers hash as their bytes in memory, which the hasher
+// cannot reorder.
+#[cfg(not(target_endian = "little"))]
+compile_error!("the digest of a world assumes a little-endian machine");
+
+/// FNV-1a 64, with every integer written in little-endian and `usize` and
+/// `isize` written as 64 bits, so that the result is the same on every
+/// little-endian machine.
+#[derive(Debug)]
+pub(crate) struct Fnv1a(u64);
+
+impl Default for Fnv1a {
+    fn default() -> Self {
+        Fnv1a(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl Hasher for Fnv1a {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0 ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+
+    fn write_u8(&mut self, i: u8) {
+        self.write(&[i]);
+    }
+
+    fn write_u16(&mut self, i: u16) {
+        self.write(&i.to_le_bytes());
+    }
+
+    fn write_u32(&mut self, i: u32) {
+        self.write(&i.to_le_bytes());
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        self.write(&i.to_le_bytes());
+    }
+
+    fn write_u128(&mut self, i: u128) {
+        self.write(&i.to_le_bytes());
+    }
+
+    fn write_usize(&mut self, i: usize) {
+        self.write_u64(i as u64);
+    }
+
+    fn write_i8(&mut self, i: i8) {
+        self.write_u8(i as u8);
+    }
+
+    fn write_i16(&mut self, i: i16) {
+        self.write_u16(i as u16);
+    }
+
+    fn write_i32(&mut self, i: i32) {
+        self.write_u32(i as u32);
+    }
+
+    fn write_i64(&mut self, i: i64) {
+        self.write_u64(i as u64);
+    }
+
+    fn write_i128(&mut self, i: i128) {
+        self.write_u128(i as u128);
+    }
+
+    fn write_isize(&mut self, i: isize) {
+        self.write_i64(i as i64);
+    }
+}
+
 impl World {
     /// A world without a map yet. `default_triggers` are used when the map
     /// has no trigger of its own.
@@ -141,6 +285,7 @@ impl World {
             ai_scripts,
             default_triggers,
             seed,
+            allow_cheatmode: false,
             id: 0,
             next_id: 0,
             next_order_id: 0,
@@ -1059,73 +1204,18 @@ impl World {
 
     // digest
 
-    /// A text describing the state of the world, to compare two runs: time,
-    /// random generator, players and every placed entity.
-    pub fn get_objects_string(&self) -> String {
-        use std::fmt::Write;
-        let mut s = String::new();
-        let _ = writeln!(
-            s,
-            "time {} random {:016x}",
-            self.time,
-            self.random.state_fingerprint()
-        );
-        for (pid, p) in self.all_players() {
-            let _ = writeln!(
-                s,
-                "player {} in_game {} resources {:?} food {}/{} units {:?} upgrades {:?} victory {} defeat {}",
-                pid.0,
-                self.players.contains(&pid),
-                p.resources,
-                p.used_food,
-                p.food,
-                p.units.iter().map(|u| u.0).collect::<Vec<_>>(),
-                p.upgrades,
-                p.has_victory,
-                p.has_been_defeated
-            );
-        }
-        for e in self.entities() {
-            let Some(place) = e.place else { continue };
-            let place = match place {
-                Place::Square(sq) => self.square(sq).name.clone(),
-                Place::Inside(c) => format!("in {}", c.0),
-            };
-            let _ = writeln!(
-                s,
-                "{} {} {} {} {} {} hp {} mana {} qty {} player {:?} orders {}",
-                e.id.0,
-                e.type_name,
-                place,
-                e.x,
-                e.y,
-                e.o,
-                e.hp,
-                e.mana,
-                e.stats.qty,
-                e.player.map(|p| p.0),
-                e.orders
-                    .iter()
-                    .map(|o| o.keyword.as_str())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-        }
-        s
-    }
-
-    /// A short digest of [`World::get_objects_string`].
+    /// A short digest of the state, as text: [`World::digest_u64`] in hex.
     pub fn get_digest(&self) -> String {
         format!("{:016x}", self.digest_u64())
     }
 
-    /// The digest of [`World::get_digest`] as a number (FNV-1a).
+    /// A digest of every part of the state that can change a later turn,
+    /// the same on every machine: two worlds that will play on alike have
+    /// the same digest.
     pub fn digest_u64(&self) -> u64 {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for b in self.get_objects_string().bytes() {
-            h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
-        }
-        h
+        let mut h = Fnv1a::default();
+        self.hash(&mut h);
+        h.finish()
     }
 
     pub(crate) fn collision_radius() -> i64 {

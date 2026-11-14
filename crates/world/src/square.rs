@@ -9,7 +9,7 @@ use crate::rules::AirGround;
 pub const SPACE_LIMIT: usize = 144;
 
 /// One square of the map.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Square {
     /// The id in the text protocol.
     pub id: u32,
@@ -132,7 +132,7 @@ impl Square {
 /// The points tried, in order, when looking for free space around a point:
 /// the point, then a square spiral of 24 turns with a step of 2.5 collision
 /// radii.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) struct Spiral {
     x: i64,
     y: i64,

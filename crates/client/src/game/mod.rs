@@ -160,7 +160,6 @@ pub struct GameInterface {
     pub world: World,
     /// The player this interface plays.
     pub me: PlayerId,
-    pub allow_cheatmode: bool,
     /// The game speed: 1 is normal.
     pub speed: f64,
     /// What the player perceives or remembers, by id, in arrival order.
@@ -231,17 +230,18 @@ pub struct GameInterface {
     pub net: Option<lockstep::NetDriver>,
     /// A chat line being typed, and who it is for.
     pub(crate) chat_entry: Option<(soundrts_protocol::Channel, TextEntry)>,
+    /// The game menu, while it is open in a game on a server.
+    pub(crate) game_menu: Option<misc::GameMenu>,
 }
 
 impl GameInterface {
     /// The interface of `me` in `world`. Says nothing: queued messages are
     /// dropped.
-    pub fn new(cx: &mut Client, world: World, me: PlayerId, allow_cheatmode: bool) -> Self {
+    pub fn new(cx: &mut Client, world: World, me: PlayerId) -> Self {
         cx.voice.silent_flush();
         GameInterface {
             world,
             me,
-            allow_cheatmode,
             speed: cx.config.speed as f64,
             dobjets: IndexMap::new(),
             scouted_squares: BTreeSet::new(),
@@ -294,6 +294,7 @@ impl GameInterface {
             orders_list: Vec::new(),
             net: None,
             chat_entry: None,
+            game_menu: None,
         }
     }
 
@@ -434,6 +435,9 @@ impl GameInterface {
                         Typed::Cancelled => self.chat_entry = None,
                         Typed::Typing | Typed::Ignored => {}
                     }
+                }
+                InputEvent::KeyDown(k) if self.game_menu.is_some() => {
+                    self.game_menu_key(cx, k)?;
                 }
                 InputEvent::KeyDown(k) => {
                     if self.shortcut_mode {

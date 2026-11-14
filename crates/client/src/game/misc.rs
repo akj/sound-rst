@@ -9,6 +9,7 @@ use soundrts_world::msgparts as mp;
 use soundrts_world::player::ControllerKind;
 
 use crate::client::Client;
+use crate::input::{Event, Key, KeyDown};
 use crate::menu::{Action, Flow, Menu, TextEntry, input_string};
 use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
@@ -23,6 +24,13 @@ use super::{GameInterface, Oops, POSITIONAL_BEEP_SOUND, R, Stop, TURN, style_msg
 enum GameMenuChoice {
     Quit,
     Speed(&'static str),
+}
+
+/// The game menu, open in a game on a server while the game goes on, and
+/// the choice made in it.
+pub(crate) struct GameMenu {
+    menu: Menu,
+    choice: Rc<Cell<Option<GameMenuChoice>>>,
 }
 
 /// The characters the console accepts.
@@ -106,7 +114,7 @@ impl GameInterface {
             C::Console => self.cmd_console(cx)?,
             C::ReloadParameters => cx.reload_parameters(),
             C::Cmd(cmd) => {
-                if self.allow_cheatmode {
+                if self.world.allow_cheatmode {
                     self.execute_command(cx, cmd)?;
                 } else {
                     cx.voice.item(&msg(mp::BEEP));
@@ -171,7 +179,7 @@ impl GameInterface {
     }
 
     fn cmd_toggle_cheatmode(&mut self, cx: &mut Client) {
-        if self.allow_cheatmode {
+        if self.world.allow_cheatmode {
             self.write_line(cx, "toggle_cheatmode");
             let state = if self.world.player(self.me).cheatmode {
                 mp::IS_NOW_OFF
@@ -242,7 +250,7 @@ impl GameInterface {
     }
 
     fn cmd_console(&mut self, cx: &mut Client) -> Result<(), Stop> {
-        if !self.allow_cheatmode {
+        if !self.world.allow_cheatmode {
             cx.voice.item(&msg(mp::BEEP));
             return Ok(());
         }
@@ -255,7 +263,7 @@ impl GameInterface {
     /// Plays as the next player of the game (a cheat): the logins stay with
     /// the players, the events now come from the new one.
     fn cmd_change_player(&mut self, cx: &mut Client) {
-        if !self.allow_cheatmode {
+        if !self.world.allow_cheatmode {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
@@ -283,10 +291,14 @@ impl GameInterface {
         self.world.players.first() == Some(&self.me)
     }
 
-    /// The game menu: quit, the speeds, continue.
+    /// The game menu: quit, the speeds, continue. In a game on a server,
+    /// the game goes on while it is open and the keys go to it; otherwise
+    /// the game waits for a choice.
     fn cmd_gamemenu(&mut self, cx: &mut Client) -> Result<(), Stop> {
-        cx.voice.silent_flush();
-        cx.stop_sound(true);
+        if self.net.is_none() {
+            cx.voice.silent_flush();
+            cx.stop_sound(true);
+        }
         let choice: Rc<Cell<Option<GameMenuChoice>>> = Rc::new(Cell::new(None));
         let set = |c: GameMenuChoice| {
             let choice = choice.clone();
@@ -321,13 +333,41 @@ impl GameInterface {
             );
         }
         menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
+        if self.net.is_some() {
+            menu.say_title(cx);
+            self.game_menu = Some(GameMenu { menu, choice });
+            return Ok(());
+        }
         menu.run(cx)?;
-        match choice.get() {
+        self.game_menu_chosen(cx, choice.get());
+        Ok(())
+    }
+
+    /// A key pressed while the game menu is open in a game on a server: F7
+    /// writes to the game as in the game, the other keys go to the menu,
+    /// which closes once an item is chosen.
+    pub(crate) fn game_menu_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
+        if k.key == Key::F7 {
+            self.cmd_say(cx, Channel::Game);
+            return Ok(());
+        }
+        let Some(gm) = &mut self.game_menu else {
+            return Ok(());
+        };
+        if gm.menu.handle(cx, Some(Event::KeyDown(k)))? {
+            let choice = gm.choice.get();
+            self.game_menu = None;
+            self.game_menu_chosen(cx, choice);
+        }
+        Ok(())
+    }
+
+    fn game_menu_chosen(&mut self, cx: &mut Client, choice: Option<GameMenuChoice>) {
+        match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
             Some(GameMenuChoice::Speed(s)) => self.write_line(cx, &format!("speed {s}")),
             None => {}
         }
-        Ok(())
     }
 
     /// Asks the world to quit; asked again, quits at once.

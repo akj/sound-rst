@@ -29,7 +29,7 @@ use crate::world::{Abort, Res, TPlace, World};
 const NB_WORKERS_TO_GET: i64 = 10;
 
 /// What `check_type` compares a unit or a type with.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Sel {
     /// A list of type names: `nb` counts 1 if the first one is an upgrade
     /// the player has.
@@ -52,7 +52,7 @@ impl Sel {
 }
 
 /// The classes `choose` looks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Kind {
     Meadow,
     Deposit,
@@ -68,7 +68,7 @@ impl Kind {
 }
 
 /// An order given by `order`, followed until it is done.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 struct Tracked {
     unit: EntityId,
     /// The order as last seen in the unit's queue.
@@ -86,7 +86,7 @@ enum IdKey {
 type DepositPriority = (i64, i64, IdKey);
 
 /// The state of a scripted computer player (`Computer`).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash)]
 pub(crate) struct Computer {
     /// The lines of the script, once an AI type other than `timers` is set.
     plan: Option<Vec<String>>,

@@ -785,7 +785,8 @@ pub enum ServerMsg {
         slot: SlotIndex,
     },
     /// Clients disagree about the state after `turn`. `slots` are the
-    /// players whose digest differs from the most common one.
+    /// players whose digest differs from the most common one, or every
+    /// player on a tie; they are taken out of the game.
     OutOfSync {
         turn: Turn,
         slots: Vec<SlotIndex>,

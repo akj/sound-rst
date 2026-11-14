@@ -326,8 +326,11 @@ async fn a_player_who_keeps_the_game_waiting_too_long_is_taken_out() {
     all[1].expect(refused(Refusal::NotNow)).await;
 }
 
-#[tokio::test]
-async fn out_of_sync_names_the_odd_player_once() {
+/// Andrew, Bob and Carol in a game where the clock waits for everyone
+/// (max_lead 0), each having reported turn 0 with their digest.
+async fn three_player_game_after_turn_0(
+    digests: [Digest; 3],
+) -> (soundrts_server::ServerHandle, Vec<Client>) {
     let server = server(|c| c.max_lead = 0);
     let mut all = clients(server.local_addr(), &["andrew", "bob", "carol"]).await;
     let room = open_room(&mut all, 0, &map(3, 4), true).await;
@@ -336,39 +339,139 @@ async fn out_of_sync_names_the_odd_player_once() {
     ready(&mut all, 1, &[0, 1, 2]).await;
     ready(&mut all, 2, &[0, 1, 2]).await;
     start_game(&mut all, room, &[0, 1, 2]).await;
-
     // With max_lead 0, turn t + 1 comes only after everyone reported t, so
     // a desync of turn t is always told before turn t + 1.
-    for (c, digest) in all.iter_mut().zip([7, 7, 8]) {
+    for (c, digest) in all.iter_mut().zip(digests) {
         wait_for_turn(c, 0).await;
         c.send(ClientMsg::TurnDone { turn: 0, digest }).await;
     }
-    for c in &mut all {
+    (server, all)
+}
+
+/// The next turn, skipping the messages that come and go with the speed of
+/// the test and the lobby's news of players moving.
+async fn next_turn_ignoring_news(c: &mut Client) -> Turn {
+    loop {
+        match next_ignoring_waits(c).await {
+            ServerMsg::Turn { turn, .. } => return turn,
+            ServerMsg::Lobby {
+                change: LobbyChange::PlayerMoved { .. },
+            } => {}
+            other => panic!("{}: expected a turn, got {other:?}", c.login),
+        }
+    }
+}
+
+#[tokio::test]
+async fn out_of_sync_takes_the_odd_player_out() {
+    let (_server, mut all) = three_player_game_after_turn_0([7, 7, 8]).await;
+    let out = ServerMsg::OutOfSync {
+        turn: 0,
+        slots: vec![2],
+    };
+    assert_eq!(next_ignoring_waits(&mut all[2]).await, out);
+    assert_eq!(next_ignoring_waits(&mut all[2]).await, ServerMsg::GameEnded);
+    all[2]
+        .expect(moved(&login("carol"), Whereabouts::Lobby))
+        .await;
+    for c in &mut all[..2] {
+        assert_eq!(next_ignoring_waits(c).await, out);
+        assert_eq!(
+            next_ignoring_waits(c).await,
+            ServerMsg::PlayerLeftGame { slot: 2 }
+        );
+    }
+    // The others play on, and their digests are still compared.
+    for turn in 1..4 {
+        for c in &mut all[..2] {
+            assert_eq!(next_turn_ignoring_news(c).await, turn);
+            c.send(ClientMsg::TurnDone { turn, digest: 1 }).await;
+        }
+    }
+    for (c, digest) in all[..2].iter_mut().zip([1, 2]) {
+        assert_eq!(next_turn_ignoring_news(c).await, 4);
+        c.send(ClientMsg::TurnDone { turn: 4, digest }).await;
+    }
+    for c in &mut all[..2] {
         assert_eq!(
             next_ignoring_waits(c).await,
             ServerMsg::OutOfSync {
-                turn: 0,
-                slots: vec![2],
+                turn: 4,
+                slots: vec![0, 1],
             }
         );
-        assert!(matches!(
-            next_ignoring_waits(c).await,
-            ServerMsg::Turn { turn: 1, .. }
-        ));
     }
-    // Further differences are not told again.
-    for turn in 1..4 {
-        for (c, digest) in all.iter_mut().zip([1, 2, 3]) {
+    all[0].expect(ServerMsg::GameEnded).await;
+}
+
+#[tokio::test]
+async fn out_of_sync_on_a_tie_ends_the_game_for_everyone() {
+    let server = server(|c| c.max_lead = 0);
+    let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let room = open_room(&mut all, 0, &map(2, 4), true).await;
+    join_room(&mut all, 1, room).await;
+    ready(&mut all, 1, &[0, 1]).await;
+    start_game(&mut all, room, &[0, 1]).await;
+    for (c, digest) in all.iter_mut().zip([7, 8]) {
+        wait_for_turn(c, 0).await;
+        c.send(ClientMsg::TurnDone { turn: 0, digest }).await;
+    }
+    let out = ServerMsg::OutOfSync {
+        turn: 0,
+        slots: vec![0, 1],
+    };
+    assert_eq!(next_ignoring_waits(&mut all[0]).await, out);
+    all[0].expect(ServerMsg::GameEnded).await;
+    assert_eq!(next_ignoring_waits(&mut all[1]).await, out);
+    all[1].skip_to(&ServerMsg::GameEnded).await;
+}
+
+#[tokio::test]
+async fn out_of_sync_players_all_leave_before_the_next_turn_is_compared() {
+    let server = server(|c| c.max_lead = NO_WAIT);
+    let mut all = clients(server.local_addr(), &["andrew", "bob", "carol", "dave"]).await;
+    let room = open_room(&mut all, 0, &map(2, 4), true).await;
+    for who in 1..4 {
+        join_room(&mut all, who, room).await;
+    }
+    for who in 1..4 {
+        ready(&mut all, who, &[0, 1, 2, 3]).await;
+    }
+    start_game(&mut all, room, &[0, 1, 2, 3]).await;
+    // Bob, Carol and Dave report turns 0 and 1; Bob differs in both.
+    for (c, digests) in all[1..].iter_mut().zip([[8, 9], [7, 7], [7, 7]]) {
+        wait_for_turn(c, 1).await;
+        for (turn, digest) in (0..).zip(digests) {
             c.send(ClientMsg::TurnDone { turn, digest }).await;
         }
-        for c in &mut all {
-            let msg = next_ignoring_waits(c).await;
-            assert!(
-                matches!(msg, ServerMsg::Turn { turn: t, .. } if t == turn + 1),
-                "{msg:?}"
-            );
+    }
+    // Andrew reports turn 0 last, and differs too. Once he is out, turn 1
+    // has every digest it waits for, Bob's included.
+    wait_for_turn(&mut all[0], 0).await;
+    all[0]
+        .send(ClientMsg::TurnDone { turn: 0, digest: 6 })
+        .await;
+    let mut told = Vec::new();
+    while told.last() != Some(&ServerMsg::PlayerLeftGame { slot: 1 }) {
+        let msg = all[2].recv().await;
+        if matches!(
+            msg,
+            ServerMsg::OutOfSync { .. } | ServerMsg::PlayerLeftGame { .. }
+        ) {
+            told.push(msg);
         }
     }
+    assert_eq!(
+        told,
+        [
+            ServerMsg::OutOfSync {
+                turn: 0,
+                slots: vec![0, 1],
+            },
+            ServerMsg::PlayerLeftGame { slot: 0 },
+            ServerMsg::PlayerLeftGame { slot: 1 },
+        ]
+    );
 }
 
 /// Waits for turn `n` if it has not come yet.

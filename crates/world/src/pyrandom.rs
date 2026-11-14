@@ -9,7 +9,7 @@ const UPPER_MASK: u32 = 0x8000_0000;
 const LOWER_MASK: u32 = 0x7fff_ffff;
 
 /// The Mersenne Twister of CPython, with the derived methods the game uses.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PyRandom {
     mt: Box<[u32; N]>,
     index: usize,
