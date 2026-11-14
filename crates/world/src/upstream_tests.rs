@@ -1459,14 +1459,20 @@ mod test_worldplayercomputer {
         assert_eq!(w.square(a1).name, "a1");
         assert!(w.square(a1).objects.is_empty());
         let owner = human(&mut w);
-        assert!(!w.is_ok_for_warehouse(a1, 0));
+        // The square is judged by what the owner sees: a peasant is there.
+        create(&mut w, "peasant", owner, a1);
+        let is_ok = |w: &mut World| {
+            w.update_perception_and_memory(owner).unwrap();
+            w.is_ok_for_warehouse(owner, a1, 0)
+        };
+        assert!(!is_ok(&mut w));
         let gold = w.rules.type_id("goldmine").unwrap();
         w.create_deposit(gold, a1, "75").unwrap();
-        assert!(w.is_ok_for_warehouse(a1, 0));
+        assert!(is_ok(&mut w));
         create(&mut w, "lumbermill", owner, a1); // stores resource 1
-        assert!(w.is_ok_for_warehouse(a1, 0));
+        assert!(is_ok(&mut w));
         create(&mut w, "townhall", owner, a1); // stores resource 0
-        assert!(!w.is_ok_for_warehouse(a1, 0));
+        assert!(!is_ok(&mut w));
     }
 }
 
@@ -1725,5 +1731,341 @@ mod test_definitions {
         let rules = Rules::load(&["def number\nclass soldier"]);
         let copy = rules.clone();
         assert!(copy.unit_type("number").is_some());
+    }
+}
+
+/// Bugs the original has and the port no longer copies.
+mod bugs_of_the_original {
+    use super::*;
+    use crate::events::{EntityEvent, Event};
+
+    /// Two computers on `jl1_extended`, in the given alliances.
+    fn two_computers(alliance: (&str, &str), ai: &str) -> (World, PlayerId, PlayerId) {
+        let mut w = world("soundrts/tests/jl1_extended.txt");
+        let mut c1 = Controller::computer(ai);
+        let mut c2 = Controller::computer(ai);
+        c1.alliance = Some(alliance.0.into());
+        c2.alliance = Some(alliance.1.into());
+        let ps = w.populate_map(&[c1, c2], false, false).unwrap();
+        w.update_buckets();
+        (w, ps[0], ps[1])
+    }
+
+    #[test]
+    fn a_healer_heals_its_own_allied_units_once_per_turn() {
+        let (mut w, cp, cp2) = two_computers(("1", "1"), "easy");
+        assert_eq!(w.player(cp).allied, [cp, cp2]);
+        let th = find(&w, cp, "townhall", 0).unwrap();
+        let p = find(&w, cp, "peasant", 0).unwrap();
+        // 1 heal level heals 1000 / 25 = 40 hit points each turn.
+        w.em(th).stats.heal_level = 1;
+        let max = w.e(p).stats.hp_max;
+        w.em(p).hp = max - 200;
+        w.creature_update(th).unwrap();
+        assert_eq!(w.e(p).hp, max - 160);
+    }
+
+    const TWO_SQUARES: &str = "
+square_width 12
+nb_columns 2
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 2
+nb_players_max 2
+starting_squares a1 b1
+";
+
+    /// Two human players, on `a1` and `b1`, with no units.
+    fn two_humans() -> (World, PlayerId, PlayerId) {
+        let mut w = world_text(TWO_SQUARES);
+        let ps = w
+            .populate_map(
+                &[Controller::human("a", false), Controller::human("b", false)],
+                false,
+                false,
+            )
+            .unwrap();
+        (w, ps[0], ps[1])
+    }
+
+    #[test]
+    fn a_splash_that_kills_its_target_still_hits_the_units_beside_it() {
+        let (mut w, a, b) = two_humans();
+        let a1 = sq(&w, "a1");
+        let dragon = create(&mut w, "dragon", a, a1);
+        let target = create(&mut w, "footman", b, a1);
+        let beside = create(&mut w, "footman", b, a1);
+        let (t, s) = (w.e(target), w.e(beside));
+        let d2 = (t.x - s.x).pow(2) + (t.y - s.y).pow(2);
+        assert!(d2 <= PRECISION * PRECISION, "within the splash radius");
+        w.em(target).hp = 1;
+        w.set_action_target(dragon, Some(Target::Entity(target)));
+        let max = w.e(beside).stats.hp_max;
+        for _ in 0..20 {
+            w.update();
+            if w.e(target).place.is_none() {
+                break;
+            }
+        }
+        assert!(w.e(target).place.is_none(), "the target is dead");
+        // The dragon's damage of 4, less the footman's armor of 0.5.
+        assert_eq!(w.e(beside).hp, max - 3500);
+    }
+
+    const THREE_SQUARES: &str = "
+square_width 12
+nb_columns 3
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 3
+nb_players_max 3
+starting_squares a1 b1 c1
+";
+
+    #[test]
+    fn a_victory_defeats_every_other_player_when_the_losers_quit() {
+        let mut w = world_text(THREE_SQUARES);
+        let humans = ["a", "b", "c"].map(|n| Controller::human(n, false));
+        let ps = w.populate_map(&humans, false, false).unwrap();
+        for &p in &ps {
+            w.plm(p).observer_if_defeated = false;
+        }
+        w.victory(ps[0]);
+        assert!(w.player(ps[0]).has_victory);
+        assert!(w.player(ps[1]).has_been_defeated);
+        assert!(w.player(ps[2]).has_been_defeated);
+        assert_eq!(w.players, [ps[0]]);
+    }
+
+    #[test]
+    fn every_player_quits_when_nobody_is_playing_any_more() {
+        let mut w = world_text(THREE_SQUARES);
+        let humans = ["a", "b", "c"].map(|n| Controller::human(n, false));
+        let ps = w.populate_map(&humans, false, false).unwrap();
+        for &p in &ps {
+            w.plm(p).has_been_defeated = true;
+        }
+        w.update();
+        assert!(w.players.is_empty(), "still in the game: {:?}", w.players);
+        assert_eq!(w.ex_players, ps);
+    }
+
+    #[test]
+    fn every_abandoned_building_project_gives_its_money_back() {
+        let mut w = world_text(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 3
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+starting_units townhall peasant peasant
+starting_resources 100 100
+",
+        );
+        let p = w
+            .populate_map(&[Controller::human("a", false)], false, false)
+            .unwrap()[0];
+        w.update();
+        let start = w.player(p).resources.clone();
+        let a1 = sq(&w, "a1");
+        let meadows: Vec<EntityId> = w
+            .square(a1)
+            .objects
+            .iter()
+            .copied()
+            .filter(|&o| w.e(o).class == crate::rules::EntityClass::Meadow)
+            .collect();
+        let peasants = [0, 1].map(|i| find(&w, p, "peasant", i).unwrap());
+        for (&peasant, &meadow) in peasants.iter().zip(&meadows) {
+            take(&mut w, peasant, &format!("build farm {meadow}"));
+        }
+        assert_eq!(w.player(p).budget.len(), 2);
+        assert_ne!(w.player(p).resources, start);
+        for peasant in peasants {
+            w.em(peasant).orders.clear();
+        }
+        w.player_slow_update(p).unwrap();
+        assert!(w.player(p).budget.is_empty());
+        assert_eq!(w.player(p).resources, start);
+    }
+
+    #[test]
+    fn a_ranged_enemy_that_harms_makes_its_own_square_cataclysmic() {
+        let (mut w, a, b) = two_humans();
+        let (a1, b1) = (sq(&w, "a1"), sq(&w, "b1"));
+        create(&mut w, "footman", a, b1);
+        let archer = create(&mut w, "archer", b, b1);
+        assert!(!w.e(archer).is_melee());
+        w.em(archer).stats.harm_level = 1;
+        w.em(archer).time_limit = Some(1_000_000);
+        assert!(is_perceiving(&mut w, a, archer));
+        w.update_enemy_menace_and_presence_and_corpses(a);
+        let pl = w.player(a);
+        assert_eq!(pl.cataclysmic_places, [b1].into());
+        let m = w.e(archer).menace();
+        assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
+    }
+
+    #[test]
+    fn two_points_of_a_square_are_different_targets() {
+        let w = world_text(TWO_SQUARES);
+        let a1 = sq(&w, "a1");
+        let zoom = |x, y| {
+            Target::Zoom(crate::entity::ZoomTarget {
+                place: a1,
+                x,
+                y,
+                id: None,
+            })
+        };
+        assert!(zoom(2000, 2000).same(&zoom(2000, 2000)));
+        assert!(!zoom(2000, 2000).same(&zoom(6000, 2000)));
+        assert!(!zoom(2000, 2000).same(&zoom(2000, 6000)));
+    }
+
+    #[test]
+    fn of_two_meadows_as_near_the_one_with_the_smaller_id_comes_first() {
+        let (mut w, a, _) = two_humans();
+        let a1 = sq(&w, "a1");
+        let f = create(&mut w, "footman", a, a1);
+        let (fx, fy) = (w.e(f).x, w.e(f).y);
+        let first = w.create_meadow(a1, Some((fx - 1000, fy)));
+        // The next id with one more digit: 9 then 10, or 99 then 100.
+        let digits = first.0.to_string().len() as u32;
+        while w.create_meadow(a1, Some((1000, 1000))).0 + 1 < 10_u32.pow(digits) {}
+        let second = w.create_meadow(a1, Some((fx + 1000, fy)));
+        assert!(second.0.to_string() < first.0.to_string());
+        assert_eq!(w.find_nearest_meadow(a1, f), Some(first));
+    }
+
+    #[test]
+    fn adding_a_unit_where_there_is_no_space_leaves_the_other_units_alone() {
+        use crate::command::{Cheat, Command};
+        let mut w = world_text(
+            "
+square_width 1
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        w.allow_cheatmode = true;
+        let p = w
+            .populate_map(&[Controller::human("a", false)], false, false)
+            .unwrap()[0];
+        let a1 = sq(&w, "a1");
+        let add = |n: &str| {
+            Command::Cheat(Cheat::AddUnits {
+                square: Some(a1),
+                units: format!("{n} footman"),
+            })
+        };
+        w.queue(p, add("100"));
+        w.update();
+        let warnings = w.drain_warnings();
+        assert!(
+            warnings.contains(&"not enough space".to_owned()),
+            "{warnings:?}"
+        );
+        let full = w.player(p).units.clone();
+        assert!(!full.is_empty());
+        w.queue(p, add("1"));
+        w.update();
+        assert_eq!(w.drain_warnings(), ["not enough space"]);
+        assert_eq!(w.player(p).units, full);
+    }
+
+    #[test]
+    fn a_computer_forgets_a_unit_three_minutes_after_losing_sight_of_it() {
+        let mut w = world_text(THREE_SQUARES);
+        let controllers = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+            Controller::human("c", false),
+        ];
+        let ps = w.populate_map(&controllers, false, false).unwrap();
+        let (cp, b) = (ps[0], ps[1]);
+        let (a1, c1) = (sq(&w, "a1"), sq(&w, "c1"));
+        create(&mut w, "footman", cp, a1);
+        let enemy = create(&mut w, "footman", b, a1);
+        assert!(is_perceiving(&mut w, cp, enemy));
+        move_to(&mut w, enemy, c1);
+        assert!(!is_perceiving(&mut w, cp, enemy));
+        assert!(w.player(cp).memory.contains_key(&enemy));
+        w.time += 3 * 60 * 1000;
+        is_perceiving(&mut w, cp, enemy);
+        assert!(w.player(cp).memory.contains_key(&enemy));
+        w.time += 1;
+        is_perceiving(&mut w, cp, enemy);
+        assert!(!w.player(cp).memory.contains_key(&enemy));
+    }
+
+    #[test]
+    fn a_computer_judges_a_warehouse_place_by_what_it_has_seen() {
+        let mut w = world_text(THREE_SQUARES);
+        let controllers = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+            Controller::human("c", false),
+        ];
+        let ps = w.populate_map(&controllers, false, false).unwrap();
+        let (cp, b) = (ps[0], ps[1]);
+        let (a1, c1) = (sq(&w, "a1"), sq(&w, "c1"));
+        let gold = w.rules.type_id("goldmine").unwrap();
+        let mine = w.create_deposit(gold, a1, "75").unwrap();
+        let scout = create(&mut w, "footman", cp, a1);
+        assert!(is_perceiving(&mut w, cp, mine));
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // The scout leaves; the mine is remembered.
+        move_to(&mut w, scout, c1);
+        assert!(!is_perceiving(&mut w, cp, mine));
+        assert!(w.player(cp).memory.contains_key(&mine));
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // A town hall the computer has not seen does not change its mind.
+        create(&mut w, "townhall", b, a1);
+        is_perceiving(&mut w, cp, mine);
+        assert!(w.is_ok_for_warehouse(cp, a1, 0));
+        // Once seen, it does.
+        move_to(&mut w, scout, a1);
+        is_perceiving(&mut w, cp, mine);
+        assert!(!w.is_ok_for_warehouse(cp, a1, 0));
+    }
+
+    /// The events of the entities the player perceives, since the last call.
+    fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
+        w.drain_events(p)
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Entity { event, .. } => Some(event),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn load_all_aimed_at_a_unit_inside_something_is_refused_at_once() {
+        let mut w = world_text(TWO_SQUARES);
+        let humans = [Controller::human("a", true), Controller::human("b", false)];
+        let a = w.populate_map(&humans, false, false).unwrap()[0];
+        let a1 = sq(&w, "a1");
+        let t1 = create(&mut w, "new_flyingmachine", a, a1);
+        let t2 = create(&mut w, "new_flyingmachine", a, a1);
+        let f = create(&mut w, "footman", a, a1);
+        w.load(t2, f);
+        w.update();
+        w.drain_events(a);
+        for kw in ["load_all", "unload_all"] {
+            take(&mut w, t1, &format!("{kw} {f}"));
+            assert_eq!(evs(&mut w, a), [EntityEvent::OrderImpossible(None)], "{kw}");
+            w.update();
+            assert!(keywords(&w, t1).is_empty(), "{kw}");
+            assert!(evs(&mut w, a).is_empty(), "{kw}");
+        }
     }
 }

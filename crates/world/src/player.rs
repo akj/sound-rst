@@ -227,9 +227,7 @@ pub struct Player {
     pub controller: Controller,
     pub neutral: bool,
     pub faction: String,
-    /// The allies, the player included. A player in an alliance appears
-    /// twice, like in the original, which counts its own units twice when
-    /// healing.
+    /// The allies, the player included, each once.
     pub allied: Vec<super::entity::PlayerId>,
     /// 1 for the first non-neutral player, and so on.
     pub number: Option<u32>,
@@ -488,12 +486,10 @@ impl Player {
         self.smart_units()
     }
 
-    /// How long a mobile unit is remembered after it went out of sight.
+    /// How long a mobile unit is remembered after it went out of sight: 3
+    /// minutes, for a computer as for a human.
     pub fn memory_duration(&self) -> i64 {
-        match self.kind {
-            PlayerKind::Computer { .. } => 36_000_000,
-            _ => 3 * 60 * 1000,
-        }
+        3 * 60 * 1000
     }
 
     pub fn is_playing(&self) -> bool {

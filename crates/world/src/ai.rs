@@ -93,15 +93,9 @@ struct Tracked {
     order: Order,
 }
 
-/// The comparison key of `_deposit_priority`: the id is text, and the
-/// missing deposit has 0 instead.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum IdKey {
-    Zero,
-    Text(String),
-}
-
-type DepositPriority = (i64, i64, IdKey);
+/// The comparison key of `_deposit_priority`: the deposit's id last, and
+/// none for a missing deposit.
+type DepositPriority = (i64, i64, Option<EntityId>);
 
 /// The state of a scripted computer player (`Computer`).
 #[derive(Clone, Debug, Default, Hash)]
@@ -280,7 +274,7 @@ impl World {
             ));
         }
         targets.retain(|(_, t)| !self.t_entity(t).is_some_and(Entity::is_exit));
-        targets.sort_by(|a, b| a.0.cmp_as_text(b.0));
+        targets.sort_by_key(|t| t.0);
         let ids: Vec<EntityId> = targets.into_iter().map(|(i, _)| i).collect();
         let mut i = 0;
         while i < self.pl(p).units.len() {
@@ -328,14 +322,19 @@ impl World {
             .choice_index(orders.len())
             .expect("the order list is not empty");
         let kw = orders[i];
-        // `UseOrder.nb_args` is a property, true when read on the class.
-        let args = kw == Keyword::Use || kw.nb_args() > 0;
         let mut menu = self.menu_requests(unit, kw, true);
         if menu.is_empty() {
             return Ok(None);
         }
         let i = self.random.choice_index(menu.len()).expect("not empty");
         let mut order = menu.swap_remove(i);
+        // Of the abilities, only those that ask for a target take one.
+        let args = if kw == Keyword::Use {
+            self.order_info(unit, kw, order.type_name())
+                .is_some_and(|info| info.nb_args > 0)
+        } else {
+            kw.nb_args() > 0
+        };
         if args {
             let Some(j) = self.random.choice_index(targets.len()) else {
                 return Err(Abort::new("Cannot choose from an empty sequence"));
@@ -725,7 +724,7 @@ impl World {
         v.sort_by(|&a, &b| {
             self.value_as_an_explorer(b)
                 .cmp(&self.value_as_an_explorer(a))
-                .then_with(|| b.cmp_as_text(a))
+                .then_with(|| b.cmp(&a))
         });
         v
     }
@@ -987,8 +986,8 @@ impl World {
         Ok(())
     }
 
-    /// `_builders_place`: where most workers are; on a tie, the place with
-    /// the greatest id (as text).
+    /// `_builders_place`: where most workers are; on a tie, the square with
+    /// the greatest id, before a place inside something.
     fn builders_place(&self, p: PlayerId) -> Res<Option<Place>> {
         let mut starts: Vec<(Option<Place>, i64)> = Vec::new();
         for &u in &self.cs(p).workers {
@@ -1002,17 +1001,12 @@ impl World {
             return Ok(None);
         };
         let best: Vec<Option<Place>> = starts.iter().filter(|s| s.1 == max).map(|s| s.0).collect();
-        if best.len() > 1 && best.iter().any(|pl| !matches!(pl, Some(Place::Square(_)))) {
-            return Err(Abort::new(
-                "'<' not supported between instances of 'str' and 'NoneType'",
-            ));
-        }
         Ok(best
             .into_iter()
             .max_by(|a, b| {
                 let id = |pl: &Option<Place>| match pl {
-                    Some(Place::Square(s)) => self.square(*s).id.to_string(),
-                    _ => String::new(),
+                    Some(Place::Square(s)) => Some(self.square(*s).id),
+                    _ => None,
                 };
                 id(a).cmp(&id(b))
             })
@@ -1185,23 +1179,33 @@ impl World {
 
     // Computer: choosing a place
 
-    /// `is_ok_for_warehouse`: no warehouse for the resource on the square,
-    /// and a deposit of it.
-    pub(crate) fn is_ok_for_warehouse(&self, z: SquareId, resource_type: i64) -> bool {
-        let objects = &self.square(z).objects;
-        for &o in objects {
-            let stores = self.e(o).type_id.is_some_and(|t| {
+    /// `is_ok_for_warehouse`: as far as the player knows, no warehouse for
+    /// the resource on the square, and a deposit of it.
+    pub(crate) fn is_ok_for_warehouse(&self, p: PlayerId, z: SquareId, resource_type: i64) -> bool {
+        let pl = self.pl(p);
+        let perceived = self
+            .square(z)
+            .objects
+            .iter()
+            .filter(|o| pl.perception.contains(o));
+        let remembered = pl
+            .memory
+            .values()
+            .map(|r| &*r.snapshot)
+            .filter(|e| e.place == Some(Place::Square(z)));
+        let known: Vec<&Entity> = perceived.map(|&o| self.e(o)).chain(remembered).collect();
+        let stores = |e: &Entity| {
+            e.type_id.is_some_and(|t| {
                 self.rules
                     .ty(t)
                     .storable_resource_types
                     .contains(&resource_type)
-            });
-            if stores {
-                return false;
-            }
+            })
+        };
+        if known.iter().any(|e| stores(e)) {
+            return false;
         }
-        objects.iter().any(|&o| {
-            let e = self.e(o);
+        known.iter().any(|e| {
             e.class == EntityClass::Deposit
                 && e.type_id.and_then(|t| self.rules.ty(t).resource_type) == Some(resource_type)
         })
@@ -1214,7 +1218,7 @@ impl World {
         let Place::Square(s) = place else {
             return resource_type.is_none();
         };
-        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(s, rt))
+        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(p, s, rt))
             && !self.square_is_dangerous(p, s)
     }
 
@@ -1266,7 +1270,7 @@ impl World {
             }
         }
         candidates.retain(|(_, o)| self.choose_is_ok(p, o, resource_type));
-        candidates.sort_by(|a, b| a.0.cmp_as_text(b.0));
+        candidates.sort_by_key(|c| c.0);
         let mut candidates: Vec<Target> = candidates.into_iter().map(|(_, o)| o).collect();
         if candidates.len() > 10 {
             candidates = self.remove_far_candidates(&candidates, start, 10)?;
@@ -1288,7 +1292,7 @@ impl World {
             for o in candidates.into_iter().filter(|o| self.t_place_of(o) == p0) {
                 keyed.push((self.deposit_priority(p, &Some(o.clone()))?, o));
             }
-            keyed.sort_by(|a, b| b.0.cmp(&a.0));
+            keyed.sort_by_key(|k| std::cmp::Reverse(k.0));
             candidates = keyed.into_iter().map(|(_, o)| o).collect();
         }
         let result = candidates.into_iter().next();
@@ -1299,8 +1303,7 @@ impl World {
     }
 
     /// `_remove_far_candidates`: the candidates met first in a breadth
-    /// first walk of the squares from `start`. A square met twice before
-    /// its exits are walked is counted twice, as in the original.
+    /// first walk of the squares from `start`.
     fn remove_far_candidates(
         &self,
         candidates: &[Target],
@@ -1317,6 +1320,10 @@ impl World {
         let mut done: Vec<SquareId> = Vec::new();
         while c.len() < limit {
             let Some(room) = queue.pop_front() else { break };
+            // A square may be queued twice before it is walked.
+            if done.contains(&room) {
+                continue;
+            }
             for o in &self.square(room).objects {
                 if let Some(t) = ids.get(o) {
                     c.push(t.clone());
@@ -1324,9 +1331,6 @@ impl World {
                         break;
                     }
                 }
-            }
-            if done.contains(&room) {
-                continue;
             }
             for &e in &self.square(room).exits {
                 let os = self
@@ -1344,7 +1348,7 @@ impl World {
 
     fn deposit_priority(&self, p: PlayerId, d: &Option<Target>) -> Res<DepositPriority> {
         let Some(t) = d else {
-            return Ok((-100, 0, IdKey::Zero));
+            return Ok((-100, 0, None));
         };
         let workers = self
             .cs(p)
@@ -1360,7 +1364,7 @@ impl World {
             .copied()
             .ok_or_else(|| Abort::new("list index out of range"))?;
         let id = self.t_entity(t).expect("an entity").id;
-        Ok((floordiv(-r, 10), -workers, IdKey::Text(id.to_string())))
+        Ok((floordiv(-r, 10), -workers, Some(id)))
     }
 
     // Computer: counting and getting units
@@ -1694,7 +1698,7 @@ impl World {
                 for u in units {
                     keyed.push((self.worker_orders_priority(p, u)?, u));
                 }
-                keyed.sort_by(|a, b| a.0.cmp(&b.0));
+                keyed.sort_by_key(|k| k.0);
                 units = keyed.into_iter().map(|(_, u)| u).collect();
             }
             let u = units.remove(0);
@@ -1764,6 +1768,124 @@ mod order_sites;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A world with the original's rules and this map.
+    fn world(map: &str) -> World {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        let read = |f: &str| {
+            let bytes = std::fs::read(dir.join(f))
+                .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let rules = crate::Rules::load(&[read("res/rules.txt")]);
+        let ai = crate::AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(rules, ai, Vec::new(), 0);
+        w.load_and_build_map(map).unwrap();
+        w
+    }
+
+    #[test]
+    fn on_a_tie_the_builders_place_is_the_square_and_not_the_transport() {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("easy")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let create = |w: &mut World, t: &str| {
+            let tid = w.rules.type_id(t).unwrap();
+            w.create_creature(tid, Some(p), Place::Square(a1), x, y)
+                .unwrap()
+        };
+        let outside = create(&mut w, "peasant");
+        let inside = create(&mut w, "peasant");
+        let transport = create(&mut w, "new_flyingmachine");
+        w.load(transport, inside);
+        w.csm(p).workers = vec![inside, outside];
+        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+        w.csm(p).workers = vec![outside, inside];
+        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+    }
+
+    #[test]
+    fn computer2_aims_only_the_abilities_that_ask_for_a_target() {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("ai2")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let tid = w.rules.type_id("necromancer").unwrap();
+        let u = w
+            .create_creature(tid, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        let mut uses = BTreeMap::new();
+        for _ in 0..500 {
+            if let Some(o) = w.random_order(u, &[u]).unwrap()
+                && o.keyword() == Keyword::Use
+            {
+                let ability = o.type_name().unwrap().to_owned();
+                uses.insert(ability, o.target().is_some());
+            }
+        }
+        // `a_raise_dead` acts around the necromancer.
+        assert_eq!(uses, [("a_raise_dead".to_owned(), false)].into());
+    }
+
+    #[test]
+    fn a_square_reached_by_two_ways_gives_its_candidates_once() {
+        // a1 leads to b1 and a2, which both lead to b2.
+        let w = world(
+            "
+square_width 12
+nb_columns 2
+nb_lines 2
+west_east_paths a1 a2
+south_north_paths a1 b1
+nb_meadows_by_square 3
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let b2 = w.square_by_name("b2").unwrap();
+        let meadows: Vec<Target> = w
+            .square(b2)
+            .objects
+            .iter()
+            .filter(|&&o| w.e(o).is_meadow())
+            .map(|&o| Target::Entity(o))
+            .collect();
+        assert_eq!(meadows.len(), 3);
+        let a1 = w.square_by_name("a1").unwrap();
+        let near = w
+            .remove_far_candidates(&meadows, Some(Place::Square(a1)), 10)
+            .unwrap();
+        let ids: Vec<EntityId> = near.iter().filter_map(Target::entity_id).collect();
+        let expected: Vec<EntityId> = meadows.iter().filter_map(Target::entity_id).collect();
+        assert_eq!(ids, expected);
+    }
 
     #[test]
     fn computer2_chooses_from_the_original_list_of_orders() {

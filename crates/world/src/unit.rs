@@ -1368,7 +1368,7 @@ impl World {
             let (ea, eb) = (self.e(a), self.e(b));
             (-ea.menace(), square_of_distance(x, y, ea.x, ea.y))
                 .cmp(&(-eb.menace(), square_of_distance(x, y, eb.x, eb.y)))
-                .then(a.cmp_as_text(b))
+                .then(a.cmp(&b))
         });
         self.attack(id, Target::Entity(reachable[0]));
         Ok(true)
@@ -1629,14 +1629,13 @@ impl World {
         let Some(tp) = self.e(target).place else {
             return Ok(());
         };
+        // The splash is centred where the target was hit, even if it dies.
+        let (tx, ty) = (self.e(target).x, self.e(target).y);
         for o in self.place_objects(tp).to_vec() {
             let ot = Target::Entity(o);
             if !self.is_an_enemy(id, &ot) && o != target {
                 continue;
             }
-            // The target's position is read again for each object: once the
-            // target is dead, it is at (0, 0).
-            let (tx, ty) = (self.e(target).x, self.e(target).y);
             let oe = self.e(o);
             if oe.is_creature()
                 && square_of_distance(oe.x, oe.y, tx, ty) <= r2

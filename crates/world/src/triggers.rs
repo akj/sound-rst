@@ -420,15 +420,9 @@ impl World {
                                 notify,
                             ) {
                                 Ok(()) => {}
-                                Err(AddUnitError::NotEnoughSpace) => {
-                                    self.warn("not enough space");
-                                    // The original deletes the player's last
-                                    // unit here, which is not the one that
-                                    // failed.
-                                    if let Some(&last) = self.pl(p).units.last() {
-                                        self.delete(last);
-                                    }
-                                }
+                                // The unit that found no space was never
+                                // created.
+                                Err(AddUnitError::NotEnoughSpace) => self.warn("not enough space"),
                                 Err(AddUnitError::Other(m)) => {
                                     self.warn(format!("couldn't add unit: {i}: {m}"))
                                 }

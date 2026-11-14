@@ -1030,13 +1030,8 @@ impl World {
             }
         }
         if self.true_playing_players().is_empty() {
-            // The list shrinks while it is walked, so every other player
-            // quits, as in the original.
-            let mut i = 0;
-            while i < self.players.len() {
-                let p = self.players[i];
+            for p in self.players.clone() {
                 self.quit_game(p);
-                i += 1;
             }
         }
     }

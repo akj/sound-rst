@@ -11,7 +11,6 @@
 //! (see [`EntityClass::default_stats`]), and the data only one class has
 //! lives in [`ExitData`], [`SiteData`] and the corpse's unit.
 
-use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
@@ -23,14 +22,6 @@ use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 /// text protocol: all of them share one counter, as in the original.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityId(pub u32);
-
-impl EntityId {
-    /// Compares as the original does where it sorts by `id`: ids are
-    /// strings there, so "10" comes before "9".
-    pub fn cmp_as_text(self, other: EntityId) -> Ordering {
-        self.0.to_string().cmp(&other.0.to_string())
-    }
-}
 
 impl fmt::Display for EntityId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -96,16 +87,14 @@ pub enum Target {
 }
 
 impl Target {
-    /// Identity, as `is` in the original: the same square, entity or
-    /// remembrance. Two subsquare targets are always equal, because the
-    /// original's `ZoomTarget.__eq__` returns a non-empty tuple.
+    /// Identity: the same square, entity, remembrance or point.
     pub fn same(&self, other: &Target) -> bool {
         match (self, other) {
             (Target::Square(a), Target::Square(b)) => a == b,
             (Target::Entity(a), Target::Entity(b)) => a == b,
             (Target::Memory(a), Target::Memory(b)) => Arc::ptr_eq(&a.snapshot, &b.snapshot),
             (Target::Xy(a, b), Target::Xy(c, d)) => a == c && b == d,
-            (Target::Zoom(_), Target::Zoom(_)) => true,
+            (Target::Zoom(a), Target::Zoom(b)) => (a.x, a.y) == (b.x, b.y),
             _ => false,
         }
     }

@@ -558,21 +558,20 @@ impl World {
         let mut friends = BTreeSet::new();
         let mut cataclysmic = BTreeSet::new();
         let allied = self.pl(p).allied.clone();
-        let mut perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
-        perceived.sort_by(|a, b| a.cmp_as_text(*b));
-        let mut remembered: Vec<Arc<Entity>> = self
+        // Both in id order.
+        let perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
+        let remembered: Vec<Arc<Entity>> = self
             .pl(p)
             .memory
             .values()
             .map(|r| r.snapshot.clone())
             .collect();
-        remembered.sort_by(|a, b| a.id.cmp_as_text(b.id));
         let entities = perceived
             .iter()
             .map(|&o| self.e(o))
             .chain(remembered.iter().map(|r| &**r));
         for o in entities {
-            let Some(Place::Square(mut place)) = o.place else {
+            let Some(Place::Square(place)) = o.place else {
                 continue;
             };
             if self.player_is_an_enemy_of_entity(p, o) {
@@ -584,11 +583,8 @@ impl World {
                     presence.push(place);
                 }
                 if !o.is_melee() {
-                    // The loop variable is `place` itself in the original, so
-                    // after the loop `place` is the last neighbor.
                     for n in self.square(place).neighbors.clone() {
                         *menace.entry(n).or_insert(0) += floordiv(m, 10);
-                        place = n;
                     }
                 }
             } else if o.is_corpse() {
@@ -815,11 +811,8 @@ impl World {
     }
 
     fn free_project_resources_if_no_worker_on_project(&mut self, p: PlayerId) -> Res {
-        // The budget shrinks while it is walked, so the project after a freed
-        // one is skipped, as in the original.
-        let mut i = 0;
-        while i < self.pl(p).budget.len() {
-            let project = self.pl(p).budget[i].clone();
+        // Freeing a project removes it from the budget, so walk a copy.
+        for project in self.pl(p).budget.clone() {
             let worker = self
                 .pl(p)
                 .units
@@ -828,7 +821,6 @@ impl World {
             if !worker {
                 self.free_resources(p, &project)?;
             }
-            i += 1;
         }
         Ok(())
     }
@@ -920,7 +912,7 @@ impl World {
                 }
             }
         }
-        warehouses.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp_as_text(b.1)));
+        warehouses.sort();
         Ok(warehouses.first().map(|w| w.1))
     }
 
@@ -992,11 +984,8 @@ impl World {
     /// `victory`: the player and its allies win; the others lose.
     pub fn victory(&mut self, p: PlayerId) {
         let time = self.time;
-        // The list shrinks while it is walked when a loser quits, so the
-        // next player is skipped, as in the original.
-        let mut i = 0;
-        while i < self.players.len() {
-            let op = self.players[i];
+        // A loser who quits leaves the list, so walk a copy.
+        for op in self.players.clone() {
             if self.pl(op).is_playing() {
                 if self.pl(p).allied.contains(&op) {
                     self.plm(op).has_victory = true;
@@ -1005,7 +994,6 @@ impl World {
                     self.defeat(op, false);
                 }
             }
-            i += 1;
         }
     }
 

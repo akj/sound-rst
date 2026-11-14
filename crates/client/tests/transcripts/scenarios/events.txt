@@ -79,6 +79,10 @@ key CTRL UP
 key BACKSPACE
 wait_turns 150
 key c
+# then on to c4, where the computer has a farm
+key f
+key CTRL RIGHT
+key BACKSPACE
 wait_game_end
 key ESCAPE
 key ESCAPE
