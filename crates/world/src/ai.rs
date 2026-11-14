@@ -981,8 +981,8 @@ impl World {
         Ok(())
     }
 
-    /// `_builders_place`: where most workers are; on a tie, the place with
-    /// the greatest id.
+    /// `_builders_place`: where most workers are; on a tie, the square with
+    /// the greatest id, before a place inside something.
     fn builders_place(&self, p: PlayerId) -> Res<Option<Place>> {
         let mut starts: Vec<(Option<Place>, i64)> = Vec::new();
         for &u in &self.cs(p).workers {
@@ -996,11 +996,6 @@ impl World {
             return Ok(None);
         };
         let best: Vec<Option<Place>> = starts.iter().filter(|s| s.1 == max).map(|s| s.0).collect();
-        if best.len() > 1 && best.iter().any(|pl| !matches!(pl, Some(Place::Square(_)))) {
-            return Err(Abort::new(
-                "'<' not supported between instances of 'str' and 'NoneType'",
-            ));
-        }
         Ok(best
             .into_iter()
             .max_by(|a, b| {
@@ -1773,6 +1768,39 @@ mod tests {
         let mut w = World::new(rules, ai, Vec::new(), 0);
         w.load_and_build_map(map).unwrap();
         w
+    }
+
+    #[test]
+    fn on_a_tie_the_builders_place_is_the_square_and_not_the_transport() {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("easy")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let create = |w: &mut World, t: &str| {
+            let tid = w.rules.type_id(t).unwrap();
+            w.create_creature(tid, Some(p), Place::Square(a1), x, y)
+                .unwrap()
+        };
+        let outside = create(&mut w, "peasant");
+        let inside = create(&mut w, "peasant");
+        let transport = create(&mut w, "new_flyingmachine");
+        w.load(transport, inside);
+        w.csm(p).workers = vec![inside, outside];
+        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+        w.csm(p).workers = vec![outside, inside];
+        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
     }
 
     #[test]
