@@ -48,8 +48,10 @@ use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, KeyDown};
 use crate::menu::{Exit, TextEntry, Typed};
+use crate::message::{Category, Subject};
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
+use crate::voice::EntryId;
 
 use self::animation::NoiseSource;
 use self::command::GameCommand;
@@ -61,10 +63,19 @@ use self::order::OrderTypeView;
 pub const TURN: f64 = 0.3;
 /// The same alert sound is not played again within this many seconds.
 pub const ALERT_LIMIT: f64 = 0.5;
-/// Entity events this many seconds late are dropped.
+/// Entity events this many seconds late play no sound: their news is
+/// still told.
 pub const EVENT_LIMIT: f64 = 3.0;
 pub const BEEP_SOUND: &str = "1029";
 pub const POSITIONAL_BEEP_SOUND: &str = "1003";
+
+/// Whether an entity event reaches the interface in time for its sounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Timing {
+    OnTime,
+    /// More than [`EVENT_LIMIT`] seconds late: a sound would be noise.
+    Late,
+}
 
 /// An error the original raises and catches in its loop
 /// (`exception("error in clientgame loop")`): the rest of the pass is
@@ -200,16 +211,17 @@ pub struct GameInterface {
     pub(crate) previous_group: Option<Vec<EntityId>>,
     pub(crate) previous_compass: Option<Msg>,
     pub(crate) previous_menus: IndexMap<String, Vec<String>>,
-    pub(crate) alert_squares: IndexMap<Place, f64>,
+    /// When the player's units were last attacked at each place.
+    pub(crate) attacks: HashMap<Place, f64>,
     pub(crate) lost_units: Vec<(Msg, Option<Place>)>,
     pub(crate) neutralized_units: Vec<(Msg, Option<Place>)>,
     pub(crate) new_enemy_units: Vec<(Msg, Option<Place>)>,
     pub(crate) scout_info: IndexSet<Place>,
     pub(crate) known_resource_places: HashSet<Option<Place>>,
-    pub(crate) previous_unit_attacked_alert: Option<f64>,
-    pub(crate) previous_scout_info: Option<f64>,
-    pub(crate) previous_units_alert: Option<f64>,
-    pub(crate) previous_squares_alert: Option<f64>,
+    /// The units each piece of news about units counts.
+    pub(crate) told_units: HashMap<Subject, Vec<Msg>>,
+    /// The alert the cursor last jumped to, and its square.
+    pub(crate) alert_jump: Option<(EntryId, SquareId)>,
     pub(crate) previous_resources: Option<Vec<i64>>,
     pub(crate) previous_available_food: i64,
     pub(crate) previous_used_food: i64,
@@ -276,16 +288,14 @@ impl GameInterface {
             previous_group: None,
             previous_compass: None,
             previous_menus: IndexMap::new(),
-            alert_squares: IndexMap::new(),
+            attacks: HashMap::new(),
             lost_units: Vec::new(),
             neutralized_units: Vec::new(),
             new_enemy_units: Vec::new(),
             scout_info: IndexSet::new(),
             known_resource_places: HashSet::new(),
-            previous_unit_attacked_alert: None,
-            previous_scout_info: None,
-            previous_units_alert: None,
-            previous_squares_alert: None,
+            told_units: HashMap::new(),
+            alert_jump: None,
             previous_resources: None,
             previous_available_food: 0,
             previous_used_food: 0,
@@ -504,7 +514,10 @@ impl GameInterface {
     pub(crate) fn process_srv_event(&mut self, cx: &mut Client, e: SrvEvent) -> Result<(), Stop> {
         match e {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
-            SrvEvent::VoiceImportant(m) => cx.voice.confirmation(&m),
+            SrvEvent::VoiceImportant(m) => {
+                let policy = cx.config.news.of(Category::Story);
+                cx.voice.confirmation_story(&m, policy);
+            }
             SrvEvent::Sequence(parts) => cx.play_sequence(&parts),
             // In a game on a server, the server keeps the time.
             SrvEvent::Speed(s) => {
@@ -519,11 +532,13 @@ impl GameInterface {
     }
 
     fn srv_event(&mut self, cx: &mut Client, entity: KnownEntity, event: &EntityEvent) {
-        if cx.clock.now() > self.next_update + EVENT_LIMIT {
-            return;
-        }
+        let timing = if cx.clock.now() > self.next_update + EVENT_LIMIT {
+            Timing::Late
+        } else {
+            Timing::OnTime
+        };
         let view = EntityView::new(entity, &cx.rng);
-        if let Err(Oops { message: e, .. }) = self.notify(cx, &view, event) {
+        if let Err(Oops { message: e, .. }) = self.notify(cx, &view, event, timing) {
             cx.log.error(format!("problem during srv_event: {e}"));
         }
     }
@@ -545,9 +560,8 @@ impl GameInterface {
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);
         }
-        self.units_alert_if_needed(cx, None)?;
-        self.squares_alert_if_needed(cx);
-        self.scout_info_if_needed(cx)?;
+        self.units_alert_if_needed(cx, None);
+        self.scout_info_if_needed(cx);
         self.update_fog_of_war(cx, v.memory, v.perception);
         self.note_upgrades();
         self.update_group();
@@ -633,13 +647,14 @@ impl GameInterface {
         }
     }
 
-    /// Says the objective of the map, if any.
+    /// Says the objective of the map, if any, as the story's policy says.
     pub fn say_objective(&self, cx: &mut Client) {
         let objective = self.view().map_objective();
         if !objective.is_empty() {
             let mut m = msg(mp::OBJECTIVE);
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
-            cx.voice.confirmation(&m);
+            let policy = cx.config.news.of(Category::Story);
+            cx.voice.confirmation_story(&m, policy);
         }
     }
 

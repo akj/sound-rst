@@ -18,6 +18,7 @@ use crate::game::lockstep::NetDriver;
 use crate::game::stats::score_msgs;
 use crate::mapfile::Map;
 use crate::menu::Exit;
+use crate::message::{Category, News};
 use crate::net::GameLink;
 use crate::record::{GameRecord, RecordedPlayer, Setup};
 
@@ -276,7 +277,7 @@ impl Session {
     /// Says the score and waits until it is said (a key skips ahead).
     pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
         for m in score_msgs(game.view(), cx.res.style()) {
-            cx.voice.info(&m);
+            cx.news(News::new(Category::System, m));
         }
         cx.voice.flush(true);
         game.stop_noises(cx);

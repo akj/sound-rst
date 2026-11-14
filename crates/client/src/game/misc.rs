@@ -89,6 +89,11 @@ impl GameInterface {
             C::HistoryPrevious => cx.voice.previous(),
             C::HistoryNext => cx.voice.say_next(true),
             C::HistoryStop => cx.voice.say_next(false),
+            C::Unheard => cx.voice.unheard(),
+            C::ReviewPrevious => cx.voice.review_previous(),
+            C::ReviewNext => cx.voice.review_next(),
+            C::ReviewCategory => cx.voice.review_category(),
+            C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
             C::Objectives => self.cmd_objectives(cx),
             C::GameMenu => self.cmd_gamemenu(cx)?,
             C::SayPlayers => {
@@ -125,6 +130,28 @@ impl GameInterface {
                 return Err(Stop::Oops(Oops::new(format!("cmd_{name}: {error}"))));
             }
         }
+        Ok(())
+    }
+
+    /// Moves the cursor to the square of the last alert and says it.
+    /// Pressed again on that square, goes to the alert before, and stays
+    /// on the oldest.
+    fn cmd_jump_to_alert(&mut self, cx: &mut Client) -> R {
+        let before = match self.alert_jump {
+            Some((id, square)) if self.place == Some(square) => Some(id),
+            _ => None,
+        };
+        let Some((id, square)) = cx
+            .voice
+            .alert_before(before)
+            .or(before.and(self.alert_jump))
+        else {
+            cx.voice.item(&msg(mp::NOTHING));
+            return Ok(());
+        };
+        self.leave_zoom_and_immersion(cx)?;
+        self.select_and_say_square(cx, square, &Vec::new());
+        self.alert_jump = Some((id, square));
         Ok(())
     }
 

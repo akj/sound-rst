@@ -443,6 +443,17 @@ impl GameInterface {
         self.set_obs_pos(cx)
     }
 
+    /// Leaves first person mode and the zoom, before jumping to a square.
+    pub(crate) fn leave_zoom_and_immersion(&mut self, cx: &mut Client) -> R {
+        if self.immersion {
+            self.toggle_immersion(cx)?;
+        }
+        if self.zoom.is_some() {
+            self.cmd_toggle_zoom(cx);
+        }
+        Ok(())
+    }
+
     fn select_square_from_list(
         &mut self,
         cx: &mut Client,
@@ -453,12 +464,7 @@ impl GameInterface {
             cx.voice.item(&msg(mp::NOTHING));
             return Ok(());
         }
-        if self.immersion {
-            self.toggle_immersion(cx)?;
-        }
-        if self.zoom.is_some() {
-            self.cmd_toggle_zoom(cx);
-        }
+        self.leave_zoom_and_immersion(cx)?;
         let mut squares = squares;
         if let Some(p) = self.place
             && !squares.contains(&p)

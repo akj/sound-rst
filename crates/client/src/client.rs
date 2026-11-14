@@ -12,6 +12,7 @@ use crate::clock::ClockRef;
 use crate::config::Config;
 use crate::input::{Input, InputSource};
 use crate::log::Log;
+use crate::message::{Category, News, Policy};
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::resource::Resources;
@@ -242,12 +243,29 @@ impl Client {
         self.fullscreen
     }
 
-    /// Says sounds or texts in order, each one interruptible.
+    /// Says the sounds or texts of a cut scene in order, each one
+    /// interruptible, as the story's policy says.
     pub fn play_sequence(&mut self, names: &[String]) {
-        self.stop_sound(true);
-        for name in names {
-            self.voice.important(&vec![MsgPart::from(name.as_str())]);
+        let policy = self.config.news.of(Category::Story);
+        if policy == Policy::Speak {
+            self.stop_sound(true);
         }
+        for name in names {
+            self.voice
+                .important_story(&vec![MsgPart::from(name.as_str())], policy);
+        }
+    }
+
+    /// Gives news to the voice, as the player's policy for its category
+    /// says.
+    pub fn news(&mut self, news: News) {
+        let policy = self.config.news.of(news.category);
+        self.voice.news(news, policy);
+    }
+
+    /// Whether news of this category comes with the sound of its event.
+    pub fn cue(&self, category: Category) -> bool {
+        self.config.news.of(category).plays_sound()
     }
 
     /// The next (`incr` 1) or previous (-1) help message of "menu" or

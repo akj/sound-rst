@@ -6,6 +6,7 @@ use soundrts_protocol::{Channel, ChatLine};
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
+use crate::message::{Category, News};
 use crate::sound_cache::literal;
 
 /// The sound before a chat line: the alert of the conversion ability,
@@ -62,6 +63,14 @@ impl ChatLog {
     pub fn is_empty(&self) -> bool {
         self.lines.is_empty()
     }
+}
+
+/// A chat line as news: the chat sound, then the line.
+pub fn line_news(line: &ChatLine) -> News {
+    News::new(
+        Category::Chat,
+        [msg(&[CHAT_SOUND]), line_msg(line)].concat(),
+    )
 }
 
 /// How a chat line is said: who says what, "allied" first for a line to

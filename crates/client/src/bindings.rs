@@ -39,9 +39,14 @@ pub const MAX_BINDING_LINE_BYTES: usize = 4096;
 pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
-/// and chat to the allies.
-pub const CLIENT_BINDINGS: &str =
-    "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n";
+/// chat to the allies, and the news log: what did I miss, a category's
+/// messages and changing the category, the last alerts' squares. Each news
+/// key is one the original leaves free and that neither Windows nor a
+/// screen reader takes, and needs no modifier: a modifier pressed alone
+/// is a command of its own.
+pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
+    F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
+    DELETE: jump_to_alert\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
 /// resource layers (translations included) but a map that came from a

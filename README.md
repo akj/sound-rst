@@ -57,6 +57,28 @@ To get a written record of everything the game says, set `debug_mode = 1` in `So
 
 To play in another language, write its code, for example `fr`, in `cfg/language.txt` in the data folder.
 
+### News
+
+While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. News is never lost: a message cut off is said again, newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square), and every message is kept in a log, heard or not.
+
+| Key | Does |
+| --- | --- |
+| F4 | What did I miss: says how many messages you have not heard in each category. Press again to hear them one at a time: the newest alert first, then the others, oldest first. |
+| Comma | Says the previous message of the category you review. |
+| Period | Says the next message of the category you review. |
+| Slash | Changes the category you review, and says which. It starts at alerts. |
+| Delete | Moves to the square of the last alert and says it. Press again to go to the alert before. |
+| F5, F6 | Walk back and forth through every message, as before. |
+
+In `SoundRTS.ini`, the `[news]` section says what you hear of each category. Each of `alert`, `production`, `economy`, `scouting`, `chat`, `system` and `story` takes one of these values:
+
+- `speak`: said in its turn, with its sound. This is the default.
+- `sound`: only its sound plays, for example the bell of a finished building or the chat sound. The message waits in the log, unheard.
+- `log`: kept in the log, unheard, without a sound.
+- `drop`: neither said nor kept.
+
+The original game's `verbosity` setting is read once: a category it names is spoken, and production, economy or scouting it leaves out plays only its sound. The game then rewrites the file with a `[news]` section.
+
 ### Speech that ends when NVDA says so
 
 Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off.

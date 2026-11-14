@@ -254,8 +254,10 @@ Events:
   - `important`: blocks until said or a key is pressed; the key is used up;
   - `confirmation`, `menu`: block until said or a key is pressed; the key
     stays queued;
-  - `info`: a queued message started by the voice update (news);
-  - `history`: a message said again from the history (`F5`).
+  - `info`: a queued message started by the voice update (news), or only
+    its recorded sounds under the `sound` policy;
+  - `history`: a message said again from the log (`F5`, the review keys,
+    what did I miss).
 - `voice cut queue=<n>`: speech in progress was stopped other than by a new
   message (a silent flush, sounds stopped, a skip in the history...). `n`
   parts were still queued in the voice channel. When only the sounds were
@@ -322,7 +324,7 @@ starts empty: no campaign bookmarks, no remembered menu choices.
 | `campaign` | the prologue cut scene, chapter 1 (title, intro, objectives, a farm completing an objective, barracks from the console, the cut scene, victory, score), the victory menu, chapter 2 (computer units attack, a unit neutralized), cancel, the defeat menu |
 | `french` | `language fr`: the main menu and its help, a short game on jl1 (status keys, orders, targets, squares, time, help), quit and score |
 | `square_orders` | a peasant ordered to a square, then to a subsquare in zoom mode, and its status: the order's target is a place, named by the place's own title |
-| `events` | with the console: a research completing, an impossible order and its reason (no food), a small gold mine exhausted, a priest's holy vision on another square (an ability with a target), footmen against the computer's base (fights, neutralized units), victory and the score |
+| `events` | with the console: a research completing, an impossible order and its reason (no food), a small gold mine exhausted, a priest's holy vision on another square (an ability with a target), footmen against the computer's base, then the square next to it (fights, neutralized units), victory and the score |
 | `transport` | jl5 (water): a boat loads every footman of a coastal square, its status, unloads them on that square |
 
 Not covered: the multiplayer menus and chat. `crates/client/tests/multiplayer.rs`
@@ -361,12 +363,10 @@ again.
 - The first square of a game is announced by the first animation after the
   first world update, up to 100 ms after the game starts, and interrupts
   whatever the first key said (`training_jl1`).
-- News are queued as `info` messages and expire after 45 s. A newer message
-  of the same update type, or an identical newer one, supersedes them.
 - Server events are handled one per loop pass. An entity event handled
-  later than `next_update + 3 s` is dropped, so a long blocking message can
-  make the interface skip the sounds and the news ("peasant 2 ready!") that
-  the event would have produced.
+  later than `next_update + 3 s` plays no sound, so a long blocking message
+  can make the interface skip the sounds that the event would have
+  produced. Its news ("peasant 2 ready!") is still said.
 - Saying the time reports the measured speed (`speed 0.1` right after the
   game menu was open for a while: the average turn duration includes the
   pause; `training_jl1`).

@@ -11,6 +11,7 @@ use soundrts_world::{EntityId, KnownEntity, KnownOrder, KnownTarget, Place, Play
 
 use crate::audio::{angle, distance};
 use crate::client::Client;
+use crate::message::{Category, News, Subject};
 use crate::rng::ClientRng;
 use crate::sound::{Audio, Placement};
 use crate::style::{Noise, StyleValue};
@@ -18,7 +19,7 @@ use crate::style::{Noise, StyleValue};
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::news::must_be_said;
 use super::order::{PRECISION, substitute_args};
-use super::{GameInterface, Oops, R, compute_title, style_msg};
+use super::{GameInterface, Oops, R, Timing, compute_title, style_msg};
 
 /// The same footstep sound does not start again within this many seconds.
 pub const FOOTSTEP_LIMIT: f64 = 0.1;
@@ -670,73 +671,98 @@ impl GameInterface {
 
     // reactions to events
 
-    /// Reacts to an event of the entity.
-    pub fn notify(&mut self, cx: &mut Client, v: &EntityView, event: &EntityEvent) -> R {
+    /// Plays a sound of an event, unless the event came too late for its
+    /// sounds.
+    fn event_sound(&self, cx: &Client, v: &EntityView, attr: &str, alert: bool, timing: Timing) {
+        if timing == Timing::OnTime {
+            self.launch_event_style(cx, v, attr, alert, 0);
+        }
+    }
+
+    /// Reacts to an event of the entity. A late event plays no sound, but
+    /// its news is told.
+    pub fn notify(
+        &mut self,
+        cx: &mut Client,
+        v: &EntityView,
+        event: &EntityEvent,
+        timing: Timing,
+    ) -> R {
         match event {
             EntityEvent::Wounded {
                 attacker_type,
                 attacker,
                 attacker_damage_level,
-            } => self.on_wounded(cx, v, attacker_type, *attacker, *attacker_damage_level),
-            EntityEvent::DeathBy(a) => self.on_death_by(cx, v, *a)?,
+            } => self.on_wounded(
+                cx,
+                v,
+                attacker_type,
+                *attacker,
+                *attacker_damage_level,
+                timing,
+            ),
+            EntityEvent::DeathBy(a) => self.on_death_by(cx, v, *a, timing)?,
             EntityEvent::OrderOk => {
                 if v.player() == Some(self.me) {
-                    self.launch_event_style(cx, v, "order_ok", true, 0);
+                    self.event_sound(cx, v, "order_ok", true, timing);
                 }
             }
             EntityEvent::OrderImpossible(reason) => {
                 if v.player() == Some(self.me) {
-                    self.launch_event_style(cx, v, "order_impossible", true, 0);
+                    self.event_sound(cx, v, "order_impossible", true, timing);
                     if let Some(r) = reason {
                         self.say_reason(cx, r);
                     }
                 }
             }
-            EntityEvent::Attack => self.launch_event_style(cx, v, "attack", true, 0),
-            EntityEvent::Collision => self.launch_event_style(cx, v, "blocked", false, 0),
-            EntityEvent::Flee => self.launch_event_style(cx, v, "flee", true, 0),
-            EntityEvent::Complete => self.on_complete(cx, v)?,
+            EntityEvent::Attack => self.event_sound(cx, v, "attack", true, timing),
+            EntityEvent::Collision => self.event_sound(cx, v, "blocked", false, timing),
+            EntityEvent::Flee => self.event_sound(cx, v, "flee", true, timing),
+            EntityEvent::Complete => self.on_complete(cx, v, timing)?,
             EntityEvent::Completeness(s) => {
-                self.launch_event_style(cx, v, "production", false, 0);
-                self.launch_event_style(cx, v, &format!("proportion_{s}"), false, 0);
+                self.event_sound(cx, v, "production", false, timing);
+                self.event_sound(cx, v, &format!("proportion_{s}"), false, timing);
             }
             EntityEvent::ProductionDeferred => {
                 let m = style_msg(cx.res.style(), "messages", "production_deferred");
-                cx.voice.info(&m);
+                let news = News::new(Category::Production, m);
+                cx.news(news.about(Subject::ProductionDeferred));
             }
             EntityEvent::ResearchComplete => {
                 let m = self.style_text(cx, v, "research_complete_msg");
-                cx.voice.info(&m);
+                cx.news(News::new(Category::Production, m));
                 self.send_menu_alerts_if_needed(cx);
             }
             EntityEvent::UseComplete(ability) => {
                 let st = cx.res.style().words(ability, "alert");
-                if !st.is_empty() {
+                if !st.is_empty() && timing == Timing::OnTime {
                     let s = st[cx.rng.below(st.len())].clone();
                     self.launch_alert_of(cx, v, &s);
                 }
             }
             EntityEvent::Store(r) => {
-                self.launch_event_style(cx, v, &format!("store_resource_{r}"), false, 0)
+                self.event_sound(cx, v, &format!("store_resource_{r}"), false, timing)
             }
             EntityEvent::Exhausted => {
-                self.launch_event_style(cx, v, "exhausted", false, 0);
-                if cx.config.verbosity.contains("resource_exhausted") {
-                    let m = [self.title(cx, v)?, msg(mp::EXHAUSTED)].concat();
-                    cx.voice.info(&m);
+                if cx.cue(Category::Economy) {
+                    self.event_sound(cx, v, "exhausted", false, timing);
                 }
+                let m = [self.title(cx, v)?, msg(mp::EXHAUSTED)].concat();
+                cx.news(News::new(Category::Economy, m));
             }
             EntityEvent::Added => {
-                self.launch_event_style(cx, v, "added", true, 0);
-                if cx.config.verbosity.contains("unit_added") && self.number_must_be_said(v)? {
+                if cx.cue(Category::Production) {
+                    self.event_sound(cx, v, "added", true, timing);
+                }
+                if self.number_must_be_said(v)? {
                     let t = self.style_text(cx, v, "added_msg");
                     let m = substitute_args(t, &self.ext_title(cx, v)?);
-                    cx.voice.info(&m);
+                    cx.news(News::new(Category::Production, m));
                 }
             }
             other => {
                 let name = other.text();
-                self.launch_event_style(cx, v, &name, false, 0);
+                self.event_sound(cx, v, &name, false, timing);
             }
         }
         Ok(())
@@ -744,7 +770,8 @@ impl GameInterface {
 
     fn say_reason(&self, cx: &mut Client, r: &Reason) {
         let m = style_msg(cx.res.style(), "messages", &r.name());
-        cx.voice.info(&m);
+        let news = News::new(Category::Production, m);
+        cx.news(news.about(Subject::Refusal(r.clone())));
     }
 
     fn number_must_be_said(&self, v: &EntityView) -> R<bool> {
@@ -754,15 +781,17 @@ impl GameInterface {
             .ok_or_else(|| Oops::new("'<=' not supported between 'NoneType' and 'int'"))
     }
 
-    fn on_complete(&mut self, cx: &mut Client, v: &EntityView) -> R {
+    fn on_complete(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) -> R {
         if v.player() != Some(self.me) {
             return Ok(());
         }
-        self.launch_event_style(cx, v, "complete", true, 0);
-        if cx.config.verbosity.contains("unit_complete") && self.number_must_be_said(v)? {
+        if cx.cue(Category::Production) {
+            self.event_sound(cx, v, "complete", true, timing);
+        }
+        if self.number_must_be_said(v)? {
             let t = self.style_text(cx, v, "complete_msg");
             let m = substitute_args(t, &self.title(cx, v)?);
-            cx.voice.info(&m);
+            cx.news(News::new(Category::Production, m));
         }
         self.send_menu_alerts_if_needed(cx);
         Ok(())
@@ -775,46 +804,53 @@ impl GameInterface {
         attacker_type: &str,
         _attacker: EntityId,
         level: i64,
+        timing: Timing,
     ) {
         if v.player() == Some(self.me) {
-            self.unit_attacked_alert(cx, v);
+            self.unit_attacked_alert(cx, v, timing);
         }
         let s = cx
             .res
             .style()
             .words(attacker_type, &format!("attack_hit_level_{level}"));
-        if !s.is_empty() {
+        if !s.is_empty() && timing == Timing::OnTime {
             let sound = s[cx.rng.below(s.len())].clone();
             self.launch_event(cx, v, &sound, 1.0, 0, 0.0, false);
         }
     }
 
-    fn unit_attacked_alert(&mut self, cx: &mut Client, v: &EntityView) {
-        let now = cx.clock.now();
-        if let Some(p) = v.place() {
-            self.alert_squares.insert(p, now);
-        }
-        self.squares_alert_if_needed(cx);
-        if self
-            .previous_unit_attacked_alert
-            .is_none_or(|t| now > t + 10.0)
+    /// Tells of an attack on a unit of the player, with the alert sound,
+    /// when its place was not under attack already.
+    fn unit_attacked_alert(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
+        if let Some(place) = v.place()
+            && self.attack_alert(cx, place)
+            && cx.cue(Category::Alert)
         {
-            self.launch_event_style(cx, v, "alert", true, 0);
-            self.previous_unit_attacked_alert = Some(now);
+            self.event_sound(cx, v, "alert", true, timing);
         }
     }
 
-    fn on_lose_fight(&mut self, cx: &mut Client, v: &EntityView) -> R {
-        self.launch_event_style(cx, v, "lose_fight", true, 0);
-        self.units_alert_if_needed(cx, v.place())
+    fn on_lose_fight(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
+        if cx.cue(Category::Alert) {
+            self.event_sound(cx, v, "lose_fight", true, timing);
+        }
+        self.units_alert_if_needed(cx, v.place());
     }
 
-    fn on_win_fight(&mut self, cx: &mut Client, v: &EntityView) -> R {
-        self.launch_event_style(cx, v, "win_fight", true, 0);
-        self.units_alert_if_needed(cx, None)
+    fn on_win_fight(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
+        if cx.cue(Category::Alert) {
+            self.event_sound(cx, v, "win_fight", true, timing);
+        }
+        self.units_alert_if_needed(cx, None);
     }
 
-    fn on_death_by(&mut self, cx: &mut Client, v: &EntityView, attacker_id: EntityId) -> R {
+    fn on_death_by(
+        &mut self,
+        cx: &mut Client,
+        v: &EntityView,
+        attacker_id: EntityId,
+        timing: Timing,
+    ) -> R {
         let attacker = self.dobjets.get(&attacker_id).map(|a| a.model.clone());
         let attacker_player = attacker.as_ref().and_then(|a| a.player);
         if v.player() == Some(self.me) {
@@ -832,7 +868,7 @@ impl GameInterface {
         let friend_soldiers = friends.soldiers > 0;
         if !friend_soldiers && v.model.is_a_threat || friends.units == 0 {
             if v.player() == Some(self.me) {
-                self.on_lose_fight(cx, v)?;
+                self.on_lose_fight(cx, v, timing);
             }
             if let Some(a) = attacker
                 && attacker_player == Some(self.me)
@@ -843,7 +879,7 @@ impl GameInterface {
                     footstep_random: 0.0,
                     anim: AnimState::default(),
                 };
-                self.on_win_fight(cx, &av)?;
+                self.on_win_fight(cx, &av, timing);
             }
         }
         Ok(())

@@ -1,7 +1,7 @@
-//! What the multiplayer menus and messages say beyond the phrases of
-//! `msgparts`: more sound numbers of the original's `tts.txt`, and the
-//! phrases the original never recorded, in English, kept here together so
-//! they can be translated later.
+//! What the client says beyond the phrases of `msgparts`: more sound
+//! numbers of the original's `tts.txt`, and the phrases the original never
+//! recorded, in English, kept here together so they can be translated
+//! later.
 
 use soundrts_world::msg::{Msg, MsgPart};
 
@@ -52,6 +52,16 @@ pub const MAP_REFUSED: &str = "the map of this game is too large once unpacked";
 pub const GAME_CANNOT_START: &str = "this game cannot start here";
 pub const NO_PORT_FORWARDING: &str =
     "the router did not open the port: only the players of your local network can join";
+
+// The categories of news, as the log's review keys name them. An alert is
+// the original's own word.
+
+pub const PRODUCTION: &str = "production";
+pub const ECONOMY: &str = "economy";
+pub const SCOUTING: &str = "scouting";
+pub const CHAT: &str = "chat";
+pub const SYSTEM: &str = "system";
+pub const STORY: &str = "story";
 
 /// A phrase as a message.
 pub fn text(s: &str) -> Msg {
