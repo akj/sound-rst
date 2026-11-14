@@ -30,7 +30,9 @@ key x
 key c
 key v
 key LCTRL
+release LCTRL
 key RCTRL
+release RCTRL
 key SPACE
 
 # the peasant and its order menu
@@ -191,12 +193,14 @@ key ALT PAGEUP
 key SHIFT PAGEDOWN
 key SHIFT PAGEUP
 key LCTRL
+release LCTRL
 
 # zoom
 key F8
 key RIGHT
 key UP
 key LCTRL
+release LCTRL
 key TAB
 key ESCAPE
 key F8
@@ -257,10 +261,15 @@ interrupt_after 0.3 key F5
 wait 4
 key F6
 interrupt_after 0.5 key LALT
+release LALT
 interrupt_after 0.5 key LALT
+release LALT
 key RALT
+release RALT
 key LSHIFT
+release LSHIFT
 key RSHIFT
+release RSHIFT
 key HOME
 key KP_PLUS
 key END

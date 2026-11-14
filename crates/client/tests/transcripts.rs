@@ -19,7 +19,7 @@ use soundrts::client::{Client, Desktop, Devices, open_resources};
 use soundrts::clock::Clock;
 use soundrts::config::{Config, Login};
 use soundrts::input::{
-    GameProgress, InputPoint, InputSource, Key, KeyDown, Mods, RawInput, ReadContext,
+    GameProgress, InputPoint, InputSource, Key, KeyDown, KeyUp, Mods, RawInput, ReadContext,
 };
 use soundrts::log::Log;
 use soundrts::mainmenu::main_menu;
@@ -47,8 +47,9 @@ struct Scenario {
 }
 
 const SETTINGS: [&str; 6] = ["language", "login", "mods", "soundpacks", "seed", "limit"];
-const STEP_KINDS: [&str; 7] = [
+const STEP_KINDS: [&str; 8] = [
     "key",
+    "release",
     "type",
     "wait",
     "wait_turn",
@@ -373,6 +374,7 @@ impl Replay {
         let game = c.and_then(|c| c.game);
         match kind {
             "key" => c.is_some_and(|c| c.point != InputPoint::Voice && self.settled(c)),
+            "release" => c.is_some(),
             "interrupt_after" => {
                 let delay = arg.split(' ').next().unwrap();
                 self.us.get() >= self.last_delivery_us + secs(delay)
@@ -403,16 +405,19 @@ impl Replay {
         self.last_delivery_us = self.us.get();
         self.turns_at_delivery = self.game.map_or(0, |g| g.turns_handled);
         self.turn_at_delivery = self.game.map(|g| g.turn);
-        let key = match step.split_once(' ') {
-            Some(("key", k)) => Some(k.to_owned()),
-            Some(("interrupt_after", rest)) => Some(rest.splitn(3, ' ').nth(2).unwrap().to_owned()),
-            _ => None,
-        };
-        if let Some(k) = key {
-            self.ready.push_back(RawInput::KeyDown(key_event(&k)));
-            // The replay neither repeats a key nor posts its release:
-            // the queue forgets the key without an event.
-            self.ready.push_back(RawInput::FocusLost);
+        match step.split_once(' ') {
+            Some(("key", k)) => self.ready.push_back(RawInput::KeyDown(key_event(k))),
+            Some(("interrupt_after", rest)) => {
+                let k = rest.splitn(3, ' ').nth(2).unwrap();
+                self.ready.push_back(RawInput::KeyDown(key_event(k)));
+            }
+            Some(("release", name)) => {
+                let key =
+                    Key::from_pygame_name(name).unwrap_or_else(|| panic!("unknown key {name}"));
+                self.ready
+                    .push_back(RawInput::KeyUp(KeyUp { key, physical: key }));
+            }
+            _ => {}
         }
     }
 
@@ -459,7 +464,10 @@ impl Replay {
                 return;
             }
             self.deliver();
-            if step.starts_with("key") || step.starts_with("interrupt_after") {
+            if ["key", "release", "interrupt_after"]
+                .iter()
+                .any(|k| step.starts_with(k))
+            {
                 return;
             }
         }

@@ -66,14 +66,15 @@ length 6116 3719
 @66610 voice history "SoundRTS 1.3.8.1  , please make a selection"
 @71710 step 23 key F6
 @71720 step 24 key LALT
-@71730 step 25 key HOME
-@71730 voice item "60 percent of the volume"
-@74530 step 26 key END
-@74530 voice item "50 percent of the volume"
-@77330 step 27 key BACKSPACE
-@77340 step 28 key F3
-@77340 voice item "press Tab to select. press Enter to confirm."
-@81740 step 29 key ESCAPE
-@81740 voice confirmation "quit,"
-@82250 sounds 1 8718435b93e3acaf
-@82250 end
+@71730 step 25 release LALT
+@71740 step 26 key HOME
+@71750 voice item "60 percent of the volume"
+@74550 step 27 key END
+@74550 voice item "50 percent of the volume"
+@77350 step 28 key BACKSPACE
+@77360 step 29 key F3
+@77360 voice item "press Tab to select. press Enter to confirm."
+@81760 step 30 key ESCAPE
+@81760 voice confirmation "quit,"
+@82270 sounds 1 a41eaab65ca6360d
+@82270 end

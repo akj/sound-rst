@@ -205,14 +205,16 @@ pub enum Event {
     Quit,
 }
 
-/// What an input source delivers. Repeats are not delivered: the queue
-/// makes its own.
+/// What an input source delivers.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RawInput {
     KeyDown(KeyDown),
+    /// The system repeats a held key, at the player's own delay and rate.
+    KeyRepeat(KeyDown),
     KeyUp(KeyUp),
     Quit,
-    /// The window lost the keyboard: held keys stop repeating.
+    /// The window lost the keyboard: the keys held may be released
+    /// unseen.
     FocusLost,
 }
 
@@ -265,23 +267,16 @@ pub trait InputSource {
     fn before_read(&mut self, _now: f64, _context: &ReadContext) {}
 }
 
-/// The first repeat comes this long after a key goes down...
-pub const REPEAT_DELAY: f64 = 0.5;
-/// ...then one every this long while it stays down.
-pub const REPEAT_INTERVAL: f64 = 0.1;
-
-struct Repeat {
-    event: KeyDown,
-    next: f64,
-}
-
-/// The event queue, with pygame's behaviour: the last key pressed repeats
-/// after 500 ms every 100 ms until released.
+/// The event queue. A modifier key acts as a key of its own only when it
+/// is pressed alone: its press is queued when it is released, and only if
+/// no other key went down while it was held. A held modifier does not
+/// repeat; other keys repeat as the system repeats them.
 pub struct EventQueue {
     source: Box<dyn InputSource>,
     clock: ClockRef,
     pending: VecDeque<Event>,
-    repeat: Option<Repeat>,
+    /// The modifier pressed with no other key since.
+    alone: Option<KeyDown>,
     game: Option<GameProgress>,
 }
 
@@ -291,48 +286,37 @@ impl EventQueue {
             source,
             clock,
             pending: VecDeque::new(),
-            repeat: None,
+            alone: None,
             game: None,
-        }
-    }
-
-    /// Queues the repeats due by `time`.
-    fn repeat_until(&mut self, time: f64) {
-        if let Some(r) = self.repeat.as_mut() {
-            while time >= r.next {
-                self.pending.push_back(Event::KeyDown(r.event.clone()));
-                r.next += REPEAT_INTERVAL;
-            }
         }
     }
 
     fn pump(&mut self) {
         let now = self.clock.now();
-        while let Some((time, raw)) = self.source.next(now) {
-            self.repeat_until(time);
+        while let Some((_, raw)) = self.source.next(now) {
             match raw {
-                RawInput::KeyDown(e) => {
-                    self.repeat = Some(Repeat {
-                        event: e.clone(),
-                        next: time + REPEAT_DELAY,
-                    });
+                // A second modifier makes a chord of both.
+                RawInput::KeyDown(e) if e.key.is_modifier() => {
+                    self.alone = match self.alone {
+                        Some(_) => None,
+                        None => Some(e),
+                    };
+                }
+                RawInput::KeyRepeat(e) if e.key.is_modifier() => {}
+                RawInput::KeyDown(e) | RawInput::KeyRepeat(e) => {
+                    self.alone = None;
                     self.pending.push_back(Event::KeyDown(e));
                 }
                 RawInput::KeyUp(e) => {
-                    if self
-                        .repeat
-                        .as_ref()
-                        .is_some_and(|r| r.event.physical == e.physical)
-                    {
-                        self.repeat = None;
+                    if let Some(press) = self.alone.take_if(|m| m.physical == e.physical) {
+                        self.pending.push_back(Event::KeyDown(press));
                     }
                     self.pending.push_back(Event::KeyUp(e));
                 }
                 RawInput::Quit => self.pending.push_back(Event::Quit),
-                RawInput::FocusLost => self.repeat = None,
+                RawInput::FocusLost => self.alone = None,
             }
         }
-        self.repeat_until(now);
     }
 }
 
@@ -414,27 +398,77 @@ impl Input {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
-    use crate::testkit::{Script, down};
+    use crate::testkit::{Script, down, press};
+
+    fn keys(input: &Input) -> Vec<Key> {
+        input.get_keydowns().into_iter().map(|e| e.key).collect()
+    }
 
     #[test]
-    fn a_held_key_repeats_after_500_ms_every_100_ms() {
+    fn a_held_key_repeats_as_the_system_repeats_it() {
         let clock = Rc::new(ManualClock::new());
-        let script = Script::new().key_down(Key::Down).at(0.95).key_up(Key::Down);
+        let script = Script::new()
+            .repeat(0.3, 0.2)
+            .key_down(Key::Down)
+            .at(0.95)
+            .key_up(Key::Down);
         let input = Input::new(Box::new(script.source()), clock.clone());
         assert_eq!(input.get_keydowns(), vec![down(Key::Down)]);
-        clock.advance(0.49);
+        clock.advance(0.29);
         assert!(input.get_keydowns().is_empty());
         clock.advance(0.01);
-        assert_eq!(input.get_keydowns().len(), 1);
-        clock.advance(0.25);
-        // Repeats at 0.6 and 0.7.
-        assert_eq!(input.get_keydowns().len(), 2);
+        assert_eq!(keys(&input), vec![Key::Down]);
+        clock.advance(0.45);
+        // Repeats at 0.5 and 0.7.
+        assert_eq!(keys(&input), vec![Key::Down, Key::Down]);
         clock.advance(0.5);
-        // Repeats at 0.8 and 0.9, then the release at 0.95 ends them.
-        assert_eq!(input.get_keydowns().len(), 2);
+        // A repeat at 0.9, then the release at 0.95 ends them.
+        assert_eq!(keys(&input), vec![Key::Down]);
         assert!(matches!(input.poll(), Some(Event::KeyUp(_))));
         clock.advance(1.0);
         assert!(input.get_keydowns().is_empty());
+    }
+
+    #[test]
+    fn a_modifier_pressed_alone_is_a_key_when_it_is_released() {
+        let clock = Rc::new(ManualClock::new());
+        let script = Script::new()
+            .repeat(0.3, 0.2)
+            .key_down(Key::LCtrl)
+            .at(2.0)
+            .key_up(Key::LCtrl);
+        let input = Input::new(Box::new(script.source()), clock.clone());
+        // Held, it neither acts nor repeats.
+        clock.advance(1.99);
+        assert_eq!(input.get_all(), vec![]);
+        clock.advance(0.01);
+        assert_eq!(
+            input.get_all(),
+            vec![
+                Event::KeyDown(down(Key::LCtrl)),
+                Event::KeyUp(KeyUp {
+                    key: Key::LCtrl,
+                    physical: Key::LCtrl
+                })
+            ]
+        );
+    }
+
+    #[test]
+    fn a_modifier_pressed_with_another_key_only_modifies_it() {
+        let clock = Rc::new(ManualClock::new());
+        let script = Script::new()
+            .key_down(Key::LCtrl)
+            .tap_with(Key::Tab, Mods::CTRL)
+            .key_up(Key::LCtrl)
+            .at(1.0)
+            .key_down(Key::LCtrl)
+            .key_down(Key::LShift)
+            .key_up(Key::LShift)
+            .key_up(Key::LCtrl);
+        let input = Input::new(Box::new(script.source()), clock.clone());
+        clock.advance(2.0);
+        assert_eq!(input.get_keydowns(), vec![press(Key::Tab, Mods::CTRL)]);
     }
 
     #[test]

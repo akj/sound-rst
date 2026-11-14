@@ -316,7 +316,17 @@ impl LiveKeys {
 
     /// A press and release at `time`.
     pub fn tap_at(&self, time: f64, key: Key, mods: Mods) {
+        self.down_at(time, key, mods);
+        self.up_at(time, key);
+    }
+
+    /// A press at `time`; the key stays down until [`LiveKeys::up_at`].
+    pub fn down_at(&self, time: f64, key: Key, mods: Mods) {
         self.insert(time, RawInput::KeyDown(press(key, mods)));
+    }
+
+    /// A release at `time`.
+    pub fn up_at(&self, time: f64, key: Key) {
         self.insert(time, RawInput::KeyUp(KeyUp { key, physical: key }));
     }
 
@@ -357,6 +367,7 @@ pub struct Script {
     events: VecDeque<(usize, f64, RawInput)>,
     waits: Vec<Wait>,
     time: f64,
+    repeat: Option<Repeat>,
     keep_open: bool,
     live: Option<LiveKeys>,
     deadline: Option<f64>,
@@ -395,6 +406,14 @@ impl Script {
     /// ends instead of waiting forever.
     pub fn deadline(mut self, time: f64) -> Script {
         self.deadline = Some(time);
+        self
+    }
+
+    /// Held keys repeat as a system repeats them: the last key pressed,
+    /// `delay` seconds after it goes down, then every `interval` seconds
+    /// until it is released. Without this, held keys do not repeat.
+    pub fn repeat(mut self, delay: f64, interval: f64) -> Script {
+        self.repeat = Some(Repeat { delay, interval });
         self
     }
 
@@ -512,8 +531,17 @@ impl Script {
             deadline: self.deadline,
             last_time: 0.0,
             quit_sent: self.keep_open,
+            repeat: self.repeat,
+            held: None,
         }
     }
+}
+
+/// A system's key repeat.
+#[derive(Clone, Copy, Debug)]
+struct Repeat {
+    delay: f64,
+    interval: f64,
 }
 
 /// Plays a [`Script`]. Once it has run out, and time has moved past its
@@ -534,6 +562,9 @@ pub struct ScriptedInput {
     deadline: Option<f64>,
     last_time: f64,
     quit_sent: bool,
+    repeat: Option<Repeat>,
+    /// The key that repeats, and when it repeats next.
+    held: Option<(KeyDown, f64)>,
 }
 
 impl ScriptedInput {
@@ -601,20 +632,47 @@ impl ScriptedInput {
             .filter(|(part, _, _)| *part <= self.satisfied)
             .map(|(part, t, _)| self.offsets[*part] + t)
     }
-}
 
-impl InputSource for ScriptedInput {
-    fn next(&mut self, now: f64) -> Option<(f64, RawInput)> {
-        if self.deadline.is_some_and(|d| now > d) {
-            self.deadline = None;
-            self.events.clear();
-            if let Some(live) = &self.live {
-                live.0.borrow_mut().clear();
-            }
-            self.quit_sent = true;
-            return Some((now, RawInput::Quit));
+    /// The held key's repeat, if it is due by `now` and before the next
+    /// key.
+    fn next_repeat(&mut self, now: f64) -> Option<(f64, RawInput)> {
+        let interval = self.repeat?.interval;
+        let live = self.live.as_ref().and_then(LiveKeys::next_time);
+        let next_key = [self.next_due(), live]
+            .into_iter()
+            .flatten()
+            .reduce(f64::min);
+        let (e, at) = self.held.as_mut()?;
+        if *at > now || next_key.is_some_and(|t| t <= *at) {
+            return None;
         }
-        self.end_waits(now);
+        let time = *at;
+        *at += interval;
+        Some((time, RawInput::KeyRepeat(e.clone())))
+    }
+
+    /// Notes which key is held after `e`.
+    fn hold(&mut self, time: f64, e: &RawInput) {
+        match e {
+            RawInput::KeyDown(k) => {
+                self.held = self.repeat.map(|r| (k.clone(), time + r.delay));
+            }
+            RawInput::KeyUp(k) => {
+                if self
+                    .held
+                    .as_ref()
+                    .is_some_and(|(h, _)| h.physical == k.physical)
+                {
+                    self.held = None;
+                }
+            }
+            RawInput::FocusLost | RawInput::Quit => self.held = None,
+            RawInput::KeyRepeat(_) => {}
+        }
+    }
+
+    /// The next scripted or live input due by `now`.
+    fn next_key(&mut self, now: f64) -> Option<(f64, RawInput)> {
         let waiting = self.satisfied < self.waits.len();
         let script_first = self.next_due();
         if let Some(live) = &self.live {
@@ -655,6 +713,30 @@ impl InputSource for ScriptedInput {
             }
             None => None,
         }
+    }
+}
+
+impl InputSource for ScriptedInput {
+    fn next(&mut self, now: f64) -> Option<(f64, RawInput)> {
+        if self.deadline.is_some_and(|d| now > d) {
+            self.deadline = None;
+            self.events.clear();
+            if let Some(live) = &self.live {
+                live.0.borrow_mut().clear();
+            }
+            self.quit_sent = true;
+            self.held = None;
+            return Some((now, RawInput::Quit));
+        }
+        self.end_waits(now);
+        if let Some(repeat) = self.next_repeat(now) {
+            return Some(repeat);
+        }
+        let next = self.next_key(now);
+        if let Some((time, e)) = &next {
+            self.hold(*time, e);
+        }
+        next
     }
 }
 

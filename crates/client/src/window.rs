@@ -275,30 +275,29 @@ fn mods_of(state: ModifiersState) -> Mods {
     }
 }
 
-/// Turns a winit key event into the game's input. Repeats from the system
-/// are dropped: the event queue makes its own.
-pub fn translate(event: &KeyEvent, modifiers: ModifiersState) -> Option<RawInput> {
-    if event.repeat {
-        return None;
-    }
+/// Turns a winit key event into the game's input, the system's repeats
+/// included.
+pub fn translate(event: &KeyEvent, modifiers: ModifiersState) -> RawInput {
     let physical = match event.physical_key {
         PhysicalKey::Code(code) => physical_key(code),
         PhysicalKey::Unidentified(_) => Key::Unknown,
     };
     let key = logical_key(event, physical);
-    Some(match event.state {
-        ElementState::Pressed => RawInput::KeyDown(KeyDown {
-            key,
-            physical,
-            mods: mods_of(modifiers),
-            unicode: event
-                .text
-                .as_ref()
-                .map(|t| t.to_string())
-                .unwrap_or_default(),
-        }),
+    let press = || KeyDown {
+        key,
+        physical,
+        mods: mods_of(modifiers),
+        unicode: event
+            .text
+            .as_ref()
+            .map(|t| t.to_string())
+            .unwrap_or_default(),
+    };
+    match event.state {
+        ElementState::Pressed if event.repeat => RawInput::KeyRepeat(press()),
+        ElementState::Pressed => RawInput::KeyDown(press()),
         ElementState::Released => RawInput::KeyUp(KeyUp { key, physical }),
-    })
+    }
 }
 
 /// The game thread's keyboard: what the window sent.
@@ -430,8 +429,8 @@ impl ApplicationHandler<WindowCommand> for App {
             } => {
                 // Windows replays held keys when the window gets the focus
                 // back; those are not presses.
-                if !is_synthetic && let Some(raw) = translate(&event, self.modifiers) {
-                    self.send(raw);
+                if !is_synthetic {
+                    self.send(translate(&event, self.modifiers));
                 }
             }
             WindowEvent::Focused(false) => self.send(RawInput::FocusLost),

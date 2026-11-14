@@ -122,637 +122,646 @@ length 9999 208980
 @54151 step 20 key v
 @54451 sounds 2 9011fd4b9e38598e
 @54451 step 21 key LCTRL
-@54451 voice item "b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
-@60251 sounds 42 75502e629b3fc5cd
-@60251 step 22 key RCTRL
-@60251 voice item "b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
-@66051 sounds 43 3944630d4942626a
-@66051 step 23 key SPACE
-@66051 voice item "b 1 , you are not controlling any unit"
-@70051 voice info "1 peasant enemy at a 1"
-@72652 sounds 45 472b6a6ced266ba5
-@72652 step 24 key e
-@72652 voice item "peasant 1 at b 1 , awaiting your orders"
-@76952 sounds 33 64309430af1f7e12
-@76952 step 25 key v
-@76952 voice item ", 4 hit points on 4 , ,"
-@79652 sounds 18 70fc004611514e0b
-@79652 step 26 key SPACE
-@79652 voice item "b 1 You control peasant 1 at b 1 ,"
-@83652 sounds 29 b98cd67e1a09bac8
-@83652 step 27 key a
-@83652 voice item "go to , , press tab to select the target and then press enter to confirm"
-@90852 sounds 60 f01e8977df30d9e2
-@90852 step 28 key a
-@90852 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@98252 sounds 50 97aa195319954802
-@98252 step 29 key a
-@98252 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
-@109352 sounds 79 f47db66412adca6f
-@109352 step 30 key SHIFT a
-@109352 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@116752 sounds 51 8368c93bf5c5c6ce
-@116752 step 31 key CTRL a
-@116752 voice item "build stables on , requires keep"
-@119952 sounds 24 83fb05418db467ad
-@119952 step 32 key CTRL SHIFT a
-@119952 voice item "build shipyard on , requires sawmill"
-@123552 sounds 21 78c7ad0ff3da4016
-@123552 step 33 key ESCAPE
-@123552 voice item "cancel"
-@124152 sounds 4 be062523396f4fc7
-@124152 step 34 key ALT a
-@124152 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
-@126152 sounds 14 eab23c5999115e53
-@126152 step 35 interrupt_after 2 key f
-@126152 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
-@137252 sounds 78 921c62a4bb1de513
-@137252 step 36 key TAB
-@137252 voice item [1003] "a meadow to the northwest , build farm on" vol=0.919,0.395
-@141371 sounds 28 8f210f685cc7fb6e
-@141371 step 37 key TAB
-@141371 voice item [1003] "a path to the east , build farm on" vol=0.156,0.988
-@144790 sounds 24 ac6bfea238bc348f
-@144790 step 38 key CTRL TAB
-@144790 voice item [1003] "a path to the west , build farm on" vol=0.988,0.156
-@148209 sounds 22 869f73fe0a483c84
-@148209 step 39 key SHIFT TAB
-@148209 voice item [1003] "a path to the east , build farm on" vol=0.156,0.988
-@151628 sounds 26 9c37c81ede4403e5
-@151628 step 40 key CTRL SHIFT TAB
-@151628 voice item [1003] "a meadow to the northwest , build farm on" vol=0.919,0.395
-@155747 sounds 27 5741d95194b0b036
-@155747 step 41 key RETURN
-@155747 voice item "build farm on a meadow"
-@157947 voice info "5 gold"
-@158747 voice info "5 wood"
-@159548 sounds 33 7ec4ae53d552fe25
-@159548 step 42 key w
-@159548 voice item "town hall 1 at b 1 , awaiting your orders"
-@164048 sounds 32 47ff3e03d102aed6
-@164048 step 43 key a
-@164048 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@171348 sounds 61 d0b4fd79fad29807
-@171348 step 44 key KP_ENTER
-@171348 voice item "recruit peasant"
-@172848 voice info "1 gold"
+@54452 step 22 release LCTRL
+@54452 voice item "b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
+@60252 sounds 42 75502e629b3fc5cd
+@60252 step 23 key RCTRL
+@60253 step 24 release RCTRL
+@60253 voice item "b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
+@66053 sounds 43 3944630d4942626a
+@66053 step 25 key SPACE
+@66053 voice item "b 1 , you are not controlling any unit"
+@70053 voice info "1 peasant enemy at a 1"
+@72654 sounds 45 472b6a6ced266ba5
+@72654 step 26 key e
+@72654 voice item "peasant 1 at b 1 , awaiting your orders"
+@76954 sounds 33 64309430af1f7e12
+@76954 step 27 key v
+@76954 voice item ", 4 hit points on 4 , ,"
+@79654 sounds 18 70fc004611514e0b
+@79654 step 28 key SPACE
+@79654 voice item "b 1 You control peasant 1 at b 1 ,"
+@83654 sounds 29 b98cd67e1a09bac8
+@83654 step 29 key a
+@83654 voice item "go to , , press tab to select the target and then press enter to confirm"
+@90854 sounds 60 f01e8977df30d9e2
+@90854 step 30 key a
+@90854 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@98254 sounds 50 97aa195319954802
+@98254 step 31 key a
+@98254 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+@109354 sounds 79 f47db66412adca6f
+@109354 step 32 key SHIFT a
+@109354 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@116754 sounds 51 8368c93bf5c5c6ce
+@116754 step 33 key CTRL a
+@116754 voice item "build stables on , requires keep"
+@119954 sounds 24 83fb05418db467ad
+@119954 step 34 key CTRL SHIFT a
+@119954 voice item "build shipyard on , requires sawmill"
+@123554 sounds 21 78c7ad0ff3da4016
+@123554 step 35 key ESCAPE
+@123554 voice item "cancel"
+@124154 sounds 4 be062523396f4fc7
+@124154 step 36 key ALT a
+@124154 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
+@126154 sounds 14 eab23c5999115e53
+@126154 step 37 interrupt_after 2 key f
+@126154 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+@137254 sounds 78 921c62a4bb1de513
+@137254 step 38 key TAB
+@137254 voice item [1003] "a meadow to the northwest , build farm on" vol=0.919,0.395
+@141373 sounds 28 8f210f685cc7fb6e
+@141373 step 39 key TAB
+@141373 voice item [1003] "a path to the east , build farm on" vol=0.156,0.988
+@144792 sounds 24 ac6bfea238bc348f
+@144792 step 40 key CTRL TAB
+@144792 voice item [1003] "a path to the west , build farm on" vol=0.988,0.156
+@148211 sounds 22 869f73fe0a483c84
+@148211 step 41 key SHIFT TAB
+@148211 voice item [1003] "a path to the east , build farm on" vol=0.156,0.988
+@151630 sounds 26 9c37c81ede4403e5
+@151630 step 42 key CTRL SHIFT TAB
+@151630 voice item [1003] "a meadow to the northwest , build farm on" vol=0.919,0.395
+@155749 sounds 27 5741d95194b0b036
+@155749 step 43 key RETURN
+@155749 voice item "build farm on a meadow"
+@157949 voice info "5 gold"
+@158749 voice info "5 wood"
+@159550 sounds 33 7ec4ae53d552fe25
+@159550 step 44 key w
+@159550 voice item "town hall 1 at b 1 , awaiting your orders"
+@164050 sounds 32 47ff3e03d102aed6
+@164050 step 45 key a
+@164050 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@171350 sounds 61 d0b4fd79fad29807
+@171350 step 46 key KP_ENTER
+@171350 voice item "recruit peasant"
+@172850 voice info "1 gold"
 @181950 voice info "peasant 2 ready!"
 @183150 sounds 100 8ce8f5c49390e2fe
-@183150 step 45 wait_turns 40
+@183150 step 47 wait_turns 40
 @183751 sounds 6 c2b6310b8c665a86
-@183751 step 46 key a
+@183751 step 48 key a
 @183751 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
 @191051 sounds 47 34bde917aecb3f80
-@191051 step 47 key a
+@191051 step 49 key a
 @191051 voice item "upgrade to keep , requires barracks , press enter to confirm"
 @197051 sounds 41 5b1c4d78861b9102
-@197051 step 48 key a
+@197051 step 50 key a
 @197051 voice item "rally to , define the rally point for the new units , press tab to select the target and then press enter to confirm"
 @208651 voice info "farm 2 complete"
 @210352 sounds 94 ba56c67b5e930e48
-@210352 step 49 key LEFT
+@210352 step 51 key LEFT
 @210352 voice item [1091] "a 1 , meadows , in the fog of war , 1 gold mine"
 @215700 sounds 20 1ef71385d1ece30c
-@215700 step 50 key CTRL RETURN
+@215700 step 52 key CTRL RETURN
 @215700 voice item "rally to a 1"
 @217100 sounds 4 617a101f0c3db1f5
-@217100 step 51 key RIGHT
+@217100 step 53 key RIGHT
 @217100 voice item [1091] "b 1 , 1 town hall , 2 farm and 2 peasant"
 @226050 sounds 65 66a5e69f9b335af2
-@226050 step 52 wait_turns 30
-@226051 step 53 key ALT e
+@226050 step 54 wait_turns 30
+@226051 step 55 key ALT e
 @226051 voice item "peasant 1 at b 1 , awaiting your orders"
 @230351 sounds 28 8c939ed8990e2830
-@230351 step 54 key SPACE
+@230351 step 56 key SPACE
 @230351 voice item "b 1 You control peasant 1 at b 1 ,"
 @234351 sounds 22 1c9a9ffe015daaea
-@234351 step 55 key TAB
+@234351 step 57 key TAB
 @234351 voice item [1003] "a path to the east" vol=0.156,0.988
 @236170 sounds 14 3da9367e770a5e1b
-@236170 step 56 key TAB
+@236170 step 58 key TAB
 @236170 voice item [1003] "a path to the west" vol=0.988,0.156
 @237989 sounds 12 1337b7cf3b24d8db
-@237989 step 57 key TAB
+@237989 step 59 key TAB
 @237989 voice item [1003] "town hall 1 to the south , 400 hit points on 400 , ,"
 @244608 sounds 42 e9df356dbead319e
-@244608 step 58 key BACKSPACE
+@244608 step 60 key BACKSPACE
 @244608 voice item "go to town hall 1 ,"
 @253350 sounds 63 1db8d7e4dbfc6317
-@253350 step 59 wait_turns 30
-@253351 step 60 key CTRL e
+@253350 step 61 wait_turns 30
+@253351 step 62 key CTRL e
 @253351 voice item ", You control 2 peasant , ,"
 @256251 sounds 24 418032c53a827609
-@256251 step 61 key CTRL 6
+@256251 step 63 key CTRL 6
 @256353 sounds 4 f226c1f51268bd97
-@256353 step 62 key 0
+@256353 step 64 key 0
 @256353 voice item "You control peasant 1 at b 1 ,"
 @259753 sounds 27 5b85bb171d3a69f2
-@259753 step 63 key 6
+@259753 step 65 key 6
 @259753 voice item ", You control 2 peasant , ,"
 @262653 sounds 22 fcba62b28dadd83b
-@262653 step 64 key SHIFT 7
+@262653 step 66 key SHIFT 7
 @262953 sounds 5 899cb7e66c354c13
-@262953 step 65 key 7
+@262953 step 67 key 7
 @262953 voice item ", You control 2 peasant , ,"
 @265853 sounds 17 0652946f7d19e618
-@265853 step 66 key 1
+@265853 step 68 key 1
 @265853 voice item ", You control 2 peasant , ,"
 @268753 sounds 19 82b9ce87863fc6ba
-@268753 step 67 key 2
+@268753 step 69 key 2
 @268753 voice item "You control peasant 1 at b 1 ,"
 @272153 sounds 27 7a2197ed2ea55792
-@272153 step 68 key 3
+@272153 step 70 key 3
 @272153 voice item "You control peasant 1 at b 1 ,"
 @275553 sounds 29 060c5e24e5054a7f
-@275553 step 69 key 4
+@275553 step 71 key 4
 @275553 voice item "You control peasant 1 at b 1 ,"
 @278953 sounds 22 83688694295ce452
-@278953 step 70 key 5
+@278953 step 72 key 5
 @278953 voice item "You control peasant 1 at b 1 ,"
 @282353 sounds 20 ce41bd71938d1e83
-@282353 step 71 key CTRL 1
+@282353 step 73 key CTRL 1
 @282353 voice item ", You control 2 peasant , ,"
 @285253 sounds 16 043c4ef1404a2114
-@285253 step 72 key CTRL 2
+@285253 step 74 key CTRL 2
 @285253 voice item "You control peasant 1 at b 1 ,"
 @288653 sounds 22 e3c86377ee698131
-@288653 step 73 key CTRL 3
+@288653 step 75 key CTRL 3
 @288653 voice item "You control peasant 1 at b 1 ,"
 @292053 sounds 26 fd581d41e66d856c
-@292053 step 74 key CTRL 4
+@292053 step 76 key CTRL 4
 @292053 voice item "You control peasant 1 at b 1 ,"
 @295453 sounds 21 1383c474aec20796
-@295453 step 75 key CTRL 5
+@295453 step 77 key CTRL 5
 @295453 voice item "You control peasant 1 at b 1 ,"
 @298853 sounds 28 0c1c17acf0bf2d12
-@298853 step 76 key 8
+@298853 step 78 key 8
 @298853 voice item ", you are not controlling any unit"
 @302253 sounds 26 1f5f2d9636517a30
-@302253 step 77 key CTRL 9
+@302253 step 79 key CTRL 9
 @302551 sounds 3 245bd1302fe72197
-@302551 step 78 key 9
+@302551 step 80 key 9
 @302551 voice item ", you are not controlling any unit"
 @305951 sounds 21 3fd38a3041f5b8f8
-@305951 step 79 key CTRL 7
+@305951 step 81 key CTRL 7
 @306151 sounds 2 b96d2f501e9918ad
-@306151 step 80 key CTRL 8
+@306151 step 82 key CTRL 8
 @306451 sounds 2 e5346cc85b42adf5
-@306451 step 81 key SHIFT 6
-@306751 step 82 key SHIFT 8
+@306451 step 83 key SHIFT 6
+@306751 step 84 key SHIFT 8
 @307051 sounds 1 d6d265d0e70674fd
-@307051 step 83 key SHIFT 9
+@307051 step 85 key SHIFT 9
 @307351 sounds 2 af9c56b2d26289ea
-@307351 step 84 key q
+@307351 step 86 key q
 @307351 voice item "town hall 1 at b 1 , awaiting your orders"
 @311851 sounds 31 50f6f051fce687eb
-@311851 step 85 key SHIFT q
+@311851 step 87 key SHIFT q
 @311851 voice item "peasant 2 at b 1 , awaiting your orders"
 @316151 sounds 26 a004e5b2760cbc0a
-@316151 step 86 key CTRL q
+@316151 step 88 key CTRL q
 @316151 voice item "town hall 1 at b 1 , awaiting your orders"
 @320651 sounds 29 46918ee1c6b46959
-@320651 step 87 key CTRL SHIFT q
+@320651 step 89 key CTRL SHIFT q
 @320651 voice item "peasant 2 at b 1 , awaiting your orders"
 @324951 sounds 28 bc3675015b2c3d57
-@324951 step 88 key w
+@324951 step 90 key w
 @324951 voice item "town hall 1 at b 1 , awaiting your orders"
 @329451 sounds 29 5a09ef7bd79f9928
-@329451 step 89 key ALT w
+@329451 step 91 key ALT w
 @329451 voice item "town hall 1 at b 1 , awaiting your orders"
 @333951 sounds 29 20d1f58c0208dc41
-@333951 step 90 key CTRL w
+@333951 step 92 key CTRL w
 @333951 voice item "farm 1 at b 1 , awaiting your orders"
 @337951 sounds 22 b72a47f2e03beade
-@337951 step 91 key SHIFT w
+@337951 step 93 key SHIFT w
 @337951 voice item "town hall 1 at b 1 , awaiting your orders"
 @342451 sounds 43 c28484e0cac9e996
-@342451 step 92 key e
+@342451 step 94 key e
 @342451 voice item "peasant 1 at b 1 , awaiting your orders"
 @346751 sounds 32 cc0e996af70bda6c
-@346751 step 93 key SHIFT e
+@346751 step 95 key SHIFT e
 @346751 voice item "peasant 2 at b 1 , awaiting your orders"
 @351051 sounds 25 7e1e1b26116df9d2
-@351051 step 94 key ALT e
+@351051 step 96 key ALT e
 @351051 voice item "peasant 1 at b 1 , awaiting your orders"
 @355351 sounds 27 159e1c7aab2ed735
-@355351 step 95 key ALT SHIFT e
+@355351 step 97 key ALT SHIFT e
 @355351 voice item "peasant 2 at b 1 , awaiting your orders"
 @359651 sounds 28 725aedc3fe1393e9
-@359651 step 96 key CTRL ALT e
+@359651 step 98 key CTRL ALT e
 @359651 voice item ", You control 2 peasant , ,"
 @362551 sounds 18 0c71a0a3581e981f
-@362551 step 97 key QUOTE
+@362551 step 99 key QUOTE
 @362551 voice item "peasant 2 at b 1 , awaiting your orders"
 @366851 sounds 29 394e4bf373d5647d
-@366851 step 98 key CTRL QUOTE
+@366851 step 100 key CTRL QUOTE
 @366851 voice item ", You control 2 peasant , ,"
 @369751 sounds 16 76cac35d63645618
-@369751 step 99 key r
+@369751 step 101 key r
 @370051 sounds 6 92e323db12d5fd78
-@370051 step 100 key SHIFT r
+@370051 step 102 key SHIFT r
 @370351 sounds 1 7884f8e262d791f6
-@370351 step 101 key CTRL r
+@370351 step 103 key CTRL r
 @370351 voice item ", you are not controlling any unit"
 @373751 sounds 17 2e632d6f2eb6e1f6
-@373751 step 102 key CTRL f
+@373751 step 104 key CTRL f
 @373751 voice item ", you are not controlling any unit"
 @377151 sounds 21 f814f1df989237a7
-@377151 step 103 key t
+@377151 step 105 key t
 @377251 sounds 2 37641fd80846ba46
-@377251 step 104 key y
+@377251 step 106 key y
 @377551 sounds 2 bd349789e06ad079
-@377551 step 105 key u
+@377551 step 107 key u
 @377851 sounds 2 34c78aaa5ace428e
-@377851 step 106 key i
+@377851 step 108 key i
 @378151 sounds 1 e1451012d2734085
-@378151 step 107 key o
+@378151 step 109 key o
 @378451 sounds 2 1c9f30fec67160b1
-@378451 step 108 key p
+@378451 step 110 key p
 @378751 sounds 1 1277504dca1ebe7c
-@378751 step 109 key SHIFT t
+@378751 step 111 key SHIFT t
 @379051 sounds 2 a3a601609c4252dd
-@379051 step 110 key SHIFT y
+@379051 step 112 key SHIFT y
 @379351 sounds 1 96938886ca140456
-@379351 step 111 key SHIFT u
+@379351 step 113 key SHIFT u
 @379651 sounds 3 fc5c0bca6938d650
-@379651 step 112 key SHIFT i
+@379651 step 114 key SHIFT i
 @379951 sounds 1 97d9545ac20d05c1
-@379951 step 113 key SHIFT o
+@379951 step 115 key SHIFT o
 @380251 sounds 2 ce59c6cbe0ce2996
-@380251 step 114 key SHIFT p
+@380251 step 116 key SHIFT p
 @380551 sounds 2 18092e5e785f3b45
-@380551 step 115 key CTRL t
+@380551 step 117 key CTRL t
 @380551 voice item ", you are not controlling any unit"
 @383951 sounds 32 330559b0db69932e
-@383951 step 116 key CTRL y
+@383951 step 118 key CTRL y
 @383951 voice item ", you are not controlling any unit"
 @387351 sounds 27 59a1711861e3e075
-@387351 step 117 key CTRL u
+@387351 step 119 key CTRL u
 @387351 voice item ", you are not controlling any unit"
 @390751 sounds 19 a2b84495ffd99f0e
-@390751 step 118 key CTRL i
+@390751 step 120 key CTRL i
 @390751 voice item ", you are not controlling any unit"
 @394151 sounds 23 212439d9bd6cd679
-@394151 step 119 key CTRL o
+@394151 step 121 key CTRL o
 @394151 voice item ", you are not controlling any unit"
 @397551 sounds 23 564b95aa4d691e27
-@397551 step 120 key CTRL p
+@397551 step 122 key CTRL p
 @397551 voice item ", you are not controlling any unit"
 @400951 sounds 21 5c063485c3bc97df
-@400951 step 121 key CTRL g
+@400951 step 123 key CTRL g
 @400951 voice item ", you are not controlling any unit"
 @404351 sounds 21 db0d4946077436fe
-@404351 step 122 key CTRL h
+@404351 step 124 key CTRL h
 @404351 voice item ", you are not controlling any unit"
 @407751 sounds 27 0fa17387a68bf913
-@407751 step 123 key CTRL j
+@407751 step 125 key CTRL j
 @407751 voice item ", you are not controlling any unit"
 @411151 sounds 31 30add1bf2d8f908b
-@411151 step 124 key CTRL k
+@411151 step 126 key CTRL k
 @411151 voice item ", you are not controlling any unit"
 @414551 sounds 21 d600dd9bc8d6aab4
-@414551 step 125 key CTRL l
+@414551 step 127 key CTRL l
 @414551 voice item ", you are not controlling any unit"
 @417951 sounds 22 6cf137d4c9678514
-@417951 step 126 key CTRL SEMICOLON
+@417951 step 128 key CTRL SEMICOLON
 @417951 voice item ", you are not controlling any unit"
 @421351 sounds 23 800393b675ca1be0
-@421351 step 127 key f
+@421351 step 129 key f
 @421351 voice item ", you are not controlling any unit"
 @424751 sounds 31 47289fbcb975c0f8
-@424751 step 128 key g
+@424751 step 130 key g
 @424751 voice item ", you are not controlling any unit"
 @428151 sounds 26 210c3d4f1a1d3267
-@428151 step 129 key h
+@428151 step 131 key h
 @428151 voice item ", you are not controlling any unit"
 @431551 sounds 19 02672e39d682f65e
-@431551 step 130 key j
+@431551 step 132 key j
 @431551 voice item ", you are not controlling any unit"
 @434951 sounds 19 78282dad31576e80
-@434951 step 131 key k
+@434951 step 133 key k
 @434951 voice item ", you are not controlling any unit"
 @438351 sounds 21 ddfde1114e0abb4b
-@438351 step 132 key l
+@438351 step 134 key l
 @438351 voice item ", you are not controlling any unit"
 @441751 sounds 24 374a940ccc696ad1
-@441751 step 133 key SEMICOLON
+@441751 step 135 key SEMICOLON
 @441751 voice item ", you are not controlling any unit"
 @445151 sounds 22 b3c7ae5da5158e1b
-@445151 step 134 key d
+@445151 step 136 key d
 @445151 voice item ", You control 2 peasant , ,"
 @448051 sounds 21 84d19e6392d53481
-@448051 step 135 key ALT d
+@448051 step 137 key ALT d
 @448051 voice item ", You control 2 peasant , ,"
 @450951 sounds 19 4d1682c7a4a9c826
-@450951 step 136 key CTRL ALT d
+@450951 step 138 key CTRL ALT d
 @450951 voice item ", You control 2 peasant , ,"
 @453851 sounds 24 5362454ed40ab795
-@453851 step 137 key CTRL d
+@453851 step 139 key CTRL d
 @453851 voice item ", You control 2 peasant , ,"
 @456751 sounds 21 d3df75914ca593ba
-@456751 step 138 key s
+@456751 step 140 key s
 @456751 voice item ", you are not controlling any unit"
 @460151 sounds 22 f74069ed6efbe8a8
-@460151 step 139 key CTRL s
+@460151 step 141 key CTRL s
 @460151 voice item ", you are not controlling any unit"
 @463551 sounds 21 8b0a327ec53ed748
-@463551 step 140 key SHIFT s
+@463551 step 142 key SHIFT s
 @463551 voice item ", You control 2 peasant , ,"
 @466451 sounds 18 6f8fafaa6179d6b7
-@466451 step 141 key CTRL SHIFT s
+@466451 step 143 key CTRL SHIFT s
 @466451 voice item ", You control 2 peasant , ,"
 @469351 sounds 19 b394aef56b2bcc0b
-@469351 step 142 key ALT s
+@469351 step 144 key ALT s
 @469351 voice item ", You control 2 peasant , ,"
 @472251 sounds 20 3055abbde3322a03
-@472251 step 143 key CTRL ALT s
+@472251 step 145 key CTRL ALT s
 @472251 voice item ", You control 2 peasant , ,"
 @475151 sounds 18 1621df574010e9b5
-@475151 step 144 key TAB
+@475151 step 146 key TAB
 @475151 voice item [1003] "peasant 2 to the south , 4 hit points on 4 , ," vol=0.137,0.991
 @480370 sounds 32 bb8f418b820b5703
-@480370 step 145 key BACKSLASH
+@480370 step 147 key BACKSLASH
 @480370 voice item "peasant 2 at b 1 , awaiting your orders"
 @484670 sounds 29 d920441257d507ae
-@484670 step 146 key UP
+@484670 step 148 key UP
 @484670 voice item [1027] "b 1 , 1 town hall , 2 farm and 2 peasant"
 @489664 sounds 30 471e8546895d705a
-@489664 step 147 key SHIFT UP
+@489664 step 149 key SHIFT UP
 @489664 voice item [1027] "b 1 , 1 town hall , 2 farm and 2 peasant"
 @494658 sounds 29 2929d537945ead20
-@494658 step 148 key CTRL UP
+@494658 step 150 key CTRL UP
 @494658 voice item "b 2 , unknown , 1 peasant enemy"
 @498158 voice info "1 footman enemy at c 2"
 @500759 sounds 54 494a49cd19e99dfa
-@500759 step 149 key CTRL SHIFT UP
+@500759 step 151 key CTRL SHIFT UP
 @500759 voice item "b 3 , unknown"
 @502259 sounds 12 cf3bdae811a4e753
-@502259 step 150 key DOWN
+@502259 step 152 key DOWN
 @502259 voice item "b 2 , unknown , 1 peasant enemy"
 @505759 sounds 27 239da774aca43277
-@505759 step 151 key SHIFT DOWN
+@505759 step 153 key SHIFT DOWN
 @505759 voice item [1027] "b 1 , 1 town hall , 2 farm and 2 peasant"
 @510753 sounds 34 faf55e86658bc2d9
-@510753 step 152 key CTRL DOWN
+@510753 step 154 key CTRL DOWN
 @510753 voice item "b 4 , unknown"
-@512253 step 153 key CTRL SHIFT DOWN
+@512253 step 155 key CTRL SHIFT DOWN
 @512253 voice item "b 3 , unknown"
 @513753 sounds 12 40994e89a3b9aa26
-@513753 step 154 key LEFT
+@513753 step 156 key LEFT
 @513753 voice item "a 3 , unknown"
 @515253 sounds 6 7da0167bff6c8b4a
-@515253 step 155 key SHIFT LEFT
+@515253 step 157 key SHIFT LEFT
 @515253 voice item "b 3 , unknown"
 @516753 sounds 13 382f2297d81667d0
-@516753 step 156 key CTRL LEFT
+@516753 step 158 key CTRL LEFT
 @516753 voice item "a 3 , unknown"
 @518253 sounds 4 28024490e286f0af
-@518253 step 157 key CTRL SHIFT LEFT
+@518253 step 159 key CTRL SHIFT LEFT
 @518253 voice item "b 3 , unknown"
 @519753 sounds 7 e70958427c0ab77a
-@519753 step 158 key RIGHT
+@519753 step 160 key RIGHT
 @519753 voice item "c 3 , unknown"
 @521253 sounds 4 9d8a903cb2e88bf4
-@521253 step 159 key SHIFT RIGHT
+@521253 step 161 key SHIFT RIGHT
 @521253 voice item "b 3 , unknown"
 @522753 sounds 6 ff30c74aad2db535
-@522753 step 160 key CTRL RIGHT
+@522753 step 162 key CTRL RIGHT
 @522753 voice item "c 3 , unknown"
 @524253 sounds 3 484e6a372bef8b96
-@524253 step 161 key CTRL SHIFT RIGHT
+@524253 step 163 key CTRL SHIFT RIGHT
 @524253 voice item "b 3 , unknown"
 @525753 sounds 10 8259c1de415e64df
-@525753 step 162 key PAGEDOWN
+@525753 step 164 key PAGEDOWN
 @525753 voice item "b 1 , 1 town hall , 2 farm and 2 peasant"
 @530553 sounds 48 82f6ddc43e0798fb
-@530553 step 163 key PAGEDOWN
+@530553 step 165 key PAGEDOWN
 @530553 voice item "b 1 , 1 town hall , 2 farm and 2 peasant"
 @535353 sounds 31 b38f535e3cd0fd27
-@535353 step 164 key PAGEUP
+@535353 step 166 key PAGEUP
 @535353 voice item "b 1 , 1 town hall , 2 farm and 2 peasant"
 @540153 sounds 33 a2830330eef67c4f
-@540153 step 165 key CTRL PAGEDOWN
+@540153 step 167 key CTRL PAGEDOWN
 @540153 voice item "b 2 , unknown , 1 peasant and 1 footman enemy"
 @545253 sounds 45 d4760222f4a53a8d
-@545253 step 166 key CTRL PAGEUP
+@545253 step 168 key CTRL PAGEUP
 @545253 voice item "a 2 , meadows , in the fog of war , 1 footman enemy"
 @550753 sounds 22 8bba8f649a077ab3
-@550753 step 167 key ALT PAGEDOWN
+@550753 step 169 key ALT PAGEDOWN
 @550753 voice item "b 3 , unknown"
 @552253 sounds 10 d32bb111b9279c52
-@552253 step 168 key ALT PAGEUP
+@552253 step 170 key ALT PAGEUP
 @552253 voice item "b 2 , unknown , 1 peasant and 1 footman enemy"
 @557353 sounds 46 2dbd80e59d2a5355
-@557353 step 169 key SHIFT PAGEDOWN
+@557353 step 171 key SHIFT PAGEDOWN
 @557353 voice item "c 2 , forest , in the fog of war , 1 footman enemy , 1 gold mine and 2 wood"
 @565653 sounds 41 05684f3d40c06213
-@565653 step 170 key SHIFT PAGEUP
+@565653 step 172 key SHIFT PAGEUP
 @565653 voice item "c 1 , forest , in the fog of war , 1 wood"
 @570153 sounds 21 2467bc8c9ff4cceb
-@570153 step 171 key LCTRL
-@570153 voice item "c 1 , forest , in the fog of war , 1 wood"
-@574653 sounds 17 145fb9ca332333a6
-@574653 step 172 key F8
-@574653 voice item "zoom is now on , c 1 at the center , forest , in the fog of war"
-@581153 sounds 21 696238d67c5fe756
-@581153 step 173 key RIGHT
-@581153 voice item "c 1 east , forest , in the fog of war"
-@585053 sounds 15 6de05a4581d7262b
-@585053 step 174 key UP
-@585053 voice item "c 1 northeast , forest , in the fog of war"
-@589453 sounds 23 0b0772bbc12a39cc
-@589453 step 175 key LCTRL
-@589453 voice item "c 1 northeast , forest , in the fog of war"
-@593853 sounds 24 30d00a7914ea26c5
-@593853 step 176 key TAB
-@593853 voice item "nothing!"
-@594653 sounds 1 f02e75e1ac78be1e
-@594653 step 177 key ESCAPE
-@594653 voice item "zoom is now off , c 1 , forest , in the fog of war , 1 wood"
-@600953 sounds 25 0edffd9f1acf769a
-@600953 step 178 key F8
-@600953 voice item "zoom is now on , c 1 at the center , forest , in the fog of war"
-@607453 sounds 25 d44333980fff4467
-@607453 step 179 key e
-@607453 voice item "peasant 1 at b 1 , awaiting your orders"
-@611753 sounds 16 ff3290cd8d57c7af
-@611753 step 180 key CTRL SPACE
-@611753 voice item "b 1 You control peasant 1 at b 1 ,"
-@611753 voice item "first person mode"
-@613453 sounds 18 2ad823a4a1752f5e
-@613453 step 181 key LEFT
-@613453 voice item "east"
-@613853 step 182 key LEFT
-@613853 voice item "northeast"
-@614753 sounds 6 a73f625c79f4d055
-@614753 step 183 key RIGHT
-@614753 voice item "east"
-@615153 sounds 3 617a33f8cc4d88b3
-@615153 step 184 key TAB
-@615153 voice item [1003] "town hall 1 at 0 meters to the south , 400 hit points on 400 , ," vol=0.222,0.975
-@623172 sounds 55 16915bb25548dfd0
-@623172 step 185 key ESCAPE
-@623172 voice item "map mode"
-@623972 sounds 8 dc9ddb2ed1b7ab65
-@623972 step 186 key ESCAPE
-@623972 voice item "zoom is now off , b 1 , 1 town hall , 2 farm and 2 peasant"
-@630572 sounds 45 aaf9d9dfc06ac7fc
-@630572 step 187 key e
-@630572 voice item "peasant 2 at b 1 , awaiting your orders"
-@634872 sounds 27 1bf9b7750a10a5b0
-@634872 step 188 key a
-@634872 voice item "go to , , press tab to select the target and then press enter to confirm"
-@642072 sounds 59 ded0d953be7cbdc2
-@642072 step 189 key a
-@642072 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@649472 sounds 47 1e3b773b3db60feb
-@649472 step 190 key RIGHT
-@649472 voice item [1091] "c 1 , forest , in the fog of war , 1 wood"
-@654220 sounds 31 0b4263b8ccf2cd21
-@654220 step 191 key TAB
-@654220 voice item [1003] "a meadow to the west , exploit" vol=0.973,0.229
-@657239 sounds 14 72f52f69da146668
-@657239 step 192 key RETURN
-@657239 voice item "exploit a meadow"
-@658839 sounds 7 4c212d780000d734
-@658839 step 193 key QUOTE
-@658839 voice item "peasant 1 at b 1 , awaiting your orders"
-@663139 sounds 15 b7cc139427de43a8
-@663139 step 194 key ALT r
-@663139 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@670539 sounds 27 0c5df2ddb819dea8
-@670539 step 195 key TAB
-@670539 voice item [1003] "a path to the west , exploit" vol=0.988,0.156
-@673358 sounds 10 0a952f623b5718ea
-@673358 step 196 key SHIFT RETURN
-@673358 voice item "exploit a path"
-@674758 sounds 5 29660a9ffcffba76
-@674758 step 197 key e
-@674758 voice item "peasant 2 at b 1 , awaiting your orders"
-@679058 sounds 18 515b05871011e9dc
-@679058 step 198 key ALT g
-@679058 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@686458 sounds 34 b45fff45c49f632d
-@686458 step 199 key SHIFT ALT g
-@686458 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@693858 sounds 27 b8cd9712862760bf
-@693858 step 200 key TAB
-@693858 voice item [1003] "wood in the fog of war , to the southeast , contains 75 wood , exploit" vol=0.065,0.998
-@701277 sounds 27 7d4aca9670a3b3e6
-@701277 step 201 key CTRL SHIFT RETURN
-@701277 voice item "exploit wood in the fog of war ,"
-@704477 sounds 19 7e513e7c29a32a14
-@704477 step 202 key LEFT
-@704477 voice item [1091] "b 1 , 1 town hall , 2 farm and 2 peasant"
-@709525 sounds 54 8aea7bffdf8abfb3
-@709525 step 203 key LEFT
-@709525 voice item [1091] "a 1 , meadows , in the fog of war , 1 gold mine"
-@714873 sounds 25 5930c379a6ca4b2d
-@714873 step 204 key w
-@714873 voice item "town hall 1 at b 1 , awaiting your orders"
-@719373 sounds 24 9307caae1ba3d1db
-@719373 step 205 key TAB
-@719373 voice item [1003] "gold mine in the fog of war , to the southwest , contains 75 gold" vol=0.998,0.065
-@726292 sounds 32 bab9a7ff4024a429
-@726292 step 206 key BACKSPACE
-@726292 voice item "rally to gold mine in the fog of war , ,"
-@730292 sounds 26 93128694d15b8101
-@730292 step 207 key e
-@730292 voice item "peasant 1 at b 1 , awaiting your orders"
-@734592 sounds 28 78715f6c943e2928
-@734592 step 208 key TAB
-@734592 voice item [1003] "a meadow to the east" vol=0.229,0.973
-@736611 sounds 13 67de95b1cfba0215
-@736611 step 209 key TAB
-@736611 voice item [1003] "a meadow in the fog of war , to the northwest" vol=0.817,0.577
-@741130 sounds 28 1cf91fa0e835ed9e
-@741130 step 210 key BACKSPACE
-@741130 voice item "go to a meadow in the fog of war , ,"
-@744730 voice info "7 wood"
-@745531 sounds 35 5ce59adc433cf89a
-@745531 step 211 key SHIFT KP_ENTER
+@570153 step 173 key LCTRL
+@570154 step 174 release LCTRL
+@570154 voice item "c 1 , forest , in the fog of war , 1 wood"
+@574654 sounds 17 145fb9ca332333a6
+@574654 step 175 key F8
+@574654 voice item "zoom is now on , c 1 at the center , forest , in the fog of war"
+@581154 sounds 21 696238d67c5fe756
+@581154 step 176 key RIGHT
+@581154 voice item "c 1 east , forest , in the fog of war"
+@585054 sounds 15 6de05a4581d7262b
+@585054 step 177 key UP
+@585054 voice item "c 1 northeast , forest , in the fog of war"
+@589454 sounds 23 0b0772bbc12a39cc
+@589454 step 178 key LCTRL
+@589455 step 179 release LCTRL
+@589455 voice item "c 1 northeast , forest , in the fog of war"
+@593855 sounds 24 30d00a7914ea26c5
+@593855 step 180 key TAB
+@593855 voice item "nothing!"
+@594655 sounds 1 f02e75e1ac78be1e
+@594655 step 181 key ESCAPE
+@594655 voice item "zoom is now off , c 1 , forest , in the fog of war , 1 wood"
+@600955 sounds 25 0edffd9f1acf769a
+@600955 step 182 key F8
+@600955 voice item "zoom is now on , c 1 at the center , forest , in the fog of war"
+@607455 sounds 25 d44333980fff4467
+@607455 step 183 key e
+@607455 voice item "peasant 1 at b 1 , awaiting your orders"
+@611755 sounds 16 ff3290cd8d57c7af
+@611755 step 184 key CTRL SPACE
+@611755 voice item "b 1 You control peasant 1 at b 1 ,"
+@611755 voice item "first person mode"
+@613455 sounds 18 2ad823a4a1752f5e
+@613455 step 185 key LEFT
+@613455 voice item "east"
+@613855 step 186 key LEFT
+@613855 voice item "northeast"
+@614755 sounds 6 a73f625c79f4d055
+@614755 step 187 key RIGHT
+@614755 voice item "east"
+@615155 sounds 3 617a33f8cc4d88b3
+@615155 step 188 key TAB
+@615155 voice item [1003] "town hall 1 at 0 meters to the south , 400 hit points on 400 , ," vol=0.222,0.975
+@623174 sounds 55 16915bb25548dfd0
+@623174 step 189 key ESCAPE
+@623174 voice item "map mode"
+@623974 sounds 8 dc9ddb2ed1b7ab65
+@623974 step 190 key ESCAPE
+@623974 voice item "zoom is now off , b 1 , 1 town hall , 2 farm and 2 peasant"
+@630574 sounds 45 aaf9d9dfc06ac7fc
+@630574 step 191 key e
+@630574 voice item "peasant 2 at b 1 , awaiting your orders"
+@634874 sounds 27 1bf9b7750a10a5b0
+@634874 step 192 key a
+@634874 voice item "go to , , press tab to select the target and then press enter to confirm"
+@642074 sounds 59 ded0d953be7cbdc2
+@642074 step 193 key a
+@642074 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@649474 sounds 47 1e3b773b3db60feb
+@649474 step 194 key RIGHT
+@649474 voice item [1091] "c 1 , forest , in the fog of war , 1 wood"
+@654222 sounds 31 0b4263b8ccf2cd21
+@654222 step 195 key TAB
+@654222 voice item [1003] "a meadow to the west , exploit" vol=0.973,0.229
+@657241 sounds 14 72f52f69da146668
+@657241 step 196 key RETURN
+@657241 voice item "exploit a meadow"
+@658841 sounds 7 4c212d780000d734
+@658841 step 197 key QUOTE
+@658841 voice item "peasant 1 at b 1 , awaiting your orders"
+@663141 sounds 15 b7cc139427de43a8
+@663141 step 198 key ALT r
+@663141 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@670541 sounds 27 0c5df2ddb819dea8
+@670541 step 199 key TAB
+@670541 voice item [1003] "a path to the west , exploit" vol=0.988,0.156
+@673360 sounds 10 0a952f623b5718ea
+@673360 step 200 key SHIFT RETURN
+@673360 voice item "exploit a path"
+@674760 sounds 5 29660a9ffcffba76
+@674760 step 201 key e
+@674760 voice item "peasant 2 at b 1 , awaiting your orders"
+@679060 sounds 18 515b05871011e9dc
+@679060 step 202 key ALT g
+@679060 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@686460 sounds 34 b45fff45c49f632d
+@686460 step 203 key SHIFT ALT g
+@686460 voice item "exploit , , press tab to select the target and then press enter to confirm"
+@693860 sounds 27 b8cd9712862760bf
+@693860 step 204 key TAB
+@693860 voice item [1003] "wood in the fog of war , to the southeast , contains 75 wood , exploit" vol=0.065,0.998
+@701279 sounds 27 7d4aca9670a3b3e6
+@701279 step 205 key CTRL SHIFT RETURN
+@701279 voice item "exploit wood in the fog of war ,"
+@704479 sounds 19 7e513e7c29a32a14
+@704479 step 206 key LEFT
+@704479 voice item [1091] "b 1 , 1 town hall , 2 farm and 2 peasant"
+@709527 sounds 54 8aea7bffdf8abfb3
+@709527 step 207 key LEFT
+@709527 voice item [1091] "a 1 , meadows , in the fog of war , 1 gold mine"
+@714875 sounds 25 5930c379a6ca4b2d
+@714875 step 208 key w
+@714875 voice item "town hall 1 at b 1 , awaiting your orders"
+@719375 sounds 24 9307caae1ba3d1db
+@719375 step 209 key TAB
+@719375 voice item [1003] "gold mine in the fog of war , to the southwest , contains 75 gold" vol=0.998,0.065
+@726294 sounds 32 bab9a7ff4024a429
+@726294 step 210 key BACKSPACE
+@726294 voice item "rally to gold mine in the fog of war , ,"
+@730294 sounds 26 93128694d15b8101
+@730294 step 211 key e
+@730294 voice item "peasant 1 at b 1 , awaiting your orders"
+@734594 sounds 28 78715f6c943e2928
+@734594 step 212 key TAB
+@734594 voice item [1003] "a meadow to the east" vol=0.229,0.973
+@736613 sounds 13 67de95b1cfba0215
+@736613 step 213 key TAB
+@736613 voice item [1003] "a meadow in the fog of war , to the northwest" vol=0.817,0.577
+@741132 sounds 28 1cf91fa0e835ed9e
+@741132 step 214 key BACKSPACE
+@741132 voice item "go to a meadow in the fog of war , ,"
+@744732 voice info "7 wood"
+@745533 sounds 35 5ce59adc433cf89a
+@745533 step 215 key SHIFT KP_ENTER
 @745651 sounds 1 9c5707890ff5f911
-@745651 step 212 key CTRL KP_ENTER
+@745651 step 216 key CTRL KP_ENTER
 @745951 sounds 3 55b219c3f60c59c6
-@745951 step 213 key CTRL SHIFT KP_ENTER
+@745951 step 217 key CTRL SHIFT KP_ENTER
 @746251 sounds 1 0866473f4bbcdc1a
-@746251 step 214 key SHIFT BACKSPACE
+@746251 step 218 key SHIFT BACKSPACE
 @746251 voice item "go to a meadow ,"
 @747851 sounds 14 6566b4c2482de6df
-@747851 step 215 key CTRL BACKSPACE
+@747851 step 219 key CTRL BACKSPACE
 @747851 voice item "go to a meadow ,"
 @749451 sounds 12 77cf377dbf4950b7
-@749451 step 216 key CTRL SHIFT BACKSPACE
+@749451 step 220 key CTRL SHIFT BACKSPACE
 @749451 voice item "go to a meadow ,"
 @751051 voice info "1 footman enemy at a 2"
 @753652 sounds 31 55768c5310bf4eb8
-@753652 step 217 key F1
+@753652 step 221 key F1
 @753652 voice item "f 10 to open the menu"
 @756152 sounds 11 d9ee577baa607801
-@756152 step 218 key F1
+@756152 step 222 key F1
 @756152 voice item "direction arrows to move on the map"
 @759652 sounds 17 5810eba4b2ed2380
-@759652 step 219 key SHIFT F1
+@759652 step 223 key SHIFT F1
 @759652 voice item "f 10 to open the menu"
 @762152 sounds 11 52e32f8d4d7db231
-@762152 step 220 key F2
+@762152 step 224 key F2
 @762152 voice item "e to control the next peasant"
 @765052 sounds 14 a8f6d50c9d97f95e
-@765052 step 221 key F3
+@765052 step 225 key F3
 @765052 voice item "12 minutes 7 seconds , speed 1.0"
 @769252 sounds 20 6f3e9f0f754b9a31
-@769252 step 222 key F9
+@769252 step 226 key F9
 @769252 voice item "objective: neutralized enemy ."
 @772252 sounds 13 168d31c716f46379
-@772252 step 223 key F11
+@772252 step 227 key F11
 @772252 voice item "player , quiet computer ,"
 @774752 sounds 12 27159facb5ba04ee
-@774752 step 224 key F5
+@774752 step 228 key F5
 @774752 voice history "1 footman enemy at a 2"
-@775052 step 225 interrupt_after 0.3 key F5
+@775052 step 229 interrupt_after 0.3 key F5
 @775052 voice cut queue=0
 @775052 voice history "7 wood"
 @775852 voice history "1 footman enemy at a 2"
 @779052 sounds 19 a9b6ac8ba1025c31
-@779052 step 226 wait 4
+@779052 step 230 wait 4
 @779251 sounds 1 e7cdac287c720c0e
-@779251 step 227 key F6
+@779251 step 231 key F6
 @779751 sounds 5 a088471bf84856de
-@779751 step 228 interrupt_after 0.5 key LALT
+@779751 step 232 interrupt_after 0.5 key LALT
+@779751 step 233 release LALT
 @780251 sounds 3 995f07325c339f55
-@780251 step 229 interrupt_after 0.5 key LALT
+@780251 step 234 interrupt_after 0.5 key LALT
+@780251 step 235 release LALT
 @780451 sounds 2 1518ce3e567c14c5
-@780451 step 230 key RALT
+@780451 step 236 key RALT
+@780452 step 237 release RALT
 @780751 sounds 3 ab7b378f2450b802
-@780751 step 231 key LSHIFT
+@780751 step 238 key LSHIFT
+@780752 step 239 release LSHIFT
 @781051 sounds 2 64a4bb29a9a87c07
-@781051 step 232 key RSHIFT
+@781051 step 240 key RSHIFT
+@781052 step 241 release RSHIFT
 @781351 sounds 4 14d8aa61a2696f60
-@781351 step 233 key HOME
+@781351 step 242 key HOME
 @781351 voice item "60 percent of the volume"
 @784151 voice info "9 wood"
 @784952 sounds 21 7cd8b55adea4a4c2
-@784952 step 234 key KP_PLUS
+@784952 step 243 key KP_PLUS
 @784952 voice item "70 percent of the volume"
 @787752 sounds 20 5bd9a92de10c08e6
-@787752 step 235 key END
+@787752 step 244 key END
 @787752 voice item "60 percent of the volume"
 @790552 sounds 17 8e7c52b3be5b1202
-@790552 step 236 key KP_MINUS
+@790552 step 245 key KP_MINUS
 @790552 voice item "50 percent of the volume"
 @793352 sounds 14 cb4d90642a468e87
-@793352 step 237 key CTRL BACKQUOTE
+@793352 step 246 key CTRL BACKQUOTE
 @793651 sounds 2 8cb3d94e432f120e
-@793651 step 238 key CTRL F3
+@793651 step 247 key CTRL F3
 @793651 voice item [1039] [1003] "is now on"
 @794677 sounds 5 7f30faeba19f4aab
-@794677 step 239 key CTRL SHIFT F3
+@794677 step 248 key CTRL SHIFT F3
 @800550 sounds 44 018e4051634e8d73
-@800550 step 240 wait_turns 20
+@800550 step 249 wait_turns 20
 @800551 sounds 1 a45473f2fd4c1e41
-@800551 step 241 key CTRL SHIFT F3
+@800551 step 250 key CTRL SHIFT F3
 @800851 sounds 3 d9ca2e951610a5a1
-@800851 step 242 key CTRL SHIFT F2
+@800851 step 251 key CTRL SHIFT F2
 @800851 voice item "cheat mode is now on"
 @802851 voice info "3 peasant enemy at a 3"
 @805451 voice info "5 enemy at a 4"
@@ -760,153 +769,153 @@ length 9999 208980
 @809351 voice info "1 farm enemy at c 4"
 @811651 voice info ", 3 peasant enemy at a 3"
 @814452 sounds 95 1268664619a53285
-@814452 step 243 key BACKQUOTE
+@814452 step 252 key BACKQUOTE
 @814452 voice menu "Enter a command."
-@816053 step 244 key r (type r)
+@816053 step 253 key r (type r)
 @816053 voice item "r . r"
-@816553 step 245 key RETURN
+@816553 step 254 key RETURN
 @816553 voice item "r"
 @816653 sounds 9 8938662529df8914
-@816653 step 246 key z
+@816653 step 255 key z
 @816653 voice item "1001 gold"
 @818353 sounds 9 320de923f6f49abf
-@818353 step 247 key BACKQUOTE
+@818353 step 256 key BACKQUOTE
 @818353 voice menu "Enter a command."
-@819954 step 248 key h (type h)
+@819954 step 257 key h (type h)
 @819954 voice item "h . h"
-@820454 step 249 key RETURN
+@820454 step 258 key RETURN
 @820454 voice item "h"
 @820454 voice item "p: pause/unpause, s: set speed, r: get 1000 resources, t: get all techs, m: infinite mana, a: add units, v: instant victory"
 @833554 voice info "1 farm at building enemy at a 3"
 @837054 voice info "1 archer enemy at b 4"
 @839555 sounds 159 ff31e35db9bac9eb
-@839555 step 250 key BACKQUOTE
+@839555 step 259 key BACKQUOTE
 @839555 voice menu "Enter a command."
-@841156 step 251 key ESCAPE
+@841156 step 260 key ESCAPE
 @841185 sounds 7 bd4a4ecdf85731d8
-@841185 step 252 key w
+@841185 step 261 key w
 @841185 voice item "town hall 1 at b 1 , awaiting your orders"
 @845685 sounds 29 888609e409ab36da
-@845685 step 253 key a
+@845685 step 262 key a
 @845685 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
 @852985 voice info "1 farm enemy at a 3"
 @855286 sounds 69 d96429ee3d36472b
-@855286 step 254 key RETURN
+@855286 step 263 key RETURN
 @855286 voice item "recruit peasant"
 @856786 sounds 12 f90dc3c4898d8ff1
-@856786 step 255 key ALT g
+@856786 step 264 key ALT g
 @856786 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
 @856786 voice item "recruit peasant"
 @858286 sounds 13 7a7bbad92bf4fb7c
-@858286 step 256 key ALT g
+@858286 step 265 key ALT g
 @858286 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
 @858286 voice item "recruit peasant"
 @859786 sounds 15 c9bafec167f8f09d
-@859786 step 257 key e
+@859786 step 266 key e
 @859786 voice item "peasant 1 at a 1 , awaiting your orders"
 @864086 voice info "1 archer enemy at b 4"
 @866586 voice info "peasant 3 ready!"
 @868387 sounds 87 6ef26df484ede1eb
-@868387 step 258 key ALT a
+@868387 step 267 key ALT a
 @868387 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
 @885187 voice info "peasant 4 ready!"
 @886988 sounds 233 a539940cfcc0bf13
-@886988 step 259 key b
+@886988 step 268 key b
 @886988 voice item "build barracks on , requires 7 gold and 9 wood , press tab to select the target and then press enter to confirm"
 @898488 voice info "1 archer enemy at b 4"
 @900988 voice info "peasant 5 ready!"
 @902789 sounds 194 ced459c252b5102a
-@902789 step 260 key TAB
+@902789 step 269 key TAB
 @902789 voice item [1003] "gold mine to the southwest , contains 72 gold , build barracks on" vol=0.998,0.065
 @909708 voice info "1 archer enemy at b 4"
 @912209 sounds 137 cc7081f64c4095b9
-@912209 step 261 key RETURN
+@912209 step 270 key RETURN
 @912209 voice item "build barracks on gold mine"
 @914909 sounds 34 b6cb75322330f5a2
-@914909 step 262 key CTRL SHIFT F4
+@914909 step 271 key CTRL SHIFT F4
 @914909 voice item "you are quiet computer"
 @917109 voice info "6 gold"
 @917909 voice info "33 food to 29"
 @920010 sounds 90 5085232b52baa205
-@920010 step 263 key SPACE
+@920010 step 272 key SPACE
 @920010 voice item "a 1 , you are not controlling any unit"
 @924010 voice info "the menu of town hall has just changed."
 @927910 voice info "the menu of peasant has just changed."
 @931610 voice info "1 gold"
 @932410 voice info "33 food to 30"
 @934511 sounds 168 9f025399bb6f0639
-@934511 step 264 key CTRL SHIFT F4
+@934511 step 273 key CTRL SHIFT F4
 @934511 voice item "you are player"
 @935911 sounds 20 8bc4060b23024b0b
-@935911 step 265 key CTRL SHIFT F2
+@935911 step 274 key CTRL SHIFT F2
 @935911 voice item "cheat mode is now off"
 @938011 sounds 23 8be130b6b69a7777
-@938011 step 266 key F10
+@938011 step 275 key F10
 @938011 voice menu "Menu"
-@938411 step 267 key DOWN
+@938411 step 276 key DOWN
 @938411 voice item "cancel game ,"
 @939711 sounds 1 58aeaf222868a7be
-@939711 step 268 key DOWN
+@939711 step 277 key DOWN
 @939711 voice item "set the game speed to slow ,"
 @942511 sounds 1 e032cf8e1e7db55a
-@942511 step 269 key DOWN
+@942511 step 278 key DOWN
 @942511 voice item "set the game speed to normal ,"
 @945511 sounds 1 5e9114296113f3ae
-@945511 step 270 key DOWN
+@945511 step 279 key DOWN
 @945511 voice item "set the game speed to fast ,"
 @948311 sounds 1 d0c266755e3a1475
-@948311 step 271 key RETURN
+@948311 step 280 key RETURN
 @948311 voice confirmation "set the game speed to fast"
 @950924 sounds 19 dcf36b3bca26fd2b
-@950924 step 272 key F3
+@950924 step 281 key F3
 @950924 voice item "14 minutes 55 seconds , speed 0.1"
 @955424 sounds 38 e92f1bc4e3060bf0
-@955424 step 273 key CTRL c
+@955424 step 282 key CTRL c
 @955424 voice menu "Menu"
-@955824 step 274 key ESCAPE
+@955824 step 283 key ESCAPE
 @955824 voice confirmation "continue game"
 @957136 sounds 12 950197d31a7b99a6
-@957136 step 275 key ALT F4
+@957136 step 284 key ALT F4
 @957136 voice menu "Menu"
-@957536 step 276 key UP
+@957536 step 285 key UP
 @957536 voice item "continue game ,"
 @959036 sounds 1 b3c71dfdcf269c77
-@959036 step 277 key RETURN
+@959036 step 286 key RETURN
 @959046 sounds 1 795eea3168f2e6c3
-@959046 step 278 key ESCAPE
+@959046 step 287 key ESCAPE
 @959046 voice confirmation "continue game"
 @974757 voice info "1000 gold"
 @982707 sounds 338 0ba73c313ba40093
-@982707 step 279 wait_turns 150
-@982708 step 280 key z
+@982707 step 288 wait_turns 150
+@982708 step 289 key z
 @982708 voice item "1002 gold"
 @984408 sounds 32 9cfa4cedda10203e
-@984408 step 281 key x
+@984408 step 290 key x
 @984408 voice item "1019 wood"
 @986108 sounds 34 6351d974846d65f3
-@986108 step 282 key c
+@986108 step 291 key c
 @986108 voice item "17 food to 5"
 @1008507 sounds 330 1f68683e36e43ce3
-@1008507 step 283 wait_turns 150
-@1008508 step 284 key F3
+@1008507 step 292 wait_turns 150
+@1008508 step 293 key F3
 @1008508 voice item "16 minutes 40 seconds , speed 2.0"
 @1013008 sounds 65 81ffb905441aee32
-@1013008 step 285 key c
+@1013008 step 294 key c
 @1013008 voice item "17 food to 5"
 @1035507 sounds 348 ff865197d59b3612
-@1035507 step 286 wait_turns 150
-@1035508 step 287 key z
+@1035507 step 295 wait_turns 150
+@1035508 step 296 key z
 @1035508 voice item "1014 gold"
 @1037208 sounds 16 85f72c408202076c
-@1037208 step 288 key CTRL F3
+@1037208 step 297 key CTRL F3
 @1037208 voice item [1039] [1003] "is now off"
 @1038334 sounds 18 14dc001e3d5c0f48
-@1038334 step 289 key F10
+@1038334 step 298 key F10
 @1038334 voice menu "Menu"
-@1038734 step 290 key DOWN
+@1038734 step 299 key DOWN
 @1038734 voice item "cancel game ,"
 @1040034 sounds 1 fad8f3ef2de2ba16
-@1040034 step 291 key RETURN
+@1040034 step 300 key RETURN
 @1040034 voice confirmation "cancel game"
 @1041146 voice info "Defeat at 17 minutes 40 seconds"
 @1045046 voice info "5 units produced , 0 lost , 0 neutralized"
@@ -916,11 +925,11 @@ length 9999 208980
 @1060946 voice info "score press F5 to listen again"
 @1064146 voice menu "please make a selection"
 @1066446 sounds 14 2f00d33771647d1e
-@1066446 step 292 key ESCAPE
+@1066446 step 301 key ESCAPE
 @1066446 voice confirmation "go back to the previous menu"
 @1069256 voice menu "SoundRTS 1.3.8.1  , please make a selection"
 @1074356 sounds 1 003acbe095a0280e
-@1074356 step 293 key ESCAPE
+@1074356 step 302 key ESCAPE
 @1074356 voice confirmation "quit,"
 @1074866 sounds 1 d4449e08dbc1bfc3
 @1074866 end
