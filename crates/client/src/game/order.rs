@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{EntityId, World};
+use soundrts_world::{EntityId, KeywordOrder, World};
 
 use crate::style::Style;
 
@@ -151,12 +151,19 @@ impl OrderTypeView {
         })
     }
 
-    /// The order as the `order` command writes it.
-    pub fn encode(&self) -> String {
+    /// The order to give, without its target. An error if the menu paired
+    /// a keyword and a type wrongly.
+    pub fn order(&self) -> super::R<KeywordOrder> {
         match &self.type_name {
-            Some(t) => format!("{} {t}", self.keyword.as_str()),
-            None => self.keyword.as_str().to_owned(),
+            Some(t) => KeywordOrder::typed(self.keyword, t.clone()),
+            None => KeywordOrder::new(self.keyword),
         }
+        .ok_or_else(|| {
+            super::Oops::new(format!(
+                "not an order: {:?} {:?}",
+                self.keyword, self.type_name
+            ))
+        })
     }
 
     /// An ability with a long range: the target may be any square.

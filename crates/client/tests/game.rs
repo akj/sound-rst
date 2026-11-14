@@ -22,10 +22,10 @@ fn map_index(map: &str) -> usize {
 }
 
 fn peasant_orders(g: &soundrts::game::GameInterface) -> String {
-    let p = g.world.player(g.me);
+    let p = g.host.world_until_view().player(g.me);
     p.units
         .iter()
-        .filter_map(|&u| g.world.entity(u))
+        .filter_map(|&u| g.host.world_until_view().entity(u))
         .filter(|e| &*e.type_name == "peasant")
         .map(|e| {
             e.orders
@@ -97,12 +97,14 @@ fn a_training_game_on_jl1_through_the_menus() {
         Step::Key("build", Key::Return, N),
         Step::Probe("building", peasant_orders),
         Step::Probe("peasants", |g| {
-            g.world
+            g.host
+                .world_until_view()
                 .player(g.me)
                 .units
                 .iter()
                 .filter(|&&u| {
-                    g.world
+                    g.host
+                        .world_until_view()
                         .entity(u)
                         .is_some_and(|e| &*e.type_name == "peasant")
                 })

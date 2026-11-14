@@ -1,10 +1,10 @@
 //! A game on a server (`worldclient.Coordinator`): the commands the player
-//! writes go to the server as orders, and a turn runs only when the server
+//! gives go to the server as orders, and a turn runs only when the server
 //! has sent it, with every player's orders, so that every client runs the
 //! same game.
 
 use soundrts_protocol::{ClientMsg, SlotIndex};
-use soundrts_world::PlayerId;
+use soundrts_world::{Command, PlayerId, World};
 
 use super::GameInterface;
 use crate::client::Client;
@@ -21,6 +21,22 @@ pub struct NetDriver {
     /// The game so far: each turn run, with the orders queued for it and
     /// the digest told to the server.
     pub record: GameRecord,
+    /// The player's commands not yet sent to the server.
+    pub unsent: Vec<Command>,
+}
+
+impl NetDriver {
+    /// Keeps a command to send with the next orders. A command with no
+    /// text line (a cheat the host carries out itself) cannot be sent: a
+    /// game on a server allows no cheat.
+    pub(crate) fn queue(&mut self, cx: &Client, world: &World, command: Command) {
+        if command.line(world).is_some() {
+            self.unsent.push(command);
+        } else {
+            cx.log
+                .warning(format!("a game on a server cannot send {command:?}"));
+        }
+    }
 }
 
 impl GameInterface {
@@ -41,7 +57,7 @@ impl GameInterface {
             }
             return;
         }
-        crate::net::send_orders(cx, &mut self.pending_commands);
+        self.send_unsent(cx);
         let now = cx.clock.now();
         if self.waiting_for_world_update || now < self.next_update {
             return;
@@ -63,11 +79,11 @@ impl GameInterface {
                 continue;
             };
             // As the original: a player out of the game gets no order.
-            if !self.world.players.contains(&p) {
+            if !self.host.world_until_view().players.contains(&p) {
                 continue;
             }
             for order in so.orders.as_slice() {
-                self.world.queue_command(p, order.as_str());
+                self.host.queue_line(p, order.as_str());
                 queued.push(RecordedOrder {
                     slot: so.slot,
                     order: order.as_str().to_owned(),
@@ -76,7 +92,7 @@ impl GameInterface {
         }
         self.next_update = now + interval / (1 + backlog) as f64;
         self.run_turn(cx);
-        let digest = self.world.digest_u64();
+        let digest = self.host.world_until_view().digest_u64();
         if let Some(driver) = &mut self.net {
             driver.record.turns.push(RecordedTurn {
                 turn,
@@ -85,6 +101,20 @@ impl GameInterface {
             });
         }
         crate::net::send(cx, ClientMsg::TurnDone { turn, digest });
+    }
+
+    /// Sends the commands given since the last call as orders, as many as
+    /// the server takes for one turn; the others wait.
+    fn send_unsent(&mut self, cx: &mut Client) {
+        let Some(driver) = &mut self.net else {
+            return;
+        };
+        let world = self.host.world_until_view();
+        // Every command kept has a line: `NetDriver::queue` keeps no other.
+        let mut lines: Vec<String> = driver.unsent.iter().filter_map(|c| c.line(world)).collect();
+        let before = lines.len();
+        crate::net::send_orders(cx, &mut lines);
+        driver.unsent.drain(..before - lines.len());
     }
 
     /// Writes the record to the replays folder if the server has said the

@@ -1,13 +1,13 @@
 //! The game interface (`clientgame.py`): what the player hears of a game
 //! and what the keys do.
 //!
-//! The interface owns the [`World`]. Its loop asks the world for a turn
-//! when one is due (every 300 ms divided by the speed), after giving it
-//! the commands written since the last turn, then reads what happened as
-//! the original's server events: entity events, messages, and a `voila`
-//! with the perception, memory and observed squares at the end of the
-//! turn. One server event is handled per pass of the loop, after the key
-//! presses, as in the original.
+//! The interface owns the game's [`Host`] and gives it the player's
+//! commands. Its loop steps the host when a turn is due (every 300 ms
+//! divided by the speed), then reads what happened as the original's
+//! server events: entity events, messages, and a `voila` with the
+//! perception, memory and observed squares at the end of the turn. One
+//! server event is handled per pass of the loop, after the key presses,
+//! as in the original.
 //!
 //! The submodules follow the original's files and sections: [`entity`]
 //! (`clientgameentity.py`), [`focus`] (`clientgamefocus.py`), [`news`],
@@ -36,7 +36,7 @@ use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{Entity, EntityId, Place, PlayerId, SquareId, Voila, World};
+use soundrts_world::{Command, Entity, EntityId, Host, Place, PlayerId, SquareId, Voila};
 
 use crate::bindings::{Bindings, game_bindings_text};
 use crate::client::Client;
@@ -157,7 +157,8 @@ pub fn compute_title(style: &Style, type_name: &str) -> Msg {
 
 /// The interface of a running game.
 pub struct GameInterface {
-    pub world: World,
+    /// The game.
+    pub host: Host,
     /// The player this interface plays.
     pub me: PlayerId,
     /// The game speed: 1 is normal.
@@ -222,8 +223,6 @@ pub struct GameInterface {
     pub(crate) previous_animation: f64,
     pub(crate) bindings: Bindings<GameCommand>,
     pub(crate) srv_queue: VecDeque<SrvEvent>,
-    /// The commands written since the last turn.
-    pub(crate) pending_commands: Vec<String>,
     /// The order kinds of the menus, in menu order.
     pub(crate) orders_list: Vec<Keyword>,
     /// In a game on a server: what runs the turns the server sends.
@@ -235,12 +234,12 @@ pub struct GameInterface {
 }
 
 impl GameInterface {
-    /// The interface of `me` in `world`. Says nothing: queued messages are
-    /// dropped.
-    pub fn new(cx: &mut Client, world: World, me: PlayerId) -> Self {
+    /// The interface of `me` in the game of `host`. Says nothing: queued
+    /// messages are dropped.
+    pub fn new(cx: &mut Client, host: Host, me: PlayerId) -> Self {
         cx.voice.silent_flush();
         GameInterface {
-            world,
+            host,
             me,
             speed: cx.config.speed as f64,
             dobjets: IndexMap::new(),
@@ -290,7 +289,6 @@ impl GameInterface {
             previous_animation: 0.0,
             bindings: Bindings::new(),
             srv_queue: VecDeque::new(),
-            pending_commands: Vec::new(),
             orders_list: Vec::new(),
             net: None,
             chat_entry: None,
@@ -300,7 +298,7 @@ impl GameInterface {
 
     /// The square width in meters.
     pub fn square_width(&self) -> f64 {
-        self.world.square_width() as f64 / 1000.0
+        self.host.world_until_view().square_width() as f64 / 1000.0
     }
 
     /// The order kinds for the menus, from the current style.
@@ -316,16 +314,20 @@ impl GameInterface {
         self.bindings = b;
     }
 
-    /// Sends a command to the world at the next turn, for this player
-    /// (`server.write_line`).
-    pub fn write_line(&mut self, cx: &Client, s: &str) {
-        if self.world.players.contains(&self.me) {
-            self.pending_commands.push(s.to_owned());
-        } else {
+    /// Gives a command of the player to the game (`server.write_line`): to
+    /// the host, or in a game on a server, to the server with the next
+    /// orders sent. A player out of the game sends nothing.
+    pub fn send_command(&mut self, cx: &Client, command: Command) {
+        if !self.host.world_until_view().players.contains(&self.me) {
             cx.log.info(format!(
-                "didn't send the order for player {}: {s}",
+                "didn't send the order for player {}: {command:?}",
                 self.me.0
             ));
+            return;
+        }
+        match &mut self.net {
+            Some(driver) => driver.queue(cx, self.host.world_until_view(), command),
+            None => self.host.queue(self.me, command),
         }
     }
 
@@ -378,25 +380,22 @@ impl GameInterface {
         !self.waiting_for_world_update && cx.clock.now() >= self.next_update
     }
 
-    /// Gives the pending commands to the world, runs a turn, and queues
+    /// Runs a turn with the commands given since the last one, and queues
     /// what happened.
     fn ask_for_update(&mut self, cx: &mut Client) {
-        for c in std::mem::take(&mut self.pending_commands) {
-            self.world.queue_command(self.me, &c);
-        }
         self.next_update = cx.clock.now() + TURN / self.speed;
         self.run_turn(cx);
     }
 
-    /// Runs a turn of the world with the commands queued, and queues what
+    /// Runs a turn of the game with the commands queued, and queues what
     /// happened.
     pub(crate) fn run_turn(&mut self, cx: &mut Client) {
         self.waiting_for_world_update = true;
-        self.world.update();
-        for w in self.world.drain_warnings() {
+        let report = self.host.step(self.me);
+        for w in report.warnings {
             cx.log.warning(format!("world: {w}"));
         }
-        for e in self.world.drain_events(self.me) {
+        for e in report.events {
             self.srv_queue.push_back(match e {
                 Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
                 Event::VoiceImportant(m) => SrvEvent::VoiceImportant(m),
@@ -411,7 +410,7 @@ impl GameInterface {
     /// How far the game has got.
     pub fn progress(&self) -> GameProgress {
         GameProgress {
-            turn: self.world.turn(),
+            turn: self.host.world_until_view().turn(),
             events_waiting: !self.srv_queue.is_empty(),
             turns_handled: self.turns_handled,
         }
@@ -569,21 +568,34 @@ impl GameInterface {
 
     /// Whether the entity belongs to an enemy of the player.
     pub fn is_an_enemy(&self, e: &Entity) -> bool {
-        e.player
-            .is_some_and(|p| !self.world.player(self.me).allied.contains(&p))
+        e.player.is_some_and(|p| {
+            !self
+                .host
+                .world_until_view()
+                .player(self.me)
+                .allied
+                .contains(&p)
+        })
     }
 
     /// Whether `p` is the player or an ally.
     pub fn is_allied(&self, p: Option<PlayerId>) -> bool {
-        p.is_some_and(|p| self.world.player(self.me).allied.contains(&p))
+        p.is_some_and(|p| {
+            self.host
+                .world_until_view()
+                .player(self.me)
+                .allied
+                .contains(&p)
+        })
     }
 
     /// The title of a place: the square's, or the container's type title.
     pub fn place_title(&self, cx: &Client, place: Place) -> Msg {
         match place {
-            Place::Square(s) => self.world.square(s).title.clone(),
+            Place::Square(s) => self.host.world_until_view().square(s).title.clone(),
             Place::Inside(c) => self
-                .world
+                .host
+                .world_until_view()
                 .entity(c)
                 .map(|e| style_msg(cx.res.style(), &e.type_name, "title"))
                 .unwrap_or_default(),
@@ -594,13 +606,13 @@ impl GameInterface {
     pub fn outer_square(&self, place: Option<Place>) -> Option<SquareId> {
         match place? {
             Place::Square(s) => Some(s),
-            Place::Inside(c) => self.outer_square(self.world.entity(c)?.place),
+            Place::Inside(c) => self.outer_square(self.host.world_until_view().entity(c)?.place),
         }
     }
 
     /// Says the objective of the map, if any.
     pub fn say_objective(&self, cx: &mut Client) {
-        let objective = &self.world.map.objective;
+        let objective = &self.host.world_until_view().map.objective;
         if !objective.is_empty() {
             let mut m = msg(mp::OBJECTIVE);
             m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
@@ -613,9 +625,9 @@ impl GameInterface {
         !self.srv_queue.is_empty()
     }
 
-    /// The commands not yet given to the world.
-    pub fn pending_commands(&self) -> &[String] {
-        &self.pending_commands
+    /// In a game on a server, the commands not yet sent to the server.
+    pub fn pending_commands(&self) -> &[Command] {
+        self.net.as_ref().map_or(&[], |n| &n.unsent)
     }
 
     /// Stops every noise of the game.

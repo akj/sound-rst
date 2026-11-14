@@ -1,6 +1,7 @@
 //! The commands a key of `bindings.txt` can give during a game, read once
 //! when the bindings are loaded.
 
+use soundrts_world::Queue;
 use soundrts_world::nofloat::py_int;
 
 use crate::bindings::BindingError;
@@ -18,6 +19,14 @@ impl OrderFlags {
         OrderFlags {
             queue: args.iter().any(|a| a == "queue_order"),
             imperative: args.iter().any(|a| a == "imperative"),
+        }
+    }
+
+    pub fn queue(self) -> Queue {
+        if self.queue {
+            Queue::Append
+        } else {
+            Queue::Replace
         }
     }
 }

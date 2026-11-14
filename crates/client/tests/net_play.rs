@@ -17,6 +17,8 @@ use soundrts::mainmenu::main_menu;
 use soundrts::menu::py_repr;
 use soundrts::testkit::{Harness, Script, WAIT_LIMIT};
 use soundrts_protocol::{Digest, MapHash, Turn};
+use soundrts_world::orders::Keyword;
+use soundrts_world::{Command, KeywordOrder, Order, OrderTarget, Queue};
 
 /// Speech lasts a tenth of its usual time, as the clock is real.
 fn config(login: &str) -> Config {
@@ -257,59 +259,76 @@ fn two_players_play_a_game_in_step_and_leave_it() {
                     .collect();
                 for (slot, &p) in slots.iter().enumerate() {
                     for e in g
-                        .world
+                        .host
+                        .world_until_view()
                         .player(p)
                         .units
                         .iter()
-                        .filter_map(|&u| g.world.entity(u))
+                        .filter_map(|&u| g.host.world_until_view().entity(u))
                     {
                         if &*e.type_name == "peasant"
                             && let Some(sq) = e.square()
                         {
-                            r.squares.insert((slot, g.world.square(sq).name.clone()));
+                            r.squares
+                                .insert((slot, g.host.world_until_view().square(sq).name.clone()));
                         }
                     }
                 }
             }
-            let turn = g.world.turn();
+            let turn = g.host.world_until_view().turn();
             if done.get() == turn || !matches!(turn, 10 | 70) && quit_at.is_none_or(|q| turn != q) {
                 return;
             }
             done.set(turn);
             if quit_at == Some(turn) {
-                g.write_line(cx, "quit");
+                g.send_command(cx, Command::Quit);
                 return;
             }
             let me = g.me;
             let units: Vec<_> = g
-                .world
+                .host
+                .world_until_view()
                 .player(me)
                 .units
                 .iter()
-                .filter_map(|&u| g.world.entity(u))
+                .filter_map(|&u| g.host.world_until_view().entity(u))
                 .filter(|e| &*e.type_name == "peasant")
-                .map(|e| (e.id.0, e.square()))
+                .map(|e| (e.id, e.square()))
                 .collect();
             let Some((_, Some(home))) = units.first().copied() else {
                 return;
             };
             let target = if turn == 10 {
-                let sq = g.world.square(home);
+                let sq = g.host.world_until_view().square(home);
                 let Some(next) = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
-                    .find_map(|(dc, dr)| g.world.square_at(sq.col + dc, sq.row + dr))
+                    .find_map(|(dc, dr)| {
+                        g.host
+                            .world_until_view()
+                            .square_at(sq.col + dc, sq.row + dr)
+                    })
                 else {
                     return;
                 };
-                let name = g.world.square(next).name.clone();
-                record.borrow_mut().target = Some((you, name.clone()));
-                name
+                let name = g.host.world_until_view().square(next).name.clone();
+                record.borrow_mut().target = Some((you, name));
+                next
             } else {
-                g.world.square(home).name.clone()
+                home
             };
-            let ids: Vec<String> = units.iter().map(|(id, _)| id.to_string()).collect();
-            g.write_line(cx, &format!("control {}", ids.join(" ")));
-            g.write_line(cx, &format!("order 0 0 go {target}"));
+            let go = KeywordOrder::new(Keyword::Go).expect("go takes no type");
+            g.send_command(
+                cx,
+                Command::Control(units.iter().map(|&(id, _)| id).collect()),
+            );
+            g.send_command(
+                cx,
+                Command::Order {
+                    order: Order::Keyword(go.at(OrderTarget::Square(target))),
+                    queue: Queue::Replace,
+                    imperative: false,
+                },
+            );
         })
     }
 

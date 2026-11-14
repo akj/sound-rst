@@ -66,9 +66,11 @@ pub mod defs;
 
 mod ai;
 pub mod collision;
+pub mod command;
 pub mod entity;
 pub mod events;
 pub mod group;
+pub mod host;
 pub mod map;
 pub mod nofloat;
 pub mod orders;
@@ -77,6 +79,7 @@ pub mod player;
 mod playerlogic;
 pub mod pyrandom;
 pub mod rules;
+pub mod setup;
 pub mod square;
 mod squarelogic;
 pub mod triggers;
@@ -85,11 +88,14 @@ mod unit;
 mod upstream_tests;
 pub mod world;
 
+pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
 pub use entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 pub use events::{EntityEvent, Event, Reason, Voila};
+pub use host::{Host, TurnReport};
 pub use map::MapError;
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
+pub use setup::GameSetup;
 pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with

@@ -1,0 +1,173 @@
+//! The host of one game: it owns the world, takes the players' commands and
+//! steps the game a turn at a time.
+
+use crate::command::{Cheat, Command, OrderTarget};
+use crate::entity::{EntityId, PlayerId};
+use crate::events::Event;
+use crate::nofloat::PRECISION;
+use crate::orders::Keyword;
+use crate::player::ControllerKind;
+use crate::setup::GameSetup;
+use crate::world::{Abort, World};
+
+/// The host of one game. It owns the world: everything that changes the
+/// game goes through it, as a [`Command`] for a player, and the game moves
+/// on only when the host is stepped.
+///
+/// Order: the commands queued before a [`Host::step`] run at the start of
+/// that step, in the order they were queued, and before the turn itself.
+/// The exception is the cheats that change the game at once
+/// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
+/// [`Cheat::PlayAs`]): the host carries them out when they are queued,
+/// between steps, as the single-player console always has.
+///
+/// Nothing steps the host on its own: the game loop and the tests call
+/// [`Host::step`] when a turn is due.
+pub struct Host {
+    world: World,
+    seats: Vec<PlayerId>,
+    warnings: Vec<String>,
+}
+
+/// What a step gives back.
+#[derive(Debug)]
+pub struct TurnReport {
+    /// What the player perceived during the turn, in order. Only a local
+    /// human receives events.
+    pub events: Vec<Event>,
+    /// What went wrong in the game since the last step: a refused or
+    /// broken command, a map problem... For the log; a player does not
+    /// hear them.
+    pub warnings: Vec<String>,
+}
+
+impl Host {
+    /// Builds the game of a set-up. The error is the map's. The warnings
+    /// of building wait for [`Host::drain_warnings`] or the first step.
+    pub fn new(setup: &GameSetup) -> Result<Host, String> {
+        let (world, seats) = setup.build_world()?;
+        Ok(Host {
+            world,
+            seats,
+            warnings: Vec::new(),
+        })
+    }
+
+    /// The player of each controller of the set-up, in seat order.
+    pub fn seats(&self) -> &[PlayerId] {
+        &self.seats
+    }
+
+    /// Queues a command of `player` for the next step, or carries out at
+    /// once a cheat that changes the game between turns (see [`Host`]).
+    pub fn queue(&mut self, player: PlayerId, command: Command) {
+        if let Command::Cheat(cheat) = &command
+            && self.cheat_at_once(player, cheat)
+        {
+            return;
+        }
+        if let Some(line) = command.line(&self.world) {
+            self.world.queue_command(player, &line);
+        }
+    }
+
+    /// Queues a command of `player` received as text: the orders of a game
+    /// on a server, and those of a game record. Temporary: it goes when a
+    /// game on a server sends commands as values.
+    pub fn queue_line(&mut self, player: PlayerId, line: &str) {
+        self.world.queue_command(player, line);
+    }
+
+    /// Runs one turn: the commands queued, then 300 ms of game time.
+    /// Returns what `player` perceived and the warnings since the last step.
+    pub fn step(&mut self, player: PlayerId) -> TurnReport {
+        self.world.update();
+        TurnReport {
+            warnings: self.drain_warnings(),
+            events: self.world.drain_events(player),
+        }
+    }
+
+    /// The warnings since the last call or step.
+    pub fn drain_warnings(&mut self) -> Vec<String> {
+        let mut w = std::mem::take(&mut self.warnings);
+        w.extend(self.world.drain_warnings());
+        w
+    }
+
+    /// The keyword of the order `unit` would choose for `target` if it
+    /// received the default order now. The error is the world's.
+    pub fn default_order(
+        &mut self,
+        unit: EntityId,
+        target: OrderTarget,
+    ) -> Result<Option<Keyword>, Abort> {
+        let id = target.text(&self.world);
+        Ok(self
+            .world
+            .get_default_order(unit, &id)?
+            .and_then(Keyword::parse))
+    }
+
+    /// The world, to read. Temporary: the interface reads the game here
+    /// until it reads a view of what its player knows instead. Nothing may
+    /// change the world except through the host.
+    pub fn world_until_view(&self) -> &World {
+        &self.world
+    }
+
+    /// Carries out a cheat that changes the game at once, or refuses it if
+    /// the game allows no cheat. False for the other cheats, which wait for
+    /// the next step.
+    fn cheat_at_once(&mut self, player: PlayerId, cheat: &Cheat) -> bool {
+        if matches!(
+            cheat,
+            Cheat::ToggleMode | Cheat::Victory | Cheat::AddUnits { .. } | Cheat::Trigger(_)
+        ) {
+            return false;
+        }
+        if !self.world.allow_cheatmode {
+            self.warnings
+                .push(format!("cheat mode is not allowed: {cheat:?}"));
+            return true;
+        }
+        let w = &mut self.world;
+        match cheat {
+            Cheat::Resources => {
+                for r in &mut w.player_mut(player).resources {
+                    *r += 1000 * PRECISION;
+                }
+            }
+            Cheat::AllTechs => w.player_mut(player).cheat_has_all = true,
+            Cheat::InfiniteMana => {
+                for u in w.player(player).units.clone() {
+                    if let Some(e) = w.entity_mut(u) {
+                        e.stats.mana_regen *= 1000;
+                    }
+                }
+            }
+            &Cheat::PlayAs(other) => {
+                if !w.players.contains(&other) {
+                    self.warnings
+                        .push(format!("no player {} to play as", other.0));
+                    return true;
+                }
+                if other != player {
+                    let login = w.player(other).controller.login();
+                    w.player_mut(other).controller.kind =
+                        ControllerKind::Human { login, local: true };
+                    if let ControllerKind::Human { local, .. } =
+                        &mut w.player_mut(player).controller.kind
+                    {
+                        *local = false;
+                    }
+                }
+            }
+            Cheat::ToggleMode | Cheat::Victory | Cheat::AddUnits { .. } | Cheat::Trigger(_) => {}
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -9,8 +9,7 @@ use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::player::ControllerKind;
 use soundrts_world::{
-    AiScripts, Controller, DefaultTrigger, PlayerId, Rules, SIM_VERSION, World,
-    multiplayer_default_triggers,
+    Controller, DefaultTrigger, GameSetup, Host, SIM_VERSION, multiplayer_default_triggers,
 };
 
 use crate::client::Client;
@@ -202,21 +201,19 @@ impl Session {
     /// are said).
     pub fn start(&mut self, cx: &mut Client) -> Option<GameInterface> {
         cx.res.set_map(Some(&self.map));
-        let rules = cx.res.rules_text();
-        let ai = cx.res.ai_text();
-        let built = build_world(WorldInputs {
-            rules: &rules,
-            ai: &ai,
-            default_triggers: self.kind.default_triggers(),
+        let setup = GameSetup {
+            rules: cx.res.rules_text(),
+            ai: cx.res.ai_text(),
+            map: self.map.definition.clone(),
             seed: self.seed,
+            controllers: self.players.clone(),
+            default_triggers: self.kind.default_triggers(),
             allow_cheatmode: self.allow_cheatmode,
-            map_definition: &self.map.definition,
-            controllers: &self.players,
             random_starts: true,
             equivalents: self.kind.equivalents(),
-        });
-        let (mut world, players) = match built {
-            Ok(built) => built,
+        };
+        let mut host = match Host::new(&setup) {
+            Ok(host) => host,
             Err(e) => {
                 let e = format!("map error: {e}");
                 cx.log.warning(&e);
@@ -225,27 +222,30 @@ impl Session {
                 return None;
             }
         };
-        for w in world.drain_warnings() {
+        for w in host.drain_warnings() {
             cx.log.warning(format!("world: {w}"));
         }
         let local = self.net.as_ref().map_or(0, |n| n.you);
-        let mut game = GameInterface::new(cx, world, players[local]);
+        let me = host.seats()[local];
+        let slots = host.seats().to_vec();
+        let mut game = GameInterface::new(cx, host, me);
         if let Some(n) = &self.net {
             game.speed = n.speed.factor();
-            let setup = Setup {
+            let record = Setup {
                 sim_version: SIM_VERSION,
-                rules,
-                ai,
-                map: self.map.definition.clone(),
+                rules: setup.rules,
+                ai: setup.ai,
+                map: setup.map,
                 seed: self.seed,
                 players: self.players.iter().map(RecordedPlayer::of).collect(),
                 you: n.you,
             };
             game.net = Some(NetDriver {
                 you: n.you,
-                slots: players[..self.players.len()].to_vec(),
+                slots,
                 interval: n.speed.turn_interval().as_secs_f64(),
-                record: GameRecord::new(setup),
+                record: GameRecord::new(record),
+                unsent: Vec::new(),
             });
             if let Some(net) = &mut cx.net {
                 net.game = Some(GameLink::new(n.you));
@@ -267,7 +267,14 @@ impl Session {
             countdown(cx);
         }
         if self.kind == SessionKind::Mission {
-            let intro: Vec<String> = game.world.map.intro.iter().map(i64::to_string).collect();
+            let intro: Vec<String> = game
+                .host
+                .world_until_view()
+                .map
+                .intro
+                .iter()
+                .map(i64::to_string)
+                .collect();
             if !intro.is_empty() {
                 cx.play_sequence(&intro);
             }
@@ -276,50 +283,13 @@ impl Session {
 
     /// Says the score and waits until it is said (a key skips ahead).
     pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
-        for m in score_msgs(&game.world, game.me, cx.res.style()) {
+        for m in score_msgs(game.host.world_until_view(), game.me, cx.res.style()) {
             cx.voice.info(&m);
         }
         cx.voice.flush(true);
         game.stop_noises(cx);
-        self.has_victory = game.world.player(game.me).has_victory;
+        self.has_victory = game.host.world_until_view().player(game.me).has_victory;
     }
-}
-
-/// What a world is built from. A game and the replay of its record build
-/// their world from these with [`build_world`], so that both build the
-/// same world.
-pub struct WorldInputs<'a> {
-    /// Every `rules.txt` of the layers, joined.
-    pub rules: &'a str,
-    /// Every `ai.txt` of the layers, joined.
-    pub ai: &'a str,
-    pub default_triggers: Vec<DefaultTrigger>,
-    pub seed: i64,
-    pub allow_cheatmode: bool,
-    pub map_definition: &'a str,
-    /// The players, in slot order.
-    pub controllers: &'a [Controller],
-    /// The players start at random starting places.
-    pub random_starts: bool,
-    /// The factions replace the start units with their own.
-    pub equivalents: bool,
-}
-
-/// Builds a world and its map, and creates the players. Returns the world
-/// and its players, those of the controllers first, in order; the error
-/// is the map's.
-pub fn build_world(inputs: WorldInputs) -> Result<(World, Vec<PlayerId>), String> {
-    let rules = Rules::load(&[inputs.rules]);
-    let ai = AiScripts::load(&[inputs.ai]);
-    let mut world = World::new(rules, ai, inputs.default_triggers, inputs.seed);
-    world.allow_cheatmode = inputs.allow_cheatmode;
-    world
-        .load_and_build_map(inputs.map_definition)
-        .map_err(|e| e.0)?;
-    let players = world
-        .populate_map(inputs.controllers, inputs.random_starts, inputs.equivalents)
-        .map_err(|e| e.0)?;
-    Ok((world, players))
 }
 
 /// "The game will start in 5 seconds", then the seconds, as the original
