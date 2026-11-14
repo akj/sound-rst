@@ -24,8 +24,8 @@ if (-not (Test-Path (Join-Path $Target '.git'))) {
 }
 
 # The files must be the same bytes on every machine, whatever Git's line-end
-# setting is there: tests compare against hashes of what the original computes
-# from them.
+# setting is there: tests compare against recorded hashes of what the game
+# computes from them.
 Invoke-Git -C $Target config core.autocrlf false
 
 $head = git -C $Target rev-parse --verify --quiet HEAD

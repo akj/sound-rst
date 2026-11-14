@@ -113,12 +113,25 @@ cargo fmt --check
 
 The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs` also run real servers, on 127.0.0.1 only, and their clients on real time. No test asks a router to forward a port.
 
-Two sets of tests compare the port with the original Python game:
+Two sets of tests check the port against recordings:
 
-- `crates/world/tests/parity` compares the simulation. The original and the port play the same scripted games from the same seed, and the state of every player and unit must match after every turn. [The simulation parity README](crates/world/tests/parity/README.md) explains how to regenerate the reference.
-- `crates/client/tests/parity` compares the interface. A driver runs the original client without a screen reader, a sound device, or a window, presses scripted keys, and records what the client says and plays. The port replays the same scripts and must produce the same transcript. [The interface parity README](crates/client/tests/parity/README.md) defines the model.
+- `crates/world/tests/traces` checks the simulation. The port plays scripted games from a fixed seed, and the state of every player and unit after every turn must match the recorded hash. [The traces README](crates/world/tests/traces/README.md) explains the cases.
+- `crates/client/tests/transcripts` checks the interface. The client runs on scripted keys, and what it says and plays must match the recorded transcript. [The transcripts README](crates/client/tests/transcripts/README.md) describes the model.
 
-These tests show that the port sends the same text to the speech device as the original. They cannot show what a screen reader does with that text. Test that part by ear.
+The recordings were made from the original Python game. Up to the Git tag `last-python-parity`, the port matched them byte for byte. Since then they are the port's own. A change that alters them shows as a diff of the `expected/` folders. Review that diff.
+
+To record again after an intended change, run the tests with `UPDATE_EXPECTED=1`. The tests write what the port produces to `expected/` and pass. In PowerShell:
+
+```powershell
+$env:UPDATE_EXPECTED = '1'
+cargo test -p soundrts-world --test traces
+cargo test -p soundrts --test transcripts
+Remove-Item Env:UPDATE_EXPECTED
+```
+
+A change to the traces also needs a new simulation version. The traces README explains how.
+
+These tests show what text the port sends to the speech device. They cannot show what a screen reader does with that text. Test that part by ear.
 
 ## Layout
 
