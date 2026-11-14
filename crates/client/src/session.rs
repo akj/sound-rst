@@ -245,7 +245,6 @@ impl Session {
                 slots,
                 interval: n.speed.turn_interval().as_secs_f64(),
                 record: GameRecord::new(record),
-                unsent: Vec::new(),
             });
             if let Some(net) = &mut cx.net {
                 net.game = Some(GameLink::new(n.you));

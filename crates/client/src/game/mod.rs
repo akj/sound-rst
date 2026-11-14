@@ -223,6 +223,9 @@ pub struct GameInterface {
     pub(crate) previous_animation: f64,
     pub(crate) bindings: Bindings<GameCommand>,
     pub(crate) srv_queue: VecDeque<SrvEvent>,
+    /// The commands given since the last turn, or in a game on a server,
+    /// not yet sent.
+    pub(crate) pending_commands: Vec<Command>,
     /// The order kinds of the menus, in menu order.
     pub(crate) orders_list: Vec<Keyword>,
     /// In a game on a server: what runs the turns the server sends.
@@ -289,6 +292,7 @@ impl GameInterface {
             previous_animation: 0.0,
             bindings: Bindings::new(),
             srv_queue: VecDeque::new(),
+            pending_commands: Vec::new(),
             orders_list: Vec::new(),
             net: None,
             chat_entry: None,
@@ -314,20 +318,23 @@ impl GameInterface {
         self.bindings = b;
     }
 
-    /// Gives a command of the player to the game (`server.write_line`): to
-    /// the host, or in a game on a server, to the server with the next
-    /// orders sent. A player out of the game sends nothing.
+    /// Gives a command of the player to the game at the next turn
+    /// (`server.write_line`); in a game on a server, it goes to the server
+    /// with the next orders sent. A player out of the game sends nothing,
+    /// and a game on a server takes no command without a text line (a
+    /// cheat the host carries out itself).
     pub fn send_command(&mut self, cx: &Client, command: Command) {
-        if !self.host.world_until_view().players.contains(&self.me) {
+        let world = self.host.world_until_view();
+        if !world.players.contains(&self.me) {
             cx.log.info(format!(
                 "didn't send the order for player {}: {command:?}",
                 self.me.0
             ));
-            return;
-        }
-        match &mut self.net {
-            Some(driver) => driver.queue(cx, self.host.world_until_view(), command),
-            None => self.host.queue(self.me, command),
+        } else if self.net.is_some() && command.line(world).is_none() {
+            cx.log
+                .warning(format!("a game on a server cannot send {command:?}"));
+        } else {
+            self.pending_commands.push(command);
         }
     }
 
@@ -380,9 +387,12 @@ impl GameInterface {
         !self.waiting_for_world_update && cx.clock.now() >= self.next_update
     }
 
-    /// Runs a turn with the commands given since the last one, and queues
-    /// what happened.
+    /// Gives the pending commands to the host as the player's, runs a
+    /// turn, and queues what happened.
     fn ask_for_update(&mut self, cx: &mut Client) {
+        for c in std::mem::take(&mut self.pending_commands) {
+            self.host.queue(self.me, c);
+        }
         self.next_update = cx.clock.now() + TURN / self.speed;
         self.run_turn(cx);
     }
@@ -625,9 +635,10 @@ impl GameInterface {
         !self.srv_queue.is_empty()
     }
 
-    /// In a game on a server, the commands not yet sent to the server.
+    /// The commands not yet given to the host, or in a game on a server,
+    /// not yet sent to the server.
     pub fn pending_commands(&self) -> &[Command] {
-        self.net.as_ref().map_or(&[], |n| &n.unsent)
+        &self.pending_commands
     }
 
     /// Stops every noise of the game.

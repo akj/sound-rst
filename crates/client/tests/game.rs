@@ -6,7 +6,7 @@
 mod common;
 
 use common::{N, ScriptedPlayer, Step, install};
-use soundrts::input::Key;
+use soundrts::input::{Key, Mods};
 use soundrts::mainmenu::main_menu;
 use soundrts::testkit::{Harness, LiveKeys, Script};
 
@@ -255,4 +255,31 @@ fn a_training_game_on_jl1_through_the_menus() {
         ]
     );
     assert_eq!(h.log_text(), "", "nothing logged");
+}
+
+#[test]
+fn a_command_given_before_changing_player_is_the_new_players() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = h.start_training("jl1", &["easy"], 1);
+    h.run_until_turn(&mut g, 2);
+    // Paused, so that no turn runs until the end.
+    g.game.execute_command(&mut h.client, "p").unwrap();
+    h.run_for(&mut g, 1.0);
+    let turn = g.game.host.world_until_view().turn();
+    let me = g.game.me;
+    g.game.execute_command(&mut h.client, "v").unwrap();
+    let ctrl_shift = Mods {
+        ctrl: true,
+        alt: false,
+        shift: true,
+    };
+    h.key(&mut g, Key::F4, ctrl_shift);
+    let other = g.game.me;
+    assert_ne!(other, me);
+    assert_eq!(g.game.host.world_until_view().turn(), turn);
+    g.game.execute_command(&mut h.client, "p").unwrap();
+    h.run_until_turn(&mut g, turn + 1);
+    let world = g.game.host.world_until_view();
+    assert!(world.player(other).has_victory);
+    assert!(!world.player(me).has_victory);
 }
