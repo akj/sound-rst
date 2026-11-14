@@ -92,6 +92,21 @@ The options menu's Sound and speech items, or the `[news]` section of `SoundRTS.
 
 The original game's `verbosity` setting is read once: a category it names is spoken, and production, economy or scouting it leaves out plays only its sound. The game then rewrites the file with a `[news]` section.
 
+### Questions
+
+These keys answer what a sighted player sees at the edge of the screen. Each answer is one sentence, from what you know: nothing you have not seen is counted.
+
+| Key | Says |
+| --- | --- |
+| B | What your buildings train, research or upgrade to, soonest done first, with the seconds left and where. Production that waits for food comes last. |
+| N | How many of your workers are idle, how many gather each resource, and how many build. |
+| V | With more than one unit controlled: the hit points of the group against its most, how many units are below half their hit points, and how many of each type. With one unit, as before. |
+| M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
+| Shift+X | Every resource, also those that a map adds. |
+| F12 | The other players: each an ally or an enemy, and whether defeated. F11 still says the names only. |
+
+The score is said only at the end of the game: during the game it would tell you about enemy units you have not seen, for example how many units a transport that you destroyed carried.
+
 ### Speech that ends when NVDA says so
 
 Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character at first, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off. To fit the estimate to your speech rate with any screen reader, JAWS included, measure it with the Speech rate item of Sound and speech in the options menu.

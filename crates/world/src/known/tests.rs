@@ -112,6 +112,7 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
             type_name: None,
             is_deferred: false,
             is_imperative: false,
+            time_left: None,
             target: Some(KnownTarget::Entity(farm)),
             patrol: None,
         }

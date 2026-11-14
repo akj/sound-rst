@@ -1,18 +1,19 @@
 //! Choosing what to act on and acting: the target, the units controlled,
 //! the order, and sending the order to the game.
 
-use soundrts_world::msg::{Msg, MsgPart, msg};
+use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
 use soundrts_world::{Command, EntityId, Order, OrderTarget};
 
 use crate::audio::stereo;
 use crate::client::Client;
+use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 
 use super::command::{OrderFlags, OrderMenu, UnitFilter};
 use super::entity::EntityView;
-use super::order::OrderTypeView;
+use super::order::{OrderTypeView, PRECISION};
 use super::squares::{remove_duplicates, summary};
 use super::{BEEP_SOUND, GameInterface, Oops, R};
 
@@ -35,7 +36,7 @@ pub enum TypeFilter {
 }
 
 impl TypeFilter {
-    fn accepts(&self, type_name: &str) -> bool {
+    pub(super) fn accepts(&self, type_name: &str) -> bool {
         match self {
             TypeFilter::Any => true,
             TypeFilter::These(t) => t.iter().any(|x| x == type_name),
@@ -217,7 +218,7 @@ impl GameInterface {
     }
 
     /// The types named by `keyboard` in style, from the keys' names.
-    fn arrange(&self, cx: &Client, filter: &UnitFilter) -> TypeFilter {
+    pub(super) fn arrange(&self, cx: &Client, filter: &UnitFilter) -> TypeFilter {
         if filter.keyboard_types.is_empty() {
             return TypeFilter::Any;
         }
@@ -436,12 +437,40 @@ impl GameInterface {
         Ok(())
     }
 
+    /// The health of the one unit controlled, or of the group as a whole:
+    /// "35 hit points on 50 , 1 badly hurt , 2 footman and 1 archer". A
+    /// unit is badly hurt below half its hit points.
     pub(crate) fn cmd_unit_hp_status(&self, cx: &mut Client) {
         if self.group.len() == 1
             && let Some(v) = self.dobjets.get(&self.group[0])
         {
             let d = self.description(cx, v);
             cx.voice.item(&d);
+        } else if self.group.len() > 1 {
+            let (mut hp, mut hp_max, mut hurt) = (0, 0, 0);
+            let mut titles = Vec::new();
+            for v in self.group.iter().filter_map(|u| self.dobjets.get(u)) {
+                hp += v.model.hp;
+                hp_max += v.model.hp_max;
+                if v.model.hp * 2 < v.model.hp_max {
+                    hurt += 1;
+                }
+                titles.push(self.short_title(cx, v));
+            }
+            let mut m = [
+                nb2msg(hp / PRECISION),
+                msg(mp::HITPOINTS_ON),
+                nb2msg(hp_max / PRECISION),
+            ]
+            .concat();
+            if hurt > 0 {
+                m.extend(msg(mp::COMMA));
+                m.extend(nb2msg(hurt));
+                m.extend(text(words::BADLY_HURT));
+            }
+            m.extend(msg(mp::COMMA));
+            m.extend(summary(&titles, false));
+            cx.voice.item(&m);
         }
     }
 

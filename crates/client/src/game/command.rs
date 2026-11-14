@@ -76,8 +76,16 @@ pub enum OrderMenu {
 #[derive(Clone, Debug, PartialEq)]
 pub enum GameCommand {
     ResourceStatus(i64),
+    /// Every resource the rules define.
+    AllResourcesStatus,
     FoodStatus,
     UnitHpStatus,
+    /// What the player's units produce, soonest done first.
+    ProductionStatus,
+    /// What the workers do: idle, gathering each resource, building.
+    WorkersStatus,
+    /// The strength of each side on the selected square.
+    FightStatus,
     Examine,
     UnitStatus,
     SelectSquare {
@@ -149,6 +157,8 @@ pub enum GameCommand {
     Objectives,
     GameMenu,
     SayPlayers,
+    /// The other players: ally or enemy, and defeated.
+    PlayersStatus,
     Say,
     SayAllies,
     ChatPrevious,
@@ -172,8 +182,12 @@ pub enum GameCommand {
 /// Every command name the interface knows.
 pub const COMMAND_NAMES: &[&str] = &[
     "resource_status",
+    "all_resources_status",
     "food_status",
     "unit_hp_status",
+    "production_status",
+    "workers_status",
+    "fight_status",
     "examine",
     "unit_status",
     "select_square",
@@ -215,6 +229,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "objectives",
     "gamemenu",
     "say_players",
+    "players_status",
     "say",
     "say_allies",
     "chat_previous",
@@ -271,8 +286,12 @@ impl GameCommand {
         let rest = || args.get(1..).unwrap_or_default();
         Ok(match name {
             "resource_status" => one_int(C::ResourceStatus)?,
+            "all_resources_status" => none(C::AllResourcesStatus)?,
             "food_status" => none(C::FoodStatus)?,
             "unit_hp_status" => none(C::UnitHpStatus)?,
+            "production_status" => none(C::ProductionStatus)?,
+            "workers_status" => none(C::WorkersStatus)?,
+            "fight_status" => none(C::FightStatus)?,
             "examine" => none(C::Examine)?,
             "unit_status" => none(C::UnitStatus)?,
             "select_square" => {
@@ -370,6 +389,7 @@ impl GameCommand {
             "objectives" => none(C::Objectives)?,
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
+            "players_status" => none(C::PlayersStatus)?,
             "say" => none(C::Say)?,
             "say_allies" => none(C::SayAllies)?,
             "chat_previous" => none(C::ChatPrevious)?,

@@ -21,6 +21,12 @@ pub const JOIN: &[u64] = &[4019];
 pub const SERVER_COULD_NOT_START: &[u64] = &[4080];
 /// "Downloading..."
 pub const DOWNLOADING: &[u64] = &[4328];
+/// "on", as in "2 on gold"
+pub const ON2: &[u64] = &[119];
+/// "against"
+pub const AGAINST: &[u64] = &[121];
+/// "building", what a worker is busy with
+pub const BUILDING: &[u64] = &[128];
 
 // Phrases the original never recorded.
 
@@ -52,6 +58,11 @@ pub const MAP_REFUSED: &str = "the map of this game is too large once unpacked";
 pub const GAME_CANNOT_START: &str = "this game cannot start here";
 pub const NO_PORT_FORWARDING: &str =
     "the router did not open the port: only the players of your local network can join";
+pub const IDLE: &str = "idle";
+pub const BADLY_HURT: &str = "badly hurt";
+pub const STRONGER: &str = "stronger";
+pub const EVEN: &str = "evenly matched";
+pub const WEAKER: &str = "weaker";
 
 // The sound and speech settings of the options menu.
 

@@ -338,6 +338,16 @@ impl<'a> View<'a> {
         self.world.player(p).allied.contains(&q)
     }
 
+    /// The players defeated, in id order: those who still watch the game
+    /// and those who left it. Every player is told when one is.
+    pub fn defeated(&self) -> Vec<PlayerId> {
+        self.world
+            .all_players()
+            .filter(|(_, p)| p.has_been_defeated)
+            .map(|(id, _)| id)
+            .collect()
+    }
+
     // 4. Entities the player perceives or remembers.
 
     /// The entity as it is now, if the player perceives it.

@@ -263,6 +263,12 @@ impl SeatView {
         &self.turn.state.players
     }
 
+    /// The players defeated, in id order: those who still watch the game
+    /// and those who left it.
+    pub fn defeated(&self) -> &[PlayerId] {
+        &self.turn.state.defeated
+    }
+
     /// The player's name as it is said.
     pub fn player_name(&self, p: PlayerId) -> Msg {
         self.start

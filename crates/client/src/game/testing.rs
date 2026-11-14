@@ -5,6 +5,7 @@ use soundrts_world::msg::Msg;
 use soundrts_world::{EntityId, PlayerId, SquareId};
 
 use super::GameInterface;
+use crate::session::Session;
 use crate::testkit::{Harness, Script, TestGame};
 
 /// A training game on jl1 against a quiet computer, after three turns.
@@ -16,6 +17,36 @@ pub(crate) fn training() -> (Harness, TestGame) {
 pub(crate) fn training_on(map: &str) -> (Harness, TestGame) {
     let mut h = Harness::new("en", Script::new().keep_open());
     let mut g = h.start_training(map, &["quiet"], 1);
+    h.run_until_turn(&mut g, 3);
+    (h, g)
+}
+
+/// A training game on `map` against computers of these types, in these
+/// alliances (the player's first), after three turns.
+pub(crate) fn training_allied(
+    map: &str,
+    computers: &[&str],
+    alliances: &[&str],
+) -> (Harness, TestGame) {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    h.client.game.seed = Some(1);
+    let m = h
+        .client
+        .res
+        .multiplayer_maps()
+        .into_iter()
+        .find(|m| m.name == map)
+        .expect("a multiplayer map");
+    h.client.res.set_map(Some(&m));
+    let mut players = vec![h.client.config.login.as_str().to_owned()];
+    players.extend(computers.iter().map(|c| (*c).to_owned()));
+    let factions = vec!["random_faction".to_owned(); players.len()];
+    let alliances: Vec<String> = alliances.iter().map(|a| (*a).to_owned()).collect();
+    let mut session = Session::training(&h.client, m, &players, &factions, &alliances);
+    let mut game = session.start(&mut h.client).expect("a valid map");
+    h.client.input.clear();
+    game.next_update = h.client.clock.now();
+    let mut g = TestGame { session, game };
     h.run_until_turn(&mut g, 3);
     (h, g)
 }

@@ -15,8 +15,8 @@
 //! (`clientgameentity.py`), [`focus`] (`clientgamefocus.py`), [`news`],
 //! [`order`] (`clientgameorder.py`), [`animation`], [`stats`]
 //! (`worldplayerstats.score_msgs`), [`command`] (the bindings' commands),
-//! and the interface's own parts: [`squares`], [`selection`], [`alerts`]
-//! and [`misc`].
+//! and the interface's own parts: [`squares`], [`selection`], [`alerts`],
+//! [`questions`] and [`misc`].
 
 pub mod alerts;
 pub mod animation;
@@ -27,6 +27,7 @@ pub mod lockstep;
 pub mod misc;
 pub mod news;
 pub mod order;
+pub mod questions;
 pub mod selection;
 pub mod squares;
 pub mod stats;

@@ -455,3 +455,42 @@ fn the_squares_glimpsed_from_the_next_square_are_known_each_turn() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_production_tells_its_time_left_to_the_player_who_controls_it() {
+    let (mut w, me, them) = game();
+    for p in [me, them] {
+        let townhall = unit(&w, p, "townhall");
+        command(
+            &mut w,
+            p,
+            &[
+                format!("control {}", townhall.0),
+                "order 0 0 train peasant".into(),
+            ],
+        );
+    }
+    for _ in 0..10 {
+        w.update();
+    }
+    let start = GameStart::of(&w);
+    let v = View::new(&w, &start, me);
+    let first = |id| {
+        let own = v.known(id).and_then(|e| e.own)?;
+        own.orders.first().map(|o| o.time_left)
+    };
+    // A peasant takes 10 seconds: 11 turns of 300 milliseconds have gone.
+    assert_eq!(first(unit(&w, me, "townhall")), Some(Some(6700)));
+    assert_eq!(first(unit(&w, them, "townhall")), None);
+}
+
+#[test]
+fn a_defeated_player_is_known_to_every_player() {
+    let (mut w, me, them) = game();
+    let start = GameStart::of(&w);
+    assert!(View::new(&w, &start, me).defeated().is_empty());
+    w.defeat(them, true);
+    let v = View::new(&w, &start, me);
+    assert_eq!(v.defeated(), [them]);
+    assert_eq!(v.players(), [me]);
+}

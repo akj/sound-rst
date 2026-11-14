@@ -39,14 +39,18 @@ pub const MAX_BINDING_LINE_BYTES: usize = 4096;
 pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
-/// chat to the allies, and the news log: what did I miss, a category's
-/// messages and changing the category, the last alerts' squares. Each news
-/// key is one the original leaves free and that neither Windows nor a
-/// screen reader takes, and needs no modifier: a modifier pressed alone
-/// is a command of its own.
+/// chat to the allies, the news log (what did I miss, a category's
+/// messages and changing the category, the last alerts' squares), and the
+/// questions: what is in production, the workers and the fight here
+/// beside the original's status keys Z to V, every resource on Shift X,
+/// and the other players beside F11. Each key is one the original leaves
+/// free and that neither Windows nor a screen reader takes. Shift Z is
+/// left to maps, which bind it to a third resource.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
-    DELETE: jump_to_alert\n";
+    DELETE: jump_to_alert\n\
+    b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
+    F12: players_status\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
 /// resource layers (translations included) but a map that came from a
@@ -372,6 +376,30 @@ mod tests {
             b.get(&chord("CTRL SHIFT F4")),
             Some(&command("change_player", ""))
         );
+    }
+
+    #[test]
+    fn the_clients_keys_are_free_in_the_original_and_name_its_commands() {
+        let text = std::fs::read_to_string(upstream_root().join("res/ui/bindings.txt")).unwrap();
+        let log = Log::silent();
+        let mut upstream = Bindings::new();
+        upstream.load(&text, &any, &log);
+        let mut client = Bindings::new();
+        client.load(
+            CLIENT_BINDINGS,
+            &crate::game::command::GameCommand::parse,
+            &log,
+        );
+        assert_eq!(client.len(), CLIENT_BINDINGS.lines().count());
+        for (c, command) in client.iter() {
+            assert_eq!(upstream.get(c), None, "{c:?} is the original's");
+            assert!(
+                !matches!(command, crate::game::command::GameCommand::Broken { .. }),
+                "{command:?}"
+            );
+        }
+        // Maps bind Shift Z to a third resource.
+        assert_eq!(client.get(&chord("SHIFT z")), None);
     }
 
     #[test]

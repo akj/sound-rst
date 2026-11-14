@@ -44,11 +44,15 @@ impl GameInterface {
         use GameCommand as C;
         match c {
             C::ResourceStatus(r) => self.cmd_resource_status(cx, *r),
+            C::AllResourcesStatus => self.cmd_all_resources_status(cx),
             C::FoodStatus => {
                 let m = self.food_msg(cx);
                 cx.voice.item(&m);
             }
             C::UnitHpStatus => self.cmd_unit_hp_status(cx),
+            C::ProductionStatus => self.cmd_production_status(cx)?,
+            C::WorkersStatus => self.cmd_workers_status(cx),
+            C::FightStatus => self.cmd_fight_status(cx),
             C::Examine => self.cmd_examine(cx)?,
             C::UnitStatus => self.cmd_unit_status(cx)?,
             C::SelectSquare {
@@ -105,6 +109,7 @@ impl GameInterface {
                 }
                 cx.voice.item(&m);
             }
+            C::PlayersStatus => self.cmd_players_status(cx),
             C::Say => self.cmd_say(cx, Channel::Game),
             C::SayAllies => self.cmd_say(cx, Channel::Allies),
             C::ChatPrevious => crate::net::chat_previous(cx),
