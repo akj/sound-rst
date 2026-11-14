@@ -1903,6 +1903,23 @@ starting_resources 100 100
         assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
     }
 
+    #[test]
+    fn two_points_of_a_square_are_different_targets() {
+        let w = world_text(TWO_SQUARES);
+        let a1 = sq(&w, "a1");
+        let zoom = |x, y| {
+            Target::Zoom(crate::entity::ZoomTarget {
+                place: a1,
+                x,
+                y,
+                id: None,
+            })
+        };
+        assert!(zoom(2000, 2000).same(&zoom(2000, 2000)));
+        assert!(!zoom(2000, 2000).same(&zoom(6000, 2000)));
+        assert!(!zoom(2000, 2000).same(&zoom(2000, 6000)));
+    }
+
     /// The events of the entities the player perceives, since the last call.
     fn evs(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
         w.drain_events(p)

@@ -96,16 +96,14 @@ pub enum Target {
 }
 
 impl Target {
-    /// Identity, as `is` in the original: the same square, entity or
-    /// remembrance. Two subsquare targets are always equal, because the
-    /// original's `ZoomTarget.__eq__` returns a non-empty tuple.
+    /// Identity: the same square, entity, remembrance or point.
     pub fn same(&self, other: &Target) -> bool {
         match (self, other) {
             (Target::Square(a), Target::Square(b)) => a == b,
             (Target::Entity(a), Target::Entity(b)) => a == b,
             (Target::Memory(a), Target::Memory(b)) => Arc::ptr_eq(&a.snapshot, &b.snapshot),
             (Target::Xy(a, b), Target::Xy(c, d)) => a == c && b == d,
-            (Target::Zoom(_), Target::Zoom(_)) => true,
+            (Target::Zoom(a), Target::Zoom(b)) => (a.x, a.y) == (b.x, b.y),
             _ => false,
         }
     }
