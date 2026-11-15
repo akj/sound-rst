@@ -33,8 +33,6 @@ const COMMITTED: &[(&str, Counts)] = &[
     // file                   trig inv uncl unwrap expect index
     ("ai.rs",                 [  0,  0, 25,  0,  0, 14]),
     ("ai/door.rs",            [  0,  0,  3,  0,  2,  0]),
-    ("ai/fairness.rs",        [  0,  0,  0, 26,  0,  8]),
-    ("ai/order_sites.rs",     [  0,  0,  0, 27,  0, 17]),
     ("map.rs",                [  0,  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  0,  3]),
     ("orders.rs",             [  0, 20,  0,  0, 14,  3]),
@@ -85,13 +83,47 @@ fn source_files() -> Vec<(String, PathBuf)> {
                 .join("/");
             (name, p)
         })
-        .filter(|(name, _)| {
-            !matches!(
-                name.rsplit('/').next(),
-                Some("tests.rs" | "upstream_tests.rs")
-            )
-        })
         .collect();
+    // A module its parent declares only for the tests, such as
+    // `#[cfg(test)] mod fairness;` in `ai.rs`, is a test.
+    let mut tests: Vec<String> = Vec::new();
+    for (name, path) in &files {
+        let text = std::fs::read_to_string(path).unwrap();
+        let dir = match name.strip_suffix(".rs") {
+            Some("lib") => String::new(),
+            Some(stem) => format!("{}/", stem.strip_suffix("/mod").unwrap_or(stem)),
+            None => continue,
+        };
+        let mut rest = text.as_str();
+        while let Some(i) = rest.find("#[cfg(test)]") {
+            rest = rest[i + "#[cfg(test)]".len()..].trim_start();
+            // Other attributes may come between.
+            while rest.starts_with("#[") {
+                let mut depth = 0;
+                let end = rest[1..].find(|c| {
+                    match c {
+                        '[' => depth += 1,
+                        ']' => depth -= 1,
+                        _ => {}
+                    }
+                    depth == 0
+                });
+                rest = end.map_or("", |e| rest[e + 2..].trim_start());
+            }
+            let item = ["pub(crate) ", "pub(super) ", "pub "]
+                .iter()
+                .find_map(|v| rest.strip_prefix(v))
+                .unwrap_or(rest);
+            if let Some(m) = item.strip_prefix("mod ")
+                && let Some((child, _)) = m.split_once(';')
+                && !child.contains('{')
+            {
+                tests.push(format!("{dir}{}.rs", child.trim()));
+                tests.push(format!("{dir}{}/mod.rs", child.trim()));
+            }
+        }
+    }
+    files.retain(|(name, _)| !tests.contains(name));
     files.sort();
     files
 }
