@@ -425,9 +425,13 @@ impl World {
         let Some(tid) = self.rules.type_id(type_name) else {
             return;
         };
+        let Ok(q) = crate::nofloat::to_int(q) else {
+            self.warn(format!("{type_name} {q}: not a quantity"));
+            return;
+        };
         for _ in 0..n {
-            if let Err(e) = self.create_deposit(tid, s, q) {
-                self.warn(e.to_string());
+            if self.create_deposit(tid, s, q).is_err() {
+                self.warn(format!("no room for {type_name}"));
             }
         }
     }

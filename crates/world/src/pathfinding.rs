@@ -8,7 +8,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 
-use crate::abort::{Abort, Res};
+use crate::abort::{Abort, Invariant, Res};
 use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::nofloat::int_distance;
 use crate::rules::AirGround;
@@ -278,9 +278,7 @@ impl World {
             return Ok(false);
         }
         let Some(p) = player else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'is_very_dangerous'",
-            ));
+            return Err(Invariant::AvoidingDangerForNobody.into());
         };
         Ok(match n {
             Node::Square(s) => self.square_is_very_dangerous(p, s),

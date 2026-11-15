@@ -1,7 +1,7 @@
 //! What units, buildings, deposits and corpses do (`worldunit.py`,
 //! `worldaction.py`, `worldresource.py`, `worldupgrade.py`).
 
-use crate::abort::{Abort, Res};
+use crate::abort::{Abort, Invariant, Res};
 use crate::entity::{
     Action, ActionKind, AiMode, Corpse, Creature, CreatureKind, Deposit, Entity, EntityId, Kind,
     Place, PlayerId, SiteData, SquareId, Target,
@@ -152,16 +152,14 @@ impl World {
         Ok(id)
     }
 
-    /// Creates a deposit with a quantity written as in a map.
+    /// Creates a deposit of a quantity, in thousandths.
     pub(crate) fn create_deposit(
         &mut self,
         type_id: TypeId,
         square: SquareId,
-        qty: &str,
-    ) -> Res<EntityId> {
+        q: i64,
+    ) -> Result<EntityId, NotEnoughSpace> {
         let t = self.rules.ty(type_id);
-        let q = crate::nofloat::to_int(qty)
-            .map_err(|_| Abort::new(format!("could not convert string to float: {qty:?}")))?;
         let deposit = Deposit {
             type_id,
             qty_max: q,
@@ -173,9 +171,8 @@ impl World {
         e.airground_type = t.airground_type;
         e.stats.qty = q;
         let place = Place::Square(square);
-        let (x, y) = self
-            .initial_position(e.stats.collision != 0, e.airground_type, place, None)
-            .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+        let (x, y) =
+            self.initial_position(e.stats.collision != 0, e.airground_type, place, None)?;
         Ok(self.insert_entity(e, place, x, y, 90))
     }
 
@@ -472,7 +469,7 @@ impl World {
         let ph = match e.place {
             Some(Place::Square(s)) => self.square(s).height(),
             Some(Place::Inside(c)) => self.height_of(self.e(c))?,
-            None => return Err(Abort::new("'NoneType' object has no attribute 'height'")),
+            None => return Err(Invariant::Unplaced.into()),
         };
         Ok(ph + e.stats.bonus_height)
     }
@@ -672,9 +669,7 @@ impl World {
             return Ok(false);
         }
         if !matches!(e.place, Some(Place::Square(_))) {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'would_collide'",
-            ));
+            return Err(Invariant::ActingInside.into());
         }
         Ok(self
             .collision(e.airground_type)
@@ -770,7 +765,7 @@ impl World {
             return Ok(());
         }
         let Some(Place::Square(place)) = e.place else {
-            return Err(Abort::new("'Inside' object has no attribute 'x'"));
+            return Err(Invariant::ActingInside.into());
         };
         let smart = e.player().is_some_and(|p| self.pl(p).smart_units());
         let t = if smart {
@@ -805,7 +800,7 @@ impl World {
     /// `_near_enough_to_aim`.
     pub(crate) fn near_enough_to_aim(&mut self, id: EntityId, target: &Target) -> Res<bool> {
         let Some(t) = self.t_entity(target) else {
-            return Err(Abort::new("the target is not an entity"));
+            return Err(Invariant::AimAtNoEntity.into());
         };
         let target_blocks = t.blocked_exit().is_some();
         let e = self.e(id);
@@ -1233,7 +1228,7 @@ impl World {
                 Ok(())
             }
             Kind::Corpse(_) => Ok(()),
-            Kind::Meadow | Kind::Exit(_) => Err(Abort::new("this entity has no attribute 'die'")),
+            Kind::Meadow | Kind::Exit(_) => Err(Invariant::LandDies.into()),
         }
     }
 
@@ -1728,9 +1723,7 @@ impl World {
     fn chance_to_hit_res(&self, id: EntityId, target: EntityId) -> Res<i64> {
         let (e, t) = (self.e(id), self.e(target));
         let (Some(ep), Some(tp)) = (e.place, t.place) else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'high_ground'",
-            ));
+            return Err(Invariant::Unplaced.into());
         };
         let high_ground = !self.place_high_ground(ep)
             && self.place_high_ground(tp)
@@ -1740,9 +1733,7 @@ impl World {
         let mut result = if high_ground { 50 } else { 100 };
         if !e.is_melee() {
             let Place::Square(ts) = tp else {
-                return Err(Abort::new(
-                    "'Inside' object has no attribute 'terrain_cover'",
-                ));
+                return Err(Invariant::HitInside.into());
             };
             let cover = self.square(ts).terrain_cover;
             let c = if t.airground_type != AirGround::Air {
@@ -1864,14 +1855,16 @@ impl World {
             if site.timer == 0 {
                 let site = site.clone();
                 let e = self.e(id);
-                let (player, place, x, y) = (e.player(), e.place, e.x, e.y);
+                let (player, x, y) = (e.player(), e.x, e.y);
+                let place = e.place.ok_or(Invariant::SiteWithoutPlace)?;
                 let blocked_exit = e.blocked_exit();
                 let land = e.building_land();
                 self.delete(id);
-                let place = place.ok_or_else(|| Abort::new("the building site has no place"))?;
+                // The site's own spot was just freed, and its building's
+                // type is a creature's: a deposit cannot be ordered built.
                 let b = self
                     .create_creature(site.building_type, player, place, x, y)
-                    .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+                    .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
                 // `b` was just created as a creature.
                 if let Some(c) = self.cm(b) {
                     c.building_land = land;
@@ -2011,7 +2004,7 @@ impl World {
                 }
                 *s
             }
-            Target::Xy(..) => return Err(Abort::new("'tuple' object has no attribute 'place'")),
+            Target::Xy(..) => return Err(Invariant::OrderAimsAtCoordinates.into()),
             _ => match self.t_place(target) {
                 TPlace::Nowhere => return Ok(None),
                 TPlace::World => return Ok(None),
@@ -2099,7 +2092,7 @@ impl World {
         let i = self
             .random
             .choice_index(self.squares.len())
-            .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
+            .ok_or(Invariant::NoSquare)?;
         let stage = self.next_stage(id, Some(&Target::Square(SquareId(i as u32))), false)?;
         self.set_action_target(id, stage);
         Ok(())
@@ -2109,7 +2102,7 @@ impl World {
     /// squares to watch, then anywhere, avoiding danger.
     pub(crate) fn auto_explore(&mut self, id: EntityId) -> Res {
         let Some(p) = self.e(id).player() else {
-            return Err(Abort::new("AssertionError"));
+            return Ok(());
         };
         let current = self.e(id).action_target().cloned();
         match current {
@@ -2148,7 +2141,7 @@ impl World {
                 let i = self
                     .random
                     .choice_index(self.squares.len())
-                    .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
+                    .ok_or(Invariant::NoSquare)?;
                 let dest = SquareId(i as u32);
                 if let Some(c) = self.cm(id) {
                     c.destination = Some(dest);
@@ -2161,11 +2154,7 @@ impl World {
                 if self.is_very_dangerous(p, &t)? {
                     let here_dangerous = match here {
                         Some(Place::Square(s)) => self.square_is_very_dangerous(p, s),
-                        _ => {
-                            return Err(Abort::new(
-                                "'Inside' object has no attribute 'other_side'",
-                            ));
-                        }
+                        _ => return Err(Invariant::ActingInside.into()),
                     };
                     if !here_dangerous {
                         self.set_action_target(id, None);

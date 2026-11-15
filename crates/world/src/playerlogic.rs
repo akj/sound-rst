@@ -4,13 +4,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::abort::{Abort, Res};
+use crate::abort::{Abort, Invariant, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
 use crate::msg::{Msg, msg};
 use crate::msgparts as mp;
 use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
-use crate::orders::{Order, TargetRef};
+use crate::orders::{Order, OrderKind, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
@@ -752,7 +752,7 @@ impl World {
                     return Ok(Some(t.clone()));
                 }
             }
-            Target::Xy(..) => return Err(Abort::new("'tuple' object has no attribute 'id'")),
+            Target::Xy(..) => return Err(Invariant::OrderAimsAtCoordinates.into()),
         }
         let id = t.entity_id().expect("an entity");
         self.resolve_target(p, &TargetRef::Entity(id))
@@ -794,12 +794,10 @@ impl World {
             .iter()
             .position(|b| b.uid == project.uid || self.order_eq(b, project));
         if let Some(i) = i {
-            let unit_cost = project
-                .kind
-                .type_id()
-                .map(|t| self.rules.ty(t).cost.clone());
-            let cost =
-                unit_cost.ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))?;
+            let OrderKind::Build { building, .. } = project.kind else {
+                return Err(Invariant::ProjectIsNotABuild.into());
+            };
+            let cost = self.rules.ty(building).cost.clone();
             self.unpay(p, &cost);
             self.plm(p).budget.remove(i);
         }

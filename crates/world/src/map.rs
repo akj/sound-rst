@@ -919,13 +919,17 @@ impl World {
                 .rules
                 .type_id(&cls)
                 .ok_or_else(|| MapError(format!("unknown deposit type {cls}")))?;
-            if let Ok(q) = to_int(&n) {
+            let q = to_int(&n);
+            if let Ok(q) = q {
                 number(&format!("{cls} {n}"), q)?;
             }
+            // A quantity that is not a number is an error only where the
+            // deposit is created.
             if self.can_receive(s, AirGround::Ground, None) {
+                let q = q.map_err(|_| MapError(format!("{cls} {n}: not a quantity")))?;
                 let d = self
-                    .create_deposit(tid, s, &n)
-                    .map_err(|e| MapError(e.to_string()))?;
+                    .create_deposit(tid, s, q)
+                    .map_err(|_| MapError(format!("no room for {cls} on {z}")))?;
                 let m = self.create_meadow(s, None);
                 // `d` is the deposit created above: the meadow is created
                 // after it, to have the next id.
