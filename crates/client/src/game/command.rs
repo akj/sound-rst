@@ -782,6 +782,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 161);
+        assert_eq!(seen.len(), 175);
     }
 }

@@ -120,6 +120,10 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 
 The score is said only at the end of the game: during the game it would tell you about enemy units you have not seen, for example how many units a transport that you destroyed carried.
 
+### Idle soldiers
+
+The keys F to Semicolon select every soldier of a type on the square, as in the original: F the first type, such as footmen, G the second, such as archers, and so on. With Shift, they select only the idle ones, those without orders, on the square. With Control and Shift, they select the idle ones all over the map.
+
 ### Speech that ends when NVDA says so
 
 Most screen readers do not tell a program when they have finished speaking, so the game estimates the end of each message from its length: 0.1 seconds a character at first, the `wait_delay_per_character` setting. At a fast speech rate you hear a silence before each queued message. At a slow rate the next message can cut the current one off. To fit the estimate to your speech rate with any screen reader, JAWS included, measure it with the Speech rate item of Sound and speech in the options menu.

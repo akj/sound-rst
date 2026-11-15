@@ -46,7 +46,10 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// beside the original's status keys Z to V, every resource on Shift X,
 /// how the controlled unit fights on Shift V, beside its hit points on V,
 /// and the other players beside F11; the previous objective on Shift F9,
-/// beside the next on F9; and key help on Control F1, beside help on F1. Each key is one the original leaves free and that neither
+/// beside the next on F9; the idle soldiers of a type here with Shift and
+/// the original's key that selects that type here (F to Semicolon), and
+/// all over the map with Control Shift; and key help on Control F1, beside
+/// help on F1. Each key is one the original leaves free and that neither
 /// Windows nor a screen reader takes. Shift Z is left to maps, which bind
 /// it to a third resource.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
@@ -54,7 +57,15 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     CTRL SHIFT c: copy_message\n\
     DELETE: jump_to_alert\n\
     b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
-    F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\nSHIFT v: combat_status\n";
+    F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\nSHIFT v: combat_status\n\
+    SHIFT f: select_units local idle soldier1\nSHIFT g: select_units local idle soldier2\n\
+    SHIFT h: select_units local idle soldier3\nSHIFT j: select_units local idle soldier4\n\
+    SHIFT k: select_units local idle soldier5\nSHIFT l: select_units local idle soldier6\n\
+    SHIFT SEMICOLON: select_units local idle soldier7\n\
+    CTRL SHIFT f: select_units idle soldier1\nCTRL SHIFT g: select_units idle soldier2\n\
+    CTRL SHIFT h: select_units idle soldier3\nCTRL SHIFT j: select_units idle soldier4\n\
+    CTRL SHIFT k: select_units idle soldier5\nCTRL SHIFT l: select_units idle soldier6\n\
+    CTRL SHIFT SEMICOLON: select_units idle soldier7\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
 /// resource layers (translations included) but a map that came from a
