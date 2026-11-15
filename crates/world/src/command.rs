@@ -1,15 +1,13 @@
 //! What a player asks of the game, as typed values.
 //!
 //! A [`Command`] is given to a [`crate::Host`] for a player, and the world
-//! carries it out as it is. Text is read in one place, [`Command::parse`],
-//! for the commands that arrive as text: the orders of a game on a server
-//! and of a game record. A game on a server sends the line
-//! [`Command::line`] writes; temporary, until it sends commands as values.
+//! carries it out as it is. The tests' scenarios also write commands as
+//! the original's lines of text, which only the `truth` feature reads.
 
-use crate::World;
 use crate::entity::{EntityId, PlayerId, SquareId};
-use crate::nofloat::py_float;
-use crate::orders::{Keyword, TargetRef};
+use crate::orders::Keyword;
+#[cfg(feature = "truth")]
+use crate::{World, nofloat::py_float, orders::TargetRef};
 
 /// Something a player asks of the game.
 #[derive(Clone, Debug, PartialEq)]
@@ -194,13 +192,8 @@ pub enum Cheat {
     PlayAs(PlayerId),
 }
 
+#[cfg(feature = "truth")]
 impl OrderTarget {
-    /// The target as a line of text writes it: a square's protocol id, a
-    /// point as `zoom-<square>-<x>-<y>`, or an entity's id.
-    pub(crate) fn text(self, world: &World) -> String {
-        TargetRef::from(self).text(world)
-    }
-
     /// Reads a target written in a line of text. A square may also be
     /// written by its name. The error is a word that names no target.
     fn parse(world: &World, word: &str) -> Result<OrderTarget, String> {
@@ -213,8 +206,9 @@ impl OrderTarget {
     }
 }
 
+#[cfg(feature = "truth")]
 impl Command {
-    /// Reads a line of text, the inverse of [`Command::line`]. The error
+    /// Reads a line of text as the original wrote a command. The error
     /// says why the line is not a command. The warning is about a line read
     /// in part: a `control` whose list of ids cannot be read chooses no
     /// unit.
@@ -288,66 +282,6 @@ impl Command {
                 Queue::Append
             },
             imperative: *imperative == "1",
-        })
-    }
-
-    /// The text line of the command, as a game on a server sends it and
-    /// [`Command::parse`] reads it. `None` for the cheats the host carries
-    /// out itself ([`Cheat::Resources`], [`Cheat::AllTechs`],
-    /// [`Cheat::InfiniteMana`], [`Cheat::PlayAs`]), which have no text; a
-    /// game on a server allows no cheat. `world` names the squares.
-    ///
-    /// Temporary: the text goes when a game on a server sends commands as
-    /// values.
-    pub(crate) fn line(&self, world: &World) -> Option<String> {
-        Some(match self {
-            Command::Control(units) => {
-                let ids: Vec<i64> = units.iter().map(|u| i64::from(u.0)).collect();
-                format!("control {}", crate::group::encode(&ids))
-            }
-            Command::Order {
-                order,
-                queue,
-                imperative,
-            } => {
-                let words = match order {
-                    Order::Keyword(o) => {
-                        let mut w = o.keyword.as_str().to_owned();
-                        for part in o
-                            .type_name
-                            .iter()
-                            .cloned()
-                            .chain(o.target.map(|t| t.text(world)))
-                        {
-                            w.push(' ');
-                            w.push_str(&part);
-                        }
-                        w
-                    }
-                    Order::Default(t) => format!("default {}", t.text(world)),
-                    Order::ResetGroup(name) => format!("reset_group {name}"),
-                    Order::JoinGroup(name) => format!("join_group {name}"),
-                };
-                format!(
-                    "order {} {} {words}",
-                    i32::from(*queue == Queue::Append),
-                    i32::from(*imperative)
-                )
-            }
-            Command::Speed(s) => format!("speed {s:?}"),
-            Command::Quit => "quit".to_owned(),
-            Command::Cheat(c) => match c {
-                Cheat::ToggleMode => "toggle_cheatmode".to_owned(),
-                Cheat::Victory => "cmd victory".to_owned(),
-                Cheat::AddUnits { square, units } => {
-                    let name = square.map(|s| world.square(s).name.as_str()).unwrap_or("");
-                    format!("cmd add_units {name} {units}")
-                }
-                Cheat::Trigger(text) => format!("cmd {text}"),
-                Cheat::Resources | Cheat::AllTechs | Cheat::InfiniteMana | Cheat::PlayAs(_) => {
-                    return None;
-                }
-            },
         })
     }
 }

@@ -204,16 +204,19 @@ compile_error!("the digest of a world assumes a little-endian machine");
 
 /// FNV-1a 64, with every integer written in little-endian and `usize` and
 /// `isize` written as 64 bits, so that the result is the same on every
-/// little-endian machine.
+/// little-endian machine. The digest of the `truth` feature.
+#[cfg(feature = "truth")]
 #[derive(Debug)]
 pub(crate) struct Fnv1a(u64);
 
+#[cfg(feature = "truth")]
 impl Default for Fnv1a {
     fn default() -> Self {
         Fnv1a(0xcbf2_9ce4_8422_2325)
     }
 }
 
+#[cfg(feature = "truth")]
 impl Hasher for Fnv1a {
     fn finish(&self) -> u64 {
         self.0
@@ -917,9 +920,10 @@ impl World {
         self.pending_commands.push((player, command));
     }
 
-    /// Queues a command of a player received as a line of text: the orders
-    /// of a game on a server and of a game record (see
-    /// [`Command::parse`]). A line that is not a command is a warning.
+    /// Queues a command of a player written as the original's line of text,
+    /// for the tests' scenarios. A line that is not a command is a warning.
+    /// Only the `truth` feature has it.
+    #[cfg(feature = "truth")]
     pub fn queue_command(&mut self, player: PlayerId, line: &str) {
         match Command::parse(line, self) {
             Ok((command, warning)) => {
@@ -1203,13 +1207,16 @@ impl World {
     // digest
 
     /// A short digest of the state, as text: [`World::digest_u64`] in hex.
+    #[cfg(feature = "truth")]
     pub fn get_digest(&self) -> String {
         format!("{:016x}", self.digest_u64())
     }
 
     /// A digest of every part of the state that can change a later turn,
     /// the same on every machine: two worlds that will play on alike have
-    /// the same digest.
+    /// the same digest. The traces' tests compare games by it; only the
+    /// `truth` feature has it.
+    #[cfg(feature = "truth")]
     pub fn digest_u64(&self) -> u64 {
         let mut h = Fnv1a::default();
         self.hash(&mut h);

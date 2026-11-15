@@ -7,7 +7,7 @@
 //! # Driving a game
 //!
 //! ```no_run
-//! use soundrts_world::{AiScripts, Controller, Rules, World, multiplayer_default_triggers};
+//! use soundrts_world::{AiScripts, Command, Controller, Rules, World, multiplayer_default_triggers};
 //! # let (rules_txt, ai_txt, map_txt) = ("", "", "");
 //! let rules = Rules::load(&[rules_txt]);
 //! let ai = AiScripts::load(&[ai_txt]);
@@ -17,7 +17,7 @@
 //!     .populate_map(&[Controller::human("me", true), Controller::computer("easy")], true, true)
 //!     .expect("enough starting places")[0];
 //! loop {
-//!     world.queue_command(me, "order 0 0 go 12"); // from a server or a record
+//!     world.queue(me, Command::Quit); // a command of the player
 //!     world.update(); // one turn: 300 ms of game time
 //!     for _event in world.drain_events(me) { /* speak, play sounds */ }
 //!     # break;
@@ -27,11 +27,9 @@
 //! The rules and scripts of a mod, a campaign or a map are more layers of
 //! the same files: pass them all, in order, to [`Rules::load`] and
 //! [`AiScripts::load`]. A command is a [`Command`], given with
-//! [`World::queue`], or the original's text line (`control 4 7-9`, `order 0
-//! 1 go 12`, `cmd add_units a1 footman`, `quit`...), given with
-//! [`World::queue_command`]; it runs at the start of the next
-//! [`World::update`]. Only a local human
-//! ([`Controller::human`] with `local`) receives events.
+//! [`World::queue`]; it runs at the start of the next [`World::update`].
+//! Only a local human ([`Controller::human`] with `local`) receives
+//! events.
 //!
 //! # Reading the state
 //!
@@ -58,7 +56,7 @@
 //!   seen before, with the time they were seen), observed squares,
 //!   statistics, objectives, victory, defeat, cheat mode. A player in cheat
 //!   mode has observed every square before.
-//! - [`World::digest_u64`] and [`World::get_digest`] sum up the whole
+//! - With the `truth` feature, `World::digest_u64` sums up the whole
 //!   state, to compare two runs.
 //!
 //! # Computer players
@@ -139,7 +137,7 @@ pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers}
 /// The version of the simulation. Players can join the same game only with
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
-/// [`World::digest_u64`].
+/// the digest of a world (`World::digest_u64`).
 pub const SIM_VERSION: u32 = 6;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
