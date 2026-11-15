@@ -39,7 +39,25 @@ pub(crate) enum PathResult {
     Places(Vec<SquareId>),
 }
 
-type CacheKey = (SquareId, SquareId, AirGround, Option<PlayerId>, bool, bool);
+type CacheKey = (
+    SquareId,
+    SquareId,
+    AirGround,
+    Option<PlayerId>,
+    bool,
+    bool,
+    Forests,
+);
+
+/// Whose view of the dense forests a path search takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum Forests {
+    /// As they are now: the paths units walk.
+    AsTheyAre,
+    /// As the player perceives or remembers each exit: the paths a player
+    /// can plan. An exit it knows nothing of is open.
+    AsKnownBy(PlayerId),
+}
 
 /// The results computed during the current world time. The original keeps
 /// them until the time changes, even if exits get blocked meanwhile.
@@ -190,7 +208,7 @@ impl World {
         plane: AirGround,
         avoid: bool,
     ) -> Res<Option<Node>> {
-        match self.shortest_path(start, dest, plane, player, false, avoid)? {
+        match self.shortest_path(start, dest, plane, player, false, avoid, Forests::AsTheyAre)? {
             PathResult::Next(n, _) => Ok(n),
             PathResult::Places(_) => Ok(None),
         }
@@ -205,7 +223,7 @@ impl World {
         plane: AirGround,
         avoid: bool,
     ) -> Res<i64> {
-        match self.shortest_path(start, dest, plane, player, false, avoid)? {
+        match self.shortest_path(start, dest, plane, player, false, avoid, Forests::AsTheyAre)? {
             PathResult::Next(_, d) => Ok(d),
             PathResult::Places(_) => Ok(INF),
         }
@@ -221,13 +239,17 @@ impl World {
         plane: AirGround,
         avoid: bool,
     ) -> Result<Vec<SquareId>, Abort> {
-        match self.shortest_path(start, dest, plane, player, true, avoid)? {
+        match self.shortest_path(start, dest, plane, player, true, avoid, Forests::AsTheyAre)? {
             PathResult::Places(p) => Ok(p),
             PathResult::Next(..) => Ok(Vec::new()),
         }
     }
 
-    fn shortest_path(
+    /// A shortest path search: with `places`, the squares of the way,
+    /// else the next step and the distance. `player` is whose walls close
+    /// exits and, with `avoid`, whose knowledge of danger is avoided.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shortest_path(
         &mut self,
         start: SquareId,
         dest: SquareId,
@@ -235,16 +257,17 @@ impl World {
         player: Option<PlayerId>,
         places: bool,
         avoid: bool,
+        forests: Forests,
     ) -> Res<PathResult> {
         if self.path_cache.time != Some(self.time) {
             self.path_cache.results.clear();
             self.path_cache.time = Some(self.time);
         }
-        let key = (start, dest, plane, player, places, avoid);
+        let key = (start, dest, plane, player, places, avoid, forests);
         if let Some(r) = self.path_cache.results.get(&key) {
             return Ok(r.clone());
         }
-        let r = self.dijkstra(start, dest, plane, player, places, avoid)?;
+        let r = self.dijkstra(start, dest, plane, player, places, avoid, forests)?;
         self.path_cache.results.insert(key, r.clone());
         Ok(r)
     }
@@ -264,14 +287,32 @@ impl World {
         })
     }
 
-    fn is_blocked_node(&self, player: Option<PlayerId>, n: Node) -> bool {
+    fn is_blocked_node(&self, player: Option<PlayerId>, forests: Forests, n: Node) -> bool {
         match n {
             Node::Exit(e) => {
                 let v = player.map_or(Viewer::Nobody, Viewer::Player);
-                self.exit_is_blocked(e, v, true, false)
+                match forests {
+                    Forests::AsTheyAre => self.exit_is_blocked(e, v, true, false),
+                    Forests::AsKnownBy(p) => {
+                        self.forests_close_as_known(p, e) || self.exit_is_blocked(e, v, true, true)
+                    }
+                }
             }
             Node::Square(_) => false,
         }
+    }
+
+    /// Whether dense forests close an exit as the player last saw it.
+    fn forests_close_as_known(&self, p: PlayerId, e: EntityId) -> bool {
+        let pl = self.pl(p);
+        let known = if pl.perception.contains(&e) {
+            self.entity(e)
+        } else {
+            pl.memory.get(&e).map(|r| &*r.snapshot)
+        };
+        known
+            .and_then(|x| x.exit())
+            .is_some_and(|x| x.is_blocked_by_forests)
     }
 
     /// The neighbors of a vertex, with the start and the destination
@@ -315,6 +356,7 @@ impl World {
         out
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn dijkstra(
         &self,
         start: SquareId,
@@ -323,6 +365,7 @@ impl World {
         player: Option<PlayerId>,
         places: bool,
         avoid: bool,
+        forests: Forests,
     ) -> Res<PathResult> {
         if dest == start {
             return Ok(if places {
@@ -347,14 +390,17 @@ impl World {
             if queue.get(&v) != Some(&prio) {
                 continue;
             }
-            let skip = self.is_blocked_node(player, v) || self.is_avoided(player, avoid, v)?;
+            let skip =
+                self.is_blocked_node(player, forests, v) || self.is_avoided(player, avoid, v)?;
             if !skip {
                 final_d.insert(v, prio.0);
                 if v == end_n {
                     break;
                 }
                 for (w, len) in self.neighbors_of(v, plane, ends) {
-                    if self.is_blocked_node(player, w) || self.is_avoided(player, avoid, w)? {
+                    if self.is_blocked_node(player, forests, w)
+                        || self.is_avoided(player, avoid, w)?
+                    {
                         continue;
                     }
                     let vw = prio.0 + len;

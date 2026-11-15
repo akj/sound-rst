@@ -213,3 +213,46 @@ fn a_handicap_is_granted_as_its_settings_say() {
         Some("with unlimited resources")
     );
 }
+
+/// The computer of [`three_squares`], without units, and dense forests that
+/// close the path between b1 and c1 on both sides. With `seen`, it
+/// remembers the exit of b1 toward c1 as it is now.
+fn forests_between_b1_and_c1(seen: bool) -> (World, PlayerId) {
+    let (mut w, p) = three_squares();
+    let [b1, c1] = ["b1", "c1"].map(|n| w.square_by_name(n).unwrap());
+    for (here, there) in [(b1, c1), (c1, b1)] {
+        for e in w.square(here).exits.clone() {
+            if w.exit_other_side(e).and_then(|o| w.e(o).square()) == Some(there) {
+                w.em(e).exit_mut().unwrap().is_blocked_by_forests = true;
+                if seen && here == b1 {
+                    let time_stamp = w.time;
+                    let snapshot = Arc::new(w.e(e).clone());
+                    w.plm(p).memory.insert(
+                        e,
+                        Remembrance {
+                            time_stamp,
+                            snapshot,
+                        },
+                    );
+                }
+            }
+        }
+    }
+    (w, p)
+}
+
+#[test]
+fn a_computer_plans_its_paths_through_the_forests_it_has_seen() {
+    let (mut w, p) = forests_between_b1_and_c1(false);
+    let [a1, c1] = ["a1", "c1"].map(|n| w.square_by_name(n).unwrap());
+    // Units walk the true paths: there is none.
+    let truth = w.shortest_path_distance_to(a1, c1, Some(p), AirGround::Ground, false);
+    assert_eq!(truth.unwrap(), crate::INF);
+    // The computer has not seen the forests: as far as it knows, the way
+    // is open.
+    let planned = w.door(p).distance(a1, c1, false).unwrap();
+    assert!(planned < crate::INF, "{planned}");
+    // Once it has seen them, it is closed.
+    let (mut w, p) = forests_between_b1_and_c1(true);
+    assert_eq!(w.door(p).distance(a1, c1, false).unwrap(), crate::INF);
+}

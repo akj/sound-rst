@@ -28,10 +28,11 @@ use std::sync::Arc;
 
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, MenuEntry, Order, OrderInfo, Request};
+use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
-use crate::world::{Abort, Res, TPlace, World};
+use crate::world::{Abort, INF, Res, TPlace, World};
 
 use super::Computer;
 
@@ -93,9 +94,9 @@ impl<'a> Seen<'a> {
     }
 }
 
-/// What a player is told of a unit that attacked one of its own: its
-/// owner if the player perceives it, and whether it can be hurt, which
-/// its type says. A wound tells the attacker's type.
+/// What a player knows of a unit that attacked one of its own: its owner
+/// and whether it can be hurt if the player perceives it. Of an attacker it
+/// does not perceive, it knows nothing: not every hit says who struck.
 pub(super) struct Attacker {
     pub owner: Option<PlayerId>,
     pub is_vulnerable: bool,
@@ -454,14 +455,9 @@ impl Door<'_> {
                 is_vulnerable: e.is_vulnerable(),
             };
         }
-        let is_vulnerable = self
-            .world
-            .entity(a)
-            .and_then(Entity::type_id)
-            .is_none_or(|t| self.world.rules.ty(t).stats.is_vulnerable != 0);
         Attacker {
             owner: None,
-            is_vulnerable,
+            is_vulnerable: true,
         }
     }
 
@@ -506,21 +502,48 @@ impl Door<'_> {
     }
 
     // paths
+    //
+    // A path is planned through the exits as it perceives or remembers
+    // their forests: an exit it knows nothing of is open. Its units walk
+    // the true paths when they move.
+
+    fn path(
+        &mut self,
+        start: SquareId,
+        dest: SquareId,
+        walls_of: Option<PlayerId>,
+        places: bool,
+        avoid: bool,
+    ) -> Res<PathResult> {
+        let forests = Forests::AsKnownBy(self.me);
+        self.world.shortest_path(
+            start,
+            dest,
+            AirGround::Ground,
+            walls_of,
+            places,
+            avoid,
+            forests,
+        )
+    }
 
     /// The ground distance by the shortest path, through the exits not
     /// closed by forests or by its own and its allies' walls; with
     /// `avoid`, around the squares it knows to be very dangerous.
     pub(super) fn distance(&mut self, start: SquareId, dest: SquareId, avoid: bool) -> Res<i64> {
-        let me = Some(self.me);
-        self.world
-            .shortest_path_distance_to(start, dest, me, AirGround::Ground, avoid)
+        match self.path(start, dest, Some(self.me), false, avoid)? {
+            PathResult::Next(_, d) => Ok(d),
+            PathResult::Places(_) => Ok(INF),
+        }
     }
 
     /// The ground distance by the shortest path through the exits not
     /// closed by forests, whatever blocks them.
     pub(super) fn distance_through_walls(&mut self, start: SquareId, dest: SquareId) -> Res<i64> {
-        self.world
-            .shortest_path_distance_to(start, dest, None, AirGround::Ground, false)
+        match self.path(start, dest, None, false, false)? {
+            PathResult::Next(_, d) => Ok(d),
+            PathResult::Places(_) => Ok(INF),
+        }
     }
 
     /// The squares of the exits on the shortest ground path through the
@@ -530,30 +553,63 @@ impl Door<'_> {
         start: SquareId,
         dest: SquareId,
     ) -> Res<Vec<SquareId>> {
-        self.world
-            .shortest_path_places(start, dest, None, AirGround::Ground, false)
+        match self.path(start, dest, None, true, false)? {
+            PathResult::Places(p) => Ok(p),
+            PathResult::Next(..) => Ok(Vec::new()),
+        }
     }
 
     /// Whether a ground path that avoids the squares it knows to be very
     /// dangerous leaves `start` toward `dest`.
     pub(super) fn has_a_safe_path(&mut self, start: SquareId, dest: SquareId) -> Res<bool> {
-        let me = Some(self.me);
-        Ok(self
-            .world
-            .shortest_path_to(start, dest, me, AirGround::Ground, true)?
-            .is_some())
+        match self.path(start, dest, Some(self.me), false, true)? {
+            PathResult::Next(n, _) => Ok(n.is_some()),
+            PathResult::Places(_) => Ok(false),
+        }
     }
 
     /// Its or an ally's unit storing the resource with the shortest path
-    /// from `place`.
+    /// from `place`; one without a path comes last. Its allies' units are
+    /// all perceived.
     pub(super) fn nearest_warehouse(
         &mut self,
         place: Place,
         resource_type: i64,
         include_building_sites: bool,
     ) -> Res<Option<EntityId>> {
-        self.world
-            .nearest_warehouse(self.me, place, resource_type, include_building_sites)
+        let Place::Square(start) = place else {
+            return Err(Abort::new(
+                "'Inside' object has no attribute 'shortest_path_distance_to'",
+            ));
+        };
+        let rules = &self.world.rules;
+        let stores = |t: TypeId| rules.ty(t).storable_resource_types.contains(&resource_type);
+        let mut found: Vec<(EntityId, Option<Place>)> = Vec::new();
+        for &a in self.allied() {
+            for &u in &self.world.pl(a).units {
+                let Some(e) = self.world.entity(u) else {
+                    continue;
+                };
+                let site =
+                    include_building_sites && e.site().is_some_and(|s| stores(s.building_type));
+                if e.type_id().is_some_and(stores) || site {
+                    found.push((u, e.place));
+                }
+            }
+        }
+        let mut warehouses: Vec<(i64, EntityId)> = Vec::new();
+        for (u, p) in found {
+            let Some(Place::Square(s)) = p else {
+                return Err(Abort::new("the warehouse is not on a square"));
+            };
+            let d = self.distance(start, s, false)?;
+            if d == 0 {
+                return Ok(Some(u));
+            }
+            warehouses.push((d, u));
+        }
+        warehouses.sort();
+        Ok(warehouses.first().map(|w| w.1))
     }
 
     // acting
