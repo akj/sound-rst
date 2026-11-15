@@ -1,0 +1,45 @@
+# Covers what no other case reaches: a building finished on an exit; an
+# upgrade of a unit in a group; an upgrade of a building with units inside;
+# a flying transport destroyed with units inside; resurrection; raising the
+# dead; a deadly fog and an exorcism that harm; a holy vision that detects
+# an invisible unit. Player 0 starts on b1, player 1 on b6.
+# The events that show the case still does what it covers:
+expect 0 wall complete
+expect 0 darkarcher complete
+expect 0 guardtower complete
+expect 0 new_flyingmachine death
+expect 0 priest use_complete,a_resurrection
+expect 0 necromancer use_complete,a_raise_dead
+expect 0 necromancer use_complete,a_deadly_fog
+expect 1 priest use_complete,a_exorcism
+expect 1 priest use_complete,a_holy_vision
+0 0 cmd add_units b1 3 archer scouttower
+0 0 cmd add_units b2 4 footman new_flyingmachine
+0 1 cmd add_units b2 3 archer
+1 0 control {ids:peasant}
+1 0 order 0 0 build wall {at:b1:path:1}
+1 0 control {u:archer:0}
+1 0 order 0 0 join_group 1
+1 0 control {u:archer:0}
+1 0 order 0 0 upgrade_to darkarcher
+2 0 control {u:new_flyingmachine:0}
+2 0 order 0 0 load_all {sq:b2}
+5 0 control {u:archer:1}
+5 0 order 0 0 enter {u:scouttower:0}
+5 0 control {u:archer:2}
+5 0 order 0 0 enter {u:scouttower:0}
+20 0 control {u:scouttower:0}
+20 0 order 0 0 upgrade_to guardtower
+40 0 cmd add_units b2 priest necromancer u_resurrection u_deadly_fog
+42 0 control {u:priest:0}
+42 0 order 0 0 use a_resurrection {sq:b2}
+44 0 control {u:necromancer:0}
+44 0 order 0 0 use a_raise_dead {sq:b2}
+46 0 control {u:necromancer:0}
+46 0 order 0 0 use a_deadly_fog {sq:b2}
+50 1 cmd add_units b2 priest u_exorcism
+51 1 control {u:priest:0}
+51 1 order 0 0 use a_exorcism {sq:b2}
+203 1 cmd add_units b6 priest
+204 1 control {u:priest:0}
+204 1 order 0 0 use a_holy_vision {sq:b1}

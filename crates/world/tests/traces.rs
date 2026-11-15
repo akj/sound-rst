@@ -9,7 +9,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use soundrts_world::entity::{ActionKind, Entity, Place};
-use soundrts_world::{AiScripts, Controller, PlayerId, Rules, World, multiplayer_default_triggers};
+use soundrts_world::{
+    AiScripts, Controller, ControllerKind, Event, PlayerId, Rules, World,
+    multiplayer_default_triggers,
+};
 
 fn traces_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/traces")
@@ -391,14 +394,29 @@ struct Trace {
 /// Runs a scripted game.
 fn run_trace(case: &Case) -> Trace {
     let mut w = make_world(case);
-    let players = w
-        .populate_map(&controllers(&case.players), true, true)
-        .unwrap();
     let scenario = std::fs::read_to_string(traces_dir().join(&case.scenario)).unwrap();
+    // `expect <player> <event>`: the player must hear, at some update, an
+    // event of an entity whose `<type name> <event text>` starts with
+    // `<event>`. The player then records events, which the dump and the
+    // digest leave out.
+    let mut expected: Vec<(usize, String, bool)> = Vec::new();
+    for line in scenario.lines() {
+        if let Some(rest) = line.trim().strip_prefix("expect ") {
+            let (pi, event) = rest.split_once(' ').unwrap();
+            expected.push((pi.parse().unwrap(), event.to_owned(), false));
+        }
+    }
+    let mut controllers = controllers(&case.players);
+    for &(pi, ..) in &expected {
+        if let ControllerKind::Human { local, .. } = &mut controllers[pi].kind {
+            *local = true;
+        }
+    }
+    let players = w.populate_map(&controllers, true, true).unwrap();
     let mut by_tick: BTreeMap<usize, Vec<(usize, String)>> = BTreeMap::new();
     for line in scenario.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        if line.is_empty() || line.starts_with('#') || line.starts_with("expect ") {
             continue;
         }
         let mut it = line.splitn(3, ' ');
@@ -421,6 +439,23 @@ fn run_trace(case: &Case) -> Trace {
             }
         }
         w.update();
+        let mut heard: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+        for &(pi, ..) in &expected {
+            heard.entry(pi).or_insert_with(|| {
+                w.drain_events(players[pi])
+                    .into_iter()
+                    .filter_map(|e| match e {
+                        Event::Entity { entity, event } => {
+                            Some(format!("{} {}", entity.type_name, event.text()))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            });
+        }
+        for (pi, event, seen) in &mut expected {
+            *seen |= heard[pi].iter().any(|h| h.starts_with(event.as_str()));
+        }
         let lines = dump_tick(&w);
         summary.push(format!(
             "tick {t} {} {}",
@@ -430,6 +465,13 @@ fn run_trace(case: &Case) -> Trace {
         digests.push(format!("tick {t} {:016x}", w.digest_u64()));
         full.push(format!("tick {t}"));
         full.extend(lines);
+    }
+    for (pi, event, seen) in &expected {
+        assert!(
+            *seen,
+            "{}: player {pi} never heard {event:?}: the case no longer covers what it says",
+            case.name
+        );
     }
     Trace {
         summary,
@@ -564,6 +606,16 @@ fn boats_walls_spells_and_computer_orders_on_jl5_match_the_recording_tick_by_tic
 #[test]
 fn campaign_mission_2_triggers_match_the_recording_tick_by_tick() {
     check("trace_campaign2");
+}
+
+#[test]
+fn orders_no_other_case_gives_match_the_recording_tick_by_tick() {
+    check("trace_orders");
+}
+
+#[test]
+fn upgrades_spells_and_a_wall_on_an_exit_match_the_recording_tick_by_tick() {
+    check("trace_spells");
 }
 
 /// `TRACES_ONLY=<prefix>` narrows the games with computer players to the
