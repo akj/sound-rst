@@ -846,7 +846,7 @@ mod tests {
         let (mut h, mut g) = training();
         let me = g.game.me;
         let townhall = unit(&g, me, "townhall");
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let home = w.entity(townhall).unwrap().square().unwrap();
         let home = g.game.view().square(home).name().to_owned();
         cheat(
@@ -857,7 +857,7 @@ mod tests {
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
         let of_type = |g: &crate::testkit::TestGame, t: &str| -> Vec<EntityId> {
-            let w = g.game.host.world();
+            let w = g.game.host().world();
             let units = w.player(me).units.iter().copied();
             units
                 .filter(|&u| w.entity(u).is_some_and(|e| &*e.type_name == t))
@@ -868,9 +868,9 @@ mod tests {
         g.game.group = archers.clone();
         h.key(&mut g, Key::Num6, Mods::CTRL);
         let control = format!("control {} {}", archers[0], archers[1]);
-        g.game.host.queue_line(me, &control);
+        g.game.host_mut().queue_line(me, &control);
         g.game
-            .host
+            .host_mut()
             .queue_line(me, "order 0 0 upgrade_to darkarcher");
         run_until(&mut h, &mut g, |game| {
             let dark = |v: &EntityView| &*v.model.type_name == "darkarcher";
@@ -896,15 +896,15 @@ mod tests {
         let theirs = unit(&g, them, "peasant");
         // The computer has a keep, which stables require; the player has
         // none.
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let square = w.entity(townhall).unwrap().square().unwrap();
         let name = g.game.view().square(square).name().to_owned();
         g.game
-            .host
+            .host_mut()
             .queue_line(them, &format!("cmd add_units {name} keep"));
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
-        assert!(g.game.host.world().has(them, "keep"));
+        assert!(g.game.host().world().has(them, "keep"));
         // Orders last listed for units the player now sees as the
         // computer's: one the player's peasant cannot give, one it can.
         for (u, mine) in [(townhall, unit(&g, me, "townhall")), (theirs, peasant)] {
@@ -944,7 +944,7 @@ mod tests {
         let (mut h, mut g) = training();
         let (me, them) = (g.game.me, enemy(&g));
         let square_of = |g: &crate::testkit::TestGame, u: EntityId| {
-            g.game.host.world().entity(u).unwrap().square().unwrap()
+            g.game.host().world().entity(u).unwrap().square().unwrap()
         };
         let home = square_of(&g, unit(&g, me, "townhall"));
         let away = square_of(&g, unit(&g, them, "townhall"));
@@ -958,10 +958,10 @@ mod tests {
         cheat(&mut g, me, &format!("add_units {away_name} 1 footman"));
         let turn = g.game.view().turn() + 1;
         h.run_until_turn(&mut g, turn);
-        let footmen: Vec<EntityId> = g.game.host.world().player(me).units.clone();
+        let footmen: Vec<EntityId> = g.game.host().world().player(me).units.clone();
         let footmen: Vec<EntityId> = footmen
             .into_iter()
-            .filter(|&u| &*g.game.host.world().entity(u).unwrap().type_name == "footman")
+            .filter(|&u| &*g.game.host().world().entity(u).unwrap().type_name == "footman")
             .collect();
         assert_eq!(footmen.len(), 4);
         // One footman here sets off for the other side of the map.

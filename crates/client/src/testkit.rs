@@ -19,14 +19,19 @@ use crate::config::Config;
 use crate::game::GameInterface;
 use crate::input::{InputSource, Key, KeyDown, KeyUp, Mods, RawInput};
 use crate::log::Log;
-use crate::net::NetConfig;
-use crate::net::conn::{Connection, Link, NetEvent};
+use crate::net::conn::{Connection, Link, NetEvent, Outgoing};
+use crate::net::{NetConfig, Seated};
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::session::Session;
 use crate::tts::{Progress, SpeechBackend};
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
-use soundrts_protocol::{ClientMsg, LobbyPlayer, LobbySnapshot, Login, ServerMsg, Whereabouts};
+use soundrts_protocol::game::{SeatFrame, decode_command, decode_frame};
+use soundrts_protocol::{
+    AiLevel, ClientMsg, Faction, LobbyPlayer, LobbySnapshot, Login, MapInfo, PROTOCOL_VERSION,
+    SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
+};
+use soundrts_world::{Command, GameSetup, Host, PlayerId, TurnMessage};
 
 /// The upstream checkout the tests read the game data from. Panics with
 /// instructions if it is missing.
@@ -785,14 +790,14 @@ struct FakeState {
     clock: Rc<dyn Clock>,
     /// In time order; equal times keep their order.
     scheduled: VecDeque<(f64, NetEvent)>,
-    sent: Vec<ClientMsg>,
+    sent: Vec<Outgoing>,
 }
 
 struct FakeLink(FakeServer);
 
 impl Link for FakeLink {
-    fn send(&mut self, msg: ClientMsg) {
-        self.0.0.borrow_mut().sent.push(msg);
+    fn send(&mut self, out: Outgoing) {
+        self.0.0.borrow_mut().sent.push(out);
     }
 
     fn poll(&mut self) -> Option<NetEvent> {
@@ -832,14 +837,147 @@ impl FakeServer {
         self.schedule(time, NetEvent::Msg(msg));
     }
 
+    /// Sends a frame of a game's stream at `time`.
+    pub fn frame_at(&self, time: f64, frame: SeatFrame) {
+        self.schedule(time, NetEvent::Frame(Ok(Box::new(frame))));
+    }
+
+    /// Sends a binary frame at `time`, as the client's connection reads
+    /// it.
+    pub fn bytes_at(&self, time: f64, bytes: &[u8]) {
+        self.schedule(time, NetEvent::Frame(decode_frame(bytes).map(Box::new)));
+    }
+
     /// Closes the connection at `time`.
     pub fn close_at(&self, time: f64) {
         self.schedule(time, NetEvent::Closed("closed by the test".into()));
     }
 
-    /// What the client has sent so far.
+    /// The messages the client has sent so far.
     pub fn sent(&self) -> Vec<ClientMsg> {
-        self.0.borrow().sent.clone()
+        self.0
+            .borrow()
+            .sent
+            .iter()
+            .filter_map(|o| match o {
+                Outgoing::Msg(m) => Some(m.clone()),
+                Outgoing::Command(_) => None,
+            })
+            .collect()
+    }
+
+    /// The commands the client has sent so far, with their bytes.
+    pub fn commands(&self) -> Vec<(Command, usize)> {
+        self.0
+            .borrow()
+            .sent
+            .iter()
+            .filter_map(|o| match o {
+                Outgoing::Command(b) => Some((decode_command(b).expect("a command"), b.len())),
+                Outgoing::Msg(_) => None,
+            })
+            .collect()
+    }
+}
+
+/// A game run here as a server runs one, for a fake server to send its
+/// stream to the seat of slot `you`: the frames a server sends.
+pub struct FakeStream {
+    host: Host,
+    you: usize,
+    seat: PlayerId,
+    last: TurnMessage,
+}
+
+impl FakeStream {
+    /// The game on the multiplayer map `map` with these slots, built as a
+    /// server builds it from the texts the client would send.
+    pub fn new(h: &mut Harness, map: &str, slots: &[Slot], you: usize, seed: i64) -> FakeStream {
+        let m = h.multiplayer_map(map);
+        let texts = crate::multiplayer::game_texts(&mut h.client, &m).expect("the texts");
+        let setup = GameSetup::multiplayer(
+            texts.rules.into_string(),
+            texts.ai.into_string(),
+            texts.map.into_string(),
+            seed,
+            slots.iter().map(controller).collect(),
+        );
+        let host = Host::new(&setup).expect("a game");
+        let seat = host.seats()[you];
+        let last = host.message(seat);
+        FakeStream {
+            host,
+            you,
+            seat,
+            last,
+        }
+    }
+
+    /// What a server sends the seat when the game starts: its seat, the
+    /// start and its whole message.
+    pub fn opening(&self, map: MapInfo, speed: Speed) -> Vec<SeatFrame> {
+        vec![
+            SeatFrame::Seated {
+                you: self.you,
+                map,
+                speed,
+                paused: false,
+                token: SeatToken::from_bits(1),
+            },
+            SeatFrame::Start(self.host.game_start().message()),
+            SeatFrame::Whole(self.last.clone()),
+        ]
+    }
+
+    /// Plays a turn, with the seat's `commands`, and gives the frames a
+    /// server sends the seat for it.
+    pub fn turn(&mut self, commands: Vec<Command>) -> Vec<SeatFrame> {
+        for c in commands {
+            let _ = self.host.queue(self.seat, c);
+        }
+        let turn = self
+            .host
+            .step_seats(&[self.seat])
+            .pop()
+            .expect("the seat's turn");
+        let frames = turn
+            .changes(&self.last, [])
+            .into_iter()
+            .map(SeatFrame::Change)
+            .collect();
+        self.last = (*turn.message).clone();
+        frames
+    }
+
+    /// What the seat is sent when the game is over for it.
+    pub fn end(&self) -> SeatFrame {
+        SeatFrame::End(self.host.game_end(self.seat))
+    }
+
+    pub fn host(&self) -> &Host {
+        &self.host
+    }
+}
+
+/// Who plays a slot, as a server makes it of the room: every human told
+/// the events.
+pub fn controller(slot: &Slot) -> soundrts_world::Controller {
+    let mut c = match &slot.player {
+        SlotPlayer::Human(login) => soundrts_world::Controller::human(login.as_str(), true),
+        SlotPlayer::Computer(level) => soundrts_world::Controller::computer(level.ai_type()),
+    };
+    c.faction = slot.faction.as_str().to_owned();
+    c.alliance = Some(slot.alliance.to_string());
+    c
+}
+
+/// A slot of a room, ready, with a random faction.
+pub fn slot(player: SlotPlayer, alliance: u8) -> Slot {
+    Slot {
+        player,
+        faction: Faction::random(),
+        alliance,
+        ready: true,
     }
 }
 
@@ -977,19 +1115,23 @@ impl Harness {
         self.utterances().iter().skip(from).map(render).collect()
     }
 
+    /// The multiplayer map `map`.
+    pub fn multiplayer_map(&mut self, map: &str) -> Arc<crate::mapfile::Map> {
+        self.client
+            .res
+            .multiplayer_maps()
+            .into_iter()
+            .find(|m| m.name == map)
+            .unwrap_or_else(|| panic!("no multiplayer map {map}"))
+    }
+
     /// Starts a training game on the multiplayer map `map` against
     /// computers of these types, with the world's seed fixed. The objective
     /// is told as the story and the bindings are loaded; no turn has run
     /// yet.
     pub fn start_training(&mut self, map: &str, computers: &[&str], seed: i64) -> TestGame {
         self.client.game.seed = Some(seed);
-        let m = self
-            .client
-            .res
-            .multiplayer_maps()
-            .into_iter()
-            .find(|m| m.name == map)
-            .unwrap_or_else(|| panic!("no multiplayer map {map}"));
+        let m = self.multiplayer_map(map);
         self.client.res.set_map(Some(&m));
         let mut players = vec![self.client.config.login.as_str().to_owned()];
         players.extend(computers.iter().map(|c| (*c).to_owned()));
@@ -999,8 +1141,11 @@ impl Harness {
         let mut session = Session::training(&self.client, m, &players, &factions, &alliances);
         let mut game = session.start(&mut self.client).expect("a valid map");
         self.client.input.clear();
-        game.next_update = self.client.clock.now();
-        TestGame { session, game }
+        game.set_turn_due(self.client.clock.now());
+        TestGame {
+            session: Some(session),
+            game,
+        }
     }
 
     /// Connects the client to a [`FakeServer`] as `you`, with `others`
@@ -1012,29 +1157,149 @@ impl Harness {
         server
     }
 
-    /// Starts a game on a server (see [`Harness::join_fake_server`]) on
-    /// the multiplayer map `map`, as `slots[you]`. The world is built and
-    /// the server told; no turn has run yet.
-    pub fn start_multiplayer(
+    /// Joins, on a [`FakeServer`], the game of `stream` on the multiplayer
+    /// map `map` at `speed`: the server sends the seat's opening frames
+    /// now. Nothing of the game is handled yet.
+    pub fn join_fake_game(
+        &mut self,
+        server: &FakeServer,
+        stream: &FakeStream,
+        map: &str,
+        speed: Speed,
+    ) -> TestGame {
+        let m = self.multiplayer_map(map);
+        let now = self.clock.now();
+        for f in stream.opening(m.info().expect("a map file"), speed) {
+            server.frame_at(now, f);
+        }
+        crate::net::pump(&mut self.client);
+        let seated = self
+            .client
+            .net
+            .as_mut()
+            .and_then(|n| n.started.take())
+            .expect("a seat");
+        self.client.res.set_map(Some(&m));
+        let game =
+            crate::session::join_server_game(&mut self.client, &seated).expect("the game joined");
+        self.client.input.clear();
+        TestGame {
+            session: None,
+            game,
+        }
+    }
+
+    /// Starts the game of `setup`, run here, on the multiplayer map `map`,
+    /// as its first player, readied as the game of a server is: the
+    /// objective told, no intro. No turn has run yet.
+    pub fn start_local(&mut self, map: &str, setup: &GameSetup) -> TestGame {
+        let m = self.multiplayer_map(map);
+        self.client.res.set_map(Some(&m));
+        let host = Host::new(setup).expect("a game");
+        let me = host.seats()[0];
+        let mut game = GameInterface::local(&mut self.client, host, me);
+        crate::session::prepare(&mut self.client, &mut game, Vec::new());
+        self.client.input.clear();
+        TestGame {
+            session: None,
+            game,
+        }
+    }
+
+    /// Starts a game on a real server on 127.0.0.1, which the test owns:
+    /// the player creates a room on the multiplayer map `map` at `speed`,
+    /// adds these computers, and starts the game, which the server builds
+    /// from `seed`. The player has joined the game; nothing of it is
+    /// handled yet. Waits in real time for the server, whatever the clock.
+    pub fn start_on_server(
         &mut self,
         map: &str,
-        slots: &[soundrts_protocol::Slot],
-        you: usize,
+        computers: &[AiLevel],
+        speed: Speed,
         seed: i64,
-        speed: soundrts_protocol::Speed,
-    ) -> TestGame {
-        let m = self
+    ) -> (soundrts_server::ServerHandle, TestGame) {
+        self.start_on_server_with(map, computers, speed, seed, |c| c)
+    }
+
+    /// As [`Harness::start_on_server`], with the connection to the server
+    /// passed through `wrap` before the client uses it.
+    pub fn start_on_server_with(
+        &mut self,
+        map: &str,
+        computers: &[AiLevel],
+        speed: Speed,
+        seed: i64,
+        wrap: impl FnOnce(Connection) -> Connection,
+    ) -> (soundrts_server::ServerHandle, TestGame) {
+        let server = soundrts_server::start(soundrts_server::ServerConfig {
+            name: soundrts_protocol::ServerName::new("test").expect("a name"),
+            ip: std::net::Ipv4Addr::LOCALHOST.into(),
+            port: 0,
+            seed: Some(seed),
+            ..soundrts_server::ServerConfig::default()
+        })
+        .expect("a server");
+        let address = server.local_addr().to_string();
+        let content = self.client.res.content_hash();
+        let hello = ClientMsg::Hello {
+            protocol: PROTOCOL_VERSION,
+            login: Login::new(self.client.config.login.as_str()).expect("a login"),
+            content: content.clone(),
+        };
+        let (conn, snapshot) =
+            crate::net::conn::open(&address, hello, WAIT_LIMIT).expect("connected");
+        self.client.net = Some(crate::net::Net::new(wrap(conn), snapshot, content));
+        let m = self.multiplayer_map(map);
+        let info = m.info().expect("a map file");
+        let net = self.client.net.as_mut().expect("on the server");
+        net.creating = Some(m.clone());
+        net.send(ClientMsg::CreateRoom {
+            map: info,
+            speed,
+            open: false,
+        });
+        self.pump_until(|n| n.room.is_some());
+        for (i, &level) in computers.iter().enumerate() {
+            crate::net::send(&mut self.client, ClientMsg::AddComputer { level });
+            self.pump_until(|n| n.room.as_ref().is_some_and(|r| r.state.slots.len() > i + 1));
+        }
+        let texts = crate::multiplayer::game_texts(&mut self.client, &m).expect("the texts");
+        crate::net::send(&mut self.client, ClientMsg::StartHosted { texts });
+        self.pump_until(|n| {
+            n.started.is_some() && n.game.as_ref().is_some_and(|g| g.frames.len() >= 2)
+        });
+        let seated: Seated = self
             .client
-            .res
-            .multiplayer_maps()
-            .into_iter()
-            .find(|m| m.name == map)
-            .unwrap_or_else(|| panic!("no multiplayer map {map}"));
-        let mut session = Session::multiplayer(m, slots, you, seed, speed);
-        let mut game = session.start(&mut self.client).expect("a valid map");
+            .net
+            .as_mut()
+            .and_then(|n| n.started.take())
+            .expect("a seat");
+        self.client.res.set_map(Some(&m));
+        let game =
+            crate::session::join_server_game(&mut self.client, &seated).expect("the game joined");
         self.client.input.clear();
-        game.next_update = self.client.clock.now();
-        TestGame { session, game }
+        (
+            server,
+            TestGame {
+                session: None,
+                game,
+            },
+        )
+    }
+
+    /// Reads what the server sends until `done` holds, in real time.
+    fn pump_until(&mut self, done: impl Fn(&crate::net::Net) -> bool) {
+        let start = std::time::Instant::now();
+        loop {
+            crate::net::pump(&mut self.client);
+            let net = self.client.net.as_ref().expect("on a server");
+            assert!(net.closed.is_none(), "the connection closed");
+            if done(net) {
+                return;
+            }
+            assert!(start.elapsed() < WAIT_LIMIT, "the server did not answer");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 
     /// One pass of the game loop (one millisecond of game time).
@@ -1062,6 +1327,16 @@ impl Harness {
         }
     }
 
+    /// Lets the voice speak for `seconds` of the test clock, outside a
+    /// game.
+    pub fn run_voice_for(&mut self, seconds: f64) {
+        let end = self.clock.now() + seconds;
+        while self.clock.now() < end && !self.client.voice.is_idle() {
+            self.client.voice.update();
+            self.clock.sleep(0.01);
+        }
+    }
+
     /// Runs the game loop for `seconds` of game time.
     pub fn run_for(&mut self, g: &mut TestGame, seconds: f64) {
         let end = self.clock.now() + seconds;
@@ -1085,13 +1360,19 @@ impl Harness {
         while !g.game.end_loop {
             self.step(g);
         }
-        g.session.finish(&mut self.client, &mut g.game);
+        match &mut g.session {
+            Some(session) => session.finish(&mut self.client, &mut g.game),
+            None => {
+                crate::session::finish(&mut self.client, &mut g.game);
+            }
+        }
     }
 }
 
-/// A game started by [`Harness::start_training`].
+/// A game started by [`Harness::start_training`], or on a server by
+/// [`Harness::start_on_server`], which has no session here.
 pub struct TestGame {
-    pub session: Session,
+    pub session: Option<Session>,
     pub game: GameInterface,
 }
 

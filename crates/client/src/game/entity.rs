@@ -1093,10 +1093,10 @@ mod tests {
         let peasant = unit(g, me, "peasant");
         let farm = unit(g, me, "farm");
         g.game
-            .host
+            .host_mut()
             .queue_line(me, &format!("control {}", peasant.0));
         g.game
-            .host
+            .host_mut()
             .queue_line(me, &format!("order 0 0 go {}", farm.0));
         step(g);
         let mut model = g.game.view().perceived(peasant).unwrap();
@@ -1140,7 +1140,7 @@ mod tests {
         let (h, mut g) = training();
         let them = enemy(&g);
         let townhall = unit(&g, them, "townhall");
-        let there = g.game.host.world().entity(townhall).unwrap().square();
+        let there = g.game.host().world().entity(townhall).unwrap().square();
         assert!(there.is_some());
         assert!(g.game.view().known(townhall).is_none());
         // The player remembers a unit going into the computer's town hall,
@@ -1181,13 +1181,13 @@ mod tests {
         let meadow = g.game.dobjets.values().find(|o| o.type_name() == "meadow");
         let meadow = meadow.unwrap().id();
         g.game
-            .host
+            .host_mut()
             .queue_line(me, &format!("control {}", peasant.0));
         g.game
-            .host
+            .host_mut()
             .queue_line(me, &format!("order 0 0 build farm {}", meadow.0));
         let has_site = |g: &crate::testkit::TestGame| {
-            let w = g.game.host.world();
+            let w = g.game.host().world();
             let units = &w.player(me).units;
             units
                 .iter()
@@ -1257,7 +1257,7 @@ mod tests {
     fn a_remembered_unit_has_the_upgrades_it_had_when_last_seen() {
         let (mut h, mut g) = training();
         let (me, them) = (g.game.me, enemy(&g));
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let mine = w
             .entity(unit(&g, me, "townhall"))
             .unwrap()
@@ -1295,7 +1295,7 @@ mod tests {
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
         assert!(g.game.dobjets[&footman].is_memory());
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         assert_eq!(w.unit_upgrades(footman), ["melee_weapon", "melee_armor"]);
         assert_eq!(upgrades(&mut h, &g), "swords");
 

@@ -37,11 +37,6 @@ pub const I_AM_NOT_READY: &str = "I am not ready";
 pub const REMOVE: &str = "remove";
 pub const IS_NOW_THE_ORGANIZER: &str = "is now the organizer";
 pub const YOU_HAVE_BEEN_REMOVED: &str = "you have been removed from the game";
-pub const WAITING_FOR: &str = "waiting for";
-pub const GAME_RESUMES: &str = "the game resumes";
-pub const OUT_OF_SYNC: &str =
-    "the game is out of sync: you no longer play the same game as the others";
-pub const OTHERS_OUT_OF_SYNC: &str = "other players are out of sync: they leave the game";
 pub const SHARE_ADDRESS: &str = "the address to give to the other players is";
 pub const ADDRESS_COPIED: &str = "it is copied to the clipboard";
 pub const RECENT: &str = "recent";
@@ -120,6 +115,11 @@ pub const SCOUTING: &str = "scouting";
 pub const CHAT: &str = "chat";
 pub const SYSTEM: &str = "system";
 pub const STORY: &str = "story";
+
+// A game on a server.
+
+pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
+pub const ONLY_THE_HOST_SETS_THE_SPEED: &str = "only the host can change the speed";
 
 /// A phrase as a message.
 pub fn text(s: &str) -> Msg {

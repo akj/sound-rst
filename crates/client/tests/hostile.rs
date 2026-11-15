@@ -1,13 +1,21 @@
-//! Hostile interface files. Every style, key bindings and translation file
-//! of the original's `res/ui*` folders, its mods and its folder map
+//! Hostile interface files and hostile games on a server.
+//!
+//! Every style, key bindings and translation file of the original's
+//! `res/ui*` folders, its mods and its folder map
 //! (`soundrts/tests/res/multi/jl4`) is changed at random many times over,
 //! and each changed text must be read without a panic within
 //! [`CASE_BOUND`]: as an installed layer, then as the layer of a map that
 //! came from a server.
 //!
+//! The frames a server sends a seat during a real game are changed at
+//! random, and put out of order, and the game interface must take each
+//! stream without a panic: it plays on, or ends the game, says why, and
+//! leaves it.
+//!
 //! The changes come from a fixed seed, so a failure reproduces: the message
-//! gives the file, the case and the start of the changed text. The cases
-//! run on a stack of 1 MiB, the size of a Windows program's main thread.
+//! gives the file or frame, the case and the start of what changed. The
+//! cases run on a stack of 1 MiB, the size of a Windows program's main
+//! thread.
 
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -16,11 +24,15 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use soundrts::bindings::{BindingError, Bindings, Chord};
+use soundrts::clock::Clock;
 use soundrts::log::Log;
 use soundrts::parameters::Parameters;
 use soundrts::sound_cache::{SoundCache, update_text_table};
 use soundrts::style::Style;
-use soundrts::testkit::upstream_root;
+use soundrts::testkit::{FakeStream, Harness, Script, TestGame, slot, upstream_root};
+use soundrts_protocol::game::{SeatFrame, encode_frame};
+use soundrts_protocol::{AiLevel, ClockChange, Login, SeatChange, Speed};
+use soundrts_world::Event;
 use soundrts_world::msg::MsgPart;
 
 /// The longest one case may take: reading the changed text as an installed
@@ -372,4 +384,228 @@ fn hostile_interface_files_are_read_without_a_panic() {
     let (failures, slowest) = worker.join().unwrap();
     eprintln!("slowest case: {slowest:?}");
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+// -- Hostile games on a server --------------------------------------------
+
+/// Turns of the real game whose frames are changed.
+const STREAM_TURNS: usize = 30;
+
+/// Streams with a frame changed at random.
+const FRAME_CASES: u64 = 300;
+
+/// The frames a server sends Andrew in a real game against a computer on
+/// jl1, encoded: the seat, the start, the whole message, a change a turn,
+/// and the end.
+fn real_stream(h: &mut Harness) -> Vec<Vec<u8>> {
+    let slots = [
+        slot(
+            soundrts_protocol::SlotPlayer::Human(Login::new("andrew").unwrap()),
+            1,
+        ),
+        slot(soundrts_protocol::SlotPlayer::Computer(AiLevel::Easy), 2),
+    ];
+    let mut stream = FakeStream::new(h, "jl1", &slots, 0, 1);
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut frames = stream.opening(map, Speed::Normal);
+    for _ in 0..STREAM_TURNS {
+        frames.extend(stream.turn(Vec::new()));
+    }
+    frames.push(stream.end());
+    frames.iter().map(|f| encode_frame(f).unwrap()).collect()
+}
+
+/// Changes one to four bytes of `bytes`, cuts it, or grows it.
+fn mutate_bytes(r: &mut Rng, bytes: &mut Vec<u8>) {
+    for _ in 0..1 + r.below(4) {
+        let i = r.below(bytes.len());
+        match r.below(6) {
+            0 if !bytes.is_empty() => bytes[i] ^= 1 << r.below(8),
+            1 if !bytes.is_empty() => bytes[i] = r.next() as u8,
+            2 if !bytes.is_empty() => bytes[i] = 0xff,
+            3 => bytes.truncate(i),
+            4 => bytes.insert(i, r.next() as u8),
+            _ if !bytes.is_empty() => {
+                bytes.remove(i);
+            }
+            _ => bytes.push(0),
+        }
+    }
+}
+
+/// Plays a stream of frames as Andrew's client takes them from a server,
+/// a turn every 0.3 s, to its end. Whether the game ended on a frame that
+/// cannot be right.
+fn play_stream(h: &mut Harness, frames: &[Vec<u8>]) -> bool {
+    let server = h.join_fake_server("andrew", &[]);
+    let t0 = h.clock.now();
+    for (i, f) in frames.iter().enumerate() {
+        server.bytes_at(t0 + 0.3 * i.saturating_sub(2) as f64, f);
+    }
+    let said = h.utterances().len();
+    let refused = |h: &Harness| {
+        h.said_since(said)
+            .iter()
+            .any(|s| s == "game ended: the server sent what cannot be right")
+    };
+    soundrts::net::pump(&mut h.client);
+    let Some(seated) = h.client.net.as_mut().and_then(|n| n.started.take()) else {
+        return false;
+    };
+    let map = h.multiplayer_map("jl1");
+    h.client.res.set_map(Some(&map));
+    let Some(game) = soundrts::session::join_server_game(&mut h.client, &seated) else {
+        h.client.res.set_map(None);
+        h.run_voice_for(5.0);
+        return refused(h);
+    };
+    let mut g = TestGame {
+        session: None,
+        game,
+    };
+    h.run_for(&mut g, 0.3 * frames.len() as f64 + 5.0);
+    assert!(g.game.end_loop, "the stream ended, and the game did not");
+    h.finish(&mut g);
+    h.client.res.set_map(None);
+    refused(h)
+}
+
+/// The frame at `i` of `frames`, decoded.
+fn frame(frames: &[Vec<u8>], i: usize) -> SeatFrame {
+    soundrts_protocol::game::decode_frame(&frames[i]).unwrap()
+}
+
+fn encoded(f: SeatFrame) -> Vec<u8> {
+    encode_frame(&f).unwrap()
+}
+
+/// Streams in the wrong order, or with frames no game sends. Each ends the
+/// game as soon as it is read, except those [`MAY_PLAY_ON`] names.
+fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
+    let n = frames.len();
+    let with = |at: usize, f: Vec<u8>| {
+        let mut s = frames.to_vec();
+        s.insert(at, f);
+        s
+    };
+    let mut cases = vec![
+        ("a change before the start", {
+            let mut s = frames.to_vec();
+            s.swap(1, 3);
+            s
+        }),
+        ("the start twice", with(2, frames[1].clone())),
+        ("the whole message twice", with(3, frames[2].clone())),
+        (
+            "a whole message during the game",
+            with(10, frames[2].clone()),
+        ),
+        ("a turn played again", with(10, frames[5].clone())),
+        ("a turn missed", {
+            let mut s = frames.to_vec();
+            s.remove(6);
+            s
+        }),
+        ("the end twice", with(n - 1, frames[n - 1].clone())),
+        ("a turn after the end", with(n, frames[n - 2].clone())),
+        ("a seat during the game", with(8, frames[0].clone())),
+        (
+            "news of a slot that is not in the room",
+            with(
+                8,
+                encoded(SeatFrame::Seat {
+                    slot: usize::MAX,
+                    change: SeatChange::Returned,
+                }),
+            ),
+        ),
+        (
+            "a refused start during the game",
+            with(
+                8,
+                encoded(SeatFrame::NotStarted(soundrts_protocol::StartRefusal::Busy)),
+            ),
+        ),
+        ("bytes that are no frame", with(8, vec![0xff; 40])),
+        ("more events than a game can tell", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Change(mut c) = frame(frames, 3) else {
+                panic!("a change");
+            };
+            c.events
+                .extend(std::iter::repeat_n(Event::Speed(1.0), 70_000));
+            s[3] = encoded(SeatFrame::Change(c));
+            s
+        }),
+    ];
+    cases.push((
+        "a clock change",
+        with(
+            8,
+            encoded(SeatFrame::Clock {
+                by: Login::new("nobody").unwrap(),
+                change: ClockChange::Paused,
+            }),
+        ),
+    ));
+    cases
+}
+
+/// The streams of [`out_of_order`] that may play on: a turn missed may
+/// look like a seat catching up, the game is over at the first end, and
+/// clock news names its player by login, who need not be in the room.
+const MAY_PLAY_ON: [&str; 4] = [
+    "a turn missed",
+    "the end twice",
+    "a turn after the end",
+    "a clock change",
+];
+
+#[test]
+fn hostile_frames_of_a_game_on_a_server_are_taken_without_a_panic() {
+    let worker = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let mut h = Harness::new("en", Script::new().keep_open());
+            let frames = real_stream(&mut h);
+            let mut failures = Vec::new();
+            // The real stream plays to its end.
+            assert!(!play_stream(&mut h, &frames), "the real stream was refused");
+            for (what, stream) in out_of_order(&frames) {
+                let refused = catch_unwind(AssertUnwindSafe(|| play_stream(&mut h, &stream)));
+                match refused {
+                    Ok(true) => {}
+                    Ok(false) if MAY_PLAY_ON.contains(&what) => {}
+                    Ok(false) => failures.push(format!("{what}: not refused")),
+                    Err(_) => failures.push(format!("{what}: panic")),
+                }
+            }
+            let mut refused = 0;
+            for case in 0..FRAME_CASES {
+                let mut r = Rng::new(0xF2A3, case);
+                let mut stream = frames.clone();
+                let i = r.below(stream.len());
+                mutate_bytes(&mut r, &mut stream[i]);
+                let start = Instant::now();
+                let result = catch_unwind(AssertUnwindSafe(|| play_stream(&mut h, &stream)));
+                let took = start.elapsed();
+                refused += usize::from(matches!(result, Ok(true)));
+                if result.is_err() {
+                    let kind = format!("{:?}", frame(&frames, i));
+                    let kind: String = kind.chars().take(60).collect();
+                    failures.push(format!(
+                        "case {case}: frame {i} ({kind}...): panic after {took:?}"
+                    ));
+                }
+            }
+            (failures, refused)
+        })
+        .unwrap();
+    let (failures, refused) = worker.join().unwrap();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    // Most changed frames cannot be right; some still are.
+    assert!(
+        refused > FRAME_CASES as usize / 4,
+        "{refused} changed streams refused"
+    );
 }

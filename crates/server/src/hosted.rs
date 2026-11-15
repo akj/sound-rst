@@ -33,8 +33,7 @@ use soundrts_protocol::{
     SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, StopReason,
 };
 use soundrts_world::{
-    Command, Event, GameSetup, Host, Order, OrderTarget, PlayerId, SeatTurn, TurnChange,
-    TurnMessage,
+    Command, Event, GameSetup, Host, Order, OrderTarget, PlayerId, SeatTurn, TurnMessage,
 };
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
@@ -531,41 +530,15 @@ fn play_turn(
         .collect()
 }
 
-/// The changes that bring a seat from `last`, the message it was last
-/// sent, through `turn`: the end of its turn, with `missed` told first;
-/// then, if anything came after the end of the turn (the players leaving
-/// when it ended the game), what the seat knows after the step, with those
-/// events. The second has the same game time as the first.
-fn changes(last: &TurnMessage, missed: &VecDeque<Event>, turn: &SeatTurn) -> Vec<TurnChange> {
-    let SeatTurn {
-        end_of_turn,
-        then,
-        message,
-    } = turn;
-    let after = || TurnMessage {
-        events: then.clone(),
-        ..(**message).clone()
-    };
-    match end_of_turn {
-        Some(end) => {
-            let mut changes = vec![TurnChange::catching_up(last, missed, end)];
-            if !then.is_empty() || !Arc::ptr_eq(end, message) {
-                changes.push(TurnChange::between(end, &after()));
-            }
-            changes
-        }
-        None => vec![TurnChange::catching_up(last, missed, &after())],
-    }
-}
-
-/// [`changes`], encoded; `None` if one cannot be.
+/// The changes of [`SeatTurn::changes`], encoded; `None` if one cannot
+/// be.
 fn frames(
     slot: SlotIndex,
     last: &TurnMessage,
     missed: &VecDeque<Event>,
     turn: &SeatTurn,
 ) -> Option<Vec<Bytes>> {
-    changes(last, missed, turn)
+    turn.changes(last, missed)
         .into_iter()
         .map(|c| match encode_frame(&SeatFrame::Change(c)) {
             Ok(bytes) => Some(Bytes::from(bytes)),

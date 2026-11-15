@@ -2,7 +2,7 @@
 //! in single-player it waits only on purpose, while a story is told or
 //! the game menu or the console is open.
 
-use soundrts_protocol::{AiLevel, Faction, Login, ServerMsg, Slot, SlotPlayer, Speed};
+use soundrts_protocol::{AiLevel, Login, SlotPlayer, Speed};
 use soundrts_world::msg::{Msg, MsgPart};
 
 use super::testing::training;
@@ -10,7 +10,7 @@ use super::{Mode, SrvEvent};
 use crate::clock::Clock;
 use crate::input::{Key, Mods};
 use crate::message::{Category, News};
-use crate::testkit::{Harness, Script, TestGame};
+use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::from(s)]
@@ -273,27 +273,16 @@ fn on_a_server_neither_a_cut_scene_nor_an_important_message_stops_the_turns() {
     let mut h = Harness::new("en", Script::new().keep_open());
     let server = h.join_fake_server("andrew", &[]);
     let slots = [
-        Slot {
-            player: SlotPlayer::Human(Login::new("andrew").unwrap()),
-            faction: Faction::random(),
-            alliance: 1,
-            ready: true,
-        },
-        Slot {
-            player: SlotPlayer::Computer(AiLevel::Easy),
-            faction: Faction::random(),
-            alliance: 2,
-            ready: true,
-        },
+        slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
+        slot(SlotPlayer::Computer(AiLevel::Easy), 2),
     ];
-    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
+    let mut stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1);
+    let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
     let t0 = h.clock.now();
     for n in 0..100 {
-        let turn = ServerMsg::Turn {
-            turn: n,
-            orders: Vec::new(),
-        };
-        server.at(t0 + 0.3 * f64::from(n), turn);
+        for frame in stream.turn(Vec::new()) {
+            server.frame_at(t0 + 0.3 * f64::from(n), frame);
+        }
     }
     h.run_for(&mut g, 2.0);
     h.run_until_voice_idle(&mut g);
@@ -313,12 +302,6 @@ fn on_a_server_neither_a_cut_scene_nor_an_important_message_stops_the_turns() {
     );
     let turns = turns_while_said(&mut h, &mut g);
     assert!(turns >= 5, "{turns} turns while the message was said");
-    let done = server
-        .sent()
-        .iter()
-        .filter(|m| matches!(m, soundrts_protocol::ClientMsg::TurnDone { .. }))
-        .count();
-    assert_eq!(done as i64, g.game.view().turn());
 }
 
 #[test]
@@ -423,7 +406,7 @@ fn playing_as_another_player_starts_a_new_seat_at_once() {
     assert_eq!((g.game.me, g.game.view().player()), (other, other));
     assert_eq!(g.game.view().turn(), turn);
     assert_eq!(g.game.view().terrain(home), "");
-    let theirs = g.game.host.world().player(other).units.clone();
+    let theirs = g.game.host().world().player(other).units.clone();
     let told: Vec<_> = g.game.view().own_units().map(|u| u.id).collect();
     assert_eq!(told, theirs);
 }

@@ -209,7 +209,7 @@ impl GameInterface {
     /// over the game menu if it is open; the game goes on meanwhile. A
     /// beep without a server.
     fn cmd_say(&mut self, cx: &mut Client, channel: Channel) {
-        if self.net.is_none() {
+        if !self.on_a_server() {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
@@ -332,13 +332,13 @@ impl GameInterface {
             let s = s.split(' ').next().unwrap_or_default();
             self.speed = soundrts_world::nofloat::py_float(s)
                 .map_err(|_| Oops::new(format!("could not convert string to float: '{s}'")))?;
-            self.next_update = now;
+            self.turn_due_at(now);
         } else if cmd == "p" {
             if self.speed >= 1.0 {
                 self.speed /= 10000.0;
             } else {
                 self.speed *= 10000.0;
-                self.next_update = now;
+                self.turn_due_at(now);
             }
         } else if cmd == "m" {
             self.cheat_at_once(Cheat::InfiniteMana);
@@ -379,9 +379,7 @@ impl GameInterface {
     /// player's even out of the game, as the console's always were; the
     /// console is open only in a game that allows cheats.
     pub(crate) fn cheat_at_once(&mut self, cheat: Cheat) {
-        if let Some(told) = self.host.queue(self.me, Command::Cheat(cheat)) {
-            self.install_at_once(told);
-        }
+        self.queue_at_once(Command::Cheat(cheat));
     }
 
     /// Starts typing a command of the console, in a game that allows
@@ -425,15 +423,11 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
-    fn is_admin(&self) -> bool {
-        self.view().players().first() == Some(&self.me)
-    }
-
     /// Opens the game menu: quit, the speeds, continue. The keys go to it
     /// until a choice is made. In single-player the world waits meanwhile,
     /// and its sounds stop; in a game on a server, the game goes on.
     fn cmd_gamemenu(&mut self, cx: &mut Client) {
-        if self.net.is_none() {
+        if !self.on_a_server() {
             cx.stop_sound(false);
         }
         let choice: Rc<Cell<Option<GameMenuChoice>>> = Rc::new(Cell::new(None));
@@ -446,8 +440,8 @@ impl GameInterface {
         };
         let mut menu = Menu::new(msg(mp::MENU), Vec::new());
         menu.append(msg(mp::CANCEL_GAME), set(GameMenuChoice::Quit), None);
-        // In a game on a server, the server keeps the time.
-        if self.is_admin() && self.net.is_none() {
+        // In a game on a server, the room's host sets the server's speed.
+        if self.offers_speeds() {
             menu.append(
                 msg(mp::SET_SPEED_TO_SLOW),
                 set(GameMenuChoice::Speed(0.5)),
@@ -521,8 +515,10 @@ impl GameInterface {
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.
-                cx.config.speed = s;
-                cx.save_config();
+                if !self.on_a_server() {
+                    cx.config.speed = s;
+                    cx.save_config();
+                }
             }
             None => {}
         }
@@ -531,7 +527,7 @@ impl GameInterface {
     /// Asks the world to quit; asked again, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
         if !self.already_asked_to_quit {
-            self.next_update = cx.clock.now();
+            self.turn_due_at(cx.clock.now());
             self.send_command(cx, Command::Quit);
             cx.input.clear();
             self.already_asked_to_quit = true;

@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::change::TurnChange;
 use crate::command::{Cheat, Command};
 use crate::entity::PlayerId;
 use crate::events::Event;
@@ -64,6 +65,36 @@ pub struct SeatTurn {
     pub end_of_turn: Option<Arc<TurnMessage>>,
     pub then: Vec<Event>,
     pub message: Arc<TurnMessage>,
+}
+
+impl SeatTurn {
+    /// The changes that bring a seat from `last`, the message it was last
+    /// sent, through this turn: the end of its turn, with `missed` told
+    /// first (see [`TurnChange::catching_up`]); then, if anything came
+    /// after the end of the turn (the players leaving, when it ended the
+    /// game), what the seat knows after the step, with those events, of
+    /// the same game time. A seat with no end of turn gets the second
+    /// alone, with `missed` first.
+    pub fn changes<'a>(
+        &self,
+        last: &TurnMessage,
+        missed: impl IntoIterator<Item = &'a Event>,
+    ) -> Vec<TurnChange> {
+        let after = || TurnMessage {
+            events: self.then.clone(),
+            ..(*self.message).clone()
+        };
+        match &self.end_of_turn {
+            Some(end) => {
+                let mut changes = vec![TurnChange::catching_up(last, missed, end)];
+                if !self.then.is_empty() || !Arc::ptr_eq(end, &self.message) {
+                    changes.push(TurnChange::between(end, &after()));
+                }
+                changes
+            }
+            None => vec![TurnChange::catching_up(last, missed, &after())],
+        }
+    }
 }
 
 /// Whether a cheat changes the game at once.

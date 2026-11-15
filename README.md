@@ -170,19 +170,15 @@ In a game room, the host invites players and computers, sets the alliances and f
 
 A chat message plays a short sound, then the game says who wrote it and what they wrote, after the message that is being said. In a game, the game goes on while you type. The multiplayer menu has an option that stops the game from saying when players arrive on the server or leave it.
 
-In a game on a server, every player's computer runs the same game. If one computer computes something different, the game is out of sync: the players whose game differs leave it, and the others play on. Each player's game then saves a record in the `replays` folder of the settings folder, for example `out-of-sync-andrew-seed1234-turn56.jsonl`. The record holds the rules, the map, the players' logins and every order. It replays the game on any computer, without the game data.
+In a game on a server, the server runs the game and tells each player only what that player knows: the fog of war holds. The game does not wait for a slow player or a lost connection. When the host starts the game, their computer sends the server the rules, the computer players and the map, as the host's game has them with its mods; every player needs the same mods, as before.
 
-To see whether a computer computes the same game, check the record on that computer. The check prints how many turns it replayed, and the first turn that differs if there is one. To compare the records of two players, compare the two files: each turn is one line.
-
-```powershell
-cargo run -p soundrts -- --check-record out-of-sync-andrew-seed1234-turn56.jsonl
-```
+In the game menu, the speeds change the speed of the game for everyone, and only the room's host can change it: the others hear "only the host can change the speed". A game on a server has no console and no cheats.
 
 Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
 
 ## Run a server
 
-You can also run a server on its own, for example on a computer that stays on. The server is a lobby, a chat, and a turn clock. It does not need the game data.
+You can also run a server on its own, for example on a computer that stays on. The server is a lobby and a chat, and it runs the games played on it. It does not need the game data: the player who starts a game sends what the server builds it from.
 
 ```powershell
 cargo run -p soundrts-server -- --port 2501 --name "My server"
@@ -250,7 +246,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs` also run real servers, on 127.0.0.1 only, and their clients on real time. No test asks a router to forward a port.
+The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs` and `crates/client/tests/multiplayer.rs` also run real servers, on 127.0.0.1 only. One of them plays the same game twice, on the client and through a server, and checks that the player hears and plays the same. No test asks a router to forward a port.
 
 Two sets of tests check the port against recordings:
 
@@ -276,7 +272,7 @@ These tests show what text the port sends to the speech device. They cannot show
 
 - `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world. After a seat's first message, what changed since its last one is enough to make the next.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
-- `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a host sends and receives, in a compact binary form. Nothing sends it yet.
+- `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game.

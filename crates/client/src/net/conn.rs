@@ -7,8 +7,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
+use soundrts_protocol::game::{SeatFrame, decode_frame};
 use soundrts_protocol::{
-    ClientMsg, DEFAULT_PORT, LobbySnapshot, MAX_MESSAGE_BYTES, Rejection, ServerMsg, Wire,
+    ClientMsg, DEFAULT_PORT, Invalid, LobbySnapshot, MAX_MESSAGE_BYTES, Rejection, ServerMsg, Wire,
 };
 use tokio::sync::mpsc as tokio_mpsc;
 use tokio_tungstenite::tungstenite::Message;
@@ -18,13 +19,25 @@ use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[derive(Clone, Debug, PartialEq)]
 pub enum NetEvent {
     Msg(ServerMsg),
+    /// A frame of the game's stream, decoded but not yet checked against
+    /// the game; or why it could not be decoded.
+    Frame(Result<Box<SeatFrame>, Invalid>),
     /// The connection is over, for this reason.
     Closed(String),
 }
 
+/// What goes to the server.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outgoing {
+    /// A message of the lobby, as JSON text.
+    Msg(ClientMsg),
+    /// A command of the player, encoded ([`soundrts_protocol::game::encode_command`]).
+    Command(Vec<u8>),
+}
+
 /// Both ends of a link to a server: a real socket, or a fake one in tests.
 pub trait Link {
-    fn send(&mut self, msg: ClientMsg);
+    fn send(&mut self, out: Outgoing);
     /// The next event, if one has come. Never blocks.
     fn poll(&mut self) -> Option<NetEvent>;
 }
@@ -38,7 +51,12 @@ impl Connection {
     }
 
     pub fn send(&mut self, msg: ClientMsg) {
-        self.0.send(msg);
+        self.0.send(Outgoing::Msg(msg));
+    }
+
+    /// Sends an encoded command of the player.
+    pub fn send_command(&mut self, bytes: Vec<u8>) {
+        self.0.send(Outgoing::Command(bytes));
     }
 
     pub fn poll(&mut self) -> Option<NetEvent> {
@@ -55,7 +73,7 @@ impl Connection {
 struct ClosedLink;
 
 impl Link for ClosedLink {
-    fn send(&mut self, _: ClientMsg) {}
+    fn send(&mut self, _: Outgoing) {}
 
     fn poll(&mut self) -> Option<NetEvent> {
         None
@@ -151,20 +169,23 @@ pub fn open(
         NetEvent::Msg(other) => Err(ConnectError::NotAServer(format!(
             "unexpected first message: {other:?}"
         ))),
+        NetEvent::Frame(_) => Err(ConnectError::NotAServer(
+            "a game's frame before the welcome".into(),
+        )),
         NetEvent::Closed(reason) => Err(ConnectError::NotAServer(reason)),
     }
 }
 
 struct SocketLink {
-    out: Option<tokio_mpsc::UnboundedSender<ClientMsg>>,
+    out: Option<tokio_mpsc::UnboundedSender<Outgoing>>,
     events: Option<tokio_mpsc::Receiver<NetEvent>>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Link for SocketLink {
-    fn send(&mut self, msg: ClientMsg) {
-        if let Some(out) = &self.out {
-            let _ = out.send(msg);
+    fn send(&mut self, out: Outgoing) {
+        if let Some(tx) = &self.out {
+            let _ = tx.send(out);
         }
     }
 
@@ -203,7 +224,7 @@ fn serve(
     url: String,
     hello: ClientMsg,
     timeout: Duration,
-    mut out: tokio_mpsc::UnboundedReceiver<ClientMsg>,
+    mut out: tokio_mpsc::UnboundedReceiver<Outgoing>,
     events: tokio_mpsc::Sender<NetEvent>,
     connected: mpsc::Sender<Result<(), ConnectError>>,
 ) {
@@ -258,9 +279,13 @@ fn serve(
                 biased;
                 msg = out.recv() => match msg {
                     Some(msg) => {
+                        let message = match msg {
+                            Outgoing::Msg(m) => Message::Text(m.to_json().into()),
+                            Outgoing::Command(bytes) => Message::Binary(bytes.into()),
+                        };
                         // A server that stops reading blocks the write.
                         tokio::select! {
-                            sent = ws.send(Message::Text(msg.to_json().into())) => {
+                            sent = ws.send(message) => {
                                 if let Err(e) = sent {
                                     break End::Lost(e.to_string());
                                 }
@@ -283,6 +308,12 @@ fn serve(
                             break End::Lost(format!("cannot read a message from the server: {e}"));
                         }
                     },
+                    Some(Ok(Message::Binary(bytes))) => {
+                        let frame = decode_frame(&bytes).map(Box::new);
+                        if events.send(NetEvent::Frame(frame)).await.is_err() {
+                            break End::Abandoned;
+                        }
+                    }
                     Some(Ok(Message::Close(_))) | None => break End::Lost("closed by the server".into()),
                     Some(Ok(_)) => {}
                     Some(Err(e)) => break End::Lost(e.to_string()),

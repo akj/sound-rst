@@ -14,7 +14,6 @@ use soundrts::log::Log;
 use soundrts::options::Options;
 use soundrts::parameters::Parameters;
 use soundrts::paths::Paths;
-use soundrts::record::GameRecord;
 use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
 use soundrts::tts::screen_reader_speech;
@@ -37,26 +36,6 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 notice::fatal(&e.to_string());
-                ExitCode::FAILURE
-            }
-        };
-    }
-    if let Some(file) = &options.check_record {
-        // A record that makes the simulation fail is reported as invalid
-        // by the check; the failure itself is not printed.
-        std::panic::set_hook(Box::new(|_| {}));
-        return match GameRecord::read(file) {
-            Ok(record) => {
-                let check = record.check();
-                notice::print(&format!("{check}\n"));
-                if check.passed() {
-                    ExitCode::SUCCESS
-                } else {
-                    ExitCode::FAILURE
-                }
-            }
-            Err(e) => {
-                notice::fatal(&e);
                 ExitCode::FAILURE
             }
         };

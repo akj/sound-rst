@@ -163,8 +163,6 @@ pub enum Subject {
     /// An order refused for this reason.
     Refusal(Reason),
     ProductionDeferred,
-    /// The players the server waits for.
-    Waiting,
     Room(RoomTopic),
 }
 

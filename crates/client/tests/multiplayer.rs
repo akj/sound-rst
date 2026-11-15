@@ -1,14 +1,17 @@
 //! The multiplayer menus and games against a fake server: a script of
-//! server messages at set times on the test clock. What the client says
-//! and sends is checked; `net_play.rs` plays against a real server.
+//! server messages and frames at set times on the test clock, the frames
+//! made by a game run here as a server runs one. What the client says and
+//! sends is checked. The games whose turns run play on a real server on
+//! 127.0.0.1, as does `net_play.rs`.
 
 use soundrts::clock::Clock;
 use soundrts::config::Config;
 use soundrts::input::{Key, Mods};
 use soundrts::multiplayer::play_on;
-use soundrts::testkit::{FakeServer, Harness, LiveKeys, Script, snapshot};
+use soundrts::testkit::{FakeServer, FakeStream, Harness, LiveKeys, Script, TestGame, snapshot};
+use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::*;
-use soundrts_world::{Cheat, Command};
+use soundrts_world::{Command, Order, OrderTarget, Queue};
 
 fn login(s: &str) -> Login {
     Login::new(s).unwrap()
@@ -339,23 +342,7 @@ fn a_game_starting_during_the_room_chat_prompt_cancels_it_and_starts() {
         .at(60.0)
         .tap(Key::LShift);
     let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
-        let map = jl1(h);
-        let slots = vec![
-            slot(human("andrew"), 1, true),
-            slot(SlotPlayer::Computer(AiLevel::Easy), 2, true),
-        ];
-        let state = room_state(&map, slots.clone());
-        s.at(10.0, room(RoomChange::Entered, &state));
-        s.at(
-            18.0,
-            ServerMsg::GameStarted {
-                seed: 1,
-                slots,
-                you: 0,
-                map,
-                speed: Speed::Normal,
-            },
-        );
+        game_starting(h, s, 18.0, 0);
     });
     let said = said(&h);
     let typed = from(&said, "x . x");
@@ -364,14 +351,8 @@ fn a_game_starting_during_the_room_chat_prompt_cancels_it_and_starts() {
         typed.iter().any(|s| s.starts_with("objective")),
         "{said:#?}"
     );
-    let sent = server.sent();
-    assert!(
-        !sent.iter().any(|m| matches!(m, ClientMsg::Chat { .. })),
-        "{sent:?}"
-    );
-    assert_eq!(sent.first(), Some(&ClientMsg::Loaded), "{sent:?}");
     // The window closed during the game: the server is told.
-    assert_eq!(sent.last(), Some(&ClientMsg::LeaveGame), "{sent:?}");
+    assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
 }
 
 fn two_slots() -> Vec<Slot> {
@@ -381,10 +362,32 @@ fn two_slots() -> Vec<Slot> {
     ]
 }
 
-fn turn(n: Turn) -> ServerMsg {
-    ServerMsg::Turn {
-        turn: n,
-        orders: Vec::new(),
+/// A room with a computer on jl1, entered at 10 s, whose game the server
+/// starts at `start` with `you` as the player's slot: the seat, the start
+/// of the game and the seat's whole message. No turn comes.
+fn game_starting(h: &mut Harness, s: &FakeServer, start: f64, you: SlotIndex) {
+    let map = jl1(h);
+    let state = room_state(&map, two_slots());
+    s.at(10.0, room(RoomChange::Entered, &state));
+    let stream = FakeStream::new(h, "jl1", &two_slots(), you, 1);
+    for frame in stream.opening(map, Speed::Normal) {
+        s.frame_at(start, frame);
+    }
+}
+
+/// A game of Andrew against a computer on a fake server, joined, and its
+/// stream.
+fn fake_game(h: &mut Harness, slots: &[Slot]) -> (FakeServer, FakeStream, TestGame) {
+    let server = h.join_fake_server("andrew", &["bob"]);
+    let stream = FakeStream::new(h, "jl1", slots, 0, 1);
+    let g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+    (server, stream, g)
+}
+
+/// Sends the frames of the stream's next turn at `time`.
+fn turn_at(server: &FakeServer, stream: &mut FakeStream, time: f64) {
+    for frame in stream.turn(Vec::new()) {
+        server.frame_at(time, frame);
     }
 }
 
@@ -396,41 +399,32 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
         Script::new().keep_open().with_live(live.clone()),
         config("andrew"),
     );
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    h.clock.follow_real_time();
     let t0 = h.clock.now();
-    for n in 0..40 {
-        server.at(t0 + 0.3 * f64::from(n), turn(n));
-    }
     live.tap_at(t0 + 1.0, Key::F7, Mods::NONE);
     live.type_at(t0 + 2.0, 0.5, "gg wp");
     live.tap_at(t0 + 6.0, Key::Return, Mods::NONE);
     h.run_for(&mut g, 1.5);
-    let typing_from = g.game.host.world().turn();
+    let typing_from = g.game.view().turn();
     h.run_for(&mut g, 4.4);
-    let typing_to = g.game.host.world().turn();
-    h.run_for(&mut g, 1.0);
+    let typing_to = g.game.view().turn();
+    h.run_for(&mut g, 1.5);
+    server.shutdown();
+    // 14 turns at normal speed: a slow machine may take fewer.
     assert!(
-        typing_to - typing_from >= 12,
+        typing_to - typing_from >= 10,
         "turns {typing_from} to {typing_to} while typing"
     );
-    let sent = server.sent();
-    assert!(
-        sent.contains(&ClientMsg::Chat {
-            channel: Channel::Game,
-            text: ChatText::clean("gg wp").unwrap(),
-        }),
-        "{sent:?}"
-    );
-    let done = sent
-        .iter()
-        .filter(|m| matches!(m, ClientMsg::TurnDone { .. }))
-        .count();
-    assert_eq!(done as i64, g.game.host.world().turn());
-    // The letters went to the line, not to the game's keys.
+    // The letters went to the line, not to the game's keys, and the line
+    // went to the game's players, Andrew among them.
     let said = h.said_since(0);
     assert!(said.contains(&"g . g".to_owned()), "{said:#?}");
     assert!(said.contains(&"gg wp".to_owned()), "{said:#?}");
+    assert!(
+        said.contains(&"<6114> andrew says gg wp".to_owned()),
+        "{said:#?}"
+    );
 }
 
 #[test]
@@ -441,32 +435,25 @@ fn turns_keep_running_while_the_game_menu_is_open() {
         Script::new().keep_open().with_live(live.clone()),
         config("andrew"),
     );
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    h.clock.follow_real_time();
     let t0 = h.clock.now();
-    for n in 0..60 {
-        server.at(t0 + 0.3 * f64::from(n), turn(n));
-    }
     live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
     live.tap_at(t0 + 7.0, Key::Escape, Mods::NONE);
     live.tap_at(t0 + 9.0, Key::F10, Mods::NONE);
     h.run_for(&mut g, 1.5);
-    let open_from = g.game.host.world().turn();
+    let open_from = g.game.view().turn();
     let said_from = h.said_since(0).len();
     h.run_for(&mut g, 5.0);
-    let open_to = g.game.host.world().turn();
+    let open_to = g.game.view().turn();
+    h.run_for(&mut g, 4.0);
+    server.shutdown();
+    // 16 turns at normal speed: a slow machine may take fewer.
     assert!(
-        open_to - open_from >= 15,
+        open_to - open_from >= 12,
         "turns {open_from} to {open_to} with the menu open"
     );
-    h.run_for(&mut g, 4.0);
     assert!(live.is_empty(), "every key was read");
-    let done = server
-        .sent()
-        .iter()
-        .filter(|m| matches!(m, ClientMsg::TurnDone { .. }))
-        .count();
-    assert_eq!(done as i64, g.game.host.world().turn());
     // The news went on with the menu open; Escape chose to continue, and
     // F10 then went to the game, which opened the menu again. News cut off
     // by either is said again after it.
@@ -477,262 +464,47 @@ fn turns_keep_running_while_the_game_menu_is_open() {
 }
 
 #[test]
-fn out_of_sync_says_whether_the_player_leaves_the_game() {
+fn turns_that_come_together_are_taken_together() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &["bob"]);
-    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
-    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
-    let t0 = h.clock.now();
-    server.at(
-        t0 + 1.0,
-        ServerMsg::OutOfSync {
-            turn: 0,
-            slots: vec![1],
-        },
-    );
-    server.at(
-        t0 + 10.0,
-        ServerMsg::OutOfSync {
-            turn: 0,
-            slots: vec![0, 1],
-        },
-    );
-    let from = h.said_since(0).len();
-    h.run_for(&mut g, 5.0);
-    let others = h.said_since(from);
-    assert!(
-        others
-            .iter()
-            .any(|s| s.ends_with("other players are out of sync: they leave the game")),
-        "{others:#?}"
-    );
-    let from = h.said_since(0).len();
-    h.run_for(&mut g, 10.0);
-    let you = h.said_since(from);
-    assert!(
-        you.iter().any(|s| s
-            .ends_with("the game is out of sync: you no longer play the same game as the others")),
-        "{you:#?}"
-    );
-}
-
-/// The orders that send each slot's peasants to a square: the next square
-/// east or west of their own with `away`, else their own.
-fn peasant_orders(g: &soundrts::testkit::TestGame, away: bool) -> Vec<SlotOrders> {
-    let world = g.game.host.world();
-    let net = g.game.net.as_ref().unwrap();
-    net.slots
-        .iter()
-        .enumerate()
-        .map(|(slot, &p)| {
-            let peasants: Vec<_> = world
-                .player(p)
-                .units
-                .iter()
-                .filter_map(|&u| world.entity(u))
-                .filter(|e| &*e.type_name == "peasant")
-                .collect();
-            let home = world.square(peasants[0].square().unwrap());
-            let target = if away {
-                let next = world
-                    .square_at(home.col + 1, home.row)
-                    .or_else(|| world.square_at(home.col - 1, home.row))
-                    .unwrap();
-                world.square(next).name.clone()
-            } else {
-                home.name.clone()
-            };
-            let ids: Vec<String> = peasants.iter().map(|e| e.id.0.to_string()).collect();
-            let orders = [
-                format!("control {}", ids.join(" ")),
-                format!("order 0 0 go {target}"),
-            ]
-            .map(|o| Order::new(o).unwrap());
-            SlotOrders {
-                slot,
-                orders: Orders::new(orders.to_vec()).unwrap(),
-            }
-        })
-        .collect()
-}
-
-#[test]
-fn a_game_out_of_sync_saves_a_record_that_replays_the_same_game() {
-    use soundrts::record::{Check, Difference, GameRecord, RecordedPlayer, Who};
-
-    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &["bob"]);
-    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
-    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
-    let (away, back) = (peasant_orders(&g, true), peasant_orders(&g, false));
-    let t0 = h.clock.now();
-    for n in 0..40 {
-        let orders = match n {
-            5 => away.clone(),
-            20 => back.clone(),
-            _ => Vec::new(),
-        };
-        server.at(t0 + 0.3 * f64::from(n), ServerMsg::Turn { turn: n, orders });
-    }
-    server.at(
-        t0 + 13.0,
-        ServerMsg::OutOfSync {
-            turn: 39,
-            slots: vec![1],
-        },
-    );
-    h.run_for(&mut g, 14.0);
-    assert_eq!(g.game.host.world().turn(), 40);
-
-    let path = h
-        .client
-        .paths
-        .replays()
-        .join("out-of-sync-andrew-seed1-turn39.jsonl");
-    let record = GameRecord::read(&path).unwrap();
-    assert_eq!(&record, &g.game.net.as_ref().unwrap().record);
-    assert!(
-        h.log_text()
-            .contains(&format!("game record written to {}", path.display())),
-        "{}",
-        h.log_text()
-    );
-    assert_eq!(record.setup.you, 0);
-    assert_eq!(record.setup.seed, 1);
-    assert_eq!(
-        record.setup.players,
-        [("andrew", "1"), ("bob", "2")].map(|(login, alliance)| RecordedPlayer {
-            who: Who::Human(login.into()),
-            faction: "random_faction".into(),
-            alliance: Some(alliance.into()),
-        })
-    );
-    let turns: Vec<Turn> = record.turns.iter().map(|t| t.turn).collect();
-    assert_eq!(turns, (0..40).collect::<Vec<Turn>>());
-    assert_eq!(record.turns[5].orders.len(), 4);
-    assert_eq!(record.turns[5].orders[3].slot, 1);
-    assert!(record.turns[5].orders[3].order.starts_with("order 0 0 go "));
-    assert_eq!(
-        record.check(),
-        Check::Replayed {
-            turns: 40,
-            first_difference: None
-        }
-    );
-
-    // A digest changed: the check names that turn.
-    let mut changed = record.clone();
-    let digest = record.turns[12].digest;
-    changed.turns[12].digest ^= 1;
-    assert_eq!(
-        changed.check(),
-        Check::Replayed {
-            turns: 13,
-            first_difference: Some(Difference {
-                turn: 12,
-                recorded: digest ^ 1,
-                replayed: digest,
-            })
-        }
-    );
-
-    // Bob's order to go away at turn 5 removed: that turn differs at once.
-    let mut missing = record.clone();
-    missing.turns[5].orders.remove(3);
-    let Check::Replayed {
-        turns: 6,
-        first_difference: Some(d),
-    } = missing.check()
-    else {
-        panic!("{:?}", missing.check());
-    };
-    assert_eq!(d.turn, 5);
-    assert_eq!(d.recorded, record.turns[5].digest);
-}
-
-#[test]
-fn turns_that_come_together_are_spread_out() {
-    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
     let t0 = h.clock.now() + 1.0;
-    for n in 0..3 {
-        server.at(t0, turn(n));
+    for _ in 0..3 {
+        turn_at(&server, &mut stream, t0);
     }
-    let mut times = Vec::new();
-    let mut last = g.game.host.world().turn();
-    while times.len() < 3 {
+    while h.clock.now() < t0 {
         h.step(&mut g);
-        let now = g.game.host.world().turn();
-        if now != last {
-            times.push(h.clock.now());
-            last = now;
-        }
-        assert!(h.clock.now() < t0 + 5.0, "the turns did not all run");
+        assert_eq!(g.game.view().turn(), 0);
     }
-    // 300 ms between turns at normal speed, divided by one plus the turns
-    // still waiting.
-    let gaps = [times[1] - times[0], times[2] - times[1]];
-    assert!((gaps[0] - 0.1).abs() < 0.003, "{gaps:?}");
-    assert!((gaps[1] - 0.15).abs() < 0.003, "{gaps:?}");
-    assert!(times[0] - t0 < 0.003, "{times:?}");
+    h.step(&mut g);
+    // The server's clock is the game's: each turn is current as it comes.
+    assert_eq!(g.game.view().turn(), 3);
 }
 
 #[test]
-fn orders_beyond_what_a_turn_takes_wait_for_the_next_turn() {
+fn commands_beyond_what_a_turn_takes_wait_for_the_next_turn() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
-    let command = Command::Cheat(Cheat::Trigger("x".repeat(996)));
-    let line_len = "cmd ".len() + 996;
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
+    let command = Command::Order {
+        order: Order::ResetGroup("x".repeat(996)),
+        queue: Queue::Replace,
+        imperative: false,
+    };
+    let size = game::encode_command(&command).unwrap().len();
     for _ in 0..40 {
         g.game.send_command(&h.client, command.clone());
     }
-    let order_bytes = |server: &FakeServer| -> usize {
-        server
-            .sent()
-            .iter()
-            .filter_map(|m| match m {
-                ClientMsg::Orders { orders } => Some(
-                    orders
-                        .as_slice()
-                        .iter()
-                        .map(|o| o.as_str().len())
-                        .sum::<usize>(),
-                ),
-                _ => None,
-            })
-            .sum()
-    };
+    let sent_bytes = |server: &FakeServer| -> usize { server.commands().iter().map(|c| c.1).sum() };
     h.run_for(&mut g, 0.5);
-    let first = order_bytes(&server);
+    let first = sent_bytes(&server);
     assert!(first > 0 && first <= MAX_TURN_ORDER_BYTES / 2, "{first}");
     assert!(!g.game.pending_commands().is_empty());
-    server.at(h.clock.now(), turn(0));
+    turn_at(&server, &mut stream, h.clock.now());
     h.run_for(&mut g, 0.5);
-    server.at(h.clock.now(), turn(1));
+    turn_at(&server, &mut stream, h.clock.now());
     h.run_for(&mut g, 0.5);
-    assert_eq!(order_bytes(&server), 40 * line_len);
+    assert_eq!(sent_bytes(&server), 40 * size);
+    assert!(server.commands().iter().all(|c| c.0 == command));
     assert!(g.game.pending_commands().is_empty());
-}
-
-/// A room with a computer on jl1, entered at 10 s, whose game the server
-/// starts at `start` with `you` as the player's slot.
-fn game_starting(h: &mut Harness, s: &FakeServer, start: f64, you: SlotIndex) {
-    let map = jl1(h);
-    let slots = two_slots();
-    let state = room_state(&map, slots.clone());
-    s.at(10.0, room(RoomChange::Entered, &state));
-    s.at(
-        start,
-        ServerMsg::GameStarted {
-            seed: 1,
-            slots,
-            you,
-            map,
-            speed: Speed::Normal,
-        },
-    );
 }
 
 #[test]
@@ -743,12 +515,12 @@ fn a_game_starting_as_the_player_leaves_the_room_is_played() {
         .tap(Key::Escape)
         .at(60.0)
         .tap(Key::LShift);
-    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
         game_starting(h, s, 20.0, 0)
     });
-    let sent = server.sent();
-    assert!(!sent.contains(&ClientMsg::LeaveRoom), "{sent:?}");
-    assert_eq!(sent.first(), Some(&ClientMsg::Loaded), "{sent:?}");
+    assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
+    let said = said(&h);
+    assert!(said.iter().any(|s| s.starts_with("objective")), "{said:#?}");
 }
 
 #[test]
@@ -759,31 +531,102 @@ fn a_game_started_after_the_player_asked_to_leave_is_played() {
         .tap(Key::Escape)
         .at(60.0)
         .tap(Key::LShift);
-    let (_, server) = on_fake_server(script, config("andrew"), |h, s| {
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
         game_starting(h, s, 25.0, 0)
     });
-    let sent = server.sent();
+    assert_eq!(server.sent(), [ClientMsg::LeaveRoom, ClientMsg::LeaveGame]);
+    let said = said(&h);
+    assert!(said.iter().any(|s| s.starts_with("objective")), "{said:#?}");
+}
+
+#[test]
+fn a_game_on_a_map_the_player_does_not_have_is_left() {
+    let script = Script::new().at(40.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let mut map = jl1(h);
+        map.hash = MapHash::of(b"a map nobody has");
+        let stream = FakeStream::new(h, "jl1", &two_slots(), 0, 1);
+        for frame in stream.opening(map, Speed::Normal) {
+            s.frame_at(20.0, frame);
+        }
+    });
+    assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
+    let said = said(&h);
+    assert!(
+        said.contains(&"<1029> this game cannot start here".to_owned()),
+        "{said:#?}"
+    );
+}
+
+/// Andrew chooses the second speed of the game menu in a game on a fake
+/// server whose room `host` hosts: what was said from the menu on, and
+/// what his client sent.
+fn speed_from_the_game_menu(host: &str) -> (Vec<String>, Vec<ClientMsg>) {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let (server, _, mut g) = fake_game(&mut h, &slots);
+    let map = jl1(&mut h);
+    let mut state = room_state(&map, slots);
+    state.host = login(host);
+    h.client.net.as_mut().unwrap().room = Some(soundrts::net::lobby::RoomModel {
+        state,
+        map: soundrts::net::lobby::MapState::Downloading,
+    });
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    for key in [Key::F10, Key::Down, Key::Down, Key::Return] {
+        h.key(&mut g, key, Mods::NONE);
+    }
+    h.run_for(&mut g, 1.0);
+    (h.said_since(from), server.sent())
+}
+
+#[test]
+fn the_rooms_host_sets_the_speed_of_a_game_on_a_server() {
+    let (said, sent) = speed_from_the_game_menu("andrew");
     assert_eq!(
-        sent[..2],
-        [ClientMsg::LeaveRoom, ClientMsg::Loaded],
-        "{sent:?}"
+        sent,
+        [ClientMsg::SetGameSpeed { speed: Speed::Slow }],
+        "{said:#?}"
     );
 }
 
 #[test]
-fn a_game_that_does_not_give_the_player_their_slot_is_left() {
-    for you in [1, 7] {
-        let script = Script::new().at(40.0).tap(Key::LShift);
-        let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
-            game_starting(h, s, 20.0, you)
-        });
-        assert_eq!(server.sent(), [ClientMsg::LeaveGame], "slot {you}");
-        let said = said(&h);
-        assert!(
-            said.contains(&"<1029> this game cannot start here".to_owned()),
-            "{said:#?}"
-        );
-    }
+fn only_the_rooms_host_sets_the_speed_of_a_game_on_a_server() {
+    let (said, sent) = speed_from_the_game_menu("bob");
+    assert_eq!(sent, [], "{said:#?}");
+    assert_eq!(
+        said.last().map(String::as_str),
+        Some("only the host can change the speed"),
+        "{said:#?}"
+    );
+}
+
+#[test]
+fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    turn_at(&server, &mut stream, t0);
+    // The start comes once, before the game.
+    server.frame_at(
+        t0 + 1.0,
+        SeatFrame::Start(stream.host().game_start().message()),
+    );
+    h.run_for(&mut g, 10.0);
+    assert!(g.game.end_loop, "the game went on");
+    assert_eq!(g.game.view().turn(), 1);
+    h.finish(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(
+        said.last().map(String::as_str),
+        Some("game ended: the server sent what cannot be right"),
+        "{said:#?}"
+    );
+    soundrts::session::leave_server_game(&mut h.client);
+    assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
 }
 
 #[test]
@@ -957,7 +800,8 @@ fn chat_from_the_game_menu(mods: Mods) -> Vec<ClientMsg> {
         state: room_state(&map, two_slots()),
         map: soundrts::net::lobby::MapState::Downloading,
     });
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
+    let stream = FakeStream::new(&mut h, "jl1", &two_slots(), 0, 1);
+    let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
     let t0 = h.clock.now();
     live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
     live.tap_at(t0 + 5.0, Key::F7, mods);
@@ -1019,11 +863,10 @@ fn what_players_wrote_and_their_logins_are_said_as_written() {
 #[test]
 fn a_players_login_is_said_as_written_in_the_game() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    h.join_fake_server("andrew", &[]);
     let slots = vec![slot(human("andrew"), 1, true), slot(human("4000"), 2, true)];
-    let g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
-    let other = g.game.host.world().players[1];
-    let name = g.game.host.world().player(other).name();
+    let (_, _, g) = fake_game(&mut h, &slots);
+    let other = g.game.view().players()[1];
+    let name = g.game.view().player_name(other);
     assert_eq!(
         h.client.sounds.translate(&name[0]),
         soundrts::sound_cache::Spoken::Text("4000".into())
@@ -1123,11 +966,10 @@ fn a_map_that_cannot_be_read_is_said_and_the_room_does_not_wait_for_it() {
 }
 
 #[test]
-fn keys_send_the_lines_the_interface_always_sent() {
+fn keys_send_the_commands_the_interface_always_gave() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
-    server.at(h.clock.now(), turn(0));
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
+    turn_at(&server, &mut stream, h.clock.now());
     h.run_for(&mut g, 0.5);
     // A peasant, the square to its east, the default order there; the
     // north subsquare of that square, the default order there in the
@@ -1143,43 +985,36 @@ fn keys_send_the_lines_the_interface_always_sent() {
     h.key(&mut g, Key::Down, Mods::NONE);
     h.key(&mut g, Key::Return, Mods::NONE);
     h.run_for(&mut g, 0.5);
-    let peasant = g.game.group[0].0;
-    let world = g.game.host.world();
-    assert_eq!(
-        &*world
-            .entity(soundrts_world::EntityId(peasant))
-            .unwrap()
-            .type_name,
-        "peasant"
-    );
-    let sq = world.square(g.game.place.unwrap());
-    let lines: Vec<String> = server
-        .sent()
-        .into_iter()
-        .filter_map(|m| match m {
-            ClientMsg::Orders { orders } => Some(orders),
-            _ => None,
-        })
-        .flat_map(|o| {
-            o.as_slice()
-                .iter()
-                .map(|o| o.as_str().to_owned())
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    let peasant = g.game.group[0];
+    assert_eq!(&*g.game.view().known(peasant).unwrap().type_name, "peasant");
+    let sq = g.game.place.unwrap();
+    let (x, y) = g.game.view().square(sq).center();
+    let order = |order, imperative| Command::Order {
+        order,
+        queue: Queue::Replace,
+        imperative,
+    };
+    let commands: Vec<Command> = server.commands().into_iter().map(|c| c.0).collect();
     // A square is 12 m wide: the north subsquare's center is 4 m north.
     assert_eq!(
-        lines,
+        commands,
         [
-            format!("control {peasant}"),
-            format!("order 0 0 default {}", sq.id),
-            format!("order 0 1 default zoom-{}-{}-{}", sq.id, sq.x, sq.y + 4000),
+            Command::Control(vec![peasant]),
+            order(Order::Default(OrderTarget::Square(sq)), false),
+            order(
+                Order::Default(OrderTarget::Point {
+                    square: sq,
+                    x,
+                    y: y + 4000
+                }),
+                true
+            ),
             // `reset_group` is in no menu: the units it goes to are none.
-            "control ".to_owned(),
-            "order 0 0 reset_group 6".to_owned(),
-            format!("control {peasant}"),
-            "order 0 0 join_group 6".to_owned(),
-            "quit".to_owned(),
+            Command::Control(Vec::new()),
+            order(Order::ResetGroup("6".into()), false),
+            Command::Control(vec![peasant]),
+            order(Order::JoinGroup("6".into()), false),
+            Command::Quit,
         ]
     );
 }
@@ -1270,79 +1105,30 @@ fn an_invitation_to_a_room_the_server_never_told_of_is_ignored() {
 }
 
 #[test]
-fn a_server_that_sends_turns_far_ahead_of_the_game_is_left() {
+fn a_server_that_sends_frames_far_ahead_of_the_game_is_left() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
-    let t0 = h.clock.now();
-    for n in 0..2 * soundrts::net::MAX_QUEUED_TURNS as Turn {
-        server.at(t0, turn(n));
+    let map = jl1(&mut h);
+    let stream = FakeStream::new(&mut h, "jl1", &two_slots(), 0, 1);
+    for frame in stream.opening(map, Speed::Normal) {
+        server.frame_at(0.0, frame);
     }
-    h.run_for(&mut g, 2.0);
-    assert!(g.game.end_loop, "the game went on");
-    assert!(g.game.host.world().turn() < 10);
-    let said = h.said_since(0);
-    assert!(said.contains(&UNEXPECTED.to_owned()), "{said:#?}");
-}
-
-#[test]
-fn a_turn_with_more_orders_than_a_game_can_have_is_left() {
-    // 64 slots' worth of orders at the server's limit for a turn, and a
-    // turn of lists of no orders, which cost memory all the same.
-    let order = Order::new("x".repeat(MAX_TURN_ORDER_BYTES / MAX_ORDERS_PER_MESSAGE)).unwrap();
-    let full = (0..64)
-        .map(|slot| SlotOrders {
-            slot,
-            orders: Orders::new(vec![order.clone(); MAX_ORDERS_PER_MESSAGE]).unwrap(),
-        })
-        .collect();
-    let empty = (0..100_000)
-        .map(|_| SlotOrders {
-            slot: 0,
-            orders: Orders::default(),
-        })
-        .collect();
-    for orders in [full, empty] {
-        a_turn_is_left(orders);
-    }
-}
-
-fn a_turn_is_left(orders: Vec<SlotOrders>) {
-    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &[]);
-    let mut g = h.start_multiplayer("jl1", &two_slots(), 0, 1, Speed::Normal);
-    server.at(h.clock.now(), ServerMsg::Turn { turn: 0, orders });
-    h.run_for(&mut g, 1.0);
-    assert!(g.game.end_loop, "the game went on");
-    assert_eq!(g.game.host.world().turn(), 0);
-    let said = h.said_since(0);
-    assert!(said.contains(&UNEXPECTED.to_owned()), "{said:#?}");
-}
-
-#[test]
-fn a_game_out_of_sync_writes_one_record_however_often_the_server_says_so() {
-    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let server = h.join_fake_server("andrew", &["bob"]);
-    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
-    let mut g = h.start_multiplayer("jl1", &slots, 0, 1, Speed::Normal);
-    let t0 = h.clock.now();
-    for n in 0..20 {
-        server.at(t0 + 0.3 * f64::from(n), turn(n));
-    }
-    for (i, turn) in [3, 5, 7].into_iter().enumerate() {
-        server.at(
-            t0 + 2.0 + i as f64,
-            ServerMsg::OutOfSync {
-                turn,
-                slots: vec![1],
+    // No game takes them.
+    for _ in 0..soundrts::net::MAX_QUEUED_FRAMES {
+        server.frame_at(
+            0.0,
+            SeatFrame::Seat {
+                slot: 0,
+                change: SeatChange::Returned,
             },
         );
     }
-    h.run_for(&mut g, 6.0);
-    let records: Vec<String> = std::fs::read_dir(h.client.paths.replays())
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|n| n.starts_with("out-of-sync-"))
-        .collect();
-    assert_eq!(records, ["out-of-sync-andrew-seed1-turn3.jsonl"]);
+    for _ in 0..soundrts::net::MAX_QUEUED_FRAMES / soundrts::net::PUMP_LIMIT + 2 {
+        soundrts::net::pump(&mut h.client);
+    }
+    let net = h.client.net.as_ref().unwrap();
+    assert_eq!(
+        net.closed.as_deref(),
+        Some("too many frames ahead of the game")
+    );
 }
