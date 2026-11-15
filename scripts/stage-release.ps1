@@ -1,5 +1,5 @@
-# Gathers the files of the Windows download into dist/<Name>: the game, the
-# server, the DLLs the game loads, and the licenses. The zip and the
+# Gathers the files of the Windows download into dist/<Name>: the game and
+# its .pdb, the server, the DLLs the game loads, and the licenses. The zip and the
 # installer are both made from this folder. Safe to rerun.
 #
 # Build first:
@@ -31,8 +31,10 @@ if (Test-Path $Folder) { Remove-Item -Recurse -Force $Folder }
 New-Item -ItemType Directory -Force (Join-Path $Folder 'licenses') | Out-Null
 
 # The programs, and next to them the DLLs the game loads at run time:
-# Tolk's two, and NVDA's current controller client.
-foreach ($file in 'soundrts.exe', 'soundrts-server.exe',
+# Tolk's two, and NVDA's current controller client. The game's .pdb holds
+# only file and line numbers, so a crash in client.log names where it
+# happened.
+foreach ($file in 'soundrts.exe', 'soundrts.pdb', 'soundrts-server.exe',
         'nvdaControllerClient64.dll', 'SAAPI64.dll', 'nvdaControllerClient.dll') {
     Copy-Required (Join-Path $Target $file) (Join-Path $Folder $file)
 }
