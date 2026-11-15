@@ -1,6 +1,6 @@
 # Gathers the files of the Windows download into dist/<Name>: the game and
-# its .pdb, the server, the DLLs the game loads, and the licenses. The zip and the
-# installer are both made from this folder. Safe to rerun.
+# its .pdb, the server, the DLLs the game loads, and the licenses. The zip
+# and the installer are both made from this folder. Safe to rerun.
 #
 # Build first:
 #   pwsh scripts/fetch-nvda-controller.ps1

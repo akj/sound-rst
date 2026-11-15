@@ -306,7 +306,7 @@ These tests show what text the port sends to the speech device. They cannot show
 
 A release has three downloads, with their SHA-256 checksums in `SHA256SUMS`:
 
-- `soundrts-<version>-windows-x64.zip`: the game, the server, the DLLs they load, and the licenses. Unzip it anywhere and start `soundrts.exe`.
+- `soundrts-<version>-windows-x64.zip`: the game, the server, the DLLs they load, and the licenses. Unzip it anywhere and start `soundrts.exe`. `soundrts.pdb` holds the file and line numbers of the game: with it beside the program, a crash writes its call stack to `tmp/client.log` with the place of every step.
 - `soundrts-<version>-windows-x64-setup.exe`: an installer of the same files. It installs for the current user, asks for no administrator password, and adds a Start menu entry. Its uninstaller leaves the settings folder.
 - `soundrts-server-<version>-linux-x64.tar.gz`: the server for Linux.
 
@@ -322,7 +322,7 @@ To make a release:
    git push origin v0.1.0
    ```
 
-3. The Release workflow builds the downloads and checks them: the game in the zip fetches the data and finds it, the installer installs and uninstalls. Then it makes a draft release with the downloads. A tag with a hyphen is marked as a pre-release.
+3. The Release workflow builds the downloads and checks them: a crash in a release build names its file and line, the game in the zip fetches the data and finds it, the installer installs and uninstalls. Then it makes a draft release with the downloads. A tag with a hyphen is marked as a pre-release.
 4. Read the draft on the Releases page of the repository, edit its notes, and publish it. Nobody else sees the draft before that.
 
 A pull request that changes the workflow, `packaging/`, or the scripts it runs builds and checks the same downloads, and keeps them with the run, without a release. To get a build of any branch the same way, start the Release workflow by hand on the Actions page.

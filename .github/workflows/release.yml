@@ -80,6 +80,10 @@ jobs:
         run: ./scripts/fetch-nvda-controller.ps1
       - name: Build the game and the server
         run: cargo build --release --locked -p soundrts -p soundrts-server
+      # The other tests run on debug builds, which always have line numbers.
+      # Players get this profile: a crash in their log must name its place.
+      - name: Check that a crash names its file and line in a release build
+        run: cargo test --release --locked -p soundrts --test panic_log
       - name: Gather the files of the download
         run: ./scripts/stage-release.ps1 -Name $env:NAME
       - name: Make the zip

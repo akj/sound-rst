@@ -23,7 +23,8 @@ To download the data without the question, run this in a terminal:
     soundrts.exe --fetch-data
 
 Keep the DLL files next to soundrts.exe. The game reaches your screen
-reader through them.
+reader through them. Keep soundrts.pdb there too. It is not a program: it
+lets the log say where the game was if it stops after an error.
 
 
 Where your files are
@@ -32,6 +33,9 @@ Where your files are
 (tmp\client.log) and the data of the original game (the data folder).
 Removing the game leaves this folder. Delete it yourself to remove
 everything.
+
+If the game stops after an error, the log says what the game was doing.
+Send it with your report.
 
 
 Run a server
