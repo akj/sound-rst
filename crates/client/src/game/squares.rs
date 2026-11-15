@@ -268,26 +268,23 @@ impl GameInterface {
     /// Whether the player may see the object now: in the zoom, on the
     /// square, with a title; in first person mode, in front; an exit not
     /// blocked.
-    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> R<bool> {
+    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> bool {
         if let Some(z) = &self.zoom
             && !z.contains(v.model.x, v.model.y)
         {
-            return Ok(false);
+            return false;
         }
         if !self.is_in(v, self.place) || self.title(cx, v).is_empty() {
-            return Ok(false);
+            return false;
         }
         if self.immersion {
             if self.group.contains(&v.id()) {
-                return Ok(false);
+                return false;
             }
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
-            return Ok(a.cos() > 95f64.to_radians().cos());
+            return a.cos() > 95f64.to_radians().cos();
         }
-        if self.is_an_exit(cx, v) && self.view().exit_is_blocked(v.id(), false) {
-            return Ok(false);
-        }
-        Ok(true)
+        !(self.is_an_exit(cx, v) && self.view().exit_is_blocked(v.id(), false))
     }
 
     /// The sound of moving to a square, and whether the way is closed.
@@ -318,7 +315,7 @@ impl GameInterface {
         let (x, y) = ((xc as f64 + 0.5) * sw, (yc as f64 + 0.5) * sw);
         for v in self.dobjets.values() {
             if !(self.is_in(v, Some(place))
-                && self.is_visible(cx, v)?
+                && self.is_visible(cx, v)
                 && self.is_an_exit(cx, v)
                 && !self.view().exit_is_blocked(v.id(), true))
             {

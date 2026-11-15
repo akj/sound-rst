@@ -85,7 +85,7 @@ impl GameInterface {
             C::WorkersStatus => self.cmd_workers_status(cx),
             C::FightStatus => self.cmd_fight_status(cx),
             C::CombatStatus => self.cmd_combat_status(cx),
-            C::Examine => self.cmd_examine(cx)?,
+            C::Examine => self.cmd_examine(cx),
             C::UnitStatus => self.cmd_unit_status(cx)?,
             C::SelectSquare {
                 dx,
@@ -97,11 +97,11 @@ impl GameInterface {
             C::SelectUnknownSquare(i) => self.cmd_select_unknown_square(cx, *i)?,
             C::SelectResourceSquare(i) => self.cmd_select_resource_square(cx, *i)?,
             C::ToggleZoom => self.cmd_toggle_zoom(cx),
-            C::SelectTarget { inc, types } => self.cmd_select_target(cx, *inc, types)?,
+            C::SelectTarget { inc, types } => self.cmd_select_target(cx, *inc, types),
             C::SelectOrder { inc, menu } => self.cmd_select_order(cx, *inc, *menu),
             C::OrderShortcut => self.cmd_order_shortcut(cx),
             C::Validate(flags) => self.cmd_validate(cx, *flags)?,
-            C::Default(flags) => self.cmd_default(cx, *flags)?,
+            C::Default(flags) => self.cmd_default(cx, *flags),
             C::DoAgain { now, flags } => self.cmd_do_again(cx, *now, *flags)?,
             C::SelectUnit { inc, filter } => self.cmd_select_unit(cx, *inc, filter)?,
             C::SelectUnits(filter) => self.cmd_select_units(cx, filter)?,
@@ -109,8 +109,8 @@ impl GameInterface {
             C::Group { portion, filter } => self.cmd_group(cx, *portion, filter)?,
             C::Ungroup => self.cmd_ungroup(cx)?,
             C::RecallGroup(name) => self.cmd_recall_group(cx, name)?,
-            C::SetGroup { name, flags } => self.cmd_set_group(cx, name, *flags)?,
-            C::AppendGroup { name, flags } => self.cmd_append_group(cx, name, *flags)?,
+            C::SetGroup { name, flags } => self.cmd_set_group(cx, name, *flags),
+            C::AppendGroup { name, flags } => self.cmd_append_group(cx, name, *flags),
             C::Escape => self.cmd_escape(cx)?,
             C::Help(incr) => {
                 let m = cx.help_msg("game", *incr);

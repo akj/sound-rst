@@ -1,6 +1,8 @@
 //! The commands a key of `bindings.txt` can give during a game, read once
 //! when the bindings are loaded.
 
+use std::num::NonZeroU32;
+
 use soundrts_world::Queue;
 use soundrts_world::nofloat::py_int;
 
@@ -121,8 +123,9 @@ pub enum GameCommand {
     },
     SelectUnits(UnitFilter),
     CommandUnit,
+    /// Selects one `portion`th of the units of each type.
     Group {
-        portion: i64,
+        portion: NonZeroU32,
         filter: UnitFilter,
     },
     Ungroup,
@@ -260,18 +263,23 @@ pub const COMMAND_NAMES: &[&str] = &[
 ];
 
 fn int(s: &str) -> Result<i64, String> {
-    py_int(s).map_err(|_| format!("invalid literal for int() with base 10: '{s}'"))
+    py_int(s).map_err(|_| format!("'{s}' is not a whole number"))
+}
+
+/// A whole number above 0.
+fn positive(s: &str) -> Result<NonZeroU32, String> {
+    u32::try_from(int(s)?)
+        .ok()
+        .and_then(NonZeroU32::new)
+        .ok_or_else(|| format!("{s} is not above 0"))
 }
 
 /// The arguments' count must be between `min` and `max`.
 fn arity(args: &[String], min: usize, max: usize) -> Result<(), String> {
     if args.len() < min {
-        Err(format!("missing {} required argument(s)", min - args.len()))
+        Err(format!("{} argument(s) missing", min - args.len()))
     } else if args.len() > max {
-        Err(format!(
-            "takes {max} argument(s) but {} were given",
-            args.len()
-        ))
+        Err(format!("at most {max} argument(s), not {}", args.len()))
     } else {
         Ok(())
     }
@@ -364,7 +372,7 @@ impl GameCommand {
             "group" => {
                 arity(args, 1, usize::MAX)?;
                 C::Group {
-                    portion: int(&args[0])?,
+                    portion: positive(&args[0])?,
                     filter: UnitFilter::from_args(rest()),
                 }
             }
@@ -626,11 +634,11 @@ impl GameCommand {
             C::SelectUnits(filter) => format!("select all {}", units(filter, true)),
             C::CommandUnit => "control the target, if it is yours".into(),
             C::Group { portion, filter } => {
-                let part = match portion {
+                let part = match portion.get() {
                     1 => "all".to_owned(),
                     2 => "half".to_owned(),
                     4 => "a quarter of".to_owned(),
-                    n => format!("a {} of", ordinal(*n)),
+                    n => format!("a {} of", ordinal(n.into())),
                 };
                 let what = if filter.keyboard_types.is_empty() {
                     let idle = if filter.idle { "idle " } else { "" };

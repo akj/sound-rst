@@ -151,19 +151,13 @@ impl OrderTypeView {
         })
     }
 
-    /// The order to give, without its target. An error if the menu paired
-    /// a keyword and a type wrongly.
-    pub fn order(&self) -> super::R<KeywordOrder> {
+    /// The order to give, without its target. None if the menu paired a
+    /// keyword and a type wrongly.
+    pub fn order(&self) -> Option<KeywordOrder> {
         match &self.type_name {
             Some(t) => KeywordOrder::typed(self.keyword, t.clone()),
             None => KeywordOrder::new(self.keyword),
         }
-        .ok_or_else(|| {
-            super::Oops::new(format!(
-                "not an order: {:?} {:?}",
-                self.keyword, self.type_name
-            ))
-        })
     }
 
     /// An ability with a long range: the target may be any square.

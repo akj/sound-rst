@@ -1,6 +1,8 @@
 //! Choosing what to act on and acting: the target, the units controlled,
 //! the order, and sending the order to the game.
 
+use std::num::NonZeroU32;
+
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
@@ -13,18 +15,17 @@ use crate::sound::StereoVolume;
 
 use super::command::{OrderFlags, OrderMenu, UnitFilter};
 use super::entity::EntityView;
+use super::focus::Zoom;
 use super::order::{OrderTypeView, PRECISION};
 use super::squares::{remove_duplicates, summary};
-use super::{BEEP_SOUND, GameInterface, Oops, R};
+use super::{BEEP_SOUND, GameInterface, R};
 
-/// What an order with a target aims at when no object is selected.
-#[derive(Clone, Debug, PartialEq)]
-pub enum UiTarget {
-    Entity(EntityId),
-    Zoom,
+/// What an order with a target aims at: the selected object, else the
+/// point of the zoom on its square, else the selected square.
+enum UiTarget<'a> {
+    Entity(&'a EntityView),
+    Zoom(&'a Zoom, soundrts_world::SquareId),
     Square(soundrts_world::SquareId),
-    /// No square selected yet.
-    Nothing,
 }
 
 /// The unit types a selection command asks for: any type, or these (none
@@ -44,21 +45,12 @@ impl TypeFilter {
     }
 }
 
-/// `x[:end]` with Python's slice end.
-fn py_slice_end(len: usize, end: i64) -> usize {
-    if end < 0 {
-        (len as i64 + end).max(0) as usize
-    } else {
-        (end as usize).min(len)
-    }
-}
-
 impl GameInterface {
     // target
 
     /// The selection order of a target: by kind, then title length, then
     /// distance.
-    fn priority(&self, cx: &Client, v: &EntityView) -> R<(f64, usize, f64)> {
+    fn priority(&self, cx: &Client, v: &EntityView) -> (f64, usize, f64) {
         let mut p = 10.0;
         if self.an_order_requiring_a_target_is_selected() {
             if self
@@ -71,10 +63,7 @@ impl GameInterface {
             }
         } else if self.is_an_enemy(&v.model) {
             p = 0.5;
-        } else if v.qty() > 0 {
-            let rt = self.resource_type(&v.model).ok_or_else(|| {
-                Oops::new("unsupported operand type(s) for /: 'NoneType' and 'float'")
-            })?;
+        } else if let Some(rt) = self.resource_type(&v.model).filter(|_| v.qty() > 0) {
             p = 1.0 + rt as f64 / 100.0;
         } else if v.model.is_repairable && v.hp() < v.hp_max() {
             p = 2.0;
@@ -83,18 +72,18 @@ impl GameInterface {
         } else if v.model.is_exit() {
             p = 4.0;
         }
-        Ok((p, self.title(cx, v).len(), self.distance_to(v)))
+        (p, self.title(cx, v).len(), self.distance_to(v))
     }
 
-    fn object_choices(&self, cx: &Client, inc: i64, types: &[String]) -> R<Vec<EntityId>> {
+    fn object_choices(&self, cx: &Client, inc: i64, types: &[String]) -> Vec<EntityId> {
         let mut choices = Vec::new();
         for v in self.dobjets.values() {
-            if self.is_visible(cx, v)?
+            if self.is_visible(cx, v)
                 && (types.is_empty()
                     || types.iter().any(|t| t == v.type_name())
                     || types.iter().any(|t| t == "useful") && self.is_a_useful_target(cx, v))
             {
-                choices.push((self.priority(cx, v)?, v.id()));
+                choices.push((self.priority(cx, v), v.id()));
             }
         }
         choices.sort_by(|a, b| {
@@ -107,16 +96,17 @@ impl GameInterface {
         if inc == -1 {
             ids.reverse();
         }
-        Ok(ids)
+        ids
+    }
+
+    /// The selected object.
+    fn target_view(&self) -> Option<&EntityView> {
+        self.dobjets.get(&self.target?)
     }
 
     /// Says the target with a beep from its direction.
-    pub(crate) fn say_target(&self, cx: &mut Client) -> R {
-        let Some(t) = self.target else { return Ok(()) };
-        let v = self
-            .dobjets
-            .get(&t)
-            .ok_or_else(|| Oops::missing("target"))?;
+    pub(crate) fn say_target(&self, cx: &mut Client) {
+        let Some(v) = self.target_view() else { return };
         let mut d = self.positional_description(cx, v);
         if self.an_order_requiring_a_target_is_selected()
             && let Some(o) = &self.order
@@ -130,23 +120,20 @@ impl GameInterface {
         }
         let m = [msg(mp::POSITIONAL_BEEP), d].concat();
         cx.voice.item_stereo(&m, l, r);
-        Ok(())
     }
 
-    pub(crate) fn cmd_examine(&self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_examine(&self, cx: &mut Client) {
         if self.target.is_some() {
-            self.say_target(cx)
+            self.say_target(cx);
         } else if self.zoom.is_some() {
             self.say_zoom(cx, &Vec::new());
-            Ok(())
         } else {
             self.say_square(cx, self.place, &Vec::new());
-            Ok(())
         }
     }
 
-    pub(crate) fn cmd_select_target(&mut self, cx: &mut Client, inc: i64, types: &[String]) -> R {
-        let choices = self.object_choices(cx, inc, types)?;
+    pub(crate) fn cmd_select_target(&mut self, cx: &mut Client, inc: i64, types: &[String]) {
+        let choices = self.object_choices(cx, inc, types);
         if choices.is_empty() {
             cx.voice.item(&msg(mp::NOTHING));
             self.target = None;
@@ -156,9 +143,8 @@ impl GameInterface {
                 .and_then(|t| choices.iter().position(|&c| c == t))
                 .map_or(0, |i| i + 1);
             self.target = Some(choices[if sel >= choices.len() { 0 } else { sel }]);
-            self.say_target(cx)?;
+            self.say_target(cx);
         }
-        Ok(())
     }
 
     // units
@@ -267,7 +253,7 @@ impl GameInterface {
         )
     }
 
-    fn regroup(&mut self, cx: &mut Client, portion: i64, filter: &UnitFilter) -> R {
+    fn regroup(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) -> R {
         self.update_group();
         if let Some(&first) = self.group.first() {
             let initial = &self.dobjets[&first];
@@ -287,9 +273,6 @@ impl GameInterface {
                         .collect::<Vec<_>>(),
                 ),
             };
-            if portion == 0 {
-                return Err(Oops::new("integer division or modulo by zero"));
-            }
             let units = self.units(cx, true, false);
             let mut group = Vec::new();
             for t in &types {
@@ -307,8 +290,7 @@ impl GameInterface {
                             && (!filter.idle || v.orders().is_empty())
                     })
                     .collect();
-                let end = soundrts_world::nofloat::floordiv(m.len() as i64, portion);
-                group.extend_from_slice(&m[..py_slice_end(m.len(), end)]);
+                group.extend_from_slice(&m[..m.len() / portion.get() as usize]);
             }
             if !group.contains(&first) && types.contains(&initial_type) {
                 group.pop();
@@ -319,7 +301,12 @@ impl GameInterface {
         self.say_group(cx, &Vec::new())
     }
 
-    pub(crate) fn cmd_group(&mut self, cx: &mut Client, portion: i64, filter: &UnitFilter) -> R {
+    pub(crate) fn cmd_group(
+        &mut self,
+        cx: &mut Client,
+        portion: NonZeroU32,
+        filter: &UnitFilter,
+    ) -> R {
         self.regroup(cx, portion, filter)
     }
 
@@ -397,7 +384,7 @@ impl GameInterface {
 
     pub(crate) fn cmd_select_units(&mut self, cx: &mut Client, filter: &UnitFilter) -> R {
         self.select_unit(cx, 1, filter, true)?;
-        self.regroup(cx, 1, filter)
+        self.regroup(cx, NonZeroU32::MIN, filter)
     }
 
     /// Says the units controlled and their orders, after `prefix`.
@@ -445,14 +432,11 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_unit_status(&mut self, cx: &mut Client) -> R {
-        let place_title = match self.group.first() {
-            Some(g) => {
-                let v = self.dobjets.get(g).ok_or_else(|| Oops::missing("unit"))?;
-                let p = v
-                    .place()
-                    .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'title'"))?;
-                self.place_title(cx, p)
-            }
+        let place_title = match self.group.first().and_then(|g| self.dobjets.get(g)) {
+            Some(v) => v
+                .place()
+                .map(|p| self.place_title(cx, p))
+                .unwrap_or_default(),
             None => self
                 .place
                 .map(|p| self.view().square(p).title().clone())
@@ -505,13 +489,13 @@ impl GameInterface {
 
     // recallable groups
 
-    pub(crate) fn cmd_set_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) -> R {
-        self.send_order(cx, Order::ResetGroup(name.to_owned()), flags)?;
-        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags)
+    pub(crate) fn cmd_set_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) {
+        self.send_order(cx, Order::ResetGroup(name.to_owned()), flags);
+        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags);
     }
 
-    pub(crate) fn cmd_append_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) -> R {
-        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags)
+    pub(crate) fn cmd_append_group(&mut self, cx: &Client, name: &str, flags: OrderFlags) {
+        self.send_order(cx, Order::JoinGroup(name.to_owned()), flags);
     }
 
     pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) -> R {
@@ -671,20 +655,20 @@ impl GameInterface {
 
     /// Sends an order to the units of the group that may receive it, by
     /// the ids the game gives them now (see [`GameInterface::group_now`]).
-    pub(crate) fn send_order(&mut self, cx: &Client, order: Order, flags: OrderFlags) -> R {
+    pub(crate) fn send_order(&mut self, cx: &Client, order: Order, flags: OrderFlags) {
         let g: Vec<EntityId> = match &order {
             Order::Default(_) | Order::JoinGroup(_) => {
                 self.group_now().into_iter().map(|(_, id)| id).collect()
             }
             // In no unit's menu: no unit receives it, as in the original.
-            Order::ResetGroup(_) => self.units_offering(None)?,
+            Order::ResetGroup(_) => Vec::new(),
             Order::Keyword(o) => {
                 // As the world's menus list it: `train footman`.
                 let entry = match o.type_name() {
                     Some(t) => format!("{} {t}", o.keyword().as_str()),
                     None => o.keyword().as_str().to_owned(),
                 };
-                self.units_offering(Some(&entry))?
+                self.units_offering(&entry)
             }
         };
         let mut command = Command::Order {
@@ -700,7 +684,6 @@ impl GameInterface {
             self.previous_group = Some(g);
         }
         self.send_command(cx, command);
-        Ok(())
     }
 
     /// The units of the group, each with the id the game gives it now. A
@@ -736,67 +719,40 @@ impl GameInterface {
     }
 
     /// The units of the group whose menu has the order `entry`, by the ids
-    /// the game gives them now; none for no entry. Every unit of the group
-    /// must be known.
-    fn units_offering(&self, entry: Option<&str>) -> R<Vec<EntityId>> {
-        let mut g = Vec::new();
-        for (uid, id) in self.group_now() {
-            if !self.dobjets.contains_key(&uid) {
-                return Err(Oops::missing(uid.0));
-            }
-            if entry.is_some_and(|e| self.view_menu(id, false).iter().any(|o| o == e)) {
-                g.push(id);
-            }
-        }
-        Ok(g)
+    /// the game gives them now.
+    fn units_offering(&self, entry: &str) -> Vec<EntityId> {
+        self.group_now()
+            .into_iter()
+            .map(|(_, id)| id)
+            .filter(|&id| self.view_menu(id, false).iter().any(|o| o == entry))
+            .collect()
     }
 
-    /// What an order aims at: the target, else the zoom, else the square.
-    pub fn ui_target(&self) -> UiTarget {
-        match (self.target, &self.zoom, self.place) {
-            (Some(t), _, _) => UiTarget::Entity(t),
-            (None, Some(_), _) => UiTarget::Zoom,
-            (None, None, Some(p)) => UiTarget::Square(p),
-            (None, None, None) => UiTarget::Nothing,
+    /// What an order aims at: the target, else the zoom, else the square;
+    /// nothing before a square is selected.
+    fn ui_target(&self) -> Option<UiTarget<'_>> {
+        match (self.target_view(), &self.zoom, self.place) {
+            (Some(v), _, _) => Some(UiTarget::Entity(v)),
+            (None, Some(z), Some(p)) => Some(UiTarget::Zoom(z, p)),
+            (None, None, Some(p)) => Some(UiTarget::Square(p)),
+            (None, _, None) => None,
         }
     }
 
-    /// What an order aims at, as the game takes it.
-    fn ui_order_target(&self) -> R<OrderTarget> {
-        Ok(match self.ui_target() {
-            UiTarget::Entity(t) => OrderTarget::Entity(t),
-            UiTarget::Zoom => {
-                let (Some(z), Some(p)) = (&self.zoom, self.place) else {
-                    unreachable!("zoom mode needs a square")
-                };
-                let (x, y) = z.point(self.view().square(p));
-                OrderTarget::Point { square: p, x, y }
+    /// What an order aims at, as the game takes it, and its title.
+    fn ui_order_target(&self, cx: &Client) -> Option<(OrderTarget, Msg)> {
+        Some(match self.ui_target()? {
+            UiTarget::Entity(v) => (OrderTarget::Entity(v.id()), self.title(cx, v)),
+            UiTarget::Zoom(z, p) => {
+                let square = self.view().square(p);
+                let (x, y) = z.point(square);
+                (OrderTarget::Point { square: p, x, y }, z.title(square))
             }
-            UiTarget::Square(p) => OrderTarget::Square(p),
-            UiTarget::Nothing => {
-                return Err(Oops::new("'NoneType' object has no attribute 'id'"));
-            }
+            UiTarget::Square(p) => (
+                OrderTarget::Square(p),
+                self.view().square(p).title().clone(),
+            ),
         })
-    }
-
-    fn ui_target_title(&self, cx: &Client) -> R<Msg> {
-        match self.ui_target() {
-            UiTarget::Entity(t) => {
-                let v = self
-                    .dobjets
-                    .get(&t)
-                    .ok_or_else(|| Oops::missing("target"))?;
-                Ok(self.title(cx, v))
-            }
-            UiTarget::Zoom => {
-                let (Some(z), Some(p)) = (&self.zoom, self.place) else {
-                    unreachable!("zoom mode needs a square")
-                };
-                Ok(z.title(self.view().square(p)))
-            }
-            UiTarget::Square(p) => Ok(self.view().square(p).title().clone()),
-            UiTarget::Nothing => Err(Oops::new("'NoneType' object has no attribute 'title'")),
-        }
     }
 
     pub(crate) fn cmd_validate(&mut self, cx: &mut Client, flags: OrderFlags) -> R {
@@ -812,32 +768,37 @@ impl GameInterface {
             self.cmd_command_unit(cx)?;
         } else if self.an_order_not_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
-            self.send_order(cx, Order::Keyword(o.order()?), flags)?;
-            cx.voice.item(&o.title);
-            self.previous_order = Some(o);
+            match o.order() {
+                Some(order) => {
+                    self.send_order(cx, Order::Keyword(order), flags);
+                    cx.voice.item(&o.title);
+                    self.previous_order = Some(o);
+                }
+                None => refuse_order(cx),
+            }
         } else if self.an_order_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
-            if !self.orders(cx, OrderMenu::Active).contains(&o) {
-                cx.audio.play_stereo(
-                    cx.sounds.get_sound(BEEP_SOUND),
-                    StereoVolume::Both(1.0),
-                    0.0,
-                );
-            } else {
-                let target = self.ui_order_target()?;
-                self.send_order(cx, Order::Keyword(o.order()?.at(target)), flags)?;
-                let m = [o.title.clone(), self.ui_target_title(cx)?].concat();
-                cx.voice.item(&m);
-                self.previous_order = Some(o);
+            match (o.order(), self.ui_order_target(cx)) {
+                (Some(order), Some((target, title)))
+                    if self.orders(cx, OrderMenu::Active).contains(&o) =>
+                {
+                    self.send_order(cx, Order::Keyword(order.at(target)), flags);
+                    cx.voice.item(&[o.title.clone(), title].concat());
+                    self.previous_order = Some(o);
+                }
+                // The units can no longer take the order, or no square is
+                // selected yet to aim it at.
+                _ => refuse_order(cx),
             }
         }
         Ok(())
     }
 
-    /// Says what the default order means for each kind of unit of the
-    /// group: "gather a goldmine, go to a goldmine".
-    fn say_default_confirmation(&mut self, cx: &mut Client) -> R {
-        let target = match self.ui_order_target()? {
+    /// Says what the default order at `target`, whose title is `title`,
+    /// means for each kind of unit of the group: "gather a goldmine, go to
+    /// a goldmine".
+    fn say_default_confirmation(&mut self, cx: &mut Client, target: OrderTarget, title: &Msg) {
+        let target = match target {
             OrderTarget::Entity(t) => {
                 OrderTarget::Entity(followed(&self.replaced_in_turns_waiting(), t))
             }
@@ -848,15 +809,19 @@ impl GameInterface {
             if !self.dobjets.contains_key(&u) {
                 continue;
             }
-            let keyword = self
-                .view()
-                .default_order(id, target)
-                .map_err(|e| Oops::new(e.0))?;
-            if let Some(keyword) = keyword {
-                let order = keyword.as_str();
-                let o = OrderTypeView::new(order, id, self.view(), cx.res.style(), &cx.log)
-                    .ok_or_else(|| Oops::missing(order))?;
-                let m = [o.title, self.ui_target_title(cx)?].concat();
+            let keyword = match self.view().default_order(id, target) {
+                Ok(k) => k,
+                Err(e) => {
+                    cx.log
+                        .warning(format!("the default order of unit {}: {}", id.0, e.0));
+                    None
+                }
+            };
+            // Every keyword's name is a menu entry.
+            if let Some(o) = keyword.and_then(|k| {
+                OrderTypeView::new(k.as_str(), id, self.view(), cx.res.style(), &cx.log)
+            }) {
+                let m = [o.title, title.clone()].concat();
                 if !msgs.contains(&m) {
                     msgs.push(m);
                 }
@@ -872,20 +837,29 @@ impl GameInterface {
         } else {
             cx.voice.item(&confirmation);
         }
-        Ok(())
     }
 
-    pub(crate) fn cmd_default(&mut self, cx: &mut Client, flags: OrderFlags) -> R {
+    pub(crate) fn cmd_default(&mut self, cx: &mut Client, flags: OrderFlags) {
         if self.group.is_empty() {
             cx.voice.item(&msg(mp::NO_UNIT_CONTROLLED));
+        } else if let Some((target, title)) = self.ui_order_target(cx) {
+            self.send_order(cx, Order::Default(target), flags);
+            self.say_default_confirmation(cx, target, &title);
         } else {
-            let target = self.ui_order_target()?;
-            self.send_order(cx, Order::Default(target), flags)?;
-            self.say_default_confirmation(cx)?;
+            // No square is selected yet to aim at.
+            cx.voice.item(&msg(mp::BEEP));
         }
         self.order = None;
-        Ok(())
     }
+}
+
+/// The beep of an order that cannot be given.
+fn refuse_order(cx: &Client) {
+    cx.audio.play_stereo(
+        cx.sounds.get_sound(BEEP_SOUND),
+        StereoVolume::Both(1.0),
+        0.0,
+    );
 }
 
 /// The units replaced in the turn `m`, old and new, in order.
@@ -1279,7 +1253,7 @@ mod tests {
         let a1 = t.g.game.view().square_at(0, 0).unwrap();
         let order = Order::Default(OrderTarget::Square(a1));
         let flags = OrderFlags::default();
-        t.g.game.send_order(&t.h.client, order, flags).unwrap();
+        t.g.game.send_order(&t.h.client, order, flags);
         t.h.step(&mut t.g);
         assert!(
             t.g.game
