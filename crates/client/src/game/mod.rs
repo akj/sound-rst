@@ -826,7 +826,7 @@ impl GameInterface {
         } else {
             Timing::OnTime
         };
-        let view = EntityView::new(entity, &cx.rng);
+        let view = EntityView::new(entity);
         self.notify(cx, &view, event, timing);
     }
 

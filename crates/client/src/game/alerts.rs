@@ -167,12 +167,10 @@ impl GameInterface {
         for e in self.seat.own_units() {
             let u = e.id;
             let type_name = e.type_name.to_string();
-            // A view of each unit, as the original makes one: it draws its
-            // footstep offset even when its type is done.
-            let view = EntityView::new(e, &cx.rng);
             if done.contains(&type_name) {
                 continue;
             }
+            let view = EntityView::new(e);
             let menu = relevant_menu(&self.view_menu(u, true));
             let title = self.short_title(cx, &view);
             match self.previous_menus.get(&type_name) {
@@ -353,7 +351,7 @@ impl GameInterface {
                 None => {
                     let is_resource = self.resource_type(&m).is_some();
                     let place = m.place;
-                    self.dobjets.insert(m.id, EntityView::new(m, &cx.rng));
+                    self.dobjets.insert(m.id, EntityView::new(m));
                     if self.must_report_resource(place, is_resource)
                         && let Some(place) = place
                     {
@@ -365,7 +363,7 @@ impl GameInterface {
         for m in perception {
             if !self.dobjets.contains_key(&m.id) {
                 if self.is_an_enemy(&m) {
-                    let v = EntityView::new(m.clone(), &cx.rng);
+                    let v = EntityView::new(m.clone());
                     let t = self.short_title(cx, &v);
                     self.new_enemy_units.push((t, m.place));
                 }
@@ -381,7 +379,7 @@ impl GameInterface {
             match self.dobjets.get_mut(&m.id) {
                 Some(v) => v.model = m,
                 None => {
-                    self.dobjets.insert(m.id, EntityView::new(m, &cx.rng));
+                    self.dobjets.insert(m.id, EntityView::new(m));
                 }
             }
         }

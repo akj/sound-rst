@@ -12,7 +12,6 @@ use soundrts_world::{EntityId, KnownEntity, KnownOrder, KnownTarget, Place, Play
 use crate::audio::{angle, distance};
 use crate::client::Client;
 use crate::message::{Category, News, Subject};
-use crate::rng::ClientRng;
 use crate::sound::{Audio, Placement};
 use crate::style::{Noise, StyleValue};
 
@@ -70,6 +69,10 @@ pub struct AnimState {
     pub previous_hp: Option<i64>,
     pub next_step: Option<f64>,
     pub step_side: usize,
+    /// Added to the footstep interval, so that several walking units do
+    /// not step together: drawn when the entity first walks near the
+    /// listener.
+    pub footstep_offset: Option<f64>,
 }
 
 /// An entity as the player knows it: as the last turn's end told it,
@@ -78,25 +81,16 @@ pub struct EntityView {
     pub model: KnownEntity,
     /// A facing given by the rotation keys, which hides the model's.
     pub o_override: Option<f64>,
-    /// So that several walking units do not step together.
-    pub footstep_random: f64,
     pub anim: AnimState,
 }
 
 impl EntityView {
-    pub fn new(model: KnownEntity, rng: &ClientRng) -> EntityView {
+    pub fn new(model: KnownEntity) -> EntityView {
         EntityView {
             model,
             o_override: None,
-            footstep_random: Self::footstep_offset(rng),
             anim: AnimState::default(),
         }
-    }
-
-    /// The offset added to a view's footstep interval, drawn when the view
-    /// is made.
-    pub fn footstep_offset(rng: &ClientRng) -> f64 {
-        rng.random() * 0.2
     }
 
     pub fn id(&self) -> EntityId {
@@ -399,33 +393,22 @@ impl GameInterface {
         }
     }
 
-    /// The title of a place as the original gets it from a view of the
-    /// place: the view's own title needs a player, which a place has not,
-    /// so Python falls back to the place's `title` (the container's for an
-    /// inside). The view draws its footstep offset first.
+    /// The title of a place an order names: the square's, or the
+    /// container's type title; none for a place off the map.
     fn place_view_title(&self, cx: &Client, place: Option<Place>) -> Msg {
-        EntityView::footstep_offset(&cx.rng);
         place.map_or_else(Vec::new, |p| self.place_title(cx, p))
     }
 
-    /// The title of an order's target, made as the original makes a view
-    /// of it (the view draws its footstep offset first). An entity is
-    /// described as the player perceives or remembers it, and has no title
-    /// if the player knows nothing of it. The remembered target of the
-    /// player's own order is its own memory, said as old as the player's
-    /// memory of the entity is now. A square gives the square's title (see
-    /// [`GameInterface::place_view_title`]); a point has no title.
+    /// The title of an order's target. An entity is described as the
+    /// player perceives or remembers it, and has no title if the player
+    /// knows nothing of it. The remembered target of the player's own order
+    /// is its own memory, said as old as the player's memory of the entity
+    /// is now. A square gives the square's title; a point has no title.
     fn target_title(&self, cx: &Client, t: &KnownTarget) -> Msg {
         match t {
             KnownTarget::Entity(id) => match self.view().known(*id) {
-                Some(e) => {
-                    let v = EntityView::new(e, &cx.rng);
-                    self.title(cx, &v)
-                }
-                None => {
-                    EntityView::footstep_offset(&cx.rng);
-                    Vec::new()
-                }
+                Some(e) => self.title(cx, &EntityView::new(e)),
+                None => Vec::new(),
             },
             KnownTarget::Remembered(e) => {
                 let view = self.view();
@@ -434,14 +417,10 @@ impl GameInterface {
                     last_seen: Some(remembered.unwrap_or(view.time())),
                     ..(**e).clone()
                 };
-                let v = EntityView::new(model, &cx.rng);
-                self.title(cx, &v)
+                self.title(cx, &EntityView::new(model))
             }
             KnownTarget::Square(s) => self.place_view_title(cx, Some(Place::Square(*s))),
-            KnownTarget::Point => {
-                EntityView::footstep_offset(&cx.rng);
-                Vec::new()
-            }
+            KnownTarget::Point => Vec::new(),
         }
     }
 
@@ -842,13 +821,7 @@ impl GameInterface {
             if let Some(a) = attacker
                 && attacker_player == Some(self.me)
             {
-                let av = EntityView {
-                    model: a,
-                    o_override: None,
-                    footstep_random: 0.0,
-                    anim: AnimState::default(),
-                };
-                self.on_win_fight(cx, &av, timing);
+                self.on_win_fight(cx, &EntityView::new(a), timing);
             }
         }
     }
@@ -873,12 +846,12 @@ impl GameInterface {
         }
     }
 
-    fn footstep_interval(&self, v: &EntityView) -> f64 {
+    fn footstep_interval(&self, v: &EntityView, offset: f64) -> f64 {
         let s = v.model.actual_speed;
         if s == 0 {
             return 1000.0 * 999.0;
         }
-        1000.0 / s as f64 / 2.0 + v.footstep_random
+        1000.0 / s as f64 / 2.0 + offset
     }
 
     fn terrain_footstep(&self, cx: &Client, v: &EntityView) -> Option<Vec<String>> {
@@ -950,13 +923,16 @@ impl GameInterface {
             anim.next_step = None;
             return;
         }
+        let offset = *anim
+            .footstep_offset
+            .get_or_insert_with(|| cx.rng.random() * 0.2);
         let now = cx.clock.now();
         let real_speed = self.real_speed();
         match anim.next_step {
             None => {
                 anim.step_side = 1;
                 anim.next_step =
-                    Some(now + cx.rng.random() * self.footstep_interval(v) / real_speed);
+                    Some(now + cx.rng.random() * self.footstep_interval(v, offset) / real_speed);
             }
             Some(next) if now > next => {
                 let volume = if self.immersion && (v.x(), v.y()) == (self.x, self.y) {
@@ -967,7 +943,7 @@ impl GameInterface {
                 if let Some(s) = self.footstep_noise(cx, v).get(anim.step_side) {
                     self.launch_event(cx, v, s, volume, -10, FOOTSTEP_LIMIT, false);
                 }
-                anim.next_step = Some(now + self.footstep_interval(v) / real_speed);
+                anim.next_step = Some(now + self.footstep_interval(v, offset) / real_speed);
                 anim.step_side = 1 - anim.step_side;
             }
             Some(_) => {}
@@ -1082,12 +1058,7 @@ mod tests {
         step(g);
         let mut model = g.game.view().perceived(peasant).unwrap();
         model.own.as_mut().unwrap().orders[0].target = Some(target);
-        EntityView {
-            model,
-            o_override: None,
-            footstep_random: 0.0,
-            anim: AnimState::default(),
-        }
+        EntityView::new(model)
     }
 
     #[test]
@@ -1110,7 +1081,7 @@ mod tests {
         let mut model = wood.model.clone();
         (model.id, model.place, model.x, model.y, model.last_seen) =
             (EntityId(999_999), v.place(), v.model.x, v.model.y, Some(0));
-        let remembered = EntityView::new(model, &h.client.rng);
+        let remembered = EntityView::new(model);
         g.game.dobjets.insert(EntityId(999_999), remembered);
         let v = &g.game.dobjets[&peasant];
         assert_eq!(g.game.footstep_noise(&h.client, v), ["1069", "1070"]);
@@ -1131,7 +1102,7 @@ mod tests {
         let mut model = g.game.dobjets[&peasant].model.clone();
         (model.id, model.player, model.own) = (EntityId(999_999), Some(them), None);
         (model.place, model.last_seen) = (Some(Place::Inside(townhall)), Some(0));
-        let v = EntityView::new(model, &h.client.rng);
+        let v = EntityView::new(model);
         assert!(!g.game.is_in(&v, there));
         assert!(!g.game.is_in(&v, None));
         assert_eq!(g.game.outer_square(v.place()), None);

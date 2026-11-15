@@ -1292,7 +1292,7 @@ mod tests {
         for (u, mine) in [(townhall, unit(&g, me, "townhall")), (theirs, peasant)] {
             let mut e = g.game.view().perceived(mine).unwrap();
             (e.id, e.player, e.own) = (u, Some(them), None);
-            g.game.dobjets.insert(u, EntityView::new(e, &h.client.rng));
+            g.game.dobjets.insert(u, EntityView::new(e));
         }
         let style = h.client.res.style();
         let listed = |order: &str, unit: EntityId| {
