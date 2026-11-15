@@ -64,7 +64,7 @@ use crate::message::{Category, News, Subject};
 use crate::net::words;
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
-use crate::voice::EntryId;
+use crate::voice::{EntryId, Heard};
 
 use self::animation::NoiseSource;
 use self::command::GameCommand;
@@ -206,6 +206,34 @@ impl Story {
     /// Whether every message has been said or skipped.
     fn is_told(&self, cx: &Client) -> bool {
         !self.0.iter().any(|&id| cx.voice.is_waiting(id))
+    }
+
+    /// Skips the rest of the story; its messages stay in the log. When
+    /// they are all that waits, the voice stops and they are kept unheard.
+    /// Otherwise each is skipped in turn, as a key for each would, so that
+    /// the news waiting with them is still said: each skip starts the next
+    /// message and cuts it at once.
+    fn skip(&self, cx: &mut Client) {
+        let waiting = |cx: &Client| {
+            cx.voice
+                .log()
+                .filter(|e| matches!(e.heard(), Heard::Waiting { .. }))
+                .count()
+        };
+        let story = self.0.iter().filter(|&&id| cx.voice.is_waiting(id)).count();
+        if story == waiting(cx) {
+            cx.voice.silent_flush();
+            return;
+        }
+        // Stops when a skip leaves as many messages waiting, as while the
+        // history is walked.
+        while !self.is_told(cx) {
+            let before = waiting(cx);
+            cx.voice.say_next(false);
+            if waiting(cx) == before {
+                break;
+            }
+        }
     }
 }
 
@@ -682,10 +710,17 @@ impl GameInterface {
 
     /// A key pressed while a story is told: the keys of the game menu,
     /// the history, the news, help, key help and the volume do as in the
-    /// game; any other key skips the message being said.
+    /// game; the escape key skips the rest of the story; any other key
+    /// skips the message being said.
     fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
+            Some(C::Escape) => {
+                if let Mode::Story(s) = &self.mode {
+                    s.skip(cx);
+                }
+                Ok(())
+            }
             Some(
                 c @ (C::GameMenu
                 | C::HistoryPrevious
