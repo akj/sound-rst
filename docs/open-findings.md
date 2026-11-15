@@ -2,34 +2,33 @@
 
 33 open findings from the design review of the Rust port of SoundRTS, grouped by what they affect: what you hear, multiplayer, gameplay, and code structure. The six multiplayer fixes, the game record and the recording cutover are merged and are not repeated here.
 
-Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54.
+Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54, and again the same day against `6506741`, after pull requests 6 to 63.
 
 ## Status on 15 November 2026
 
-Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
+Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. The statuses changed by pull requests 57, 60, 62 and 63 (M1, M2, M4, M8, N2, N4 to N8, N10, and N18 to N21) were set by the agent that merged them, from their tests and descriptions, against `6506741`. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
 
 Two limits apply to every status.
 
 - **What you hear.** Every fix is proved on the recorded speech device only. You have not yet reported on a listening check of the game itself. So "fixed" for a finding about what you hear means fixed in the recorded speech tests, not yet heard through NVDA.
 - **Multiplayer.** Every fix is proved only by tests through a real server on 127.0.0.1, or against the client's fake server where a finding says so. Nobody has played over a real network.
 
-Fixed, 10 findings:
+Fixed, 14 findings:
 
 - H1, H2, H3, H4, H5, H8
-- M3, M7, M9
+- M1, M2, M3, M4, M7, M8, M9
 - G3
 
-Partly fixed, 11 findings:
+Partly fixed, 8 findings:
 
 - H6
-- M1, M2, M4
 - G1, G5
 - C1, C2, C4, C6, C7
 
-Open, 7 findings:
+Open, 6 findings:
 
 - H7
-- M5, M6, M8
+- M5, M6
 - G2, G4
 - C5
 
@@ -41,7 +40,7 @@ Decided against, or put off on purpose, 2 findings:
 
 - C3, C8
 
-That is 33. Seventeen findings from the work since, N1 to N17, are at the end.
+That is 33. Twenty-one findings from the work since, N1 to N21, are at the end. Of those, N2, N4 to N8 and N10 are fixed, and N14 is being worked on.
 
 ## How far each finding was checked
 
@@ -59,7 +58,7 @@ The reviewers were three Opus agents (simulation, client, and the original game'
 
 ## Where I would start
 
-Status, 15 November: items 1 and 3 are built and wait for your ears. Item 4 is mostly done: G3 is fixed and G1 partly. Item 2 is half done, on the server side. This list is kept as it was written.
+Status, 15 November: items 1 and 3 are built and wait for your ears. Item 4 is mostly done: G3 is fixed and G1 partly. Item 2 is built, in tests through a real server on 127.0.0.1. This list is kept as it was written.
 
 1. **Speech and news, H1 to H4, as one piece of work.** It changes what you hear in every game, and H2 and H3 were blocked until the cutover. It needs your ears at the end.
 2. **Reconnecting after a dropped connection, M1 with M2.** It builds directly on the game record that is now merged.
@@ -226,7 +225,7 @@ Since pull request 54, the server runs the game and each client plays from what 
 
 ### M1. A dropped connection forfeits your army
 
-**Partly fixed.** The server side is built (pull request 48). A dropped seat is held for 90 seconds with its units on their last orders, and the seat's token takes it back (`take_back` in `crates/server/src/game.rs`, `return_to_game` in `crates/server/src/lobby.rs`). Tests through a real server: `a_dropped_player_returns_with_their_token` and `a_player_not_back_in_time_has_quit` in `crates/server/tests/games.rs`. Not built: the client keeps the token but does not use it, so a player cannot return yet (pull request 54). That work is in progress in another branch. The simplest change below describes replaying turns; the server now sends the returning seat the whole current message instead.
+**Fixed** in pull requests 48 and 57, through a real server on 127.0.0.1; not tried over a real network. The server holds a dropped seat with its units on their last orders, for 90 seconds by default, and tells the client how long. The client connects again by itself, presents the seat's token and plays on from the whole current message; you hear "connection lost, trying to return" and then "back in the game". Tests in `crates/client/tests/returning.rs`: `a_game_on_a_server_survives_a_pulled_cable`, `a_client_whose_connection_is_cut_twice_returns_twice`, `a_client_that_returns_after_its_seat_was_given_up_hears_why`. Two loose ends are in N21. The simplest change below describes replaying turns; none are replayed.
 
 From the review. Size: large.
 
@@ -240,7 +239,7 @@ From the review. Size: large.
 
 ### M2. A silently dead connection hangs the game
 
-**Partly fixed** in pull request 48, on the server only. The server pings each connection every 5 seconds and closes it after 20 seconds of silence. Test through a real server: `a_dead_connection_is_closed_by_the_heartbeat` in `crates/server/tests/games.rs`. The client still has no deadline of its own: its connection loop, `serve` in `crates/client/src/net/conn.rs`, waits for the next frame with no time limit. So the effect below still holds for the client, and nothing is said meanwhile. Found by reading.
+**Fixed** in pull requests 48 and 57. The server pings each connection every 5 seconds and closes it after 20 seconds of silence (`a_dead_connection_is_closed_by_the_heartbeat` in `crates/server/tests/games.rs`). The client pings a server it has not heard from and gives the connection up after 15 seconds of silence (`a_connection_to_a_server_that_stops_answering_is_lost` in `crates/client/tests/connection.rs`). In a game that starts the return of M1, which is spoken.
 
 From the review; I confirmed today that the client and server contain no heartbeat. Size: small.
 
@@ -264,7 +263,7 @@ Checked today. Size: small.
 
 ### M4. No pause and no speed change in a server game
 
-**Partly fixed** in pull requests 48 and 54. Speed: the room's host changes it from the game menu, and every player hears who set it. The server half is tested through a real server, in `the_host_pauses_resumes_sets_the_speed_and_removes_a_player` in `crates/server/tests/games.rs`. The client half is tested against the client's fake server, in `the_rooms_host_sets_the_speed_of_a_game_on_a_server` and `only_the_rooms_host_sets_the_speed_of_a_game_on_a_server` in `crates/client/tests/multiplayer.rs`. Pause: the server can pause and resume, and the client says so when told. But the client has no key or item that asks for a pause, so nobody can pause a game on a server yet. Adapting to ping no longer applies, because the server's clock waits for nobody.
+**Fixed** in pull requests 48, 54 and 57, in the recorded speech tests; not yet heard through NVDA. The room's host changes the speed and pauses or resumes from the game menu, and every player hears who did it. Tests: `the_host_pauses_resumes_sets_the_speed_and_removes_a_player` in `crates/server/tests/games.rs`; `the_rooms_host_sets_the_speed_of_a_game_on_a_server`, `only_the_rooms_host_is_offered_to_pause_a_game_on_a_server` and `the_rooms_host_pauses_and_resumes_a_game_on_a_server` in `crates/client/tests/multiplayer.rs`. Adapting to ping no longer applies, because the server's clock waits for nobody. When the host leaves, nobody has these powers; see N14.
 
 From the review. Size: medium.
 
@@ -310,7 +309,7 @@ Checked today for the first two points; the impact is suspected and unmeasured. 
 
 ### M8. Nobody can join only to watch
 
-**Open.** Not built. The top of `crates/server/src/game.rs` says where a watcher would attach. Issue 45 is open, for joining a game in progress. Pull requests 48 and 54 list watchers as later work. The fork review notes that late watchers and returning players (M1) share machinery.
+**Fixed** in pull request 63, through a real server on 127.0.0.1; not yet heard through NVDA. A person joins a room, or a game already running, only to watch. A watcher hears one human player's side at a time, exactly what that player is told; Control F12 and Control Shift F12 change the player. The server takes no command from a watcher. Everyone hears "<name> is watching" and "<name> stopped watching", and F11 names the watchers. The room's host chooses whether a room takes watchers; at most 8. Joining late needs no replay of the turns: a watcher is sent the whole current message, as a returning player is. Tests: `watchers_hear_the_side_of_the_player_they_follow_and_change_nothing` in `crates/client/tests/watching.rs`; `hostile_watchers_change_nothing_and_hold_up_nobody` and `a_room_takes_eight_watchers_and_none_if_its_host_says_so` in `crates/server/tests/games.rs`. What it leaves out is in N20.
 
 From the review. Size: medium.
 
@@ -637,7 +636,7 @@ From the measurement in pull request 52. Open. Measured, not read in the compute
 
 ### N2. On jl7 a computer sits at its population limit, short of gold
 
-From the measurement in pull request 52. Open.
+From the measurement in pull request 52. **Fixed** in pull request 60 for the case measured: over seeds 1 to 40 on jl7 the count fell from 88 of 320 to 3, and on 40 seeds the fix was not tuned on from 88 to 7. Test: `at_its_limit_without_gold_for_a_farm_the_computer_sends_workers_from_wood_to_gold` in `crates/world/src/ai.rs`. The cause was that a worker kept gathering what it was first sent to. The computer now moves one worker a turn to the resource its next purchase lacks. A different shortage remains; see N18.
 
 **Now.** 88 of 320 aggressive computers on jl7, in 37 of 40 seeds, sat at their population limit for over a minute without the gold for a farm. A probe of one of them found 1 worker on gold and 9 on wood, with about 190 wood stored.
 
@@ -651,7 +650,7 @@ From the measurement in pull request 52. Open.
 
 ### N4. An upgraded keep or tower loses its rallying point
 
-From the review of pull request 51. Open. Checked by reading, not reproduced.
+From the review of pull request 51. **Fixed** in pull request 62. Test: `a_building_upgraded_keeps_its_rallying_point` in `crates/world/src/orders/tests.rs`.
 
 **Now.** An upgrade replaces the building with a new one. The new building keeps the old one's hit points, blocked exit, groups and the units inside, but not its rallying point. Units trained after the upgrade do not go to the point that was set.
 
@@ -659,7 +658,7 @@ From the review of pull request 51. Open. Checked by reading, not reproduced.
 
 ### N5. An order picked but not yet aimed still names the old unit after an upgrade
 
-From the review of pull request 51. Open. Checked by reading; what you hear was not traced.
+From the review of pull request 51. **Fixed** in pull request 62, in the recorded speech tests. The order waiting for its target, the "do again" order, the group last sent and commands not yet sent all follow an upgrade now. Tests in `crates/client/src/game/selection.rs`, among them `what_names_a_unit_upgraded_names_the_unit_it_became`.
 
 **Now.** When a unit is upgraded, the interface moves its group and its selected object to the new unit. An order already picked from the menu and waiting for a target is not moved. It still names the unit it was listed for, which no longer exists.
 
@@ -667,7 +666,7 @@ From the review of pull request 51. Open. Checked by reading; what you hear was 
 
 ### N6. A converted unit can keep more hit points than its new maximum
 
-From the review of pull request 51. Open. Checked by reading, not reproduced. Matters only with rules where an upgrade raises maximum hit points.
+From the review of pull request 51. **Fixed** in pull request 62: hit points and mana are cut to the new maximum. Test: `a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum` in `crates/world/src/orders/tests.rs`.
 
 **Now.** A unit that changes hands takes its type's stats again, plus its new owner's upgrades. Its hit points are left as they were. If the old owner's upgrade had raised its maximum, it can keep more hit points than its new maximum.
 
@@ -675,7 +674,7 @@ From the review of pull request 51. Open. Checked by reading, not reproduced. Ma
 
 ### N7. A "use" order can be impossible and complete at once
 
-From pull request 53, as a suspected bug. Not traced here.
+From pull request 53, as a suspected bug. **Fixed** in pull request 62. It was real, and only the end state was wrong: the player was already told once and charged nothing. The order now ends impossible only, and the state "impossible and complete" no longer exists. Test: `a_recall_with_no_room_for_its_units_is_impossible_says_why_once_and_costs_nothing` in `crates/world/src/orders/tests.rs`.
 
 **Now.** A teleportation or recall with no room for its units is marked impossible by `use_is_not_necessary`, then complete by `use_execute`.
 
@@ -683,7 +682,7 @@ From pull request 53, as a suspected bug. Not traced here.
 
 ### N8. An upgrade that needs a meadow and finds none keeps its cost
 
-From pull request 53, as a suspected bug. Checked by reading, not reproduced.
+From pull request 53, as a suspected bug. **Fixed** in pull request 62: the cost and the food are refunded and the game says "cannot build there". Test: `an_upgrade_that_finds_no_meadow_is_refunded_and_says_why` in `crates/world/src/orders/tests.rs`.
 
 **Now.** When an upgrade into a building that needs a meadow finds no meadow, the player hears that the order is impossible. The order is then marked complete, and nothing is refunded.
 
@@ -703,7 +702,7 @@ Pull request 53 typed the rest of an order's state and left these.
 
 ### N10. The simulation does not check that a square in a command is on the map
 
-From the review of pull request 48. Open. Checked by reading.
+From the review of pull request 48. **Fixed** in pull request 62. The simulation refuses a command that names a square or a player the game does not have (`World::check_command` in `crates/world/src/command.rs`), and the server asks it instead of keeping its own copy of the rule. Tests in `crates/world/src/host/tests.rs`: `a_command_naming_a_square_off_the_map_is_refused_when_it_is_queued`, `a_command_of_a_player_the_game_never_had_is_refused_when_it_is_queued`, `a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_nothing`.
 
 **Now.** The server refuses a command naming a square that is not on the map (`on_the_map` in `crates/server/src/game.rs`). The simulation itself does not check: `Host::queue` passes the command on, and `World::square` indexes the list of squares directly. A single-player client sends only squares from its own map, so today nothing reaches it.
 
@@ -731,7 +730,7 @@ From pull request 20, where it was named and kept. Open. Checked by reading.
 
 ### N14. Host powers are not handed on when the room's host leaves a game on a server
 
-From pull requests 48 and 54. Open. Checked by reading, not run.
+From pull requests 48 and 54. Open; being worked on in another branch. Checked by reading, not run.
 
 **Now.** A room hands its host on to another player while the room is gathering. During a game it does not. Only the room's host can change the speed or remove a player, so after the host leaves, nobody can.
 
@@ -759,3 +758,48 @@ Pull request 50 notes that a small change in `crates/client/src/voice.rs` would 
 From pull request 49. Suspected, not tested with the real clipboard.
 
 **Now.** The game opens the clipboard without a window (`OpenClipboard(0)` in `crates/client/src/clipboard.rs`). Microsoft's documentation says writing can then fail. Step 7 of pull request 49's script checks it.
+
+### N18. A computer short of gold where the map has little, and a farm asked for late
+
+From the measurement in pull request 60. Open.
+
+**Now.**
+
+- On jl1 the "easy" computer still sits short of a farm's cost for over a minute in 47 of 80 cases. The whole map has 450 gold, and while it was short 99 percent of its worker time was already on gold. No rule about workers can fix that.
+- A computer asks for a farm only once it can pay for the unit that needs the food. On a map with little gold that adds waits.
+- The sweep adds up all the time a computer is at its limit and short, whatever it is waiting for. A computer waiting for its town hall to become a keep is counted too.
+
+**How to check a change.** The sweep in `crates/world/tests/ai_sweep.rs`, with `SWEEP_AI=easy` and `SWEEP_MAPS=jl1`.
+
+### N19. Loose ends of upgrades and orders
+
+From pull request 62. Open. Checked by reading by that pull request's agent, not reproduced.
+
+**Now.**
+
+- Another building's rallying point, and another unit's queued order, still name a building's old id after it is upgraded.
+- For a moment after an upgrade's turn arrives, the interface names the upgraded unit by its old name.
+- A repair the player cannot pay for says why, then ends as complete, as the original does.
+- Repeating the infinite-mana cheat multiplies mana regeneration by 1000 with no check, so it can overflow.
+
+### N20. What watching leaves out
+
+From pull request 63. Open.
+
+**Now.**
+
+- A watcher follows human players only. A computer player is not sent events, and changing that would change the simulation.
+- A defeated player cannot switch to watching in place. They go back to the lobby and can choose to watch from there.
+- A private game that is already running cannot be watched.
+- A room's choice to take watchers or not cannot be changed after the room is created.
+
+### N21. Loose ends of returning after a lost connection
+
+From pull request 57. Open; the first two are being worked on in another branch.
+
+**Now.**
+
+- A chat line typed while the connection is lost is dropped without a word.
+- Rarely the returning connection is given a numbered login such as "andrew2", because the server has not yet dropped the old one. The room's host then does not get the host's menu items back.
+- When the network is still down at the end of the hold, the client can stop trying a few seconds before the server gives up the seat.
+- A test cannot show a connection that stalls half open, a hostname lookup that hangs, or Wi-Fi that comes back with a new address.
