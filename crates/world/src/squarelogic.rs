@@ -117,7 +117,7 @@ impl World {
                 place: s,
                 x,
                 y,
-                id: None,
+                given: false,
             })
             .collect()
     }

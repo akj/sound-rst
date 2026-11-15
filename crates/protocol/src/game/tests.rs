@@ -288,7 +288,7 @@ fn aiming_at(id: u32, inner: KnownEntity) -> KnownEntity {
         cargo: None,
         inside: None,
         stance: None,
-        rallying_point: None,
+
         group: None,
         is_idle: false,
         auto_gather: None,

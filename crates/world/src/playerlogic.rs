@@ -705,7 +705,7 @@ impl World {
                     place: square,
                     x,
                     y,
-                    id: Some(t.text(self)),
+                    given: true,
                 })))
             }
             TargetRef::Entity(id) => {

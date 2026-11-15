@@ -171,8 +171,7 @@ pub struct OwnPart {
     pub inside: Option<Vec<EntityId>>,
     /// Whether it fights (offensive) or flees (defensive) when attacked.
     pub stance: Option<AiMode>,
-    /// The id given to its `rallying_point` order.
-    pub rallying_point: Option<String>,
+
     /// The name of the group it joined.
     pub group: Option<String>,
     /// Whether it is doing nothing: it has no target for an action. A unit
@@ -336,7 +335,7 @@ impl OwnPart {
             cargo: e.cargo,
             inside: e.inside.clone(),
             stance: e.ai_mode,
-            rallying_point: e.rallying_point.clone(),
+
             group: e.group.clone(),
             is_idle: e.is_idle(),
             auto_gather: e.auto_gather,

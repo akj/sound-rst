@@ -180,7 +180,7 @@ impl Keyword {
 /// A queued order keeps it as given. [`TargetRef::text`] writes it as the
 /// map language does, which [`TargetRef::parse`] reads back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum TargetRef {
+pub enum TargetRef {
     /// A square, written as its protocol id.
     Square(SquareId),
     /// A square, written as its name (`b1`), as the map language names
@@ -206,6 +206,15 @@ impl TargetRef {
             TargetRef::Point { square, x, y } => format!("zoom-{}-{x}-{y}", w.square(square).id),
             TargetRef::Entity(e) => e.to_string(),
             TargetRef::Nothing => "None".to_owned(),
+        }
+    }
+
+    /// The target as reading back its text gives it: an id that is a
+    /// square's names the square.
+    fn normalized(self, w: &World) -> TargetRef {
+        match self {
+            TargetRef::Entity(e) => w.square_by_obj_id(e.0).map_or(self, TargetRef::Square),
+            t => t,
         }
     }
 
@@ -468,7 +477,11 @@ impl Request {
             Keyword::DisableAutoRepair => now(Immediate::AutoRepair(false)),
             Keyword::ModeOffensive => now(Immediate::Stance(AiMode::Offensive)),
             Keyword::ModeDefensive => now(Immediate::Stance(AiMode::Defensive)),
-            Keyword::RallyingPoint => now(Immediate::RallyingPoint(self.first_arg(w)?)),
+            Keyword::RallyingPoint => now(Immediate::RallyingPoint(
+                self.given(w)?
+                    .ok_or_else(|| Abort::new("list index out of range"))?
+                    .normalized(w),
+            )),
             Keyword::JoinGroup => now(Immediate::JoinGroup(self.first_arg(w)?)),
             Keyword::Enter => now(Immediate::Enter(
                 self.given(w)?
@@ -555,8 +568,7 @@ enum Immediate {
     AutoGather(bool),
     AutoRepair(bool),
     Stance(AiMode),
-    /// The rallying point, as the text of its target.
-    RallyingPoint(String),
+    RallyingPoint(TargetRef),
     /// The name of the group to join.
     JoinGroup(String),
     /// The transport to enter.
@@ -1003,9 +1015,8 @@ impl World {
     /// equal for the same target given at the same time, `build` orders for
     /// the same type, target and command; other orders are never equal.
     pub(crate) fn order_eq(&self, a: &Order, b: &Order) -> bool {
-        let same_target = || {
-            a.target().and_then(|t| self.t_id_text(t)) == b.target().and_then(|t| self.t_id_text(t))
-        };
+        let same_target =
+            || a.target().and_then(Target::identity) == b.target().and_then(Target::identity);
         match &a.kind {
             OrderKind::Go { creation_time, .. } => {
                 matches!(&b.kind, OrderKind::Go { creation_time: tb, .. } if same_target() && creation_time == tb)
@@ -2252,17 +2263,8 @@ impl World {
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
                     .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
                 self.notify(u, EntityEvent::Complete, false);
-                // The rallying point keeps the text of the target it was
-                // given, which reads back as that target.
-                let rp = self.e(unit).rallying_point.clone();
-                match rp {
-                    Some(rp) => {
-                        let t = TargetRef::parse(self, &rp)?;
-                        self.take_default_order(u, t, true, false, None)?;
-                    }
-                    None => {
-                        // `get_object_by_id(None)` finds nothing.
-                    }
+                if let Some(t) = self.e(unit).rallying_point {
+                    self.take_default_order(u, t, true, false, None)?;
                 }
             }
             Product::Research(type_id) => {

@@ -15,7 +15,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::nofloat::PRECISION;
-use crate::orders::Order;
+use crate::orders::{Order, TargetRef};
 use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 
 /// The identifier of an entity, also used for squares and players in the
@@ -61,13 +61,35 @@ impl Place {
 
 /// A point of a square given by the player (`zoom-<square>-<x>-<y>`), or one
 /// of the nine subsquares of a square.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZoomTarget {
     pub place: SquareId,
     pub x: i64,
     pub y: i64,
-    /// The text id it was given with, if any.
-    pub id: Option<String>,
+    /// Given by the player, rather than a subsquare the simulation chose:
+    /// only a given point has an identity (see [`Target::identity`]).
+    pub given: bool,
+}
+
+/// Feeds the text id a given point was kept with.
+impl std::hash::Hash for ZoomTarget {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let ZoomTarget { place, x, y, given } = self;
+        place.hash(state);
+        x.hash(state);
+        y.hash(state);
+        crate::world::HashTexts::zoom_id(*given, *place, *x, *y, state);
+    }
+}
+
+/// What tells two targets apart when orders are compared: the same
+/// square, the same entity (perceived or remembered), or the same point
+/// given by the player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TargetIdentity {
+    Square(SquareId),
+    Entity(EntityId),
+    Point(SquareId, i64, i64),
 }
 
 /// A remembered entity: a copy of the entity made when it went out of
@@ -103,13 +125,14 @@ impl Target {
         }
     }
 
-    /// `getattr(target, "id", None)` as text.
-    pub fn id_text(&self, square_ids: impl Fn(SquareId) -> u32) -> Option<String> {
+    /// What tells the target apart when orders are compared (the
+    /// original's `id`): a subsquare and a point have none.
+    pub(crate) fn identity(&self) -> Option<TargetIdentity> {
         match self {
-            Target::Square(s) => Some(square_ids(*s).to_string()),
-            Target::Zoom(z) => z.id.clone(),
-            Target::Entity(e) => Some(e.0.to_string()),
-            Target::Memory(m) => Some(m.snapshot.id.0.to_string()),
+            Target::Square(s) => Some(TargetIdentity::Square(*s)),
+            Target::Zoom(z) => z.given.then_some(TargetIdentity::Point(z.place, z.x, z.y)),
+            Target::Entity(e) => Some(TargetIdentity::Entity(*e)),
+            Target::Memory(m) => Some(TargetIdentity::Entity(m.snapshot.id)),
             Target::Xy(..) => None,
         }
     }
@@ -174,7 +197,7 @@ pub struct SiteData {
 
 /// Anything placed on the map: deposit, meadow, corpse, exit, unit,
 /// building or building site.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug)]
 pub struct Entity {
     pub id: EntityId,
     pub class: EntityClass,
@@ -221,8 +244,8 @@ pub struct Entity {
     pub damage_level: i64,
     /// `float("inf")` is [`crate::INF`].
     pub distance_to_goal: i64,
-    /// The id given to the `rallying_point` order.
-    pub rallying_point: Option<String>,
+    /// Where the units it trains go, as the `rallying_point` order gave it.
+    pub rallying_point: Option<TargetRef>,
     /// The name of the group the unit joined.
     pub group: Option<String>,
     pub ai_mode: Option<AiMode>,
@@ -243,6 +266,102 @@ pub struct Entity {
     /// Corpses: the unit as it was when it died.
     pub corpse_unit: Option<Box<Entity>>,
     pub site: Option<SiteData>,
+}
+
+/// Every field in order, the rallying point as the text it was kept as.
+impl std::hash::Hash for Entity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Entity {
+            id,
+            class,
+            type_id,
+            type_name,
+            place,
+            x,
+            y,
+            o,
+            player,
+            stats,
+            airground_type,
+            blocked_exit,
+            building_land,
+            time_limit,
+            is_cloaked,
+            is_moving,
+            previous_place,
+            hp,
+            mana,
+            orders,
+            action,
+            walked,
+            rotations,
+            smooth_rotations,
+            number,
+            inside,
+            position_to_hold,
+            minimal_damage,
+            next_attack_time,
+            damage_level,
+            distance_to_goal,
+            rallying_point,
+            group,
+            ai_mode,
+            auto_gather,
+            auto_repair,
+            cargo,
+            destination,
+            actual_speed,
+            qty_max,
+            resource_regen,
+            exit,
+            corpse_unit,
+            site,
+        } = self;
+        id.hash(state);
+        class.hash(state);
+        type_id.hash(state);
+        type_name.hash(state);
+        place.hash(state);
+        x.hash(state);
+        y.hash(state);
+        o.hash(state);
+        player.hash(state);
+        stats.hash(state);
+        airground_type.hash(state);
+        blocked_exit.hash(state);
+        building_land.hash(state);
+        time_limit.hash(state);
+        is_cloaked.hash(state);
+        is_moving.hash(state);
+        previous_place.hash(state);
+        hp.hash(state);
+        mana.hash(state);
+        orders.hash(state);
+        action.hash(state);
+        walked.hash(state);
+        rotations.hash(state);
+        smooth_rotations.hash(state);
+        number.hash(state);
+        inside.hash(state);
+        position_to_hold.hash(state);
+        minimal_damage.hash(state);
+        next_attack_time.hash(state);
+        damage_level.hash(state);
+        distance_to_goal.hash(state);
+        crate::world::HashTexts::rallying_point(*rallying_point, state);
+        group.hash(state);
+        ai_mode.hash(state);
+        auto_gather.hash(state);
+        auto_repair.hash(state);
+        cargo.hash(state);
+        destination.hash(state);
+        actual_speed.hash(state);
+        qty_max.hash(state);
+        resource_regen.hash(state);
+        exit.hash(state);
+        corpse_unit.hash(state);
+        site.hash(state);
+    }
 }
 
 /// The radius of every entity with collision, in millimeters.

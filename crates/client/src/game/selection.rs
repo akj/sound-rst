@@ -1173,14 +1173,16 @@ mod tests {
         let view = t.g.game.view();
         let rally = OrderTypeView::new("rallying_point", old, view, style, &t.h.client.log);
         let b1 = view.square_at(1, 0).unwrap();
-        let b1_id = view.square(b1).protocol_id();
         t.g.game.order = rally;
         (t.g.game.place, t.g.game.target, t.g.game.zoom) = (Some(b1), None, None);
         // Enter, pressed when the turn has come and before it is taken.
         t.h.press(Key::Return, Mods::NONE);
         assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
-        let rallying_point = t.host.world().entity(new).unwrap().rallying_point.clone();
-        assert_eq!(rallying_point, Some(b1_id.to_string()));
+        let rallying_point = t.host.world().entity(new).unwrap().rallying_point;
+        assert_eq!(
+            rallying_point,
+            Some(soundrts_world::orders::TargetRef::Square(b1))
+        );
     }
 
     #[test]

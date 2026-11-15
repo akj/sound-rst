@@ -112,7 +112,6 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
             own.cargo,
             own.inside,
             own.stance,
-            own.rallying_point,
             own.group,
         ),
         (
@@ -120,7 +119,6 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
             Some((0, 5000)),
             None,
             Some(AiMode::Defensive),
-            None,
             Some("1".into())
         )
     );

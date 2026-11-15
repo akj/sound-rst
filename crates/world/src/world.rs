@@ -202,6 +202,8 @@ impl Hash for World {
 /// hashes.
 pub(crate) struct HashTexts {
     rules: Rules,
+    /// Each square's protocol id and name.
+    squares: Vec<(u32, String)>,
 }
 
 thread_local! {
@@ -223,6 +225,7 @@ impl HashTexts {
     pub(crate) fn set(w: &World) -> HashTextsGuard {
         let texts = HashTexts {
             rules: w.rules.clone(),
+            squares: w.squares.iter().map(|s| (s.id, s.name.clone())).collect(),
         };
         HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
         HashTextsGuard
@@ -260,6 +263,40 @@ impl HashTexts {
                 None => controller_faction.to_owned(),
             };
             name.hash(state);
+        });
+    }
+
+    #[expect(clippy::indexing_slicing, reason = "temporary: the proof of the ids")]
+    fn square(&self, s: SquareId) -> &(u32, String) {
+        &self.squares[s.0 as usize]
+    }
+
+    /// The text of a target, as [`crate::orders::TargetRef::text`].
+    fn target_text(&self, t: crate::orders::TargetRef) -> String {
+        use crate::orders::TargetRef;
+        match t {
+            TargetRef::Square(s) => self.square(s).0.to_string(),
+            TargetRef::SquareNamed(s) => self.square(s).1.clone(),
+            TargetRef::Point { square, x, y } => {
+                format!("zoom-{}-{x}-{y}", self.square(square).0)
+            }
+            TargetRef::Entity(e) => e.to_string(),
+            TargetRef::Nothing => "None".to_owned(),
+        }
+    }
+
+    /// Feeds a rallying point as the text it was kept as.
+    pub(crate) fn rallying_point<H: Hasher>(t: Option<crate::orders::TargetRef>, state: &mut H) {
+        Self::with(|texts| t.map(|t| texts.target_text(t)).hash(state));
+    }
+
+    /// Feeds the text id a zoom target was kept with: a point given by the
+    /// player had one.
+    pub(crate) fn zoom_id<H: Hasher>(given: bool, s: SquareId, x: i64, y: i64, state: &mut H) {
+        Self::with(|texts| {
+            given
+                .then(|| format!("zoom-{}-{x}-{y}", texts.square(s).0))
+                .hash(state)
         });
     }
 
@@ -640,11 +677,6 @@ impl World {
     /// `target.radius`: squares have none.
     pub(crate) fn t_radius(&self, t: &Target) -> i64 {
         self.t_entity(t).map_or(0, Entity::radius)
-    }
-
-    /// `getattr(target, "id", None)` as text.
-    pub(crate) fn t_id_text(&self, t: &Target) -> Option<String> {
-        t.id_text(|s| self.square(s).id)
     }
 
     // entity lifecycle

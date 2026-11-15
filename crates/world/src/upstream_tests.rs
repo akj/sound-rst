@@ -1924,7 +1924,7 @@ starting_resources 100 100
                 place: a1,
                 x,
                 y,
-                id: None,
+                given: false,
             })
         };
         assert!(zoom(2000, 2000).same(&zoom(2000, 2000)));
