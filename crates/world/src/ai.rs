@@ -1338,7 +1338,8 @@ impl Door<'_> {
     }
 
     /// `_remove_far_candidates`: the candidates met first in a breadth
-    /// first walk of the squares from `start`.
+    /// first walk of the squares from `start`, each on the square where the
+    /// player knows it; on one square, in id order.
     fn remove_far_candidates(
         &self,
         candidates: &[Target],
@@ -1346,10 +1347,10 @@ impl Door<'_> {
         limit: usize,
     ) -> Res<Vec<Target>> {
         let start = square_of(start)?;
-        let mut ids: BTreeMap<EntityId, Target> = BTreeMap::new();
+        let mut on: BTreeMap<SquareId, BTreeMap<EntityId, Target>> = BTreeMap::new();
         for o in candidates {
-            if let Some(id) = target_id(o) {
-                ids.insert(id, o.clone());
+            if let (Some(Place::Square(s)), Some(id)) = (self.target_place_of(o), target_id(o)) {
+                on.entry(s).or_default().insert(id, o.clone());
             }
         }
         let mut c = Vec::new();
@@ -1361,12 +1362,10 @@ impl Door<'_> {
             if done.contains(&room) {
                 continue;
             }
-            for o in self.objects_on(room) {
-                if let Some(t) = ids.get(o) {
-                    c.push(t.clone());
-                    if c.len() >= limit {
-                        break;
-                    }
+            for t in on.get(&room).into_iter().flat_map(BTreeMap::values) {
+                c.push(t.clone());
+                if c.len() >= limit {
+                    break;
                 }
             }
             for &e in self.exits(room) {
@@ -1804,6 +1803,9 @@ fn is_signed_number(s: &str) -> bool {
 }
 
 #[cfg(test)]
+mod fairness;
+
+#[cfg(test)]
 mod order_sites;
 
 #[cfg(test)]
@@ -1813,7 +1815,7 @@ mod tests {
     use crate::world::World;
 
     /// A world with the original's rules and this map.
-    fn world(map: &str) -> World {
+    pub(super) fn world(map: &str) -> World {
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
         let read = |f: &str| {
@@ -2012,6 +2014,9 @@ starting_squares a1
             .map(|&o| Target::Entity(o))
             .collect();
         assert_eq!(meadows.len(), 3);
+        for m in meadows.iter().filter_map(Target::entity_id) {
+            w.plm(p).perception.insert(m);
+        }
         let a1 = w.square_by_name("a1").unwrap();
         let near = w
             .door(p)

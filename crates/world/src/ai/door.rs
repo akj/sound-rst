@@ -492,11 +492,6 @@ impl Door<'_> {
         &self.world.pl(self.me).places_with_corpses
     }
 
-    /// A leak: the true objects of a square, in the order they came.
-    pub(super) fn objects_on(&self, s: SquareId) -> &[EntityId] {
-        &self.world.square(s).objects
-    }
-
     /// A leak: whether an exit is closed by forests or by a blocker of its
     /// two sides, gates included, as they truly are.
     pub(super) fn exit_is_blocked(&self, e: EntityId) -> bool {
