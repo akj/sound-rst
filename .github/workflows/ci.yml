@@ -12,11 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Backtraces keep their line numbers. The rest of the debug information
-  # is only more to compile, link and cache.
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-
 # The jobs run side by side, so a run takes as long as the slowest of them.
 # Each keeps its compiled dependencies between runs: a run compiles this
 # repository's own crates and nothing else, unless Cargo.lock or the

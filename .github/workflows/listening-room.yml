@@ -23,9 +23,6 @@ concurrency:
   group: listening-room-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-
 jobs:
   binaural:
     runs-on: windows-latest
