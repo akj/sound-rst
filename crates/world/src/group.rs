@@ -33,9 +33,7 @@ pub fn decode(s: &str) -> Result<Vec<i64>, String> {
     if s.is_empty() {
         return Ok(Vec::new());
     }
-    let int = |x: &str| {
-        crate::nofloat::py_int(x).map_err(|_| format!("invalid literal for int(): {x:?}"))
-    };
+    let int = |x: &str| crate::nofloat::py_int(x).map_err(|_| format!("{x:?} is not an id"));
     let mut result = Vec::new();
     for r in s.split(' ') {
         if r.contains('-') {

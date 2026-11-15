@@ -843,7 +843,7 @@ impl World {
                 exits.remove(i);
             }
         }
-        self.warn("Exit.delete: can't set attribute 'other_side'");
+        self.warn("a deleted exit keeps its other side");
     }
 
     pub(crate) fn unblock(&mut self, id: EntityId) {

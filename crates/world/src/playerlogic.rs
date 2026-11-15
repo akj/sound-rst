@@ -920,7 +920,7 @@ impl World {
                 self.players.remove(i);
                 self.ex_players.push(p);
             }
-            None => self.warn("list.remove(x): x not in list"),
+            None => self.warn(format!("{} quits a game it is not in", self.who(p))),
         }
     }
 
