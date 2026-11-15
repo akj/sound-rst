@@ -9,7 +9,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 
 use crate::abort::{Abort, Invariant, Res};
-use crate::entity::{EntityId, Place, PlayerId, SquareId};
+use crate::entity::{EntityId, Names, Place, PlayerId, SquareId};
 use crate::nofloat::int_distance;
 use crate::rules::AirGround;
 use crate::world::{INF, World};
@@ -66,6 +66,43 @@ pub(crate) enum Forests {
 pub struct PathCache {
     time: Option<i64>,
     results: BTreeMap<CacheKey, PathResult>,
+}
+
+impl Names for Node {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        match self {
+            Node::Square(_) => {}
+            Node::Exit(e) => f(*e),
+        }
+    }
+}
+
+/// The graphs name their exits: a path search looks them up. An exit
+/// removed from its square stays in them.
+impl Names for Graphs {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Graphs { ground, air, water } = self;
+        for g in [ground, air, water] {
+            for (node, edges) in g {
+                node.names(f);
+                for (n, _) in edges {
+                    n.names(f);
+                }
+            }
+        }
+    }
+}
+
+impl Names for PathCache {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let PathCache { time: _, results } = self;
+        for r in results.values() {
+            match r {
+                PathResult::Next(node, _) => node.names(f),
+                PathResult::Places(_) => {}
+            }
+        }
+    }
 }
 
 /// Who asks whether an exit is blocked: nobody, a player, or a unit. A

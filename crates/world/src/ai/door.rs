@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::abort::{Abort, Res};
-use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target};
+use crate::entity::{Entity, EntityId, MemoryRef, Names, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, MenuEntry, Order, OrderInfo, Request};
 use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
@@ -35,7 +35,7 @@ use crate::questions;
 use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{INF, TPlace, World};
 
-use super::Computer;
+use super::{Computer, Tracked};
 
 /// What a computer player may read and do: see the [module](self).
 pub(super) struct Door<'w> {
@@ -642,5 +642,67 @@ impl Door<'_> {
 
     pub(super) fn warn(&mut self, s: impl Into<String>) {
         self.world.warn(s);
+    }
+}
+
+/// The computer's bookkeeping names the units it tracks, its workers, its
+/// sites, the users of its abilities and the targets it chose. The targets
+/// of the orders it builds are given as targets, resolved through what it
+/// perceives or remembers, so they are not names.
+impl Names for Computer {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Computer {
+            plan: _,
+            line_nb: _,
+            previous_linechange: _,
+            watchdog: _,
+            constant_attacks: _,
+            research: _,
+            attacked_places,
+            orders,
+            previous_choose,
+            sensible_building,
+            workers,
+            gathered_deposits,
+            building_sites,
+            raise_dead_users,
+            teleportation_users,
+            cataclysm_users,
+            detector_users,
+            summon_users,
+            time_has_come,
+            safe_cnt: _,
+            lacking: _,
+        } = self;
+        attacked_places.names(f);
+        for tracked in orders.values().flatten() {
+            let Tracked { unit, order } = tracked;
+            f(*unit);
+            order.names(f);
+        }
+        for ((_, _, place), target) in previous_choose {
+            place.names(f);
+            target.names(f);
+        }
+        sensible_building.names(f);
+        workers.names(f);
+        for (target, _) in gathered_deposits {
+            target.names(f);
+        }
+        for (target, _) in time_has_come {
+            target.names(f);
+        }
+        building_sites.names(f);
+        for users in [
+            raise_dead_users,
+            teleportation_users,
+            cataclysm_users,
+            detector_users,
+            summon_users,
+        ] {
+            for (u, _) in users {
+                f(*u);
+            }
+        }
     }
 }

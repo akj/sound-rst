@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::ai::{Computer, Handicap, handicapped_name};
-use crate::entity::{Entity, EntityId, SquareId, StatType};
+use crate::entity::{Entity, EntityId, Names, SquareId, StatType};
 use crate::events::Event;
 use crate::message::TurnMessage;
 use crate::msg::{Msg, MsgPart};
@@ -533,6 +533,105 @@ impl Player {
             end_of_turn: None,
             ai: None,
         }
+    }
+
+    /// Calls `f` with each id the player's state names (see [`Names`]):
+    /// what it perceives and remembers, its units, the orders of its
+    /// budget, what its units revealed until a time not yet past, the
+    /// enemies it found this turn, its selection and its computer's
+    /// bookkeeping. Its buckets name its units only when `buckets_read`:
+    /// an allied player in the game looks through them. A remembered copy
+    /// is read as it was, so what it holds is not named; which units were
+    /// detected is only asked about, never looked up.
+    pub(crate) fn names(&self, now: i64, buckets_read: bool, f: &mut impl FnMut(EntityId)) {
+        let Player {
+            obj_id: _,
+            kind: _,
+            controller: _,
+            neutral: _,
+            faction: _,
+            allied: _,
+            number: _,
+            perception,
+            memory,
+            objectives: _,
+            units,
+            budget,
+            upgrades: _,
+            forbidden_techs: _,
+            observed_before_squares: _,
+            strictly_observed_before_squares: _,
+            observed_squares: _,
+            partly_observed_squares: _,
+            observed_objects,
+            detected_units: _,
+            allied_control: _,
+            known_enemies,
+            enemy_menace: _,
+            enemy_presence: _,
+            places_with_corpses: _,
+            places_with_friends: _,
+            cataclysmic_places: _,
+            subsquare_threat: _,
+            counterattack_places: _,
+            resources: _,
+            storage_bonus: _,
+            food: _,
+            used_food: _,
+            cheatmode: _,
+            has_victory: _,
+            has_been_defeated: _,
+            observer_if_defeated: _,
+            group,
+            group_had_enough_mana: _,
+            stats: _,
+            triggers: _,
+            menace: _,
+            buckets,
+            places_to_explore: _,
+            cheat_has_all: _,
+            handicap: _,
+            events: _,
+            end_of_turn: _,
+            ai,
+        } = self;
+        perception.iter().for_each(|&o| f(o));
+        memory.keys().for_each(|&o| f(o));
+        units.names(f);
+        budget.names(f);
+        for (&o, &until) in observed_objects {
+            if until >= now {
+                f(o);
+            }
+        }
+        for (t, list) in known_enemies.values() {
+            if *t == now {
+                list.names(f);
+            }
+        }
+        group.names(f);
+        if buckets_read {
+            buckets.values().for_each(|b| b.names(f));
+        }
+        if let Some(ai) = ai {
+            ai.names(f);
+        }
+    }
+
+    /// Forgets, once out of the game, what nothing reads any more: what
+    /// it perceived and remembered, its budget, which units were detected,
+    /// the enemies it found, its selection and its computer's
+    /// bookkeeping. Its statistics, resources, alliances, upgrades and
+    /// squares stay, for the score and its allies; so do its buckets and
+    /// what its units revealed, which its allies still look through.
+    pub(crate) fn forget_after_leaving(&mut self) {
+        self.perception.clear();
+        self.memory.clear();
+        self.budget.clear();
+        self.detected_units.clear();
+        self.known_enemies.clear();
+        self.group = None;
+        self.ai = None;
     }
 
     pub fn is_human(&self) -> bool {

@@ -15,12 +15,15 @@
 
 mod common;
 
+use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use soundrts_world::{AiScripts, Controller, Rules, World, multiplayer_default_triggers};
+use soundrts_world::{
+    AiScripts, Command, Controller, EntityId, Event, Rules, World, multiplayer_default_triggers,
+};
 
 /// The longest a load may take: `Rules::load`, `AiScripts::load` or
 /// `World::load_and_build_map`. The original's own texts load in a few
@@ -539,4 +542,92 @@ fn a_plan_line_that_recurses_is_skipped_with_a_warning() {
         ),
         ["recursion error with easy; current ai.txt line is: get 2 farm"; 3]
     );
+}
+
+/// A stale or hostile client names entities that were freed long ago: a
+/// player who left the game took its units with it. Each command is
+/// carried out as for an entity that no longer exists: the selection
+/// leaves the freed units out, and every order but a rallying point is
+/// refused for want of a target.
+#[test]
+fn commands_naming_freed_entities_aim_at_nothing() {
+    let mut w = World::new(common::rules(), common::ai(), Vec::new(), 0);
+    w.load_and_build_map(&common::read(PLAYED_MAP)).unwrap();
+    let players = w
+        .populate_map(
+            &[Controller::human("a", true), Controller::human("b", false)],
+            true,
+            true,
+        )
+        .unwrap();
+    let (a, b) = (players[0], players[1]);
+    let gone = w.player(b).units.clone();
+    w.queue(b, Command::Quit);
+    for _ in 0..3 {
+        w.update();
+    }
+    assert!(gone.iter().all(|&u| w.entity(u).is_none()), "not freed");
+    let words = |ids: &[EntityId]| {
+        ids.iter()
+            .map(|u| u.0.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mine = w.player(a).units.clone();
+    w.queue_command(a, &format!("control {} {}", words(&gone), words(&mine)));
+    for order in [
+        "default",
+        "go",
+        "attack",
+        "patrol",
+        "gather",
+        "repair",
+        "block",
+        "load",
+        "enter",
+        "wait",
+        "build farm",
+        "rallying_point",
+    ] {
+        w.queue_command(a, &format!("order 1 0 {order} {}", gone[0].0));
+    }
+    w.drain_events(a);
+    let mut heard = BTreeSet::new();
+    for _ in 0..20 {
+        w.update();
+        for e in w.drain_events(a) {
+            if let Event::Entity { entity, event } = e {
+                heard.insert(format!("{} {event:?}", entity.type_name));
+            }
+        }
+    }
+    // Only the rallying point is taken: it keeps the target as given.
+    assert_eq!(
+        heard,
+        BTreeSet::from(
+            [
+                "farm OrderImpossible(None)",
+                "peasant OrderImpossible(None)",
+                "peasant OrderImpossible(Some(CannotBuildHere))",
+                "townhall OrderImpossible(None)",
+                "townhall OrderOk",
+            ]
+            .map(str::to_owned)
+        )
+    );
+    assert_eq!(w.player(a).group.as_deref(), Some(&mine[..]));
+    for &u in &w.player(a).units {
+        let aims = w
+            .entity(u)
+            .unwrap()
+            .orders()
+            .iter()
+            .filter_map(|o| o.target());
+        for t in aims {
+            assert!(
+                t.entity_id().is_none_or(|t| !gone.contains(&t)),
+                "an order aims at {t:?}"
+            );
+        }
+    }
 }

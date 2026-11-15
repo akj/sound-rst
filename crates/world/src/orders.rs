@@ -6,7 +6,7 @@
 
 use crate::abort::{Invariant, Res};
 use crate::command::{KeywordOrder, OrderTarget};
-use crate::entity::{AiMode, Creature, EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
@@ -915,6 +915,69 @@ pub struct Order {
     progress: Progress,
     first_update: bool,
     pub(crate) kind: OrderKind,
+}
+
+/// An order names what it aims at now, and the warehouse a gatherer
+/// chose. The target as given is resolved through what its player
+/// perceives or remembers, so it is not a name.
+impl Names for Order {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Order {
+            uid: _,
+            id: _,
+            is_imperative: _,
+            progress: _,
+            first_update: _,
+            kind,
+        } = self;
+        let aim = match kind {
+            OrderKind::Production(Production {
+                product: _,
+                time_left: _,
+                previous_completeness: _,
+            })
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore => None,
+            OrderKind::Go {
+                aim,
+                creation_time: _,
+            }
+            | OrderKind::Attack { aim }
+            | OrderKind::Wait {
+                aim,
+                must_deploy: _,
+            }
+            | OrderKind::Block { aim, step: _ }
+            | OrderKind::Repair { aim, step: _ }
+            | OrderKind::BuildPhaseTwo { aim, step: _ }
+            | OrderKind::Build { building: _, aim }
+            | OrderKind::Use { ability: _, aim }
+            | OrderKind::Load { aim }
+            | OrderKind::LoadAll { aim }
+            | OrderKind::UnloadAll { aim } => Some(aim),
+            OrderKind::Patrol { aim, route } => {
+                if let Some(Route { places, index: _ }) = route {
+                    for place in places {
+                        place.names(f);
+                    }
+                }
+                Some(aim)
+            }
+            OrderKind::Gather { aim, step } => {
+                match step {
+                    GatherStep::BringBack { storage } => storage.names(f),
+                    GatherStep::Start
+                    | GatherStep::Store { until: _ }
+                    | GatherStep::GoGather
+                    | GatherStep::Extract { until: _ } => {}
+                }
+                Some(aim)
+            }
+        };
+        if let Some(Aim { given: _, target }) = aim {
+            target.names(f);
+        }
+    }
 }
 
 impl Order {
