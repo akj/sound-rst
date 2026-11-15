@@ -10,15 +10,10 @@ use soundrts::rng::ClientRng;
 use soundrts::testkit::{Harness, Script};
 
 /// What the client may log during such a game: upstream's own style
-/// warnings for objects without some sounds, the world's warnings, and the
-/// upstream error kept on purpose: the orders of a unit sent to a square or
-/// a subsquare cannot be said (their target has no player).
-const EXPECTED_WARNINGS: &[&str] = &[
-    "no value found for ",
-    "world: ",
-    "error in clientgame loop: 'Square' object has no attribute 'player'",
-    "error in clientgame loop: 'ZoomTarget' object has no attribute 'player'",
-];
+/// warnings for objects without some sounds. A warning of the world is a
+/// stop of a unit's or a player's update, which an ordinary game must not
+/// reach.
+const EXPECTED_WARNINGS: &[&str] = &["no value found for "];
 
 const TURNS: i64 = 2000;
 
