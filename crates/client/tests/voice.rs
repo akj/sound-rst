@@ -558,15 +558,50 @@ fn a_cut_scene_message_not_spoken_does_not_wait() {
     let mut h = Harness::new("en", Script::new());
     let before = h.clock.now();
     let story = || News::new(Category::Story, t(LONG));
-    h.client.voice.important_news(story(), Policy::Log);
+    h.client.voice.tell_now(vec![story()], Policy::Log);
     assert_eq!(h.clock.now(), before);
     assert_eq!(h.spoken(), Vec::<String>::new());
-    h.client.voice.important_news(story(), Policy::Speak);
+    h.client.voice.tell_now(vec![story()], Policy::Speak);
     assert!(h.clock.now() >= before + 5.0);
     assert_eq!(
         log(&h),
         [(LONG.to_owned(), Heard::No), (LONG.to_owned(), Heard::Yes)]
     );
+}
+
+/// A cut scene's lines, each said for 2 to 3 seconds.
+const SCENE: [&str; 3] = [
+    "the first line of the scene",
+    "then the second line",
+    "and the last line",
+];
+
+fn play_scene(h: &mut Harness) {
+    let lines = SCENE.map(str::to_owned);
+    h.client.play_sequence(&lines);
+}
+
+#[test]
+fn escape_skips_the_rest_of_a_cut_scene_which_stays_in_the_log_unheard() {
+    let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Escape));
+    play_scene(&mut h);
+    assert_eq!(h.spoken(), [SCENE[0]]);
+    assert_eq!(
+        log(&h),
+        [
+            (SCENE[0].to_owned(), Heard::Yes),
+            (SCENE[1].to_owned(), Heard::No),
+            (SCENE[2].to_owned(), Heard::No),
+        ]
+    );
+}
+
+#[test]
+fn another_key_skips_one_line_of_a_cut_scene() {
+    let mut h = Harness::new("en", Script::new().at(0.5).tap(Key::Space));
+    play_scene(&mut h);
+    assert_eq!(h.spoken(), SCENE);
+    assert!(log(&h).iter().all(|(_, heard)| *heard == Heard::Yes));
 }
 
 #[test]
@@ -679,7 +714,7 @@ fn in_a_game_control_shift_c_puts_the_reviewed_chat_line_on_the_clipboard() {
     let mut h = Harness::new("en", script);
     let mut g = h.start_training("jl1", &["easy"], 1);
     h.run_until_turn(&mut g, 2);
-    g.game.execute_command(&mut h.client, "p").unwrap();
+    g.game.execute_command(&mut h.client, "p");
     chat(&mut h.client.voice, "meet me at 203.0.113.7");
     chat(&mut h.client.voice, "on my way");
     h.run_until_voice_idle(&mut g);

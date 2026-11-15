@@ -1,6 +1,8 @@
 //! The commands a key of `bindings.txt` can give during a game, read once
 //! when the bindings are loaded.
 
+use std::num::NonZeroU32;
+
 use soundrts_world::Queue;
 use soundrts_world::nofloat::py_int;
 
@@ -121,8 +123,9 @@ pub enum GameCommand {
     },
     SelectUnits(UnitFilter),
     CommandUnit,
+    /// Selects one `portion`th of the units of each type.
     Group {
-        portion: i64,
+        portion: NonZeroU32,
         filter: UnitFilter,
     },
     Ungroup,
@@ -182,12 +185,6 @@ pub enum GameCommand {
     KeyHelp,
     /// A cheat command, as typed in the console.
     Cmd(String),
-    /// A known command with arguments it cannot take: pressing its key
-    /// reports the error, as upstream's call raised then.
-    Broken {
-        name: String,
-        error: String,
-    },
 }
 
 /// Every command name the interface knows.
@@ -260,36 +257,36 @@ pub const COMMAND_NAMES: &[&str] = &[
 ];
 
 fn int(s: &str) -> Result<i64, String> {
-    py_int(s).map_err(|_| format!("invalid literal for int() with base 10: '{s}'"))
+    py_int(s).map_err(|_| format!("'{s}' is not a whole number"))
+}
+
+/// A whole number above 0.
+fn positive(s: &str) -> Result<NonZeroU32, String> {
+    u32::try_from(int(s)?)
+        .ok()
+        .and_then(NonZeroU32::new)
+        .ok_or_else(|| format!("{s} is not above 0"))
 }
 
 /// The arguments' count must be between `min` and `max`.
 fn arity(args: &[String], min: usize, max: usize) -> Result<(), String> {
     if args.len() < min {
-        Err(format!("missing {} required argument(s)", min - args.len()))
+        Err(format!("{} argument(s) missing", min - args.len()))
     } else if args.len() > max {
-        Err(format!(
-            "takes {max} argument(s) but {} were given",
-            args.len()
-        ))
+        Err(format!("at most {max} argument(s), not {}", args.len()))
     } else {
         Ok(())
     }
 }
 
 impl GameCommand {
-    /// The command `name` with `args`. An unknown name is an error; known
-    /// names with unfit arguments give [`GameCommand::Broken`].
+    /// The command `name` with `args`: an error for an unknown name, or
+    /// arguments the command cannot take.
     pub fn parse(name: &str, args: Vec<String>) -> Result<GameCommand, BindingError> {
         if !COMMAND_NAMES.contains(&name) {
             return Err(BindingError(format!("'{name}' is not a command")));
         }
-        Ok(
-            Self::parse_known(name, &args).unwrap_or_else(|error| GameCommand::Broken {
-                name: name.to_owned(),
-                error,
-            }),
-        )
+        Self::parse_known(name, &args).map_err(|e| BindingError(format!("{name}: {e}")))
     }
 
     fn parse_known(name: &str, args: &[String]) -> Result<GameCommand, String> {
@@ -364,7 +361,7 @@ impl GameCommand {
             "group" => {
                 arity(args, 1, usize::MAX)?;
                 C::Group {
-                    portion: int(&args[0])?,
+                    portion: positive(&args[0])?,
                     filter: UnitFilter::from_args(rest()),
                 }
             }
@@ -626,11 +623,11 @@ impl GameCommand {
             C::SelectUnits(filter) => format!("select all {}", units(filter, true)),
             C::CommandUnit => "control the target, if it is yours".into(),
             C::Group { portion, filter } => {
-                let part = match portion {
+                let part = match portion.get() {
                     1 => "all".to_owned(),
                     2 => "half".to_owned(),
                     4 => "a quarter of".to_owned(),
-                    n => format!("a {} of", ordinal(*n)),
+                    n => format!("a {} of", ordinal(n.into())),
                 };
                 let what = if filter.keyboard_types.is_empty() {
                     let idle = if filter.idle { "idle " } else { "" };
@@ -683,7 +680,6 @@ impl GameCommand {
             C::Console => "open the console".into(),
             C::ReloadParameters => "reload the parameters".into(),
             C::Cmd(cmd) => format!("run the console command {cmd}"),
-            C::Broken { name, .. } => format!("{name}, with arguments it cannot take"),
         }
     }
 }
@@ -730,15 +726,22 @@ mod tests {
             parse("cmd a footman 3"),
             Ok(GameCommand::Cmd("a footman 3".into()))
         );
-        assert!(matches!(parse("help x"), Ok(GameCommand::Broken { .. })));
-        assert!(matches!(
+        assert_eq!(
+            parse("help x"),
+            Err(BindingError("help: 'x' is not a whole number".into()))
+        );
+        assert_eq!(
             parse("examine now"),
-            Ok(GameCommand::Broken { .. })
-        ));
-        assert!(matches!(
+            Err(BindingError("examine: at most 0 argument(s), not 1".into()))
+        );
+        assert_eq!(
             parse("select_square 1"),
-            Ok(GameCommand::Broken { .. })
-        ));
+            Err(BindingError("select_square: 1 argument(s) missing".into()))
+        );
+        assert_eq!(
+            parse("group 0 local"),
+            Err(BindingError("group: 0 is not above 0".into()))
+        );
         assert!(parse("dance").is_err());
     }
 

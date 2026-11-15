@@ -95,11 +95,10 @@ impl Session {
         }
     }
 
-    /// A seed drawn from the client's randomness; a fixed seed replaces it
-    /// (the draw still happens, so the noises that follow stay the same).
+    /// The world's seed: the fixed one if there is one, else drawn from the
+    /// client's randomness.
     fn new_seed(cx: &Client) -> i64 {
-        let drawn = cx.rng.randint(0, 10000);
-        cx.game.seed.unwrap_or(drawn)
+        cx.game.seed.unwrap_or_else(|| cx.rng.randint(0, 10000))
     }
 
     /// Plays the game to its end and says the score. The map's resources,

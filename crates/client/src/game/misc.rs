@@ -11,14 +11,14 @@ use soundrts_world::{Cheat, Command};
 
 use crate::client::Client;
 use crate::input::{Event, Key, KeyDown};
-use crate::menu::{Action, Flow, Menu, TextEntry, Typed};
+use crate::menu::{Action, Exit, Flow, Menu, TextEntry, Typed};
 use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 use soundrts_protocol::{Channel, Step};
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
-use super::{GameInterface, Mode, Oops, POSITIONAL_BEEP_SOUND, R, Stop, Story, TURN, style_msg};
+use super::{GameInterface, Mode, POSITIONAL_BEEP_SOUND, Story, TURN, style_msg};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,7 +71,7 @@ fn console_char(c: char) -> bool {
 
 impl GameInterface {
     /// Runs a command of the bindings.
-    pub(crate) fn execute(&mut self, cx: &mut Client, c: &GameCommand) -> Result<(), Stop> {
+    pub(crate) fn execute(&mut self, cx: &mut Client, c: &GameCommand) -> Result<(), Exit> {
         use GameCommand as C;
         match c {
             C::ResourceStatus(r) => self.cmd_resource_status(cx, *r),
@@ -81,37 +81,37 @@ impl GameInterface {
                 cx.voice.item(&m);
             }
             C::UnitHpStatus => self.cmd_unit_hp_status(cx),
-            C::ProductionStatus => self.cmd_production_status(cx)?,
+            C::ProductionStatus => self.cmd_production_status(cx),
             C::WorkersStatus => self.cmd_workers_status(cx),
             C::FightStatus => self.cmd_fight_status(cx),
             C::CombatStatus => self.cmd_combat_status(cx),
-            C::Examine => self.cmd_examine(cx)?,
-            C::UnitStatus => self.cmd_unit_status(cx)?,
+            C::Examine => self.cmd_examine(cx),
+            C::UnitStatus => self.cmd_unit_status(cx),
             C::SelectSquare {
                 dx,
                 dy,
                 no_collision,
-            } => self.cmd_select_square(cx, *dx, *dy, *no_collision)?,
-            C::SelectScoutedSquare(i) => self.cmd_select_scouted_square(cx, *i)?,
-            C::SelectConflictSquare(i) => self.cmd_select_conflict_square(cx, *i)?,
-            C::SelectUnknownSquare(i) => self.cmd_select_unknown_square(cx, *i)?,
-            C::SelectResourceSquare(i) => self.cmd_select_resource_square(cx, *i)?,
+            } => self.cmd_select_square(cx, *dx, *dy, *no_collision),
+            C::SelectScoutedSquare(i) => self.cmd_select_scouted_square(cx, *i),
+            C::SelectConflictSquare(i) => self.cmd_select_conflict_square(cx, *i),
+            C::SelectUnknownSquare(i) => self.cmd_select_unknown_square(cx, *i),
+            C::SelectResourceSquare(i) => self.cmd_select_resource_square(cx, *i),
             C::ToggleZoom => self.cmd_toggle_zoom(cx),
-            C::SelectTarget { inc, types } => self.cmd_select_target(cx, *inc, types)?,
+            C::SelectTarget { inc, types } => self.cmd_select_target(cx, *inc, types),
             C::SelectOrder { inc, menu } => self.cmd_select_order(cx, *inc, *menu),
             C::OrderShortcut => self.cmd_order_shortcut(cx),
-            C::Validate(flags) => self.cmd_validate(cx, *flags)?,
-            C::Default(flags) => self.cmd_default(cx, *flags)?,
-            C::DoAgain { now, flags } => self.cmd_do_again(cx, *now, *flags)?,
-            C::SelectUnit { inc, filter } => self.cmd_select_unit(cx, *inc, filter)?,
-            C::SelectUnits(filter) => self.cmd_select_units(cx, filter)?,
-            C::CommandUnit => self.cmd_command_unit(cx)?,
-            C::Group { portion, filter } => self.cmd_group(cx, *portion, filter)?,
-            C::Ungroup => self.cmd_ungroup(cx)?,
-            C::RecallGroup(name) => self.cmd_recall_group(cx, name)?,
-            C::SetGroup { name, flags } => self.cmd_set_group(cx, name, *flags)?,
-            C::AppendGroup { name, flags } => self.cmd_append_group(cx, name, *flags)?,
-            C::Escape => self.cmd_escape(cx)?,
+            C::Validate(flags) => self.cmd_validate(cx, *flags),
+            C::Default(flags) => self.cmd_default(cx, *flags),
+            C::DoAgain { now, flags } => self.cmd_do_again(cx, *now, *flags),
+            C::SelectUnit { inc, filter } => self.cmd_select_unit(cx, *inc, filter),
+            C::SelectUnits(filter) => self.cmd_select_units(cx, filter),
+            C::CommandUnit => self.cmd_command_unit(cx),
+            C::Group { portion, filter } => self.cmd_group(cx, *portion, filter),
+            C::Ungroup => self.cmd_ungroup(cx),
+            C::RecallGroup(name) => self.cmd_recall_group(cx, name),
+            C::SetGroup { name, flags } => self.cmd_set_group(cx, name, *flags),
+            C::AppendGroup { name, flags } => self.cmd_append_group(cx, name, *flags),
+            C::Escape => self.cmd_escape(cx),
             C::Help(incr) => {
                 let m = cx.help_msg("game", *incr);
                 cx.voice.item(&m);
@@ -134,7 +134,7 @@ impl GameInterface {
                     cx.desktop.set_clipboard(&words);
                 }
             }
-            C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
+            C::JumpToAlert => self.cmd_jump_to_alert(cx),
             C::Objectives(inc) => self.cmd_objectives(cx, *inc),
             C::FollowPlayer(inc) => {
                 let step = if *inc < 0 { Step::Previous } else { Step::Next };
@@ -173,23 +173,20 @@ impl GameInterface {
             C::Volume(incr) => cx.modify_volume(*incr as i32),
             C::Immersion => {
                 if !self.immersion {
-                    self.toggle_immersion(cx)?;
+                    self.toggle_immersion(cx);
                 }
             }
-            C::RotateLeft => self.cmd_rotate_left(cx)?,
-            C::RotateRight => self.cmd_rotate_right(cx)?,
+            C::RotateLeft => self.cmd_rotate_left(cx),
+            C::RotateRight => self.cmd_rotate_right(cx),
             C::Console => self.cmd_console(cx),
             C::ReloadParameters => cx.reload_parameters(),
             C::KeyHelp => self.start_key_help(cx),
             C::Cmd(cmd) => {
                 if self.view().cheats_allowed() {
-                    self.execute_command(cx, cmd)?;
+                    self.execute_command(cx, cmd);
                 } else {
                     cx.voice.item(&msg(mp::BEEP));
                 }
-            }
-            C::Broken { name, error } => {
-                return Err(Stop::Oops(Oops::new(format!("cmd_{name}: {error}"))));
             }
         }
         Ok(())
@@ -198,7 +195,7 @@ impl GameInterface {
     /// Moves the cursor to the square of the last alert of this game and
     /// says it. Pressed again on that square, goes to the alert before,
     /// and stays on the oldest.
-    fn cmd_jump_to_alert(&mut self, cx: &mut Client) -> R {
+    fn cmd_jump_to_alert(&mut self, cx: &mut Client) {
         let before = match self.alert_jump {
             Some((id, square)) if self.place == Some(square) => Some(id),
             _ => None,
@@ -210,12 +207,11 @@ impl GameInterface {
             .or(before.and(self.alert_jump))
         else {
             cx.voice.item(&msg(mp::NOTHING));
-            return Ok(());
+            return;
         };
-        self.leave_zoom_and_immersion(cx)?;
+        self.leave_zoom_and_immersion(cx);
         self.select_and_say_square(cx, square, &Vec::new());
         self.alert_jump = Some((id, square));
-        Ok(())
     }
 
     /// Starts typing a chat line to the game's players or to the allies,
@@ -339,13 +335,18 @@ impl GameInterface {
     }
 
     /// Runs a console or `cmd` command.
-    pub fn execute_command(&mut self, cx: &mut Client, cmd: &str) -> R {
+    pub fn execute_command(&mut self, cx: &mut Client, cmd: &str) {
         let now = cx.clock.now();
         if let Some(s) = cmd.strip_prefix("s ") {
             let s = s.split(' ').next().unwrap_or_default();
-            self.speed = soundrts_world::nofloat::py_float(s)
-                .map_err(|_| Oops::new(format!("could not convert string to float: '{s}'")))?;
-            self.turn_due_at(now);
+            match soundrts_world::nofloat::py_float(s) {
+                Ok(speed) => {
+                    self.speed = speed;
+                    self.turn_due_at(now);
+                }
+                // Not a number: the speed stays.
+                Err(_) => cx.voice.item(&msg(mp::BEEP)),
+            }
         } else if cmd == "p" {
             if self.speed >= 1.0 {
                 self.speed /= 10000.0;
@@ -384,7 +385,6 @@ impl GameInterface {
             };
             self.send_command(cx, Command::Cheat(cheat));
         }
-        Ok(())
     }
 
     /// A cheat that changes the game at once, even while the game waits:
@@ -408,13 +408,12 @@ impl GameInterface {
 
     /// A key pressed while a command of the console is typed: Enter runs
     /// it.
-    pub(crate) fn console_key(&mut self, cx: &mut Client, mut entry: TextEntry, k: &KeyDown) -> R {
+    pub(crate) fn console_key(&mut self, cx: &mut Client, mut entry: TextEntry, k: &KeyDown) {
         match entry.key(cx, k) {
-            Typed::Done(cmd) => self.execute_command(cx, &cmd)?,
+            Typed::Done(cmd) => self.execute_command(cx, &cmd),
             Typed::Cancelled => {}
             Typed::Typing | Typed::Ignored => self.mode = Mode::Console(entry),
         }
-        Ok(())
     }
 
     /// Plays as the next player of the game (a cheat): the logins stay with
@@ -499,7 +498,7 @@ impl GameInterface {
         cx: &mut Client,
         mut gm: GameMenu,
         k: KeyDown,
-    ) -> Result<(), Stop> {
+    ) -> Result<(), Exit> {
         let channel = match self.bindings.command_for(&k) {
             Some(GameCommand::Say) => Some(Channel::Game),
             Some(GameCommand::SayAllies) => Some(Channel::Allies),
@@ -640,30 +639,29 @@ impl GameInterface {
 
     // first person mode
 
-    pub(crate) fn toggle_immersion(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn toggle_immersion(&mut self, cx: &mut Client) {
         self.immersion = !self.immersion;
         if self.immersion {
-            self.cmd_unit_status(cx)?;
+            self.cmd_unit_status(cx);
             cx.voice.item(&msg(mp::FIRST_PERSON_MODE));
         } else {
             cx.voice.item(&msg(mp::MAP_MODE));
         }
         self.follow_mode = self.immersion;
-        Ok(())
     }
 
     /// Cancels the order being given, or leaves first person mode, zoom
     /// mode, or the object selected. While the connection is lost, leaves
     /// the game at once.
-    fn cmd_escape(&mut self, cx: &mut Client) -> R {
+    fn cmd_escape(&mut self, cx: &mut Client) {
         if self.leave_while_returning(cx) {
-            return Ok(());
+            return;
         }
         if self.order.is_some() {
             cx.voice.item(&msg(mp::CANCEL));
             self.order = None;
         } else if self.immersion {
-            self.toggle_immersion(cx)?;
+            self.toggle_immersion(cx);
         } else if self.zoom.is_some() {
             self.cmd_toggle_zoom(cx);
         } else if self.target.is_some()
@@ -671,7 +669,6 @@ impl GameInterface {
         {
             self.select_and_say_square(cx, p, &Vec::new());
         }
-        Ok(())
     }
 
     fn say_compass(&mut self, cx: &mut Client) {
@@ -682,23 +679,22 @@ impl GameInterface {
         }
     }
 
-    fn rotate(&mut self, cx: &mut Client, degrees: f64) -> R {
-        let Some(&g) = self.group.first() else {
-            return Ok(());
+    /// Turns the first unit controlled, and the listener with it.
+    fn rotate(&mut self, cx: &mut Client, degrees: f64) {
+        let Some(v) = self.group.first().and_then(|g| self.dobjets.get_mut(g)) else {
+            return;
         };
-        let v = self.dobjets.get_mut(&g).ok_or_else(|| Oops::missing(g.0))?;
         v.o_override = Some(v.o() + degrees);
         self.o += degrees;
         self.say_compass(cx);
         cx.audio.update();
-        Ok(())
     }
 
-    pub(crate) fn cmd_rotate_left(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_rotate_left(&mut self, cx: &mut Client) {
         self.rotate(cx, 45.0)
     }
 
-    pub(crate) fn cmd_rotate_right(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_rotate_right(&mut self, cx: &mut Client) {
         self.rotate(cx, -45.0)
     }
 }
@@ -733,6 +729,19 @@ mod tests {
             ask(Key::F9, Mods::SHIFT),
             "build 1 barracks , not done , 3 of 3"
         );
+    }
+
+    #[test]
+    fn a_console_speed_that_is_not_a_number_beeps_and_keeps_the_speed() {
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        let speed = g.game.speed;
+        let from = h.utterances().len();
+        g.game.execute_command(&mut h.client, "s fast");
+        assert_eq!(h.said_since(from), ["<1029>"]);
+        assert_eq!(g.game.speed, speed);
+        g.game.execute_command(&mut h.client, "s 2");
+        assert_eq!(g.game.speed, 2.0);
     }
 
     #[test]

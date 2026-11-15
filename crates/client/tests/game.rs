@@ -268,11 +268,11 @@ fn a_command_given_before_changing_player_is_the_new_players() {
     let mut g = h.start_training("jl1", &["easy"], 1);
     h.run_until_turn(&mut g, 2);
     // Paused, so that no turn runs until the end.
-    g.game.execute_command(&mut h.client, "p").unwrap();
+    g.game.execute_command(&mut h.client, "p");
     h.run_for(&mut g, 1.0);
     let turn = g.game.host().world().turn();
     let me = g.game.me;
-    g.game.execute_command(&mut h.client, "v").unwrap();
+    g.game.execute_command(&mut h.client, "v");
     let ctrl_shift = Mods {
         ctrl: true,
         alt: false,
@@ -282,7 +282,7 @@ fn a_command_given_before_changing_player_is_the_new_players() {
     let other = g.game.me;
     assert_ne!(other, me);
     assert_eq!(g.game.host().world().turn(), turn);
-    g.game.execute_command(&mut h.client, "p").unwrap();
+    g.game.execute_command(&mut h.client, "p");
     h.run_until_turn(&mut g, turn + 1);
     let world = g.game.host().world();
     assert!(world.player(other).has_victory);

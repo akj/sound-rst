@@ -5,8 +5,8 @@ length 1000 8091043
 length 1050 913107
 length 1053 133515
 length 1054 167528
+length 1055 2995556
 length 1056 1681996
-length 1057 1773787
 length 1058 1975873
 length 1059 510068
 length 1060 536803
@@ -16,8 +16,8 @@ length 1063 578571
 length 1064 1551043
 length 1065 3132608
 length 1091 247279
-length 1194 928345
 length 1195 398866
+length 1196 724172
 length 1344 471361
 length 1345 521859
 length 6115 6871
@@ -78,36 +78,36 @@ length 9999 208980
 @42451 voice info ", 1 gold mine and 2 wood at a 3"
 @46151 voice info ", 1 wood at a 4"
 @48051 voice info ", 1 gold mine at c 4"
-@50452 sounds 105 cd031a903c25ea92
+@50452 sounds 98 7439316949c9e104
 @50452 step 16 key RIGHT
 @50452 voice item [1091] "c 4 , meadows , in the fog of war , 1 gold mine"
-@55800 sounds 20 2ad51f01373e7678
+@55800 sounds 22 286bd91b56b712ce
 @55800 step 17 key BACKSPACE
 @55800 voice item "go to c 4 ,"
-@56351 sounds 3 eb48012716bfaf4a
+@56351 sounds 5 b85f4503e6ff041b
 @56351 step 18 wait_turns 2
-@57100 sounds 5 ec86066ccf0894f2
+@57100 sounds 3 d541951e855e439e
 @57100 step 19 key SPACE
 @57100 voice item "b 4 You control peasant 1 at b 4 , go to c 4 ,"
-@62500 sounds 59 5a2cd074c65cd097
+@62500 sounds 52 aaf4fef967e0c65c
 @62500 step 20 key F8
 @62500 voice item "zoom is now on , c 4 at the center , meadows"
 @67100 voice info "1 peasant enemy at a 3"
-@69701 sounds 43 4c4b7ca76a04daa7
+@69701 sounds 44 806bd3f3c7d11d4b
 @69701 step 21 key UP
 @69701 voice item "c 4 north , meadows"
-@71801 sounds 12 6a4f1c51630669a2
+@71801 sounds 9 eed75a59b960514a
 @71801 step 22 key BACKSPACE
 @71801 voice item "go to c 4 north ,"
-@72251 sounds 2 269757f4bddaa6fa
+@72251 sounds 3 a63b039dd797c261
 @72251 step 23 wait_turns 2
-@73701 sounds 11 1ced020a7fdbbe92
+@73701 sounds 12 74612e267b1e3ea3
 @73701 step 24 key SPACE
 @73701 voice item "c 4 You control peasant 1 at c 4 , go to c 4 ,"
-@79101 sounds 33 9762ad3dd9203068
+@79101 sounds 33 e33143e8f779a104
 @79101 step 25 key ESCAPE
 @79101 voice item "zoom is now off , c 4 , meadows , 1 peasant , 1 gold mine"
-@85401 sounds 34 037adf370640f874
+@85401 sounds 31 c40bdc361bb61a04
 @85401 step 26 key F10
 @85401 voice menu "Menu"
 @85801 step 27 key DOWN
@@ -122,7 +122,7 @@ length 9999 208980
 @105003 voice info "10 wood gathered , 0 consumed"
 @108503 voice info "score 23 press F5 to listen again"
 @112403 voice menu "please make a selection"
-@114703 sounds 11 7390d1198a3a619d
+@114703 sounds 12 9c252b3bb723f6a5
 @114703 step 29 key ESCAPE
 @114703 voice confirmation "go back to the previous menu"
 @117513 voice menu "SoundRTS 1.3.8.1  , please make a selection"

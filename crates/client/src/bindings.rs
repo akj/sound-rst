@@ -499,12 +499,8 @@ mod tests {
             &log,
         );
         assert_eq!(client.len(), CLIENT_BINDINGS.lines().count());
-        for (c, command) in client.iter() {
+        for (c, _) in client.iter() {
             assert_eq!(upstream.get(c), None, "{c:?} is the original's");
-            assert!(
-                !matches!(command, crate::game::command::GameCommand::Broken { .. }),
-                "{command:?}"
-            );
         }
         // Maps bind Shift Z to a third resource.
         assert_eq!(client.get(&chord("SHIFT z")), None);

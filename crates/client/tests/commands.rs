@@ -43,9 +43,6 @@ fn every_command_of_bindings_txt_is_parsed_into_a_handled_command() {
         &Log::silent(),
     );
     assert_eq!(typed.len(), raw.len() + own.len());
-    for (chord, c) in typed.iter() {
-        assert!(!matches!(c, GameCommand::Broken { .. }), "{chord:?}: {c:?}");
-    }
     assert_eq!(h.log_text(), "", "no line of bindings.txt was ignored");
     for (name, _) in EXCLUDED {
         assert!(names.iter().any(|n| n == name), "{name} is bound");

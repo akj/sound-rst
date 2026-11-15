@@ -11,6 +11,7 @@ use crate::clock::Clock;
 use crate::input::{Key, Mods};
 use crate::message::{Category, News};
 use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
+use crate::voice::Heard;
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::from(s)]
@@ -53,7 +54,7 @@ fn an_important_message_is_said_after_the_news_being_said_and_before_the_news_wa
         .news(News::new(Category::Production, t("news waiting")));
     let before = h.clock.now();
     let important = SrvEvent::VoiceImportant(t("an important message"));
-    assert!(g.game.process_srv_event(&mut h.client, important).is_ok());
+    g.game.process_srv_event(&mut h.client, important);
     assert_eq!(h.clock.now(), before, "nothing waits");
     run_until_said(&mut h, &mut g, from, 2);
     // 20 characters: 2 seconds, nearly 7 turns.
@@ -221,11 +222,64 @@ fn escape_during_a_story_still_lets_the_news_waiting_with_it_be_said() {
     h.step(&mut g);
     assert!(matches!(g.game.mode, Mode::Playing));
     h.run_until_voice_idle(&mut g);
-    // Each line skipped starts and is cut at once.
-    assert_eq!(
-        h.said_since(from),
-        ["once upon a time", "there was", "the end", "news waiting"]
+    // The lines skipped are not started.
+    assert_eq!(h.said_since(from), ["once upon a time", "news waiting"]);
+    let story: Vec<Heard> = h
+        .client
+        .voice
+        .log()
+        .filter(|e| e.category() == Some(Category::Story))
+        .map(|e| e.heard())
+        .collect();
+    assert_eq!(story[story.len() - 3..], [Heard::No; 3]);
+}
+
+#[test]
+fn escape_after_walking_the_history_during_a_story_says_no_line_of_it() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "there was", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.client
+        .news(News::new(Category::Production, t("news waiting")));
+    h.press(Key::F5, Mods::NONE);
+    h.step(&mut g);
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Playing));
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(said[0], "once upon a time");
+    assert_eq!(said.last().map(String::as_str), Some("news waiting"));
+    assert!(
+        !said.iter().any(|s| s == "there was" || s == "the end"),
+        "{said:?}"
     );
+}
+
+#[test]
+fn escape_during_a_story_stops_an_answer_being_said() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.press(Key::F1, Mods::NONE);
+    h.step(&mut g);
+    assert!(h.client.voice.is_busy(), "the help is said");
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    assert!(!h.client.voice.is_busy(), "Escape stops it");
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(h.said_since(from).len(), 2, "{:?}", h.said_since(from));
 }
 
 #[test]

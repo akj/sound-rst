@@ -12,7 +12,7 @@ use crate::client::Client;
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::entity::EntityView;
 use super::focus::Zoom;
-use super::{GameInterface, Oops, R, style_msg};
+use super::{GameInterface, style_msg};
 
 /// Keeps the first of each equal item, in order.
 pub fn remove_duplicates<T: PartialEq + Clone>(l: &[T]) -> Vec<T> {
@@ -86,11 +86,11 @@ impl GameInterface {
         }
     }
 
-    pub(crate) fn compute_move(&self, dxc: i64, dyc: i64) -> R<SquareId> {
-        let (xc, yc) = wrapped_coords(self.coords_in_map(self.place), (dxc, dyc), self.grid_max());
-        self.view()
-            .square_at(xc, yc)
-            .ok_or_else(|| Oops::missing(format!("({xc}, {yc})")))
+    /// The square `dxc` columns and `dyc` rows from `from`, across an edge
+    /// of the map to the other side. None if the map has no square there.
+    pub(crate) fn compute_move(&self, from: SquareId, dxc: i64, dyc: i64) -> Option<SquareId> {
+        let (xc, yc) = wrapped_coords(self.coords_in_map(Some(from)), (dxc, dyc), self.grid_max());
+        self.view().square_at(xc, yc)
     }
 
     /// Selects a square; the noises of the previous one stop.
@@ -268,57 +268,53 @@ impl GameInterface {
     /// Whether the player may see the object now: in the zoom, on the
     /// square, with a title; in first person mode, in front; an exit not
     /// blocked.
-    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> R<bool> {
+    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> bool {
         if let Some(z) = &self.zoom
             && !z.contains(v.model.x, v.model.y)
         {
-            return Ok(false);
+            return false;
         }
-        if !self.is_in(v, self.place) || self.title(cx, v)?.is_empty() {
-            return Ok(false);
+        if !self.is_in(v, self.place) || self.title(cx, v).is_empty() {
+            return false;
         }
         if self.immersion {
             if self.group.contains(&v.id()) {
-                return Ok(false);
+                return false;
             }
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
-            return Ok(a.cos() > 95f64.to_radians().cos());
+            return a.cos() > 95f64.to_radians().cos();
         }
-        if self.is_an_exit(cx, v) && self.view().exit_is_blocked(v.id(), false) {
-            return Ok(false);
-        }
-        Ok(true)
+        !(self.is_an_exit(cx, v) && self.view().exit_is_blocked(v.id(), false))
     }
 
-    /// The sound of moving to a square, and whether the way is closed.
+    /// The sound of moving from `place` to `new_square`, and whether the
+    /// way is closed: it is to no square, or to the same one.
     fn get_prefix_and_collision(
         &self,
         cx: &Client,
-        new_square: SquareId,
+        place: SquareId,
+        new_square: Option<SquareId>,
         dxc: i64,
         dyc: i64,
-    ) -> R<(Msg, bool)> {
+    ) -> (Msg, bool) {
         let style = cx.res.style();
         let no_path = style_msg(style, "parameters", "no_path_in_this_direction");
-        let Some(place) = self.place else {
-            return Err(Oops::new("'NoneType' object has no attribute 'is_water'"));
+        let Some(new_square) = new_square.filter(|&s| s != place) else {
+            return (no_path, true);
         };
-        if new_square == place {
-            return Ok((no_path, true));
-        }
         let (p, n) = (self.view().square(place), self.view().square(new_square));
         if !self.scouted_before_squares.contains(&place)
             || (p.is_water() || n.is_water()) && p.high_ground() == n.high_ground()
             || self.shouldnt_collide()
         {
-            return Ok((Vec::new(), false));
+            return (Vec::new(), false);
         }
         let (xc, yc) = self.coords_in_map(Some(place));
         let sw = self.square_width();
         let (x, y) = ((xc as f64 + 0.5) * sw, (yc as f64 + 0.5) * sw);
         for v in self.dobjets.values() {
             if !(self.is_in(v, Some(place))
-                && self.is_visible(cx, v)?
+                && self.is_visible(cx, v)
                 && self.is_an_exit(cx, v)
                 && !self.view().exit_is_blocked(v.id(), true))
             {
@@ -334,10 +330,10 @@ impl GameInterface {
                 } else {
                     Vec::new()
                 };
-                return Ok((prefix, false));
+                return (prefix, false);
             }
         }
-        Ok((no_path, true))
+        (no_path, true)
     }
 
     /// The arrows: through the paths (or across, without collision), five
@@ -349,21 +345,21 @@ impl GameInterface {
         dxc: i64,
         dyc: i64,
         no_collision: bool,
-    ) -> R {
+    ) {
         if self.immersion {
             if (dxc, dyc) == (-1, 0) {
-                self.cmd_rotate_left(cx)?;
+                self.cmd_rotate_left(cx);
             } else if (dxc, dyc) == (1, 0) {
-                self.cmd_rotate_right(cx)?;
+                self.cmd_rotate_right(cx);
             }
         } else if self.zoom.is_some() {
-            self.zoom_move(cx, dxc, dyc)?;
+            self.zoom_move(cx, dxc, dyc);
             self.target = None;
             self.follow_mode = false;
             self.say_zoom(cx, &Vec::new());
-        } else if self.place.is_some() {
+        } else if let Some(mut place) = self.place {
             let n = (dxc + dyc).abs();
-            if n > 1 {
+            let prefix = if n > 1 {
                 let step = if dxc != 0 {
                     (dxc.signum(), 0)
                 } else {
@@ -371,80 +367,74 @@ impl GameInterface {
                 };
                 let mut prefixes = Vec::new();
                 for _ in 0..n {
-                    let new_square = self.compute_move(step.0, step.1)?;
+                    let to = self.compute_move(place, step.0, step.1);
                     let (prefix, collision) =
-                        self.get_prefix_and_collision(cx, new_square, step.0, step.1)?;
+                        self.get_prefix_and_collision(cx, place, to, step.0, step.1);
                     if !no_collision {
                         prefixes.extend(prefix);
                     }
-                    if !collision || no_collision {
-                        self.move_to_square(cx, new_square);
-                    } else {
-                        break;
+                    match to {
+                        Some(s) if !collision || no_collision => {
+                            self.move_to_square(cx, s);
+                            place = s;
+                        }
+                        _ => break,
                     }
                 }
-                let place = self.place.expect("checked");
-                self.select_and_say_square(cx, place, &prefixes);
+                prefixes
             } else if no_collision {
-                let new_square = self.compute_move(dxc, dyc)?;
-                self.move_to_square(cx, new_square);
-                let place = self.place.expect("checked");
-                self.select_and_say_square(cx, place, &Vec::new());
-            } else {
-                let new_square = self.compute_move(dxc, dyc)?;
-                let (prefix, collision) =
-                    self.get_prefix_and_collision(cx, new_square, dxc, dyc)?;
-                if !collision {
-                    self.move_to_square(cx, new_square);
+                if let Some(s) = self.compute_move(place, dxc, dyc) {
+                    self.move_to_square(cx, s);
+                    place = s;
                 }
-                let place = self.place.expect("checked");
-                self.select_and_say_square(cx, place, &prefix);
-            }
+                Vec::new()
+            } else {
+                let to = self.compute_move(place, dxc, dyc);
+                let (prefix, collision) = self.get_prefix_and_collision(cx, place, to, dxc, dyc);
+                if let Some(s) = to.filter(|_| !collision) {
+                    self.move_to_square(cx, s);
+                    place = s;
+                }
+                prefix
+            };
+            self.select_and_say_square(cx, place, &prefix);
         }
-        Ok(())
     }
 
     /// Moves the zoom; past an edge, to the next square.
-    fn zoom_move(&mut self, cx: &mut Client, dx: i64, dy: i64) -> R {
+    fn zoom_move(&mut self, cx: &mut Client, dx: i64, dy: i64) {
         self.follow_mode = false;
         let Some(mut z) = self.zoom.take() else {
-            return Ok(());
+            return;
         };
-        let crossing = z.step(dx, dy);
-        let r = match crossing {
-            Some((sx, sy)) => self.compute_move(sx, sy).map(|s| self.place = Some(s)),
-            None => Ok(()),
-        };
+        if let Some((sx, sy)) = z.step(dx, dy)
+            && let Some(s) = self.place.and_then(|p| self.compute_move(p, sx, sy))
+        {
+            self.place = Some(s);
+        }
         if let Some(p) = self.place {
             z.update_coords(self.view().square(p));
         }
         self.zoom = Some(z);
-        r?;
-        self.set_obs_pos(cx)
+        self.set_obs_pos(cx);
     }
 
     /// Leaves first person mode and the zoom, before jumping to a square.
-    pub(crate) fn leave_zoom_and_immersion(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn leave_zoom_and_immersion(&mut self, cx: &mut Client) {
         if self.immersion {
-            self.toggle_immersion(cx)?;
+            self.toggle_immersion(cx);
         }
         if self.zoom.is_some() {
             self.cmd_toggle_zoom(cx);
         }
-        Ok(())
     }
 
-    fn select_square_from_list(
-        &mut self,
-        cx: &mut Client,
-        increment: i64,
-        squares: Vec<SquareId>,
-    ) -> R {
+    fn select_square_from_list(&mut self, cx: &mut Client, increment: i64, squares: Vec<SquareId>) {
         if squares.is_empty() {
             cx.voice.item(&msg(mp::NOTHING));
-            return Ok(());
+            return;
         }
-        self.leave_zoom_and_immersion(cx)?;
+        self.leave_zoom_and_immersion(cx);
         let mut squares = squares;
         if let Some(p) = self.place
             && !squares.contains(&p)
@@ -460,32 +450,23 @@ impl GameInterface {
                     .total_cmp(&distance(b.0 as f64, b.1 as f64, ux, uy))
             });
         }
-        let len = squares.len() as i64;
-        let mut index = match self
+        // `increment` squares from the selected one, round the list.
+        let index = match self
             .place
             .and_then(|p| squares.iter().position(|&s| s == p))
         {
-            Some(i) => i as i64 + increment,
+            Some(i) => (i as i64 + increment).rem_euclid(squares.len() as i64) as usize,
             None => 0,
         };
-        if index < 0 {
-            index = len - 1;
-        } else if index == len {
-            index = 0;
-        }
-        let square = *squares
-            .get(index as usize)
-            .ok_or_else(|| Oops::new("list index out of range"))?;
-        self.select_and_say_square(cx, square, &Vec::new());
-        Ok(())
+        self.select_and_say_square(cx, squares[index], &Vec::new());
     }
 
-    pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = self.scouted_squares.iter().copied().collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
         for v in self.dobjets.values() {
             let enemy = v.player().is_some_and(|p| !self.view().allied(p, self.me));
@@ -497,7 +478,7 @@ impl GameInterface {
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
             .filter(|s| !self.scouted_before_squares.contains(s))
@@ -505,7 +486,7 @@ impl GameInterface {
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
         for v in self.dobjets.values() {
             if self.resource_type(&v.model).is_some() && !squares.contains(&v.place()) {
@@ -545,30 +526,30 @@ impl GameInterface {
     }
 
     /// In follow mode, the selection goes where the group goes.
-    pub(crate) fn follow_if_needed(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn follow_if_needed(&mut self, cx: &mut Client) {
         self.update_group();
-        if !(self.follow_mode
-            && !self.group.is_empty()
-            && !self.an_order_requiring_a_target_is_selected())
-        {
-            return Ok(());
+        if !(self.follow_mode && !self.an_order_requiring_a_target_is_selected()) {
+            return;
         }
-        let head = self
-            .group_head()
-            .ok_or_else(|| Oops::missing("group head"))?;
+        // The group keeps only units the interface knows: one that is not
+        // empty has a head.
+        let Some(head) = self.group_head() else {
+            return;
+        };
         let (hx, hy, hplace) = (head.model.x, head.model.y, head.place());
         let head_is_here = self.is_in(head, self.place);
         if let Some(z) = &self.zoom {
-            if !z.contains(hx, hy) {
-                let s = self
-                    .outer_square(hplace)
-                    .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'xmin'"))?;
+            // A head on no square, as one that has left the map, is not
+            // followed.
+            if !z.contains(hx, hy)
+                && let Some(s) = self.outer_square(hplace)
+            {
                 self.place = Some(s);
                 let mut z = z.clone();
                 let found = z.move_to(self.view().square(s), hx, hy);
                 self.zoom = Some(z);
                 if found {
-                    self.set_obs_pos(cx)?;
+                    self.set_obs_pos(cx);
                 } else {
                     cx.log.warning("zoom: couldn't move to object");
                 }
@@ -590,12 +571,11 @@ impl GameInterface {
                 self.target = None;
             }
         }
-        Ok(())
     }
 
     /// Places the listener: on the first unit's square at first, then
     /// following the group, the zoom or the selected square.
-    pub(crate) fn set_obs_pos(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn set_obs_pos(&mut self, cx: &mut Client) {
         if self.place.is_none() {
             let units = self.units(cx, true, true);
             if let Some(&first) = units.first()
@@ -604,7 +584,7 @@ impl GameInterface {
                 self.select_and_say_square(cx, s, &Vec::new());
             }
         }
-        self.follow_if_needed(cx)?;
+        self.follow_if_needed(cx);
         let head = self.group.first().and_then(|g| self.dobjets.get(g));
         if self.immersion
             && let Some(v) = head
@@ -631,7 +611,6 @@ impl GameInterface {
             self.o = 90.0;
         }
         self.update_listener(cx);
-        Ok(())
     }
 
     /// The noises of the selected square's terrain (and of the squares

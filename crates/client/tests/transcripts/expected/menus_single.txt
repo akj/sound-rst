@@ -4,6 +4,7 @@ settings language=en login=player mods= soundpacks= seed=7 limit=1200
 length 1000 8091043
 length 1050 913107
 length 1056 1681996
+length 1057 1773787
 length 1059 510068
 length 1060 536803
 length 1061 730839
@@ -151,12 +152,12 @@ length 9999 208980
 @85780 voice confirmation "start"
 @86290 voice info "objective: neutralized enemy"
 @89191 voice item "a 4 , 1 town hall , 1 farm and 1 peasant"
-@89691 sounds 5 d7250243b09a0730
+@89691 sounds 9 4bd2e4176488be1b
 @89691 step 43 wait_turns 3
 @93991 voice info ", 1 wood at a 3"
 @95891 voice info ", 1 gold mine at a 5"
 @98291 voice info ", 1 gold mine and 2 wood at b 3"
-@101992 sounds 81 fb59780305d502bc
+@101992 sounds 81 2005eb69819dc96a
 @101992 step 44 key F10
 @101992 voice menu "Menu"
 @102392 step 45 key DOWN
@@ -171,7 +172,7 @@ length 9999 208980
 @121594 voice info "10 wood gathered , 0 consumed"
 @125094 voice info "score 23 press F5 to listen again"
 @128994 voice menu "please make a selection"
-@131294 sounds 16 4b263bc69bf23f52
+@131294 sounds 14 07143d541f2baf60
 @131294 step 47 key s
 @131294 voice item "start a game on"
 @132794 sounds 1 c7046c0e6ad2ae36
