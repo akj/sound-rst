@@ -1248,23 +1248,21 @@ impl World {
             }
         }
         self.notify(id, EntityEvent::Death, false);
-        let Some(p) = self.e(id).player() else {
-            return Err(Abort::new("'NoneType' object has no attribute 'stats'"));
-        };
+        // A unit without an owner loses nothing to count, and a killer
+        // without one (dead itself, or never owned) gains nothing: the unit
+        // dies all the same.
+        let p = self.e(id).player();
         let st = self.e(id).stat_type();
-        if let Some(st) = st {
+        if let (Some(p), Some(st)) = (p, st) {
             self.plm(p).stats.add(StatEvent::Lost, st.into(), 1);
         }
         if let Some(a) = attacker {
             self.notify(id, EntityEvent::DeathBy(a), false);
-            self.on_unit_attacked(p, id, a);
-            match self.e(a).player() {
-                Some(ap) => {
-                    if let Some(st) = st {
-                        self.plm(ap).stats.add(StatEvent::Killed, st.into(), 1);
-                    }
-                }
-                None => return Err(Abort::new("'NoneType' object has no attribute 'stats'")),
+            if let Some(p) = p {
+                self.on_unit_attacked(p, id, a);
+            }
+            if let (Some(ap), Some(st)) = (self.e(a).player(), st) {
+                self.plm(ap).stats.add(StatEvent::Killed, st.into(), 1);
             }
         }
         self.delete(id);

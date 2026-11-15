@@ -48,7 +48,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("squarelogic.rs",        [  0,  0,  0,  0,  0,  1,  1]),
     ("test_games.rs",         [  0,  0,  0,  0,  3,  1,  2]),
     ("triggers.rs",           [  0,  9,  0,  0,  0,  0,  4]),
-    ("unit.rs",               [  0,  0, 13, 10,  0,  3,  3]),
+    ("unit.rs",               [  0,  0, 13,  8,  0,  3,  3]),
     ("world.rs",              [  0,  0,  0,  0,  0,  2,  8]),
 ];
 

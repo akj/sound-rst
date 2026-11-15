@@ -856,3 +856,26 @@ fn entering_a_square_or_a_deposit_is_impossible() {
     );
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+#[test]
+fn a_unit_killed_by_or_dying_without_an_owner_is_removed() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let (x, y) = (w.square(a1).x, w.square(a1).y);
+    let t = w.rules.type_id("footman").unwrap();
+    let ownerless = w.create_creature(t, None, Place::Square(a1), x, y).unwrap();
+    w.cm(footman).unwrap().hp = 1;
+    w.hit(ownerless, footman);
+    assert_eq!(w.e(footman).place, None);
+    assert!(!w.pl(a).units.contains(&footman));
+    // Its time is up: it dies at the next slow update.
+    w.cm(ownerless).unwrap().time_limit = Some(w.time);
+    for _ in 0..4 {
+        w.update();
+    }
+    assert_eq!(w.e(ownerless).place, None);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
