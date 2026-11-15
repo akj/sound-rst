@@ -41,8 +41,7 @@ fn soak(map: &str, seed: i64) {
         .map(|s| g.game.host().world().square(s).name.clone())
         .expect("a town hall");
     g.game
-        .execute_command(&mut h.client, &format!("add_units {square} 30 footman"))
-        .unwrap();
+        .execute_command(&mut h.client, &format!("add_units {square} 30 footman"));
     let mut chords: Vec<(Chord, GameCommand)> = {
         let mut b: Bindings<GameCommand> = Bindings::new();
         let text = soundrts::bindings::game_bindings_text(

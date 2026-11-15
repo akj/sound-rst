@@ -94,56 +94,6 @@ pub enum Timing {
     Late,
 }
 
-/// An error the original raises and catches in its loop
-/// (`exception("error in clientgame loop")`): the rest of the pass is
-/// skipped and the game goes on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Oops {
-    pub message: String,
-    /// The error is a lookup that found nothing (the original's
-    /// `KeyError`). Raised by a command, it is a beep, not a logged error.
-    pub missing: bool,
-}
-
-impl Oops {
-    pub fn new(s: impl Into<String>) -> Oops {
-        Oops {
-            message: s.into(),
-            missing: false,
-        }
-    }
-
-    /// A lookup of `what` that found nothing.
-    pub fn missing(what: impl std::fmt::Display) -> Oops {
-        Oops {
-            message: format!("KeyError: {what}"),
-            missing: true,
-        }
-    }
-}
-
-/// The result of interface work that may fail as the original's does.
-pub type R<T = ()> = Result<T, Oops>;
-
-/// Why a pass of the loop stopped early.
-pub(crate) enum Stop {
-    /// The window was closed.
-    Exit,
-    Oops(Oops),
-}
-
-impl From<Oops> for Stop {
-    fn from(o: Oops) -> Stop {
-        Stop::Oops(o)
-    }
-}
-
-impl From<Exit> for Stop {
-    fn from(_: Exit) -> Stop {
-        Stop::Exit
-    }
-}
-
 /// What the world tells the interface, in order.
 #[derive(Clone, Debug)]
 pub enum SrvEvent {
@@ -608,24 +558,17 @@ impl GameInterface {
     /// One pass of the loop: a turn if one is due, the animations, the key
     /// presses, one server event, the voice, then a millisecond's rest.
     /// While the world waits, only the keys and the voice. Nothing said
-    /// waits meanwhile ([`crate::voice::Voice::set_in_game`]). Errors are
-    /// logged, as the original's loop catches them, and cut the pass
-    /// short, rest included.
+    /// waits meanwhile ([`crate::voice::Voice::set_in_game`]).
     pub fn step(&mut self, cx: &mut Client) -> Result<(), Exit> {
         cx.voice.set_in_game(true);
         let result = self.try_step(cx);
         cx.voice.set_in_game(false);
-        match result {
-            Ok(()) => cx.clock.sleep(0.001),
-            Err(Stop::Exit) => return Err(Exit),
-            Err(Stop::Oops(e)) => cx
-                .log
-                .error(format!("error in clientgame loop: {}", e.message)),
-        }
+        result?;
+        cx.clock.sleep(0.001);
         Ok(())
     }
 
-    fn try_step(&mut self, cx: &mut Client) -> Result<(), Stop> {
+    fn try_step(&mut self, cx: &mut Client) -> Result<(), Exit> {
         crate::net::pump(cx);
         self.end_story_if_told(cx);
         let waits = self.world_waits();
@@ -643,7 +586,7 @@ impl GameInterface {
             hook(self, cx);
         }
         if !self.world_waits() {
-            self.process_srv_events(cx)?;
+            self.process_srv_events(cx);
         }
         cx.voice.update();
         Ok(())
@@ -754,13 +697,13 @@ impl GameInterface {
     }
 
     /// Handles the key presses waiting.
-    fn process_events(&mut self, cx: &mut Client) -> Result<(), Stop> {
+    fn process_events(&mut self, cx: &mut Client) -> Result<(), Exit> {
         cx.input.set_game(Some(self.progress()));
         cx.input
             .input_point(self.mode.input_point(), cx.voice.is_idle());
         for e in cx.input.get_all() {
             match e {
-                InputEvent::Quit => return Err(Stop::Exit),
+                InputEvent::Quit => return Err(Exit),
                 InputEvent::KeyDown(k) => self.route_key(cx, k)?,
                 InputEvent::KeyUp(_) => {}
             }
@@ -769,12 +712,15 @@ impl GameInterface {
     }
 
     /// Gives a key press to the mode, which may change.
-    fn route_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Stop> {
+    fn route_key(&mut self, cx: &mut Client, k: KeyDown) -> Result<(), Exit> {
         // The key before may have skipped the story's last message.
         self.end_story_if_told(cx);
         match std::mem::replace(&mut self.mode, Mode::Playing) {
             Mode::Playing => self.process_keydown(cx, &k),
-            Mode::OrderShortcut => Ok(self.execute_order_shortcut(cx, &k)?),
+            Mode::OrderShortcut => {
+                self.execute_order_shortcut(cx, &k);
+                Ok(())
+            }
             Mode::Story(s) => {
                 self.mode = Mode::Story(s);
                 self.story_key(cx, &k)
@@ -784,7 +730,10 @@ impl GameInterface {
                 self.chat_key(cx, chat, &k);
                 Ok(())
             }
-            Mode::Console(entry) => Ok(self.console_key(cx, entry, &k)?),
+            Mode::Console(entry) => {
+                self.console_key(cx, entry, &k);
+                Ok(())
+            }
             Mode::KeyHelp => {
                 self.key_help_key(cx, &k);
                 Ok(())
@@ -823,7 +772,7 @@ impl GameInterface {
     /// the history, the news, copying a message, help, key help and the
     /// volume do as in the game; the escape key skips the rest of the story; any other key
     /// skips the message being said.
-    fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
+    fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Exit> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
             Some(C::Escape) => {
@@ -852,29 +801,25 @@ impl GameInterface {
         }
     }
 
-    fn process_keydown(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
-        let result = match self.bindings.command_for(k).cloned() {
+    fn process_keydown(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Exit> {
+        match self.bindings.command_for(k).cloned() {
             Some(c) => self.execute(cx, &c),
-            None => Err(Stop::Oops(Oops::missing("binding"))),
-        };
-        match result {
-            Err(Stop::Oops(e)) if e.missing => {
+            // A key bound to nothing.
+            None => {
                 cx.voice.item(&msg(mp::BEEP));
                 Ok(())
             }
-            other => other,
         }
     }
 
-    fn process_srv_events(&mut self, cx: &mut Client) -> Result<(), Stop> {
+    fn process_srv_events(&mut self, cx: &mut Client) {
         if let Some(e) = self.srv_queue.pop_front() {
-            self.process_srv_event(cx, e)?;
+            self.process_srv_event(cx, e);
         }
-        Ok(())
     }
 
     /// Handles a server event now.
-    pub(crate) fn process_srv_event(&mut self, cx: &mut Client, e: SrvEvent) -> Result<(), Stop> {
+    pub(crate) fn process_srv_event(&mut self, cx: &mut Client, e: SrvEvent) {
         match e {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
             SrvEvent::VoiceImportant(m) => cx.news(News::new(important_category(&m), m)),
@@ -892,9 +837,8 @@ impl GameInterface {
                 }
             }
             SrvEvent::Quit => self.quit_heard(cx),
-            SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m)?,
+            SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m),
         }
-        Ok(())
     }
 
     fn srv_event(&mut self, cx: &mut Client, entity: KnownEntity, event: &EntityEvent) {
@@ -917,7 +861,7 @@ impl GameInterface {
 
     /// The end of a turn: the interface's copies of the squares and the
     /// entities take the turn's, and the seat takes note of what it sees.
-    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) -> R {
+    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) {
         self.turns_handled += 1;
         self.last_virtual_time = m.time as f64 / 1000.0;
         if let Source::Local(l) = &mut self.source {
@@ -943,7 +887,6 @@ impl GameInterface {
             self.play_tick(cx);
         }
         self.record_update_time(cx);
-        Ok(())
     }
 
     // animation

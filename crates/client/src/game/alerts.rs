@@ -458,7 +458,7 @@ mod tests {
             entity,
             event: EntityEvent::Complete,
         };
-        assert!(g.game.process_srv_event(&mut h.client, event).is_ok());
+        g.game.process_srv_event(&mut h.client, event);
         let sounds = h.audio.played().len() - sounds;
         drain(h);
         (h.said_since(from), sounds)

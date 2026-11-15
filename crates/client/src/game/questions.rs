@@ -19,7 +19,7 @@ use super::command::UnitFilter;
 use super::order::{PRECISION, substitute_args};
 use super::selection::TypeFilter;
 use super::squares::summary;
-use super::{GameInterface, R, compute_title, style_msg};
+use super::{GameInterface, compute_title, style_msg};
 
 /// How the strength on the player's side of a fight compares with the
 /// enemies'.
@@ -57,7 +57,7 @@ impl GameInterface {
     /// to now, soonest done first, with the seconds left and where: "recruit
     /// peasant 7 seconds at town hall 1". Production waiting for food
     /// comes last.
-    pub(crate) fn cmd_production_status(&self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_production_status(&self, cx: &mut Client) {
         let style = cx.res.style();
         let mut productions: Vec<((bool, i64), Msg)> = Vec::new();
         for id in self.units(cx, true, false) {
@@ -82,7 +82,6 @@ impl GameInterface {
         productions.sort_by_key(|(k, _)| *k);
         let m = join(productions.into_iter().map(|(_, m)| m));
         cx.voice.item(&m);
-        Ok(())
     }
 
     /// How many of the workers the player controls are idle, gather each

@@ -18,7 +18,7 @@ use super::entity::EntityView;
 use super::focus::Zoom;
 use super::order::{OrderTypeView, PRECISION};
 use super::squares::{remove_duplicates, summary};
-use super::{BEEP_SOUND, GameInterface, R};
+use super::{BEEP_SOUND, GameInterface};
 
 /// What an order with a target aims at: the selected object, else the
 /// point of the zoom on its square, else the selected square.
@@ -253,7 +253,7 @@ impl GameInterface {
         )
     }
 
-    fn regroup(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) -> R {
+    fn regroup(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) {
         self.update_group();
         if let Some(&first) = self.group.first() {
             let initial = &self.dobjets[&first];
@@ -301,23 +301,18 @@ impl GameInterface {
         self.say_group(cx, &Vec::new())
     }
 
-    pub(crate) fn cmd_group(
-        &mut self,
-        cx: &mut Client,
-        portion: NonZeroU32,
-        filter: &UnitFilter,
-    ) -> R {
+    pub(crate) fn cmd_group(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) {
         self.regroup(cx, portion, filter)
     }
 
-    pub(crate) fn cmd_ungroup(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_ungroup(&mut self, cx: &mut Client) {
         if self.group.len() > 1 {
             self.group.truncate(1);
         }
         self.say_group(cx, &Vec::new())
     }
 
-    fn command_unit(&mut self, cx: &mut Client, unit: EntityId, silent: bool) -> R {
+    fn command_unit(&mut self, cx: &mut Client, unit: EntityId, silent: bool) {
         if !silent {
             let v = &self.dobjets[&unit];
             let m = [
@@ -329,19 +324,17 @@ impl GameInterface {
             cx.voice.item(&m);
         }
         self.group = vec![unit];
-        Ok(())
     }
 
-    pub(crate) fn cmd_command_unit(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_command_unit(&mut self, cx: &mut Client) {
         if let Some(t) = self.target
             && self.units(cx, true, false).contains(&t)
         {
-            self.command_unit(cx, t, false)?;
+            self.command_unit(cx, t, false);
         }
-        Ok(())
     }
 
-    fn select_unit(&mut self, cx: &mut Client, inc: i64, filter: &UnitFilter, silent: bool) -> R {
+    fn select_unit(&mut self, cx: &mut Client, inc: i64, filter: &UnitFilter, silent: bool) {
         let types = self.arrange(cx, filter);
         let units: Vec<EntityId> = self
             .units(cx, filter.even_if_no_menu, true)
@@ -359,7 +352,7 @@ impl GameInterface {
             .collect();
         if units.is_empty() {
             self.group = Vec::new();
-            return Ok(());
+            return;
         }
         let len = units.len() as i64;
         let mut sel = units
@@ -373,22 +366,21 @@ impl GameInterface {
         if sel >= len {
             sel = 0;
         }
-        self.command_unit(cx, units[sel as usize], silent)?;
+        self.command_unit(cx, units[sel as usize], silent);
         self.order = None;
-        Ok(())
     }
 
-    pub(crate) fn cmd_select_unit(&mut self, cx: &mut Client, inc: i64, filter: &UnitFilter) -> R {
+    pub(crate) fn cmd_select_unit(&mut self, cx: &mut Client, inc: i64, filter: &UnitFilter) {
         self.select_unit(cx, inc, filter, false)
     }
 
-    pub(crate) fn cmd_select_units(&mut self, cx: &mut Client, filter: &UnitFilter) -> R {
-        self.select_unit(cx, 1, filter, true)?;
+    pub(crate) fn cmd_select_units(&mut self, cx: &mut Client, filter: &UnitFilter) {
+        self.select_unit(cx, 1, filter, true);
         self.regroup(cx, NonZeroU32::MIN, filter)
     }
 
     /// Says the units controlled and their orders, after `prefix`.
-    pub(crate) fn say_group(&mut self, cx: &mut Client, prefix: &Msg) -> R {
+    pub(crate) fn say_group(&mut self, cx: &mut Client, prefix: &Msg) {
         self.update_group();
         if self.group.len() == 1 {
             let v = &self.dobjets[&self.group[0]];
@@ -428,10 +420,9 @@ impl GameInterface {
             let m = [prefix.clone(), msg(mp::COMMA), msg(mp::NO_UNIT_CONTROLLED)].concat();
             cx.voice.item(&m);
         }
-        Ok(())
     }
 
-    pub(crate) fn cmd_unit_status(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn cmd_unit_status(&mut self, cx: &mut Client) {
         let place_title = match self.group.first().and_then(|g| self.dobjets.get(g)) {
             Some(v) => v
                 .place()
@@ -442,12 +433,11 @@ impl GameInterface {
                 .map(|p| self.view().square(p).title().clone())
                 .unwrap_or_default(),
         };
-        self.say_group(cx, &place_title)?;
+        self.say_group(cx, &place_title);
         if !self.group.is_empty() {
             self.follow_mode = true;
             self.follow_if_needed(cx);
         }
-        Ok(())
     }
 
     /// The health of the one unit controlled, or of the group as a whole:
@@ -498,7 +488,7 @@ impl GameInterface {
         self.send_order(cx, Order::JoinGroup(name.to_owned()), flags);
     }
 
-    pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) -> R {
+    pub(crate) fn cmd_recall_group(&mut self, cx: &mut Client, name: &str) {
         self.group = self.view().recallable_group(name);
         self.say_group(cx, &Vec::new())
     }
@@ -605,30 +595,25 @@ impl GameInterface {
     }
 
     /// The key after the order shortcut key: the order with that shortcut.
-    pub(crate) fn execute_order_shortcut(
-        &mut self,
-        cx: &mut Client,
-        e: &crate::input::KeyDown,
-    ) -> R {
+    pub(crate) fn execute_order_shortcut(&mut self, cx: &mut Client, e: &crate::input::KeyDown) {
         for o in self.orders(cx, OrderMenu::Active) {
             if o.shortcut.as_deref() == Some(e.unicode.as_str()) {
                 let no_target = o.nb_args == 0;
                 self.select_order(cx, o, true);
                 if no_target {
-                    self.cmd_validate(cx, OrderFlags::default())?;
+                    self.cmd_validate(cx, OrderFlags::default());
                 }
-                return Ok(());
+                return;
             }
         }
         cx.voice.item(&msg(mp::BEEP));
-        Ok(())
     }
 
     /// Selects the previous order again, and with `now` gives it if it
     /// needs no target. If the unit it was listed for has since gone to a
     /// player the player does not control, the order is the group's own,
     /// as one of its units lists it; if none does, it cannot be given.
-    pub(crate) fn cmd_do_again(&mut self, cx: &mut Client, now: bool, flags: OrderFlags) -> R {
+    pub(crate) fn cmd_do_again(&mut self, cx: &mut Client, now: bool, flags: OrderFlags) {
         if let Some(mut o) = self.previous_order.clone()
             && !self.group.is_empty()
         {
@@ -640,17 +625,16 @@ impl GameInterface {
                     Some(x) => o = x,
                     None => {
                         cx.voice.item(&msg(mp::BEEP));
-                        return Ok(());
+                        return;
                     }
                 }
             }
             let no_target = o.nb_args == 0;
             self.select_order(cx, o, true);
             if now && no_target {
-                self.cmd_validate(cx, flags)?;
+                self.cmd_validate(cx, flags);
             }
         }
-        Ok(())
     }
 
     /// Sends an order to the units of the group that may receive it, by
@@ -755,17 +739,16 @@ impl GameInterface {
         })
     }
 
-    pub(crate) fn cmd_validate(&mut self, cx: &mut Client, flags: OrderFlags) -> R {
-        self.validate(cx, flags)?;
+    pub(crate) fn cmd_validate(&mut self, cx: &mut Client, flags: OrderFlags) {
+        self.validate(cx, flags);
         self.order = None;
-        Ok(())
     }
 
-    fn validate(&mut self, cx: &mut Client, flags: OrderFlags) -> R {
+    fn validate(&mut self, cx: &mut Client, flags: OrderFlags) {
         if self.group.is_empty() {
             cx.voice.item(&msg(mp::NO_UNIT_CONTROLLED));
         } else if self.order.is_none() {
-            self.cmd_command_unit(cx)?;
+            self.cmd_command_unit(cx);
         } else if self.an_order_not_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
             match o.order() {
@@ -791,7 +774,6 @@ impl GameInterface {
                 _ => refuse_order(cx),
             }
         }
-        Ok(())
     }
 
     /// Says what the default order at `target`, whose title is `title`,
@@ -908,6 +890,35 @@ mod tests {
     use crate::input::{Key, Mods};
 
     #[test]
+    fn an_order_with_no_square_to_aim_at_beeps_and_is_not_given() {
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        let me = g.game.me;
+        let peasant = unit(&g, me, "peasant");
+        g.game.group = vec![peasant];
+        let go = g
+            .game
+            .orders(&h.client, OrderMenu::Active)
+            .into_iter()
+            .find(|o| o.keyword == Keyword::Go)
+            .unwrap();
+        (g.game.place, g.game.target, g.game.zoom) = (None, None, None);
+        let pending = g.game.pending_commands.len();
+        let (from, sounds) = (h.utterances().len(), h.audio.played().len());
+        g.game.order = Some(go);
+        g.game.cmd_validate(&mut h.client, OrderFlags::default());
+        let played: Vec<String> = h.audio.played()[sounds..]
+            .iter()
+            .map(|(_, s)| s.clone())
+            .collect();
+        assert_eq!(played, [BEEP_SOUND]);
+        assert_eq!(h.said_since(from), Vec::<String>::new());
+        g.game.cmd_default(&mut h.client, OrderFlags::default());
+        assert_eq!(h.said_since(from), ["<1029>"]);
+        assert_eq!(g.game.pending_commands.len(), pending, "no order given");
+    }
+
+    #[test]
     fn units_upgraded_stay_selected_and_in_their_recallable_group() {
         let (mut h, mut g) = training();
         let me = g.game.me;
@@ -986,9 +997,7 @@ mod tests {
         };
         let o = pick(&g, &h.client, OrderMenu::Active, "guardtower");
         g.game.select_order(&mut h.client, o, true);
-        g.game
-            .cmd_validate(&mut h.client, OrderFlags::default())
-            .unwrap();
+        g.game.cmd_validate(&mut h.client, OrderFlags::default());
         // An order picked for it waits for its target.
         let o = pick(&g, &h.client, OrderMenu::Included, "cannontower");
         g.game.order = Some(o);
@@ -1010,15 +1019,12 @@ mod tests {
         g.game.group = vec![other];
         let from = h.utterances().len();
         g.game
-            .cmd_do_again(&mut h.client, false, OrderFlags::default())
-            .unwrap();
+            .cmd_do_again(&mut h.client, false, OrderFlags::default());
         assert_eq!(
             h.said_since(from),
             ["upgrade to guard tower , requires 5 gold and 2 wood , press enter to confirm"]
         );
-        g.game
-            .cmd_validate(&mut h.client, OrderFlags::default())
-            .unwrap();
+        g.game.cmd_validate(&mut h.client, OrderFlags::default());
         let turn = g.game.view().turn() + 1;
         h.run_until_turn(&mut g, turn);
         let w = g.game.host().world();
@@ -1299,8 +1305,7 @@ mod tests {
             g.game.previous_order = Some(o);
             let from = h.utterances().len();
             g.game
-                .cmd_do_again(&mut h.client, false, OrderFlags::default())
-                .unwrap();
+                .cmd_do_again(&mut h.client, false, OrderFlags::default());
             h.said_since(from)
         };
         // The beep.

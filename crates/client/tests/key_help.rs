@@ -20,7 +20,7 @@ fn game(running: bool) -> (Harness, TestGame, LiveKeys) {
     let mut g = h.start_training("jl1", &["easy"], 1);
     h.run_until_turn(&mut g, 2);
     if !running {
-        g.game.execute_command(&mut h.client, "p").unwrap();
+        g.game.execute_command(&mut h.client, "p");
     }
     h.run_until_voice_idle(&mut g);
     (h, g, live)

@@ -21,7 +21,7 @@ fn game(delay: f64, interval: f64) -> (Harness, TestGame, LiveKeys) {
     let mut h = Harness::new("en", script);
     let mut g = h.start_training("jl1", &["easy"], 1);
     h.run_until_turn(&mut g, 2);
-    g.game.execute_command(&mut h.client, "p").unwrap();
+    g.game.execute_command(&mut h.client, "p");
     h.run_until_voice_idle(&mut g);
     (h, g, live)
 }

@@ -679,7 +679,7 @@ fn in_a_game_control_shift_c_puts_the_reviewed_chat_line_on_the_clipboard() {
     let mut h = Harness::new("en", script);
     let mut g = h.start_training("jl1", &["easy"], 1);
     h.run_until_turn(&mut g, 2);
-    g.game.execute_command(&mut h.client, "p").unwrap();
+    g.game.execute_command(&mut h.client, "p");
     chat(&mut h.client.voice, "meet me at 203.0.113.7");
     chat(&mut h.client.voice, "on my way");
     h.run_until_voice_idle(&mut g);

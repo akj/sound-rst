@@ -53,7 +53,7 @@ fn an_important_message_is_said_after_the_news_being_said_and_before_the_news_wa
         .news(News::new(Category::Production, t("news waiting")));
     let before = h.clock.now();
     let important = SrvEvent::VoiceImportant(t("an important message"));
-    assert!(g.game.process_srv_event(&mut h.client, important).is_ok());
+    g.game.process_srv_event(&mut h.client, important);
     assert_eq!(h.clock.now(), before, "nothing waits");
     run_until_said(&mut h, &mut g, from, 2);
     // 20 characters: 2 seconds, nearly 7 turns.

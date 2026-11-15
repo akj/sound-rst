@@ -12,7 +12,7 @@ use crate::client::Client;
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::entity::EntityView;
 use super::focus::Zoom;
-use super::{GameInterface, R, style_msg};
+use super::{GameInterface, style_msg};
 
 /// Keeps the first of each equal item, in order.
 pub fn remove_duplicates<T: PartialEq + Clone>(l: &[T]) -> Vec<T> {
@@ -345,12 +345,12 @@ impl GameInterface {
         dxc: i64,
         dyc: i64,
         no_collision: bool,
-    ) -> R {
+    ) {
         if self.immersion {
             if (dxc, dyc) == (-1, 0) {
-                self.cmd_rotate_left(cx)?;
+                self.cmd_rotate_left(cx);
             } else if (dxc, dyc) == (1, 0) {
-                self.cmd_rotate_right(cx)?;
+                self.cmd_rotate_right(cx);
             }
         } else if self.zoom.is_some() {
             self.zoom_move(cx, dxc, dyc);
@@ -399,7 +399,6 @@ impl GameInterface {
             };
             self.select_and_say_square(cx, place, &prefix);
         }
-        Ok(())
     }
 
     /// Moves the zoom; past an edge, to the next square.
@@ -421,27 +420,21 @@ impl GameInterface {
     }
 
     /// Leaves first person mode and the zoom, before jumping to a square.
-    pub(crate) fn leave_zoom_and_immersion(&mut self, cx: &mut Client) -> R {
+    pub(crate) fn leave_zoom_and_immersion(&mut self, cx: &mut Client) {
         if self.immersion {
-            self.toggle_immersion(cx)?;
+            self.toggle_immersion(cx);
         }
         if self.zoom.is_some() {
             self.cmd_toggle_zoom(cx);
         }
-        Ok(())
     }
 
-    fn select_square_from_list(
-        &mut self,
-        cx: &mut Client,
-        increment: i64,
-        squares: Vec<SquareId>,
-    ) -> R {
+    fn select_square_from_list(&mut self, cx: &mut Client, increment: i64, squares: Vec<SquareId>) {
         if squares.is_empty() {
             cx.voice.item(&msg(mp::NOTHING));
-            return Ok(());
+            return;
         }
-        self.leave_zoom_and_immersion(cx)?;
+        self.leave_zoom_and_immersion(cx);
         let mut squares = squares;
         if let Some(p) = self.place
             && !squares.contains(&p)
@@ -466,15 +459,14 @@ impl GameInterface {
             None => 0,
         };
         self.select_and_say_square(cx, squares[index], &Vec::new());
-        Ok(())
     }
 
-    pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = self.scouted_squares.iter().copied().collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
         for v in self.dobjets.values() {
             let enemy = v.player().is_some_and(|p| !self.view().allied(p, self.me));
@@ -486,7 +478,7 @@ impl GameInterface {
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
             .filter(|s| !self.scouted_before_squares.contains(s))
@@ -494,7 +486,7 @@ impl GameInterface {
         self.select_square_from_list(cx, increment, squares)
     }
 
-    pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) -> R {
+    pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
         for v in self.dobjets.values() {
             if self.resource_type(&v.model).is_some() && !squares.contains(&v.place()) {
