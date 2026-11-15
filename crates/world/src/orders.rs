@@ -442,10 +442,16 @@ impl Request {
     }
 
     /// Whether the order lacks the target, or the group's name, that its
-    /// keyword needs (see [`Keyword::nb_args`]).
-    fn lacks_its_target(&self) -> bool {
+    /// keyword needs (see [`Keyword::nb_args`]), or that its ability asks
+    /// for.
+    fn lacks_its_target(&self, w: &World) -> bool {
+        let asks = || {
+            let ability = self.type_name.as_deref().and_then(|n| w.rules.type_id(n));
+            ability.is_some_and(|t| w.rules.ty(t).effect_target == ["ask"])
+        };
         match self.keyword {
             Keyword::JoinGroup => self.arg.is_none(),
+            Keyword::Use => asks() && self.given().is_none(),
             k => k.nb_args() > 0 && self.given().is_none(),
         }
     }
@@ -1181,7 +1187,7 @@ impl World {
         let kw = request.keyword;
         if self.e(unit).is_inside()
             || !self.is_order_allowed(unit, kw, request.type_name())
-            || request.lacks_its_target()
+            || request.lacks_its_target(self)
         {
             self.notify(unit, EntityEvent::OrderImpossible(None), false);
             return Ok(());

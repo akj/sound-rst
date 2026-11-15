@@ -816,7 +816,8 @@ fn after_order(
 #[test]
 fn an_order_without_its_target_is_impossible_at_once_and_one_aimed_off_its_square_aims_at_nothing()
 {
-    let (mut w, a, _) = two_humans("");
+    // A footman that may also use an ability aimed at a target.
+    let (mut w, a, _) = two_humans("def footman\ncan_use a_holy_vision\n");
     w.queue_command(a, "cmd add_units a1 footman");
     w.update();
     let footman = find(&w, a, "footman");
@@ -830,7 +831,7 @@ fn an_order_without_its_target_is_impossible_at_once_and_one_aimed_off_its_squar
     );
     let impossible = vec![EntityEvent::OrderImpossible(None)];
     // Refused before anything changes: the order in the queue stays.
-    for words in ["go", "attack", "patrol", "join_group"] {
+    for words in ["go", "attack", "patrol", "join_group", "use a_holy_vision"] {
         let refused = after_order(&mut w, a, footman, words);
         assert_eq!(refused, (impossible.clone(), kept.clone()), "{words}");
     }
