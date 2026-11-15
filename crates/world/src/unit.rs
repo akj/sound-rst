@@ -1860,9 +1860,26 @@ impl World {
                 let place = e.place.ok_or(Invariant::SiteWithoutPlace)?;
                 let blocked_exit = e.blocked_exit();
                 let land = e.building_land();
+                // A site holds room on the ground. A mod's building in
+                // another layer may find that layer full: it then waits,
+                // finished, until there is room for it.
+                let bt = self.rules.ty(site.building_type);
+                let (collision, airground) = (bt.stats.collision != 0, bt.airground_type);
+                let room_freed = e.stats.collision != 0 && e.airground_type == airground;
+                if !room_freed
+                    && self
+                        .initial_position(collision, airground, place, Some((x, y)))
+                        .is_err()
+                {
+                    if let Some(CreatureKind::BuildingSite(s)) = self.cm(id).map(|c| &mut c.kind) {
+                        s.timer = 1;
+                    }
+                    return Ok(());
+                }
                 self.delete(id);
-                // The site's own spot was just freed, and its building's
-                // type is a creature's: a deposit cannot be ordered built.
+                // The site's spot was just freed in the building's layer, or
+                // room was found above; and the building's type is a
+                // creature's: only those can be ordered built.
                 let b = self
                     .create_creature(site.building_type, player, place, x, y)
                     .map_err(|_| Invariant::NoRoomWhereRoomWas)?;

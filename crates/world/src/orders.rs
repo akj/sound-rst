@@ -2348,16 +2348,17 @@ impl World {
                 let consume_meadow =
                     e.stats.is_buildable_anywhere != 0 && t.stats.is_buildable_anywhere == 0;
                 let blocked_exit = e.blocked_exit();
+                let mut meadow = None;
                 if consume_meadow {
-                    let meadow = match place {
+                    let nearest = match place {
                         Place::Square(s) => self.find_nearest_meadow(s, unit),
                         Place::Inside(_) => None,
                     };
-                    match meadow {
+                    match nearest {
                         Some(m) => {
                             x = self.e(m).x;
                             y = self.e(m).y;
-                            self.delete(m);
+                            meadow = Some(m);
                         }
                         None => {
                             self.order_cancel(unit, o, true);
@@ -2366,6 +2367,27 @@ impl World {
                         }
                     }
                 }
+                // The old building frees room for the new one only in its
+                // own layer: a mod's new type may be in another, and find
+                // that layer full.
+                let room_freed = e.stats.collision != 0 && e.airground_type == t.airground_type;
+                if !room_freed
+                    && self
+                        .initial_position(
+                            t.stats.collision != 0,
+                            t.airground_type,
+                            place,
+                            Some((x, y)),
+                        )
+                        .is_err()
+                {
+                    self.order_cancel(unit, o, true);
+                    self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
+                    return Ok(false);
+                }
+                if let Some(m) = meadow {
+                    self.delete(m);
+                }
                 // Taken out first, the units inside stay their player's when
                 // the old building is deleted.
                 let inside = self
@@ -2373,8 +2395,9 @@ impl World {
                     .and_then(|c| c.inside.as_mut())
                     .map(std::mem::take);
                 self.delete(unit);
-                // The old building's spot was just freed, and the type is a
-                // creature's: a deposit cannot be ordered upgraded to.
+                // The old building's spot was just freed in the new type's
+                // layer, or room was found above; and the type is a
+                // creature's: only those can be ordered upgraded to.
                 let nu = self
                     .create_creature(type_id, Some(p), place, x, y)
                     .map_err(|_| Invariant::NoRoomWhereRoomWas)?;

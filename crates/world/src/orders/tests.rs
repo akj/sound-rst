@@ -1069,3 +1069,66 @@ fn an_attack_on_a_unit_inside_a_transport_is_impossible() {
     assert_eq!(w.c(footman).unwrap().hp, hp);
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+/// Fills the air around an entity of `p` with flying machines of `p`, and
+/// returns them.
+fn fill_the_air(w: &mut World, p: PlayerId, around: EntityId) -> Vec<EntityId> {
+    let t = w.rules.type_id("new_flyingmachine").unwrap();
+    let e = w.e(around);
+    let (place, x, y) = (e.place.unwrap(), e.x, e.y);
+    let mut machines = Vec::new();
+    while let Ok(m) = w.create_creature(t, Some(p), place, x, y) {
+        machines.push(m);
+    }
+    machines
+}
+
+#[test]
+fn a_flying_building_finished_in_a_full_sky_waits_for_room() {
+    let (mut w, a, _) = two_humans("def farm\nairground_type air\nis_buildable_anywhere 1\n");
+    w.queue_command(a, "cmd add_units a1 townhall peasant");
+    w.update();
+    let peasant = find(&w, a, "peasant");
+    let a1 = w.square(w.square_by_name("a1").unwrap()).id;
+    order(&mut w, a, &[peasant], &format!("build farm {a1}"));
+    w.update();
+    update_until(&mut w, |w| !all(w, a, "buildingsite").is_empty());
+    let site = all(&w, a, "buildingsite")[0];
+    let machines = fill_the_air(&mut w, a, site);
+    for _ in 0..300 {
+        w.update();
+    }
+    assert_eq!(all(&w, a, "buildingsite").len(), 1);
+    assert!(all(&w, a, "farm").is_empty());
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    for m in machines {
+        w.delete(m);
+    }
+    update_until(&mut w, |w| !all(w, a, "farm").is_empty());
+    assert!(all(&w, a, "buildingsite").is_empty());
+}
+
+#[test]
+fn an_upgrade_to_a_flying_type_in_a_full_sky_is_refunded_and_says_why() {
+    let (mut w, a, _) = two_humans("def guardtower\nairground_type air\n");
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    fill_the_air(&mut w, a, tower);
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| w.e(tower).orders().is_empty());
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    assert_eq!(all(&w, a, "scouttower"), [tower]);
+    assert!(all(&w, a, "guardtower").is_empty());
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
