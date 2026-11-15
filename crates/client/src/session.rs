@@ -8,7 +8,9 @@ use std::sync::Arc;
 use soundrts_protocol::ClientMsg;
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::{Controller, DefaultTrigger, GameSetup, Host, multiplayer_default_triggers};
+use soundrts_world::{
+    Controller, DefaultTrigger, GameSetup, Host, PlayerId, multiplayer_default_triggers,
+};
 
 use crate::campaign::Campaign;
 use crate::client::Client;
@@ -19,7 +21,7 @@ use crate::menu::Exit;
 use crate::message::{Category, News};
 use crate::net::Seated;
 use crate::net::words::{self, text};
-use crate::saves::{SaveInfo, SavedGame};
+use crate::saves::{InterfaceState, SaveInfo, SavedGame};
 
 /// The kind of a session, which decides its rules of victory, whether
 /// factions replace the start units, and what happens before and after.
@@ -46,7 +48,15 @@ impl SessionKind {
     }
 }
 
-/// A game to play here: map, players, seed.
+/// A game loaded from a save: its host, replayed to where it was saved,
+/// the player the interface played then, and what the interface kept.
+pub struct LoadedGame {
+    pub host: Host,
+    pub me: PlayerId,
+    pub ui: InterfaceState,
+}
+
+/// A game to play here: map, players, seed; or a game loaded from a save.
 pub struct Session {
     pub kind: SessionKind,
     pub map: Arc<Map>,
@@ -58,6 +68,9 @@ pub struct Session {
     pub has_victory: bool,
     /// What a save of the game says it is.
     pub save: SaveInfo,
+    /// The game loaded from a save, until it starts; `None` for a new
+    /// game.
+    pub loaded: Option<LoadedGame>,
 }
 
 impl Session {
@@ -91,6 +104,7 @@ impl Session {
             allow_cheatmode: true,
             has_victory: false,
             save,
+            loaded: None,
         }
     }
 
@@ -116,6 +130,23 @@ impl Session {
             allow_cheatmode: true,
             has_victory: false,
             save,
+            loaded: None,
+        }
+    }
+
+    /// A game loaded from a save, of `kind`, on `map`: it goes on from
+    /// where it was saved, and is saved as `save` says.
+    pub fn resumed(kind: SessionKind, map: Arc<Map>, save: SaveInfo, game: LoadedGame) -> Session {
+        let setup = game.host.record().setup();
+        Session {
+            kind,
+            map,
+            players: setup.controllers.clone(),
+            seed: setup.seed,
+            allow_cheatmode: setup.allow_cheatmode,
+            has_victory: false,
+            save,
+            loaded: Some(game),
         }
     }
 
@@ -152,9 +183,17 @@ impl Session {
     /// Builds the world and the interface, and tells the intro and the
     /// objective as a story: in single-player the first turn waits until
     /// it is told. `None` if the map cannot be built (a beep and the error
-    /// are said).
+    /// are said). A game loaded goes on where it was saved: "loaded" and
+    /// the square under the cursor are told instead of the intro.
     pub fn start(&mut self, cx: &mut Client) -> Option<GameInterface> {
         cx.res.set_map(Some(&self.map));
+        if let Some(loaded) = self.loaded.take() {
+            let mut game = GameInterface::local(cx, loaded.host, loaded.me);
+            game.set_save_info(self.save.clone());
+            let told = game.resume(loaded.ui);
+            prepare(cx, &mut game, vec![told]);
+            return Some(game);
+        }
         let setup = GameSetup {
             rules: cx.res.rules_text(),
             ai: cx.res.ai_text(),

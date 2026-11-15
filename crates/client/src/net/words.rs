@@ -31,6 +31,8 @@ pub const ON2: &[u64] = &[119];
 pub const AGAINST: &[u64] = &[121];
 /// "building", what a worker is busy with
 pub const BUILDING: &[u64] = &[128];
+/// "the list is empty"
+pub const THE_LIST_IS_EMPTY: &[u64] = &[4321];
 
 // Phrases the original never recorded.
 
@@ -93,6 +95,7 @@ pub const LOADED: &str = "loaded";
 pub const CANNOT_LOAD: &str = "cannot load";
 pub const ANOTHER_VERSION: &str = "made by another version of the game";
 pub const DAMAGED: &str = "the file is damaged";
+pub const LOADING_STOPPED: &str = "loading stopped";
 pub const SAVED_JUST_NOW: &str = "saved just now";
 /// As in "saved 3 hours ago".
 pub const SAVED_WORD: &str = "saved";

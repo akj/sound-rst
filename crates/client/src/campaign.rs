@@ -13,7 +13,8 @@ use crate::client::Client;
 use crate::mapfile::Map;
 use crate::menu::{Action, Exit, Flow, Menu};
 use crate::package::Package;
-use crate::session::Session;
+use crate::saves::Saved;
+use crate::session::{Session, SessionKind};
 
 /// A numbered step of a campaign.
 #[derive(Clone, Debug)]
@@ -317,29 +318,80 @@ pub fn run_chapter(cx: &mut Client, campaign: &Rc<Campaign>, number: usize) -> R
             }
         }
         Chapter::Mission { map, .. } => {
-            let mut game = Session::mission(cx, Arc::new(map.clone()), campaign, number);
-            game.run(cx)?;
-            if game.has_victory {
-                campaign.unlock_next(cx, number);
-                if number + 1 < campaign.chapters.len() {
-                    let mut menu = Menu::new(Vec::new(), Vec::new());
-                    menu.append(
-                        msg(mp::CONTINUE),
-                        chapter_action(campaign, number + 1),
-                        None,
-                    );
-                    menu.append(msg(mp::QUIT), Action::Nothing, None);
-                    menu.run(cx)?;
-                }
-            } else {
-                let mut menu = Menu::new(Vec::new(), Vec::new());
-                menu.append(msg(mp::RESTART), chapter_action(campaign, number), None);
-                menu.append(msg(mp::QUIT), Action::Nothing, None);
-                menu.run(cx)?;
-            }
+            let game = Session::mission(cx, Arc::new(map.clone()), campaign, number);
+            play_mission(cx, campaign, number, game)?;
         }
     }
     Ok(())
+}
+
+/// Plays a mission of chapter `number`, then asks to continue after a
+/// victory, which unlocks the next chapter, or to restart after a defeat.
+fn play_mission(
+    cx: &mut Client,
+    campaign: &Rc<Campaign>,
+    number: usize,
+    mut game: Session,
+) -> Result<(), Exit> {
+    game.run(cx)?;
+    if game.has_victory {
+        campaign.unlock_next(cx, number);
+        if number + 1 < campaign.chapters.len() {
+            let mut menu = Menu::new(Vec::new(), Vec::new());
+            menu.append(
+                msg(mp::CONTINUE),
+                chapter_action(campaign, number + 1),
+                None,
+            );
+            menu.append(msg(mp::QUIT), Action::Nothing, None);
+            menu.run(cx)?;
+        }
+    } else {
+        let mut menu = Menu::new(Vec::new(), Vec::new());
+        menu.append(msg(mp::RESTART), chapter_action(campaign, number), None);
+        menu.append(msg(mp::QUIT), Action::Nothing, None);
+        menu.run(cx)?;
+    }
+    Ok(())
+}
+
+/// Plays on a mission saved in chapter `number` of `campaign`: switches
+/// to the campaign's mods and resources, as [`run_campaign`] does, replays
+/// the save, and plays it as the chapter's mission. A save of a mission
+/// the campaign no longer has plays alone, on its own map.
+pub fn resume_mission(
+    cx: &mut Client,
+    campaign: Rc<Campaign>,
+    number: usize,
+    saved: Saved,
+) -> Result<(), Exit> {
+    if let Some(mods) = &campaign.mods {
+        cx.res.set_mods(mods);
+    }
+    cx.res.set_campaign(Some(&campaign));
+    let result = (|| {
+        let mission = matches!(campaign.chapters.get(number), Some(Chapter::Mission { .. }));
+        let map = match campaign.chapters.get(number) {
+            Some(Chapter::Mission { map, .. }) if map.definition == saved.record.setup().map => {
+                Some(Arc::new(map.clone()))
+            }
+            _ => crate::saves::load::map_of(&saved),
+        };
+        let Some(map) = map else {
+            return crate::saves::load::cannot_load(cx);
+        };
+        let Some(game) = crate::saves::load::replayed(cx, SessionKind::Mission, map, saved)? else {
+            return Ok(());
+        };
+        if mission {
+            play_mission(cx, &campaign, number, game)
+        } else {
+            let mut game = game;
+            game.run(cx)
+        }
+    })();
+    cx.res.set_campaign(None);
+    result
 }
 
 #[cfg(test)]

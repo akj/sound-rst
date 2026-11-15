@@ -61,6 +61,9 @@ pub struct Choice {
     pub action: Action,
     pub explanation: Option<Msg>,
     pub value: Option<ValueFn>,
+    /// What the Delete key does on this item, if anything. The menu stays
+    /// on the item, unless it returns [`Flow::CloseMenu`].
+    pub on_delete: Option<ActionFn>,
 }
 
 impl Choice {
@@ -70,6 +73,7 @@ impl Choice {
             action,
             explanation: None,
             value: None,
+            on_delete: None,
         }
     }
 
@@ -157,6 +161,8 @@ pub struct Menu {
     /// A setting was changed: the next run stays on its item without
     /// saying the title.
     resume: bool,
+    /// The Delete key was pressed on an item that deletes.
+    delete_chosen: bool,
 }
 
 impl Menu {
@@ -173,6 +179,7 @@ impl Menu {
             escape_on_interrupt: true,
             opened_at: None,
             resume: false,
+            delete_chosen: false,
         }
     }
 
@@ -289,6 +296,10 @@ impl Menu {
             Key::Up => self.select_next_choice(cx, None, -1),
             Key::Tab | Key::Down => self.select_next_choice(cx, None, 1),
             Key::Return | Key::KpEnter | Key::Right => self.confirm_choice(cx),
+            Key::Delete if self.on_delete().is_some() => {
+                self.delete_chosen = true;
+                self.choice_done = true;
+            }
             Key::F2 if ctrl => cx.toggle_fullscreen(),
             Key::F1 if shift => {
                 let m = cx.help_msg("menu", -1);
@@ -346,7 +357,24 @@ impl Menu {
         }
     }
 
+    /// What the Delete key does on the selected item.
+    fn on_delete(&self) -> Option<ActionFn> {
+        if !self.choice_exists() {
+            return None;
+        }
+        let index = self.index(self.choice_index.unwrap_or(0));
+        self.choices[index].on_delete.clone()
+    }
+
     fn execute_choice(&mut self, cx: &mut Client) -> Result<(), Exit> {
+        if std::mem::take(&mut self.delete_chosen) {
+            if let Some(f) = self.on_delete()
+                && f(cx)? == Flow::CloseMenu
+            {
+                self.end_loop = true;
+            }
+            return Ok(());
+        }
         let index = self.index(self.choice_index.unwrap_or(0));
         let Choice { label, action, .. } = self.choices[index].clone();
         let flow = match &action {

@@ -461,5 +461,7 @@ fn age(seconds: u64) -> Msg {
     .concat()
 }
 
+pub mod load;
+
 #[cfg(test)]
 mod tests;

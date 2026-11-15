@@ -93,4 +93,22 @@ impl GameInterface {
             Err(e) => cx.log.warning(format!("cannot save the game left: {e}")),
         }
     }
+
+    /// Takes back what the interface kept in a save: the cursor's square,
+    /// if the map has it, and the units selected, which the first end of
+    /// turn keeps to those the player still has. What is told when the
+    /// game goes on: "loaded", and the square under the cursor.
+    pub(crate) fn resume(&mut self, ui: InterfaceState) -> soundrts_world::msg::Msg {
+        let squares = self.view().square_count();
+        self.place = ui
+            .cursor
+            .filter(|s| usize::try_from(s.0).is_ok_and(|i| i < squares));
+        self.group = ui.selection;
+        let mut told = text(words::LOADED);
+        if let Some(s) = self.place {
+            told.extend(soundrts_world::msg::msg(soundrts_world::msgparts::COMMA));
+            told.extend(self.view().square(s).title().iter().cloned());
+        }
+        told
+    }
 }
