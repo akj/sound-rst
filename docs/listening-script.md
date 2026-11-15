@@ -1,6 +1,6 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
@@ -159,7 +159,11 @@ These changed how hard the game is. There is no right answer, only your judgment
 
 6.2. Play against the aggressive computer on jl1. It now attacks about a minute sooner. Is it still a fair fight?
 
-A later change will make the computers know only what a player knows, which should make them weaker. I will add its step here when it merges.
+Since pull request 77 the computers know only what a player in their seat knows. Measured over many games, they play about as strongly as before.
+
+6.3. In the single-player menu, start a training game and go through the list of opponents. Expected: one is named "random computer with unlimited resources and no requirements". Is that name too long to sit through in a menu? A shorter one is "random computer, unlimited resources".
+
+6.4. Play against the aggressive computer on jl1 once more with this in mind: does it ever seem to know something it has not seen, such as where your units are before it has scouted them?
 
 ## Part 7. With one other player
 
