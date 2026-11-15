@@ -327,6 +327,19 @@ fn the_command_line_check_replays_a_record_or_a_save_and_says_how_it_ended() {
 
 #[test]
 fn a_unit_upgraded_in_a_turn_not_yet_taken_is_saved_as_the_unit_it_became() {
+    upgraded_while_selected(false);
+}
+
+/// As a game just loaded, whose selection waits for its first end of turn.
+#[test]
+fn a_unit_upgraded_before_a_loaded_game_takes_its_selection_back_is_saved_as_it_became() {
+    upgraded_while_selected(true);
+}
+
+/// Saves a game whose selected archer became a dark archer in a turn the
+/// interface has not taken; `loaded`: the selection is a loaded game's,
+/// not yet taken back.
+fn upgraded_while_selected(loaded: bool) {
     use crate::game::testing::{cheat, unit};
     let (mut h, mut g) = training();
     let me = g.game.me;
@@ -348,7 +361,14 @@ fn a_unit_upgraded_in_a_turn_not_yet_taken_is_saved_as_the_unit_it_became() {
     let turn = g.game.view().turn() + 2;
     h.run_until_turn(&mut g, turn);
     let archer = unit(&g, me, "archer");
-    g.game.group = vec![archer];
+    if loaded {
+        let _ = g.game.resume(InterfaceState {
+            cursor: None,
+            selection: vec![archer],
+        });
+    } else {
+        g.game.group = vec![archer];
+    }
     g.game
         .host_mut()
         .queue_line(me, &format!("control {archer}"));
@@ -363,7 +383,8 @@ fn a_unit_upgraded_in_a_turn_not_yet_taken_is_saved_as_the_unit_it_became() {
         }
         g.game.run_turn(&mut h.client);
     }
-    assert_eq!(g.game.group, [archer], "the turn is not taken yet");
+    let selected: &[EntityId] = if loaded { &[] } else { &[archer] };
+    assert_eq!(g.game.group, selected, "the turn is not taken yet");
     let dark = unit(&g, me, "darkarcher");
     let path = g.game.save_game(&mut h.client, Slot::New).unwrap();
     assert_eq!(read_save(&path).unwrap().header.selection, [dark]);

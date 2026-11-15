@@ -37,14 +37,12 @@ impl GameInterface {
     /// selection it has yet to take back.
     fn interface_state(&self) -> InterfaceState {
         let selection = match &self.source {
-            Source::Local(l) if !l.selection_to_restore.is_empty() => {
-                l.selection_to_restore.clone()
-            }
-            _ => self.group_now().into_iter().map(|(_, now)| now).collect(),
+            Source::Local(l) if !l.selection_to_restore.is_empty() => &l.selection_to_restore,
+            _ => &self.group,
         };
         InterfaceState {
             cursor: self.place,
-            selection,
+            selection: self.followed_now(selection),
         }
     }
 
