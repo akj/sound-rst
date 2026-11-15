@@ -52,6 +52,7 @@ use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
+use soundrts_world::player::Objective;
 use soundrts_world::{
     Command, EntityId, Host, KnownEntity, Place, PlayerId, SeatView, SquareId, TurnMessage,
 };
@@ -64,7 +65,7 @@ use crate::message::{Category, News, Subject};
 use crate::net::words;
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
-use crate::voice::EntryId;
+use crate::voice::{EntryId, Heard};
 
 use self::animation::NoiseSource;
 use self::command::GameCommand;
@@ -207,6 +208,34 @@ impl Story {
     fn is_told(&self, cx: &Client) -> bool {
         !self.0.iter().any(|&id| cx.voice.is_waiting(id))
     }
+
+    /// Skips the rest of the story; its messages stay in the log. When
+    /// they are all that waits, the voice stops and they are kept unheard.
+    /// Otherwise each is skipped in turn, as a key for each would, so that
+    /// the news waiting with them is still said: each skip starts the next
+    /// message and cuts it at once.
+    fn skip(&self, cx: &mut Client) {
+        let waiting = |cx: &Client| {
+            cx.voice
+                .log()
+                .filter(|e| matches!(e.heard(), Heard::Waiting { .. }))
+                .count()
+        };
+        let story = self.0.iter().filter(|&&id| cx.voice.is_waiting(id)).count();
+        if story == waiting(cx) {
+            cx.voice.silent_flush();
+            return;
+        }
+        // Stops when a skip leaves as many messages waiting, as while the
+        // history is walked.
+        while !self.is_told(cx) {
+            let before = waiting(cx);
+            cx.voice.say_next(false);
+            if waiting(cx) == before {
+                break;
+            }
+        }
+    }
 }
 
 /// The category of a message the world says now. Objectives and the end of
@@ -312,6 +341,11 @@ pub struct GameInterface {
     pub(crate) log_start: EntryId,
     /// The alert the cursor last jumped to, and its square.
     pub(crate) alert_jump: Option<(EntryId, SquareId)>,
+    /// Every objective of the player's seen at the end of a turn, in the
+    /// order they came: one no longer among them is done.
+    pub(crate) objectives_seen: Vec<Objective>,
+    /// The step of the objectives said last.
+    pub(crate) objective_at: Option<usize>,
     pub(crate) previous_resources: Option<Vec<i64>>,
     pub(crate) previous_available_food: i64,
     pub(crate) previous_used_food: i64,
@@ -381,6 +415,8 @@ impl GameInterface {
             told_units: HashMap::new(),
             log_start: cx.voice.start_game(),
             alert_jump: None,
+            objectives_seen: Vec::new(),
+            objective_at: None,
             previous_resources: None,
             previous_available_food: 0,
             previous_used_food: 0,
@@ -428,6 +464,8 @@ impl GameInterface {
         } else {
             self.me = told.seat;
             self.seat = SeatView::new(self.host.game_start(), told);
+            self.objectives_seen.clear();
+            self.objective_at = None;
         }
     }
 
@@ -681,11 +719,18 @@ impl GameInterface {
     }
 
     /// A key pressed while a story is told: the keys of the game menu,
-    /// the history, the news, help, key help and the volume do as in the
-    /// game; any other key skips the message being said.
+    /// the history, the news, copying a message, help, key help and the
+    /// volume do as in the game; the escape key skips the rest of the story; any other key
+    /// skips the message being said.
     fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Stop> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
+            Some(C::Escape) => {
+                if let Mode::Story(s) = &self.mode {
+                    s.skip(cx);
+                }
+                Ok(())
+            }
             Some(
                 c @ (C::GameMenu
                 | C::HistoryPrevious
@@ -694,6 +739,7 @@ impl GameInterface {
                 | C::ReviewPrevious
                 | C::ReviewNext
                 | C::ReviewCategory
+                | C::CopyMessage
                 | C::Help(_)
                 | C::KeyHelp
                 | C::Volume(_)),
@@ -779,6 +825,7 @@ impl GameInterface {
         self.scouted_squares = m.squares.observed.clone();
         self.scouted_before_squares = m.squares.observed_before.clone();
         self.seat.remember();
+        self.note_objectives(&m.state.objectives);
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);

@@ -40,6 +40,10 @@ pub struct GameStart {
     /// Every player's name as it is said, by player id: the name of
     /// `PlayerId(i)` is at `i`. A neutral player's is empty.
     pub player_names: Vec<Msg>,
+    /// Every player's faction, as chosen in the game room or drawn for a
+    /// random choice, by player id as [`GameStart::player_names`]: a
+    /// faction's name in the rules, such as `human_faction`.
+    pub player_factions: Vec<String>,
     /// Whether the game allows cheats.
     pub cheats_allowed: bool,
 }
@@ -52,6 +56,8 @@ pub struct StartMessage {
     pub map: GameMap,
     /// As [`GameStart::player_names`].
     pub player_names: Vec<Msg>,
+    /// As [`GameStart::player_factions`].
+    pub player_factions: Vec<String>,
     pub cheats_allowed: bool,
 }
 
@@ -61,6 +67,7 @@ impl GameStart {
         StartMessage {
             map: self.map.clone(),
             player_names: self.player_names.clone(),
+            player_factions: self.player_factions.clone(),
             cheats_allowed: self.cheats_allowed,
         }
     }
@@ -72,6 +79,7 @@ impl GameStart {
             rules,
             map: message.map,
             player_names: message.player_names,
+            player_factions: message.player_factions,
             cheats_allowed: message.cheats_allowed,
         }
     }
@@ -334,6 +342,7 @@ impl GameStart {
                 intro: w.map.intro.clone(),
             },
             player_names: w.all_players().map(|(_, p)| p.name()).collect(),
+            player_factions: w.all_players().map(|(_, p)| p.faction.clone()).collect(),
             cheats_allowed: w.allow_cheatmode,
         }
     }

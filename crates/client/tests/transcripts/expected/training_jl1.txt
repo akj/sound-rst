@@ -704,7 +704,7 @@ length 9999 208980
 @765053 voice item "12 minutes 7 seconds , speed 1.0"
 @769253 sounds 20 a17c03162404f492
 @769253 step 226 key F9
-@769253 voice item "objective: neutralized enemy ."
+@769253 voice item "neutralized enemy , 1 of 1"
 @772253 sounds 14 d6ed99db46c258d2
 @772253 step 227 key F11
 @772253 voice item "player , quiet computer ,"

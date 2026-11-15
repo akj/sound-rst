@@ -82,7 +82,7 @@ In the options menu, Sound and speech has these items. Each item says its name, 
 
 While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. News is never lost: a message cut off is said again, newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square), and every message is kept in a log, heard or not.
 
-Nothing said stops the game. Important messages, such as a player defeated, a new objective or the console's answer, are said before other news waiting, while the game goes on. In single-player, the game waits on purpose while the story is told (a mission's intro, the objective, a cut scene) and while the game menu or the console is open. While the story is told, the game menu, the history and news keys, help and the volume keys work, and any other key skips the message being said. In a game on a server, nothing waits.
+Nothing said stops the game. Important messages, such as a player defeated, a new objective or the console's answer, are said before other news waiting, while the game goes on. In single-player, the game waits on purpose while the story is told (a mission's intro, the objective, a cut scene) and while the game menu or the console is open. While the story is told, the game menu, the history and news keys, the copy key, help and the volume keys work. Escape skips the rest of the story, and any other key skips the message being said. The lines you skip stay in the story category of the log, for Comma and Period to review. In a game on a server, nothing waits.
 
 | Key | Does |
 | --- | --- |
@@ -112,11 +112,19 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 | B | What your buildings train, research or upgrade to, soonest done first, with the seconds left and where. Production that waits for food comes last. |
 | N | How many of your workers are idle, how many gather each resource, and how many build. |
 | V | With more than one unit controlled: the hit points of the group against its most, how many units are below half their hit points, and how many of each type. With one unit, as before. |
+| Shift+V | How the first unit you control fights, with the upgrades that apply to it: its damage and how often it strikes, its range and armor, then its most hit points and its speed, for example "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5". |
 | M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
 | Shift+X | Every resource, also those that a map adds. |
-| F12 | The other players: each an ally or an enemy, and whether defeated. F11 still says the names only. |
+| F12 | The other players: each an ally or an enemy, and whether defeated. |
+| F11 | The players' names, as before. When the rules have more than one faction, as with the orc mod, each name is followed by the player's faction. |
+| Shift+F11 | Your faction, also the one a random choice gave you. |
+| F9, Shift+F9 | The next or the previous objective, one at a time: its description, whether it is done, and its place, such as "build 1 farm , done , 1 of 2". The map's own objective comes first, without whether it is done. After the last objective, F9 goes back to the first. |
 
 The score is said only at the end of the game: during the game it would tell you about enemy units you have not seen, for example how many units a transport that you destroyed carried.
+
+### Idle soldiers
+
+The keys F to Semicolon select every soldier of a type on the square, as in the original: F the first type, such as footmen, G the second, such as archers, and so on. With Shift, they select only the idle ones, those without orders, on the square. With Control and Shift, they select the idle ones all over the map.
 
 ### Speech that ends when NVDA says so
 
