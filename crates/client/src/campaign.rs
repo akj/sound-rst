@@ -317,7 +317,7 @@ pub fn run_chapter(cx: &mut Client, campaign: &Rc<Campaign>, number: usize) -> R
             }
         }
         Chapter::Mission { map, .. } => {
-            let mut game = Session::mission(cx, Arc::new(map.clone()));
+            let mut game = Session::mission(cx, Arc::new(map.clone()), campaign, number);
             game.run(cx)?;
             if game.has_victory {
                 campaign.unlock_next(cx, number);

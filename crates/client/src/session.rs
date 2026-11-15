@@ -6,10 +6,11 @@
 use std::sync::Arc;
 
 use soundrts_protocol::ClientMsg;
-use soundrts_world::msg::{Msg, MsgPart, msg};
+use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::{Controller, DefaultTrigger, GameSetup, Host, multiplayer_default_triggers};
 
+use crate::campaign::Campaign;
 use crate::client::Client;
 use crate::game::GameInterface;
 use crate::game::stats::score_msgs;
@@ -18,6 +19,7 @@ use crate::menu::Exit;
 use crate::message::{Category, News};
 use crate::net::Seated;
 use crate::net::words::{self, text};
+use crate::saves::{SaveInfo, SavedGame};
 
 /// The kind of a session, which decides its rules of victory, whether
 /// factions replace the start units, and what happens before and after.
@@ -54,6 +56,8 @@ pub struct Session {
     pub allow_cheatmode: bool,
     /// Whether the local player won, once the game is over.
     pub has_victory: bool,
+    /// What a save of the game says it is.
+    pub save: SaveInfo,
 }
 
 impl Session {
@@ -73,6 +77,12 @@ impl Session {
             c.faction = f.clone();
             c.alliance = Some(a.clone());
         }
+        let save = SaveInfo {
+            game: SavedGame::Training {
+                map: map.name.clone(),
+            },
+            title: map.title.clone(),
+        };
         Session {
             kind: SessionKind::Training,
             map,
@@ -80,11 +90,24 @@ impl Session {
             seed: Self::new_seed(cx),
             allow_cheatmode: true,
             has_victory: false,
+            save,
         }
     }
 
-    /// A mission on a campaign chapter's map, alone.
-    pub fn mission(cx: &Client, map: Arc<Map>) -> Session {
+    /// A mission on the map of chapter `chapter` of `campaign`, alone.
+    pub fn mission(cx: &Client, map: Arc<Map>, campaign: &Campaign, chapter: usize) -> Session {
+        let save = SaveInfo {
+            game: SavedGame::Mission {
+                campaign: campaign.name.clone(),
+                chapter,
+            },
+            title: [
+                campaign.title.clone(),
+                nb2msg(chapter as i64),
+                map.title.get(1..).unwrap_or_default().to_vec(),
+            ]
+            .concat(),
+        };
         Session {
             kind: SessionKind::Mission,
             map,
@@ -92,6 +115,7 @@ impl Session {
             seed: Self::new_seed(cx),
             allow_cheatmode: true,
             has_victory: false,
+            save,
         }
     }
 
@@ -113,7 +137,13 @@ impl Session {
         let Some(mut game) = self.start(cx) else {
             return Ok(());
         };
-        game.run_loop(cx)?;
+        if let Err(exit) = game.run_loop(cx) {
+            // The window was closed: what the game was is kept.
+            if !game.already_asked_to_quit {
+                game.save_on_leaving(cx);
+            }
+            return Err(exit);
+        }
         self.has_victory = finish(cx, &mut game);
         cx.input.set_game(None);
         Ok(())
@@ -151,6 +181,7 @@ impl Session {
         }
         let me = host.seats()[0];
         let mut game = GameInterface::local(cx, host, me);
+        game.set_save_info(self.save.clone());
         let intro = self.intro(&game);
         prepare(cx, &mut game, intro);
         Some(game)

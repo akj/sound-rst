@@ -38,12 +38,13 @@ pub mod misc;
 pub mod news;
 pub mod order;
 pub mod questions;
+mod saving;
 pub mod selection;
 pub mod server;
 pub mod squares;
 pub mod stats;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;
 
@@ -234,6 +235,8 @@ pub(crate) struct Local {
     next_update: f64,
     /// A turn has run and its end is not handled yet.
     waiting_for_world_update: bool,
+    /// What a save of the game says it is; `None` if it is not saved.
+    save: Option<crate::saves::SaveInfo>,
 }
 
 /// The interface of a running game.
@@ -331,6 +334,7 @@ impl GameInterface {
             host: Box::new(host),
             next_update: 0.0,
             waiting_for_world_update: false,
+            save: None,
         };
         let speed = cx.config.speed;
         Self::with(cx, Source::Local(local), seat, speed)

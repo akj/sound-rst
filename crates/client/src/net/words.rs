@@ -81,6 +81,28 @@ pub const RANGE: &str = "range";
 pub const ARMOR: &str = "armor";
 pub const HIT_POINTS: &str = "hit points";
 
+// Saved games.
+
+pub const SAVE_GAME: &str = "save game";
+pub const SAVED: &str = "saved";
+pub const CANNOT_SAVE: &str = "cannot save";
+pub const LOAD_A_GAME: &str = "load a game";
+/// The game saved by itself when the player last quit.
+pub const LAST_GAME: &str = "last game";
+pub const LOADED: &str = "loaded";
+pub const CANNOT_LOAD: &str = "cannot load";
+pub const ANOTHER_VERSION: &str = "made by another version of the game";
+pub const DAMAGED: &str = "the file is damaged";
+pub const SAVED_JUST_NOW: &str = "saved just now";
+/// As in "saved 3 hours ago".
+pub const SAVED_WORD: &str = "saved";
+pub const MINUTES_AGO: &str = "minutes ago";
+pub const HOURS_AGO: &str = "hours ago";
+pub const DAYS_AGO: &str = "days ago";
+pub const DELETE_THIS_SAVE: &str = "delete this saved game?";
+pub const DELETE: &str = "delete";
+pub const DELETED: &str = "deleted";
+
 // The sound and speech settings of the options menu.
 
 pub const SOUND_AND_SPEECH: &str = "sound and speech";

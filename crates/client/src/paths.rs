@@ -146,6 +146,10 @@ impl Paths {
     pub fn replays(&self) -> PathBuf {
         self.user.join("replays")
     }
+    /// The saved games (see [`crate::saves`]).
+    pub fn saves(&self) -> PathBuf {
+        self.user.join("saves")
+    }
     pub fn downloaded(&self) -> PathBuf {
         self.user.join("downloaded")
     }
@@ -176,6 +180,7 @@ impl Paths {
             self.user.clone(),
             self.tmp(),
             self.replays(),
+            self.saves(),
             downloaded.clone(),
             self.user.join("single"),
             self.user.join("multi"),

@@ -36,6 +36,7 @@ pub mod probe;
 pub mod resource;
 pub mod rng;
 pub mod rodio_output;
+pub mod saves;
 pub mod session;
 pub mod singleplayer;
 pub mod sound;
