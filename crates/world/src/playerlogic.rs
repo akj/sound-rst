@@ -4,16 +4,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::abort::{Invariant, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
 use crate::msg::{Msg, msg};
 use crate::msgparts as mp;
 use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
-use crate::orders::{Order, TargetRef};
+use crate::orders::{Order, OrderKind, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
-use crate::world::{Abort, INF, Res, World};
+use crate::world::{INF, World};
 
 /// The side of the buckets used to find units near a point.
 pub const BUCKET_SIDE: i64 = 12 * PRECISION;
@@ -155,15 +156,17 @@ impl World {
         self.pl(p).enemy_menace.contains_key(&s) && self.pl(p).enemy_presence.contains(&s)
     }
 
-    /// `is_very_dangerous` of a square or an exit.
-    pub fn is_very_dangerous(&self, p: PlayerId, t: &Target) -> Res<bool> {
+    /// `is_very_dangerous` of a square or an exit. Any other target, such
+    /// as a unit a moving explorer was sent to before, is not a way that
+    /// leads into danger.
+    pub fn is_very_dangerous(&self, p: PlayerId, t: &Target) -> bool {
         match t {
-            Target::Square(s) => Ok(self.square_is_very_dangerous(p, *s)),
-            Target::Entity(e) if self.e(*e).is_exit() => Ok(self.exit_is_very_dangerous(p, *e)),
+            Target::Square(s) => self.square_is_very_dangerous(p, *s),
+            Target::Entity(e) if self.e(*e).is_exit() => self.exit_is_very_dangerous(p, *e),
             Target::Memory(m) if m.snapshot.is_exit() => {
-                Ok(self.exit_is_very_dangerous(p, m.snapshot.id))
+                self.exit_is_very_dangerous(p, m.snapshot.id)
             }
-            _ => Err(Abort::new("object has no attribute 'other_side'")),
+            _ => false,
         }
     }
 
@@ -329,13 +332,6 @@ impl World {
         for a in self.pl(p).allied.clone() {
             for (upg, _) in self.pl(a).upgrades.clone().iter() {
                 while self.pl(p).upgrades.level(upg) < self.pl(a).upgrades.level(upg) {
-                    let t = self.rules.ty(upg);
-                    if !t.is_upgrade() {
-                        return Err(Abort::new(format!(
-                            "{} has no attribute 'upgrade_player'",
-                            t.name
-                        )));
-                    }
                     self.upgrade_player(upg, p)?;
                 }
             }
@@ -670,20 +666,20 @@ impl World {
         &self.pl(p).counterattack_places
     }
 
-    /// `time_has_come` of a computer player, for `wait` orders.
-    pub(crate) fn time_has_come(&mut self, p: PlayerId, target: Option<&Target>) -> Res<bool> {
+    /// `time_has_come` of a computer player, for `wait` orders. A player
+    /// without a script, to whom only a map's trigger can give `wait`,
+    /// never gives the signal: the unit waits.
+    pub(crate) fn time_has_come(&mut self, p: PlayerId, target: Option<&Target>) -> bool {
         if !matches!(self.pl(p).kind, PlayerKind::Computer { .. }) {
-            return Err(Abort::new(
-                "'Player' object has no attribute 'time_has_come'",
-            ));
+            return false;
         }
         let Some(Target::Square(s)) = target else {
-            return Ok(false);
+            return false;
         };
         if self.pl(p).cataclysmic_places.contains(s) {
-            return Ok(false);
+            return false;
         }
-        Ok(self.computer_time_has_come(p, *s))
+        self.computer_time_has_come(p, *s)
     }
 
     // lookups
@@ -698,41 +694,39 @@ impl World {
     }
 
     /// What a target means to a player now: a subsquare, a square, a
-    /// perceived entity, or a remembered one. The error is a point outside
-    /// its square.
-    pub(crate) fn resolve_target(&self, p: PlayerId, t: &TargetRef) -> Res<Option<Target>> {
+    /// perceived entity, or a remembered one. A point outside its square
+    /// means nothing: the interface sends the center of a subsquare.
+    pub(crate) fn resolve_target(&self, p: PlayerId, t: &TargetRef) -> Option<Target> {
         match *t {
-            TargetRef::Square(s) | TargetRef::SquareNamed(s) => Ok(Some(Target::Square(s))),
+            TargetRef::Square(s) | TargetRef::SquareNamed(s) => Some(Target::Square(s)),
             TargetRef::Point { square, x, y } => {
-                // The interface sends the center of a subsquare of the square.
-                if !self.square(square).contains(x, y) {
-                    return Err(Abort::new("the zoom is outside its square"));
-                }
-                Ok(Some(Target::Zoom(ZoomTarget {
-                    place: square,
-                    x,
-                    y,
-                    given: true,
-                })))
+                self.square(square)
+                    .contains(x, y)
+                    .then_some(Target::Zoom(ZoomTarget {
+                        place: square,
+                        x,
+                        y,
+                        given: true,
+                    }))
             }
             TargetRef::Entity(id) => {
                 if let Some(s) = self.square_by_obj_id(id.0) {
-                    return Ok(Some(Target::Square(s)));
+                    return Some(Target::Square(s));
                 }
                 if let Some(e) = self.entity(id)
                     && e.place.is_some()
                     && self.pl(p).perception.contains(&id)
                 {
-                    return Ok(Some(Target::Entity(id)));
+                    return Some(Target::Entity(id));
                 }
-                Ok(self.pl(p).memory.get(&id).map(|r| {
+                self.pl(p).memory.get(&id).map(|r| {
                     Target::Memory(MemoryRef {
                         owner: p,
                         snapshot: r.snapshot.clone(),
                     })
-                }))
+                })
             }
-            TargetRef::Nothing => Ok(None),
+            TargetRef::Nothing => None,
         }
     }
 
@@ -751,10 +745,10 @@ impl World {
                     return Ok(Some(t.clone()));
                 }
             }
-            Target::Xy(..) => return Err(Abort::new("'tuple' object has no attribute 'id'")),
+            Target::Xy(..) => return Err(Invariant::OrderAimsAtCoordinates.into()),
         }
         let id = t.entity_id().expect("an entity");
-        self.resolve_target(p, &TargetRef::Entity(id))
+        Ok(self.resolve_target(p, &TargetRef::Entity(id)))
     }
 
     // resources
@@ -793,12 +787,10 @@ impl World {
             .iter()
             .position(|b| b.uid == project.uid || self.order_eq(b, project));
         if let Some(i) = i {
-            let unit_cost = project
-                .kind
-                .type_id()
-                .map(|t| self.rules.ty(t).cost.clone());
-            let cost =
-                unit_cost.ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))?;
+            let OrderKind::Build { building, .. } = project.kind else {
+                return Err(Invariant::ProjectIsNotABuild.into());
+            };
+            let cost = self.rules.ty(building).cost.clone();
             self.unpay(p, &cost);
             self.plm(p).budget.remove(i);
         }
@@ -842,10 +834,10 @@ impl World {
         resource_type: i64,
         include_building_sites: bool,
     ) -> Res<Option<EntityId>> {
+        // The place is a gatherer's, which takes no order inside, or a
+        // deposit's.
         let Place::Square(start) = place else {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'shortest_path_distance_to'",
-            ));
+            return Err(Invariant::ActingInside.into());
         };
         let mut warehouses: Vec<(i64, EntityId)> = Vec::new();
         for a in self.pl(p).allied.clone() {
@@ -865,16 +857,18 @@ impl World {
                             .contains(&resource_type)
                     });
                 if stores || site_stores {
-                    let d = match e.place {
-                        Some(Place::Square(s)) => self.shortest_path_distance_to(
-                            start,
-                            s,
-                            Some(p),
-                            AirGround::Ground,
-                            false,
-                        )?,
-                        _ => return Err(Abort::new("the warehouse is not on a square")),
+                    // A mod's unit that stores may be inside a transport,
+                    // where nobody can bring it anything.
+                    let Some(Place::Square(s)) = e.place else {
+                        continue;
                     };
+                    let d = self.shortest_path_distance_to(
+                        start,
+                        s,
+                        Some(p),
+                        AirGround::Ground,
+                        false,
+                    )?;
                     if d == 0 {
                         return Ok(Some(u));
                     }
@@ -921,7 +915,7 @@ impl World {
                 self.players.remove(i);
                 self.ex_players.push(p);
             }
-            None => self.warn("list.remove(x): x not in list"),
+            None => self.warn(format!("{} quits a game it is not in", self.who(p))),
         }
     }
 

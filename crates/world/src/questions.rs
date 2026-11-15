@@ -19,7 +19,7 @@ use crate::orders::{
 use crate::player::Upgrades;
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
 use crate::seat_view::Comrades;
-use crate::world::{Abort, Res, World};
+use crate::world::World;
 
 /// The effects of an ability that its `use` order may always be given for.
 const EFFECTS: &[&str] = &[
@@ -116,13 +116,13 @@ pub(crate) trait Knowledge<'a>: Copy {
     fn unit(self, id: EntityId) -> Option<Self::Unit>;
     /// A player whose units the asker controls.
     fn player_facts(self, p: PlayerId) -> Option<PlayerFacts<'a>>;
-    /// What a target means to `owner`, and the entity it shows. The error
-    /// is a point outside its square.
+    /// What a target means to `owner`, and the entity it shows. A point
+    /// outside its square means nothing.
     fn resolve(
         self,
         owner: PlayerId,
         target: &TargetRef,
-    ) -> Res<Option<Resolved<Self::Target, Self::Entity>>>;
+    ) -> Option<Resolved<Self::Target, Self::Entity>>;
     /// Whether an order aims at a resolved target.
     fn aims_at(self, order: &Self::Order, target: &Self::Target) -> bool;
 }
@@ -276,14 +276,8 @@ impl<'a> Knowledge<'a> for &'a World {
         Some(self.facts(p))
     }
 
-    fn resolve(
-        self,
-        owner: PlayerId,
-        target: &TargetRef,
-    ) -> Res<Option<Resolved<Target, &'a Entity>>> {
-        let Some(t) = self.resolve_target(owner, target)? else {
-            return Ok(None);
-        };
+    fn resolve(self, owner: PlayerId, target: &TargetRef) -> Option<Resolved<Target, &'a Entity>> {
+        let t = self.resolve_target(owner, target)?;
         // The same entity as `World::t_entity`, borrowed from the world
         // rather than from the target: a remembered one is the owner's copy.
         let e = match &t {
@@ -295,10 +289,10 @@ impl<'a> Knowledge<'a> for &'a World {
                 .map(|r| &*r.snapshot),
             _ => None,
         };
-        Ok(Some(Resolved {
+        Some(Resolved {
             target: t,
             entity: e,
-        }))
+        })
     }
 
     fn aims_at(self, order: &Order, target: &Target) -> bool {
@@ -631,10 +625,14 @@ fn is_almost_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t: 
     {
         return false;
     }
-    // A deposit has no owner, hit points or orders: a mod that lists one
-    // among what a unit trains, builds or becomes cannot make one.
+    // Only a unit or a building can be made: a mod that lists a deposit,
+    // an upgrade or an ability among what a unit trains, builds or becomes
+    // cannot make one.
     if matches!(kw, Keyword::Train | Keyword::Build | Keyword::UpgradeTo)
-        && rules.ty(t).entity_class() == Some(EntityClass::Deposit)
+        && !rules
+            .ty(t)
+            .entity_class()
+            .is_some_and(EntityClass::is_creature)
     {
         return false;
     }
@@ -662,20 +660,17 @@ fn complex_is_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t:
 
 /// Whether a unit may receive an order now (`cls.is_allowed(unit,
 /// *args)`), with its type for `train`, `build`... A complex order
-/// without its type raises in the original.
+/// without its type is not allowed.
 pub(crate) fn is_order_allowed<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     kw: Keyword,
     t: Option<TypeId>,
-) -> Res<bool> {
+) -> bool {
     if kw.is_complex() {
-        let t = t.ok_or_else(|| {
-            Abort::new("is_allowed() missing 1 required positional argument: 'type_name'")
-        })?;
-        return Ok(complex_is_allowed(k, unit, kw, t));
+        return t.is_some_and(|t| complex_is_allowed(k, unit, kw, t));
     }
-    Ok(order_is_allowed(k, unit, kw))
+    order_is_allowed(k, unit, kw)
 }
 
 /// Whether a unit may receive an order without a type.
@@ -737,37 +732,12 @@ pub(crate) fn order_menu<'a, K: Knowledge<'a>>(
 
 // costs
 
-/// The type of a complex order: `footman` in `train footman`.
-pub(crate) fn complex_type(rules: &Rules, t: Option<TypeId>) -> Res<&UnitType> {
-    t.map(|t| rules.ty(t))
-        .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
-}
-
 /// The cost of a unit's type: zeros for building sites and others.
 pub(crate) fn entity_cost(rules: &Rules, unit: &impl EntityFacts) -> Vec<i64> {
     match unit.unit_type(rules) {
         Some(t) if !t.cost.is_empty() => t.cost.clone(),
         _ => vec![0; MAX_NB_OF_RESOURCE_TYPES],
     }
-}
-
-/// What an order of a unit costs in each resource. Upgrading to a type
-/// costs the difference with the unit's own type.
-pub(crate) fn order_cost(
-    rules: &Rules,
-    unit: &impl UnitFacts,
-    kw: Keyword,
-    type_id: Option<TypeId>,
-) -> Res<Vec<i64>> {
-    if !kw.is_complex() {
-        return Ok(priced_cost(rules, unit, None));
-    }
-    let t = complex_type(rules, type_id)?;
-    Ok(priced_cost(
-        rules,
-        unit,
-        Some((t, kw == Keyword::UpgradeTo)),
-    ))
 }
 
 /// What an order costs in each resource, from the type it pays for and
@@ -792,20 +762,6 @@ pub(crate) fn priced_cost(
     }
 }
 
-/// The food an order of a unit uses.
-pub(crate) fn order_food_cost(
-    rules: &Rules,
-    unit: &impl UnitFacts,
-    kw: Keyword,
-    type_id: Option<TypeId>,
-) -> Res<i64> {
-    if !kw.is_complex() {
-        return Ok(priced_food_cost(unit, None));
-    }
-    let t = complex_type(rules, type_id)?;
-    Ok(priced_food_cost(unit, Some((t, kw == Keyword::UpgradeTo))))
-}
-
 /// The food an order uses, as [`priced_cost`] reads its type.
 pub(crate) fn priced_food_cost(unit: &impl UnitFacts, priced: Option<(&UnitType, bool)>) -> i64 {
     match priced {
@@ -824,15 +780,19 @@ pub(crate) fn order_info(
     kw: Keyword,
     type_id: Option<TypeId>,
 ) -> Option<OrderInfo> {
-    let nb_args = if kw == Keyword::Use {
-        let t = complex_type(rules, type_id).ok()?;
-        usize::from(t.effect_target == ["ask"])
-    } else {
-        kw.nb_args()
+    // Upgrading to a type pays the difference with the unit's own type.
+    let priced = match (kw.is_complex(), type_id) {
+        (false, _) => None,
+        (true, Some(t)) => Some((rules.ty(t), kw == Keyword::UpgradeTo)),
+        (true, None) => return None,
+    };
+    let nb_args = match priced {
+        Some((t, _)) if kw == Keyword::Use => usize::from(t.effect_target == ["ask"]),
+        _ => kw.nb_args(),
     };
     Some(OrderInfo {
-        cost: order_cost(rules, unit, kw, type_id).ok()?,
-        food_cost: order_food_cost(rules, unit, kw, type_id).ok()?,
+        cost: priced_cost(rules, unit, priced),
+        food_cost: priced_food_cost(unit, priced),
         nb_args,
     })
 }
@@ -891,33 +851,28 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     target: &TargetRef,
-) -> Res<Option<Keyword>> {
-    let Some(p) = unit.owner() else {
-        return Err(Abort::new(
-            "'NoneType' object has no attribute 'get_object_by_id'",
-        ));
-    };
-    let Some(Resolved { target, entity: te }) = k.resolve(p, target)? else {
-        return Ok(None);
-    };
+) -> Option<Keyword> {
+    // A unit without an owner takes no order.
+    let p = unit.owner()?;
+    let Resolved { target, entity: te } = k.resolve(p, target)?;
     if te.is_some_and(|t| t.class() == EntityClass::Exit) {
-        return Ok(Some(Keyword::Block));
+        return Some(Keyword::Block);
     }
     if let Some(t) = te.filter(|t| t.owner() == Some(p)) {
         if have_enough_space(k, unit, &t) {
-            return Ok(Some(Keyword::Load));
+            return Some(Keyword::Load);
         }
         if let Some(transport) = k.unit(t.id())
             && transport.inside().is_some()
             && have_enough_space(k, transport, &unit)
         {
-            return Ok(Some(Keyword::Enter));
+            return Some(Keyword::Enter);
         }
     }
     if unit_basic_abilities(&unit).contains(&"gather")
         && te.is_some_and(|t| t.class() == EntityClass::Deposit)
     {
-        return Ok(Some(Keyword::Gather));
+        return Some(Keyword::Gather);
     }
     if let Some(t) = te {
         let rules = k.rules();
@@ -927,16 +882,16 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
             .is_some_and(|s| can_build.contains(&rules.ty(s).name));
         let repair_ok = t.is_repairable() && t.hp() < t.hp_max() && !can_build.is_empty();
         if (site_ok || repair_ok) && !is_an_enemy(k, unit, &target, te) {
-            return Ok(Some(Keyword::Repair));
+            return Some(Keyword::Repair);
         }
     }
     if order_is_allowed(k, unit, Keyword::RallyingPoint) {
-        return Ok(Some(Keyword::RallyingPoint));
+        return Some(Keyword::RallyingPoint);
     }
     if order_is_allowed(k, unit, Keyword::Go) {
-        return Ok(Some(Keyword::Go));
+        return Some(Keyword::Go);
     }
-    Ok(None)
+    None
 }
 
 // what a player sees

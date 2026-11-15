@@ -104,15 +104,28 @@ fn a_word_names_a_target_as_the_original_read_it() {
     for nothing in ["007", "+7", "", "None", "foo", "-1", "4294967296"] {
         assert_eq!(parse(nothing), Ok(TargetRef::Nothing), "{nothing:?}");
     }
+    let negative = format!("zoom-{id}--1-0");
     let refused = [
-        ("zoom", "not enough values to unpack"),
-        ("zoom-a1-1", "not enough values to unpack"),
-        (&format!("zoom-{id}--1-0"), "not enough values to unpack"),
-        ("zoom-999999-1-2", "object has no attribute 'title'"),
-        ("zoom-a1-x-2", "invalid literal for int()"),
+        ("zoom", "\"zoom\" is not zoom-<square>-<x>-<y>".to_owned()),
+        (
+            "zoom-a1-1",
+            "\"zoom-a1-1\" is not zoom-<square>-<x>-<y>".to_owned(),
+        ),
+        (
+            &negative,
+            format!("{negative:?} is not zoom-<square>-<x>-<y>"),
+        ),
+        (
+            "zoom-999999-1-2",
+            "\"zoom-999999-1-2\" names no square".to_owned(),
+        ),
+        (
+            "zoom-a1-x-2",
+            "\"x\" in \"zoom-a1-x-2\" is not a number".to_owned(),
+        ),
     ];
     for (word, error) in refused {
-        assert_eq!(parse(word), Err(Abort::new(error)), "{word:?}");
+        assert_eq!(parse(word), Err(error), "{word:?}");
     }
 }
 
@@ -141,7 +154,7 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     let outside = (h.xmax, h.y);
     // A target has no equality but identity: compare what it shows.
     let resolve = |w: &World, t| format!("{:?}", w.resolve_target(me, &t));
-    let ok = |t: Option<Target>| format!("{:?}", Ok::<_, Abort>(t));
+    let ok = |t: Option<Target>| format!("{t:?}");
     let zoom = |(x, y)| {
         Target::Zoom(ZoomTarget {
             place: s,
@@ -158,15 +171,13 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     assert_eq!(resolve(&w, point), ok(Some(zoom(inside))));
     let (x, y) = outside;
     let point = TargetRef::Point { square: s, x, y };
-    assert_eq!(
-        w.resolve_target(me, &point).unwrap_err(),
-        Abort::new("the zoom is outside its square")
-    );
+    // A point outside its square means nothing.
+    assert!(w.resolve_target(me, &point).is_none());
     assert_eq!(
         resolve(&w, TargetRef::Entity(peasant)),
         ok(Some(Target::Entity(peasant)))
     );
-    match w.resolve_target(me, &TargetRef::Entity(seen)).unwrap() {
+    match w.resolve_target(me, &TargetRef::Entity(seen)) {
         Some(Target::Memory(m)) => assert_eq!((m.owner, m.snapshot.id), (me, seen)),
         other => panic!("{other:?}"),
     }
@@ -175,7 +186,7 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     // Orders compare targets by identity: a remembered entity is the
     // entity, a point the player gave is its square and coordinates, and a
     // subsquare the simulation chose has none.
-    let remembered = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
+    let remembered = w.resolve_target(me, &TargetRef::Entity(seen));
     assert_eq!(
         remembered.and_then(|t| t.identity()),
         Some(TargetIdentity::Entity(seen))
@@ -214,8 +225,8 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
         assert_eq!(by_text, resolve(&w, t), "{t:?}");
     }
     let read_back = TargetRef::parse(&w, &seen.to_string()).unwrap();
-    let by_text = w.resolve_target(me, &read_back).unwrap().unwrap();
-    let typed = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
+    let by_text = w.resolve_target(me, &read_back).unwrap();
+    let typed = w.resolve_target(me, &TargetRef::Entity(seen));
     assert!(by_text.same(&typed.unwrap()));
 }
 
@@ -410,7 +421,7 @@ fn a_place_inside_a_unit_is_no_target() {
     let t = w.place_target(Place::Inside(transport));
     assert_eq!(t, TargetRef::Nothing);
     assert_eq!(Request::go(t).words(&w), words(&["go", "None"]));
-    assert!(w.resolve_target(me, &t).unwrap().is_none());
+    assert!(w.resolve_target(me, &t).is_none());
 }
 
 // Units that change hands or change type, given orders as a player does.
@@ -652,21 +663,25 @@ fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
 }
 
 #[test]
-fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
-    let extra = "def townhall\ncan_train peasant goldmine\ncan_upgrade_to keep goldmine\n\
-                 def peasant\ncan_build farm goldmine\n";
+fn a_deposit_an_upgrade_or_an_ability_listed_as_a_product_is_never_made() {
+    let extra = "def townhall\ncan_train peasant goldmine u_recall\n\
+                 can_upgrade_to keep goldmine a_recall\n\
+                 def peasant\ncan_build farm goldmine a_recall\n";
     let (mut w, a, _) = two_humans(extra);
     w.queue_command(a, "cmd add_units a1 townhall barracks peasant");
     w.update();
     let townhall = find(&w, a, "townhall");
     let peasant = find(&w, a, "peasant");
-    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t)).unwrap();
+    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t));
     assert!(allowed(&w, townhall, Keyword::Train, "peasant"));
     assert!(!allowed(&w, townhall, Keyword::Train, "goldmine"));
     assert!(allowed(&w, townhall, Keyword::UpgradeTo, "keep"));
     assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "goldmine"));
     assert!(allowed(&w, peasant, Keyword::Build, "farm"));
     assert!(!allowed(&w, peasant, Keyword::Build, "goldmine"));
+    assert!(!allowed(&w, townhall, Keyword::Train, "u_recall"));
+    assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "a_recall"));
+    assert!(!allowed(&w, peasant, Keyword::Build, "a_recall"));
     let resources = w.pl(a).resources.clone();
     order(&mut w, a, &[townhall], "train goldmine");
     w.update();
@@ -778,4 +793,412 @@ fn a_ship_trained_with_no_water_near_is_refunded_and_impossible() {
         [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
     );
     assert!(all(&w, a, "boat").is_empty());
+}
+
+/// What a unit says in the turn after an order, and its orders then.
+fn after_order(
+    w: &mut World,
+    p: PlayerId,
+    u: EntityId,
+    words: &str,
+) -> (Vec<EntityEvent>, Vec<Keyword>) {
+    entity_events(w, p);
+    w.queue(p, crate::Command::Control(vec![u]));
+    w.queue_command(p, &format!("order 0 1 {words}"));
+    w.update();
+    let events = entity_events(w, p)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_) | EntityEvent::OrderOk))
+        .collect();
+    (events, w.e(u).orders().iter().map(Order::keyword).collect())
+}
+
+#[test]
+fn an_order_without_its_target_is_impossible_at_once_and_one_aimed_off_its_square_aims_at_nothing()
+{
+    // A footman that may also use an ability aimed at a target.
+    let (mut w, a, _) = two_humans("def footman\ncan_use a_holy_vision\n");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square(w.square_by_name("a1").unwrap());
+    let (id, corner) = (a1.id, (a1.xmin + 500, a1.ymin + 500));
+    let near = format!("go zoom-{id}-{}-{}", corner.0, corner.1);
+    let (events, kept) = after_order(&mut w, a, footman, &near);
+    assert_eq!(
+        (events, kept.clone()),
+        (vec![EntityEvent::OrderOk], vec![Keyword::Go])
+    );
+    let impossible = vec![EntityEvent::OrderImpossible(None)];
+    // Refused before anything changes: the order in the queue stays.
+    for words in ["go", "attack", "patrol", "join_group", "use a_holy_vision"] {
+        let refused = after_order(&mut w, a, footman, words);
+        assert_eq!(refused, (impossible.clone(), kept.clone()), "{words}");
+    }
+    // A point off its square aims at nothing, as a target that died: the
+    // order replaces the queue and is impossible.
+    let far = format!("go zoom-{id}-{}-0", i64::MAX);
+    assert_eq!(after_order(&mut w, a, footman, &far), (impossible, vec![]));
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn entering_a_square_or_a_deposit_is_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let gold = w.rules.type_id("goldmine").unwrap();
+    let mine = w.create_deposit(gold, a1, 75_000).unwrap();
+    w.update();
+    let impossible = (vec![EntityEvent::OrderImpossible(None)], vec![]);
+    let square = format!("enter {}", w.square(a1).id);
+    assert_eq!(after_order(&mut w, a, footman, &square), impossible);
+    assert_eq!(
+        after_order(&mut w, a, footman, &format!("enter {mine}")),
+        impossible
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_unit_killed_by_or_dying_without_an_owner_is_removed() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let (x, y) = (w.square(a1).x, w.square(a1).y);
+    let t = w.rules.type_id("footman").unwrap();
+    let ownerless = w.create_creature(t, None, Place::Square(a1), x, y).unwrap();
+    w.cm(footman).unwrap().hp = 1;
+    w.hit(ownerless, footman);
+    assert_eq!(w.e(footman).place, None);
+    assert!(!w.pl(a).units.contains(&footman));
+    // Its time is up: it dies at the next slow update.
+    w.cm(ownerless).unwrap().time_limit = Some(w.time);
+    for _ in 0..4 {
+        w.update();
+    }
+    assert_eq!(w.e(ownerless).place, None);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
+    let (w, me, _) = game();
+    let mut w = w;
+    let s = home(&w, me);
+    let (d, plain) = (0..w.squares.len())
+        .map(|i| SquareId(i as u32))
+        .filter(|&d| d != s)
+        .find_map(|d| {
+            let plain = w
+                .shortest_path_distance_to(s, d, Some(me), AirGround::Ground, false)
+                .unwrap();
+            (plain < crate::INF).then_some((d, plain))
+        })
+        .unwrap();
+    assert_eq!(
+        w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(plain)
+    );
+    w.plm(me).enemy_menace.insert(d, 1);
+    w.plm(me).enemy_presence.push(d);
+    // A new turn: the paths found this turn are kept.
+    w.time += crate::VIRTUAL_TIME_INTERVAL;
+    assert_eq!(
+        w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(crate::INF)
+    );
+    assert_eq!(
+        w.shortest_path_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(None)
+    );
+}
+
+#[test]
+fn an_effect_the_rules_cannot_apply_is_dropped_when_they_load_and_its_research_has_none() {
+    let extra = "def u_bad\nclass upgrade\neffect bonus nosuchstat 1\n\
+                 def a_bad\nclass ability\neffect summon soon footman\n\
+                 def footman\ncan_use u_bad\n";
+    let (mut w, a, b) = two_humans(extra);
+    for name in ["u_bad", "a_bad"] {
+        assert_eq!(w.rules.unit_type(name).unwrap().effect, None, "{name}");
+    }
+    assert!(
+        w.rules
+            .warnings
+            .contains(&"in u_bad: the effect 'bonus nosuchstat 1' cannot be applied".to_owned())
+    );
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let stats = w.e(footman).stats.clone();
+    let bad = w.rules.type_id("u_bad").unwrap();
+    assert_eq!(w.upgrade_player(bad, a), Ok(()));
+    assert_eq!(w.pl(a).upgrades.level(bad), 1);
+    assert_eq!(w.e(footman).stats, stats);
+    // An ally's research that is not an upgrade, as a mod may allow, is
+    // copied with no effect.
+    w.plm(a).allied.push(b);
+    w.plm(b).allied.push(a);
+    let peasant = w.rules.type_id("peasant").unwrap();
+    w.plm(b).upgrades.add(peasant);
+    w.update();
+    assert_eq!(w.pl(a).upgrades.level(peasant), 1);
+    assert_eq!(w.e(footman).stats, stats);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn danger_waiting_and_warehouses_have_answers_for_every_unit_and_player() {
+    // A mod whose footman stores gold.
+    let (mut w, a, _) = two_humans("def footman\nstorable_resource_types 0\n");
+    w.queue_command(a, "cmd add_units a1 footman new_flyingmachine");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    // A unit is not a way into danger.
+    assert!(!w.is_very_dangerous(a, &Target::Entity(footman)));
+    // A player without a script never gives the signal to stop waiting.
+    assert!(!w.time_has_come(a, Some(&Target::Square(a1))));
+    // A warehouse inside a transport is out of reach.
+    assert_eq!(
+        w.nearest_warehouse(a, Place::Square(a1), 0, false),
+        Ok(Some(footman))
+    );
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    assert_eq!(w.e(footman).place, Some(Place::Inside(machine)));
+    assert_eq!(
+        w.nearest_warehouse(a, Place::Square(a1), 0, false),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_block_whose_exit_is_lost_and_a_teleport_at_a_unit_inside_are_impossible() {
+    let (mut w, me, _) = game();
+    let s = home(&w, me);
+    let footman = add(&mut w, "footman", me, s);
+    w.update();
+    let exit = w.square(s).exits[0];
+    w.queue(me, crate::Command::Control(vec![footman]));
+    w.queue_command(me, &format!("order 0 0 block {exit}"));
+    w.update();
+    let uid = w.e(footman).orders()[0].uid;
+    // The exit is no longer perceived nor remembered.
+    w.set_target(footman, uid, None);
+    entity_events(&mut w, me);
+    w.update();
+    assert_eq!(w.e(footman).orders()[0].progress(), Progress::Impossible);
+    let events = entity_events(&mut w, me);
+    assert!(
+        events.contains(&EntityEvent::OrderImpossible(None)),
+        "{events:?}"
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+
+    let extra = "def mage\ncan_use a_tp\n\
+                 def a_tp\nclass ability\neffect teleportation\neffect_target ask\neffect_range 100\n";
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 mage");
+    w.queue_command(a, "cmd add_units b1 footman new_flyingmachine");
+    w.update();
+    let (mage, footman) = (find(&w, a, "mage"), find(&w, a, "footman"));
+    // The footman is in the machine when the teleport is given.
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    entity_events(&mut w, a);
+    order(&mut w, a, &[mage], &format!("use a_tp {footman}"));
+    w.update();
+    let events = entity_events(&mut w, a);
+    assert!(
+        events.contains(&EntityEvent::OrderImpossible(None)),
+        "{events:?}"
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
+    w.update();
+    let machine = find(&w, a, "new_flyingmachine");
+    let b1 = w.square(w.square_by_name("b1").unwrap());
+    let (bx, by) = (b1.x, b1.y);
+    // A move toward a point of another square, as a portal leaves it.
+    w.cm(machine).unwrap().action = Some(crate::entity::Action {
+        kind: crate::entity::ActionKind::Move,
+        target: Some(Target::Xy(bx, by)),
+    });
+    let x = w.e(machine).x;
+    assert_eq!(w.action_update(machine), Ok(()));
+    assert!(w.e(machine).x > x);
+    // A footman just out of the machine, on a very dangerous square, still
+    // moving toward a safe one.
+    let footman = find(&w, a, "footman");
+    let (a1, b1) = (
+        w.square_by_name("a1").unwrap(),
+        w.square_by_name("b1").unwrap(),
+    );
+    w.em(footman).previous_place = Some(Place::Inside(machine));
+    w.set_action_target(footman, Some(Target::Square(b1)));
+    w.plm(a).enemy_menace.insert(a1, 1);
+    w.plm(a).enemy_presence.push(a1);
+    assert_eq!(w.auto_explore(footman), Ok(()));
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == b1));
+}
+
+#[test]
+fn an_attack_on_a_unit_inside_a_transport_is_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 archer footman new_flyingmachine");
+    w.update();
+    let (archer, footman) = (find(&w, a, "archer"), find(&w, a, "footman"));
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    let hp = w.c(footman).unwrap().hp;
+    order(&mut w, a, &[archer], &format!("attack {footman}"));
+    for _ in 0..5 {
+        w.update();
+    }
+    assert!(w.e(archer).orders().is_empty());
+    assert_eq!(w.c(footman).unwrap().hp, hp);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+/// Fills the air around an entity of `p` with flying machines of `p`, and
+/// returns them.
+fn fill_the_air(w: &mut World, p: PlayerId, around: EntityId) -> Vec<EntityId> {
+    let t = w.rules.type_id("new_flyingmachine").unwrap();
+    let e = w.e(around);
+    let (place, x, y) = (e.place.unwrap(), e.x, e.y);
+    let mut machines = Vec::new();
+    while let Ok(m) = w.create_creature(t, Some(p), place, x, y) {
+        machines.push(m);
+    }
+    machines
+}
+
+#[test]
+fn a_flying_building_finished_in_a_full_sky_waits_for_room() {
+    let (mut w, a, _) = two_humans("def farm\nairground_type air\nis_buildable_anywhere 1\n");
+    w.queue_command(a, "cmd add_units a1 townhall peasant");
+    w.update();
+    let peasant = find(&w, a, "peasant");
+    let a1 = w.square(w.square_by_name("a1").unwrap()).id;
+    order(&mut w, a, &[peasant], &format!("build farm {a1}"));
+    w.update();
+    update_until(&mut w, |w| !all(w, a, "buildingsite").is_empty());
+    let site = all(&w, a, "buildingsite")[0];
+    let machines = fill_the_air(&mut w, a, site);
+    for _ in 0..300 {
+        w.update();
+    }
+    assert_eq!(all(&w, a, "buildingsite").len(), 1);
+    assert!(all(&w, a, "farm").is_empty());
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+    for m in machines {
+        w.delete(m);
+    }
+    update_until(&mut w, |w| !all(w, a, "farm").is_empty());
+    assert!(all(&w, a, "buildingsite").is_empty());
+}
+
+#[test]
+fn an_upgrade_to_a_flying_type_in_a_full_sky_is_refunded_and_says_why() {
+    let (mut w, a, _) = two_humans("def guardtower\nairground_type air\n");
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    fill_the_air(&mut w, a, tower);
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| w.e(tower).orders().is_empty());
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    assert_eq!(all(&w, a, "scouttower"), [tower]);
+    assert!(all(&w, a, "guardtower").is_empty());
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
+    let (mut w, me, _) = game();
+    w.plm(me).resources = vec![1000 * crate::nofloat::PRECISION; 2];
+    // The player perceives its square.
+    w.update();
+    let s = home(&w, me);
+    let peasant = find(&w, me, "peasant");
+    let meadow = w
+        .square(s)
+        .objects
+        .iter()
+        .copied()
+        .find(|&o| w.e(o).is_a_building_land());
+    let meadow = meadow.unwrap();
+    // Queued, not yet carried out.
+    let before = w.pl(me).resources.clone();
+    let build = Request::build("farm", TargetRef::Entity(meadow));
+    w.take_order(peasant, build, true, false, None).unwrap();
+    assert_ne!(w.pl(me).resources, before, "the build reserves its cost");
+    let uid = w.e(peasant).orders()[0].uid;
+    // The player remembers the meadow; another building takes it earlier
+    // in this turn, after the player's memory was brought up to date.
+    let snapshot = std::sync::Arc::new(w.e(meadow).clone());
+    let remembered = crate::player::Remembrance {
+        time_stamp: w.time,
+        snapshot: snapshot.clone(),
+    };
+    w.plm(me).memory.insert(meadow, remembered);
+    let memory = crate::entity::MemoryRef {
+        owner: me,
+        snapshot,
+    };
+    w.set_target(peasant, uid, Some(Target::Memory(memory)));
+    w.delete(meadow);
+    entity_events(&mut w, me);
+    assert_eq!(w.order_execute(peasant, uid), Ok(()));
+    assert_eq!(w.e(peasant).orders()[0].progress(), Progress::Impossible);
+    let events = entity_events(&mut w, me);
+    let refused = EntityEvent::OrderImpossible(Some(Reason::CannotBuildHere));
+    assert!(events.contains(&refused), "{events:?}");
+    assert!(all(&w, me, "buildingsite").is_empty());
+    assert_eq!(w.pl(me).resources, before);
+}
+
+#[test]
+fn a_trigger_order_with_an_unreadable_choice_gives_no_order() {
+    use crate::triggers::Expr;
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 townhall farm");
+    w.update();
+    let townhall = find(&w, a, "townhall");
+    let resources = w.pl(a).resources.clone();
+    let word = |s: &str| Expr::Word(s.to_owned());
+    // `(order (a1 townhall ()) ((train peasant)))`: the empty list comes
+    // after the town hall is chosen.
+    let select = Expr::List(vec![word("a1"), word("townhall"), Expr::List(vec![])]);
+    let orders = Expr::List(vec![Expr::List(vec![word("train"), word("peasant")])]);
+    let stopped = w.lang(a, "order", &[select, orders]);
+    assert_eq!(
+        stopped,
+        Err(crate::abort::Abort::Trigger(
+            crate::abort::TriggerError::ListForWord
+        ))
+    );
+    assert!(w.e(townhall).orders().is_empty());
+    assert_eq!(w.pl(a).resources, resources);
 }

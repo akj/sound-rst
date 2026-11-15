@@ -403,7 +403,7 @@ fn the_default_order_is_the_worlds() {
         (OrderTarget::Entity(townhall), None),
     ];
     for (target, expected) in cases {
-        assert_eq!(v.default_order(peasant, target), Ok(expected));
+        assert_eq!(v.default_order(peasant, target), expected);
     }
 }
 

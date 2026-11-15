@@ -80,6 +80,7 @@ pub mod msgparts;
 
 pub mod defs;
 
+mod abort;
 mod ai;
 pub mod change;
 pub mod collision;
@@ -145,13 +146,13 @@ pub use record::{Record, RecordedTurn, ReplayError};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;
-pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
+pub use world::{DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
 /// the digest of a world (`World::digest_u64`).
-pub const SIM_VERSION: u32 = 12;
+pub const SIM_VERSION: u32 = 13;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.

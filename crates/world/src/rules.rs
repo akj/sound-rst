@@ -1604,7 +1604,46 @@ fn build_type(
             }
         }
     }
+    t.effect = readable_effect(name, base, t.effect.take(), warnings);
     t
+}
+
+/// The effect of an upgrade or an ability, if the simulation can apply it.
+/// One it cannot read is dropped with a warning: an upgrade without an
+/// effect has none, and an ability without one is never allowed.
+fn readable_effect(
+    name: &str,
+    base: BaseClass,
+    effect: Option<Vec<String>>,
+    warnings: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    let effect = effect?;
+    let stat = |i: usize| {
+        effect
+            .get(i)
+            .is_some_and(|s| Stats::default().get(s).is_some())
+    };
+    let integer = |i: usize| effect.get(i).is_some_and(|s| py_int(s).is_ok());
+    let readable = match (base, effect.first().map(String::as_str)) {
+        (BaseClass::Upgrade, Some("bonus")) => {
+            stat(1) && integer(2) && (effect.len() < 4 || integer(3))
+        }
+        (BaseClass::Upgrade, Some("apply_bonus")) => stat(1),
+        (BaseClass::Upgrade, _) => false,
+        (BaseClass::Ability, Some("summon" | "raise_dead")) => {
+            effect.get(1).is_some_and(|s| to_int(s).is_ok())
+        }
+        (BaseClass::Ability, Some("resurrection")) => integer(1),
+        _ => true,
+    };
+    if readable {
+        return Some(effect);
+    }
+    warnings.push(format!(
+        "in {name}: the effect '{}' cannot be applied",
+        effect.join(" ")
+    ));
+    None
 }
 
 /// The computer player scripts of `ai.txt`, by name, in definition order.

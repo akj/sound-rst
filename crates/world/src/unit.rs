@@ -1,6 +1,7 @@
 //! What units, buildings, deposits and corpses do (`worldunit.py`,
 //! `worldaction.py`, `worldresource.py`, `worldupgrade.py`).
 
+use crate::abort::{Invariant, Res};
 use crate::entity::{
     Action, ActionKind, AiMode, Corpse, Creature, CreatureKind, Deposit, Entity, EntityId, Kind,
     Place, PlayerId, SiteData, SquareId, Target,
@@ -16,7 +17,7 @@ use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
-use crate::world::{Abort, NotEnoughSpace, Res, TPlace, World};
+use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
 pub const DISTANCE_MARGIN: i64 = 175;
@@ -151,16 +152,14 @@ impl World {
         Ok(id)
     }
 
-    /// Creates a deposit with a quantity written as in a map.
+    /// Creates a deposit of a quantity, in thousandths.
     pub(crate) fn create_deposit(
         &mut self,
         type_id: TypeId,
         square: SquareId,
-        qty: &str,
-    ) -> Res<EntityId> {
+        q: i64,
+    ) -> Result<EntityId, NotEnoughSpace> {
         let t = self.rules.ty(type_id);
-        let q = crate::nofloat::to_int(qty)
-            .map_err(|_| Abort::new(format!("could not convert string to float: {qty:?}")))?;
         let deposit = Deposit {
             type_id,
             qty_max: q,
@@ -172,9 +171,8 @@ impl World {
         e.airground_type = t.airground_type;
         e.stats.qty = q;
         let place = Place::Square(square);
-        let (x, y) = self
-            .initial_position(e.stats.collision != 0, e.airground_type, place, None)
-            .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+        let (x, y) =
+            self.initial_position(e.stats.collision != 0, e.airground_type, place, None)?;
         Ok(self.insert_entity(e, place, x, y, 90))
     }
 
@@ -261,8 +259,8 @@ impl World {
         let (fp, fc) = (self.e(id).stats.food_provided, self.e(id).stats.food_cost);
         self.plm(p).food += fp;
         self.plm(p).used_food += fc;
-        if let Err(Abort(m)) = self.upgrade_to_player_level(id) {
-            self.warn(m);
+        if let Err(e) = self.upgrade_to_player_level(id) {
+            self.warn_stopped("upgrade", &self.what(id), &e);
         }
         for u in self.pl(p).units.clone() {
             if matches!(self.e(u).action_target(), Some(Target::Entity(t)) if *t == id) {
@@ -308,6 +306,10 @@ impl World {
             let Some(upg) = self.rules.type_id(&name) else {
                 continue;
             };
+            // An ability has no level; a mod may research one, to no effect.
+            if !self.rules.ty(upg).is_upgrade() {
+                continue;
+            }
             for level in 0..self.pl(p).upgrades.level(upg) {
                 self.apply_upgrade_effect(upg, id, i64::from(level))?;
             }
@@ -322,10 +324,16 @@ impl World {
     }
 
     /// `Upgrade.upgrade_player`: applies the upgrade to the player's units
-    /// that can use it, then records it.
+    /// that can use it, then records it. What a mod researches that is not
+    /// an upgrade is recorded, with no effect.
     pub(crate) fn upgrade_player(&mut self, upgrade: TypeId, p: PlayerId) -> Res {
         let level = i64::from(self.pl(p).upgrades.level(upgrade));
-        for u in self.pl(p).units.clone() {
+        let units = if self.rules.ty(upgrade).is_upgrade() {
+            self.pl(p).units.clone()
+        } else {
+            Vec::new()
+        };
+        for u in units {
             if self
                 .can_use(u)
                 .iter()
@@ -339,23 +347,19 @@ impl World {
     }
 
     fn apply_upgrade_effect(&mut self, upgrade: TypeId, unit: EntityId, start_level: i64) -> Res {
-        let t = self.rules.ty(upgrade);
-        let upgrade = &t.name;
-        let effect = t
-            .effect
-            .clone()
-            .ok_or_else(|| Abort::new(format!("{upgrade} has no effect")))?;
-        let arg = |i: usize| -> Res<&String> {
-            effect
-                .get(i)
-                .ok_or_else(|| Abort::new(format!("missing argument in effect of {upgrade}")))
+        // An upgrade without an effect has none. The rules drop an effect
+        // they cannot read, so what follows reads one they could.
+        let Some(effect) = self.rules.ty(upgrade).effect.clone() else {
+            return Ok(());
         };
+        let arg = |i: usize| -> Res<&String> { Ok(effect.get(i).ok_or(Invariant::EffectUnread)?) };
+        let int = |s: &str| -> Res<i64> { Ok(py_int(s).map_err(|_| Invariant::EffectUnread)?) };
         match effect.first().map(String::as_str) {
             Some("bonus") => {
                 let stat = arg(1)?.clone();
-                let base = py_int(arg(2)?).map_err(|_| Abort::new("invalid bonus"))?;
+                let base = int(arg(2)?)?;
                 let incr = match effect.get(3) {
-                    Some(s) => py_int(s).map_err(|_| Abort::new("invalid bonus"))?,
+                    Some(s) => int(s)?,
                     None => 0,
                 };
                 self.effect_bonus(unit, start_level, &stat, base, incr)
@@ -374,7 +378,7 @@ impl World {
                 }
                 Ok(())
             }
-            other => Err(Abort::new(format!("unknown upgrade effect {other:?}"))),
+            _ => Err(Invariant::EffectUnread.into()),
         }
     }
 
@@ -387,10 +391,7 @@ impl World {
         incr: i64,
     ) -> Res {
         let e = self.em(unit);
-        let v = e
-            .stats
-            .get_mut(stat)
-            .ok_or_else(|| Abort::new(format!("no attribute {stat}")))?;
+        let v = e.stats.get_mut(stat).ok_or(Invariant::EffectUnread)?;
         *v += base + incr * start_level;
         if stat == "damage"
             && let Some(c) = e.creature_mut()
@@ -471,7 +472,7 @@ impl World {
         let ph = match e.place {
             Some(Place::Square(s)) => self.square(s).height(),
             Some(Place::Inside(c)) => self.height_of(self.e(c))?,
-            None => return Err(Abort::new("'NoneType' object has no attribute 'height'")),
+            None => return Err(Invariant::Unplaced.into()),
         };
         Ok(ph + e.stats.bonus_height)
     }
@@ -671,9 +672,7 @@ impl World {
             return Ok(false);
         }
         if !matches!(e.place, Some(Place::Square(_))) {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'would_collide'",
-            ));
+            return Err(Invariant::ActingInside.into());
         }
         Ok(self
             .collision(e.airground_type)
@@ -769,7 +768,7 @@ impl World {
             return Ok(());
         }
         let Some(Place::Square(place)) = e.place else {
-            return Err(Abort::new("'Inside' object has no attribute 'x'"));
+            return Err(Invariant::ActingInside.into());
         };
         let smart = e.player().is_some_and(|p| self.pl(p).smart_units());
         let t = if smart {
@@ -804,7 +803,7 @@ impl World {
     /// `_near_enough_to_aim`.
     pub(crate) fn near_enough_to_aim(&mut self, id: EntityId, target: &Target) -> Res<bool> {
         let Some(t) = self.t_entity(target) else {
-            return Err(Abort::new("the target is not an entity"));
+            return Err(Invariant::AimAtNoEntity.into());
         };
         let target_blocks = t.blocked_exit().is_some();
         let e = self.e(id);
@@ -1050,9 +1049,8 @@ impl World {
         if same_place {
             self.action_reach_and_stop(id)
         } else if matches!(self.e(id).airground_type, AirGround::Air | AirGround::Water) {
-            if let Target::Xy(..) = target {
-                return Err(Abort::new("'tuple' object has no attribute 'x'"));
-            }
+            // A point is the center of a portal's other side where the unit
+            // could not go through.
             let (x, y) = self.t_xy(&target);
             self.go_to_xy(id, x, y)?;
             Ok(())
@@ -1232,7 +1230,7 @@ impl World {
                 Ok(())
             }
             Kind::Corpse(_) => Ok(()),
-            Kind::Meadow | Kind::Exit(_) => Err(Abort::new("this entity has no attribute 'die'")),
+            Kind::Meadow | Kind::Exit(_) => Err(Invariant::LandDies.into()),
         }
     }
 
@@ -1252,23 +1250,21 @@ impl World {
             }
         }
         self.notify(id, EntityEvent::Death, false);
-        let Some(p) = self.e(id).player() else {
-            return Err(Abort::new("'NoneType' object has no attribute 'stats'"));
-        };
+        // A unit without an owner loses nothing to count, and a killer
+        // without one (dead itself, or never owned) gains nothing: the unit
+        // dies all the same.
+        let p = self.e(id).player();
         let st = self.e(id).stat_type();
-        if let Some(st) = st {
+        if let (Some(p), Some(st)) = (p, st) {
             self.plm(p).stats.add(StatEvent::Lost, st.into(), 1);
         }
         if let Some(a) = attacker {
             self.notify(id, EntityEvent::DeathBy(a), false);
-            self.on_unit_attacked(p, id, a);
-            match self.e(a).player() {
-                Some(ap) => {
-                    if let Some(st) = st {
-                        self.plm(ap).stats.add(StatEvent::Killed, st.into(), 1);
-                    }
-                }
-                None => return Err(Abort::new("'NoneType' object has no attribute 'stats'")),
+            if let Some(p) = p {
+                self.on_unit_attacked(p, id, a);
+            }
+            if let (Some(ap), Some(st)) = (self.e(a).player(), st) {
+                self.plm(ap).stats.add(StatEvent::Killed, st.into(), 1);
             }
         }
         self.delete(id);
@@ -1382,8 +1378,9 @@ impl World {
         if !self.pl(p).perception.contains(oid) {
             return false;
         }
+        // A unit inside another is out of reach: its transport is not.
         let o = self.e(*oid);
-        if o.place.is_none() || o.creature().is_some_and(|c| c.hp < 0) {
+        if !matches!(o.place, Some(Place::Square(_))) || o.creature().is_some_and(|c| c.hp < 0) {
             return false;
         }
         let kind = o.airground_type.ground_or_air();
@@ -1672,8 +1669,8 @@ impl World {
         let base = self.base_damage_versus_of(a, t);
         let minimal = a.creature().map_or(0, |c| c.minimal_damage);
         let damage = minimal.max(base - self.armor_versus_of(t, a));
-        if let Err(Abort(m)) = self.receive_hit(target, damage, id, true) {
-            self.warn(m);
+        if let Err(e) = self.receive_hit(target, damage, id, true) {
+            self.warn_stopped("hit", &self.what(target), &e);
         }
     }
 
@@ -1727,9 +1724,7 @@ impl World {
     fn chance_to_hit_res(&self, id: EntityId, target: EntityId) -> Res<i64> {
         let (e, t) = (self.e(id), self.e(target));
         let (Some(ep), Some(tp)) = (e.place, t.place) else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'high_ground'",
-            ));
+            return Err(Invariant::Unplaced.into());
         };
         let high_ground = !self.place_high_ground(ep)
             && self.place_high_ground(tp)
@@ -1739,9 +1734,7 @@ impl World {
         let mut result = if high_ground { 50 } else { 100 };
         if !e.is_melee() {
             let Place::Square(ts) = tp else {
-                return Err(Abort::new(
-                    "'Inside' object has no attribute 'terrain_cover'",
-                ));
+                return Err(Invariant::HitInside.into());
             };
             let cover = self.square(ts).terrain_cover;
             let c = if t.airground_type != AirGround::Air {
@@ -1863,14 +1856,33 @@ impl World {
             if site.timer == 0 {
                 let site = site.clone();
                 let e = self.e(id);
-                let (player, place, x, y) = (e.player(), e.place, e.x, e.y);
+                let (player, x, y) = (e.player(), e.x, e.y);
+                let place = e.place.ok_or(Invariant::SiteWithoutPlace)?;
                 let blocked_exit = e.blocked_exit();
                 let land = e.building_land();
+                // A site holds room on the ground. A mod's building in
+                // another layer may find that layer full: it then waits,
+                // finished, until there is room for it.
+                let bt = self.rules.ty(site.building_type);
+                let (collision, airground) = (bt.stats.collision != 0, bt.airground_type);
+                let room_freed = e.stats.collision != 0 && e.airground_type == airground;
+                if !room_freed
+                    && self
+                        .initial_position(collision, airground, place, Some((x, y)))
+                        .is_err()
+                {
+                    if let Some(CreatureKind::BuildingSite(s)) = self.cm(id).map(|c| &mut c.kind) {
+                        s.timer = 1;
+                    }
+                    return Ok(());
+                }
                 self.delete(id);
-                let place = place.ok_or_else(|| Abort::new("the building site has no place"))?;
+                // The site's spot was just freed in the building's layer, or
+                // room was found above; and the building's type is a
+                // creature's: only those can be ordered built.
                 let b = self
                     .create_creature(site.building_type, player, place, x, y)
-                    .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+                    .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
                 // `b` was just created as a creature.
                 if let Some(c) = self.cm(b) {
                     c.building_land = land;
@@ -2010,7 +2022,7 @@ impl World {
                 }
                 *s
             }
-            Target::Xy(..) => return Err(Abort::new("'tuple' object has no attribute 'place'")),
+            Target::Xy(..) => return Err(Invariant::OrderAimsAtCoordinates.into()),
             _ => match self.t_place(target) {
                 TPlace::Nowhere => return Ok(None),
                 TPlace::World => return Ok(None),
@@ -2098,7 +2110,7 @@ impl World {
         let i = self
             .random
             .choice_index(self.squares.len())
-            .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
+            .ok_or(Invariant::NoSquare)?;
         let stage = self.next_stage(id, Some(&Target::Square(SquareId(i as u32))), false)?;
         self.set_action_target(id, stage);
         Ok(())
@@ -2108,7 +2120,7 @@ impl World {
     /// squares to watch, then anywhere, avoiding danger.
     pub(crate) fn auto_explore(&mut self, id: EntityId) -> Res {
         let Some(p) = self.e(id).player() else {
-            return Err(Abort::new("AssertionError"));
+            return Ok(());
         };
         let current = self.e(id).action_target().cloned();
         match current {
@@ -2147,7 +2159,7 @@ impl World {
                 let i = self
                     .random
                     .choice_index(self.squares.len())
-                    .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
+                    .ok_or(Invariant::NoSquare)?;
                 let dest = SquareId(i as u32);
                 if let Some(c) = self.cm(id) {
                     c.destination = Some(dest);
@@ -2157,37 +2169,22 @@ impl World {
             }
             Some(t) => {
                 let here = self.e(id).place;
-                if self.is_very_dangerous(p, &t)? {
+                if self.is_very_dangerous(p, &t) {
                     let here_dangerous = match here {
                         Some(Place::Square(s)) => self.square_is_very_dangerous(p, s),
-                        _ => {
-                            return Err(Abort::new(
-                                "'Inside' object has no attribute 'other_side'",
-                            ));
-                        }
+                        _ => return Err(Invariant::ActingInside.into()),
                     };
                     if !here_dangerous {
                         self.set_action_target(id, None);
                     }
                 } else if let Some(Place::Square(s)) = here
                     && self.square_is_very_dangerous(p, s)
-                    && let Some(prev) = self.e(id).previous_place
+                    // A unit just out of a transport has no square to go
+                    // back to.
+                    && let Some(Place::Square(ps)) = self.e(id).previous_place
+                    && !self.square_is_very_dangerous(p, ps)
                 {
-                    let prev_dangerous = match prev {
-                        Place::Square(ps) => self.square_is_very_dangerous(p, ps),
-                        Place::Inside(_) => {
-                            return Err(Abort::new(
-                                "'Inside' object has no attribute 'other_side'",
-                            ));
-                        }
-                    };
-                    if !prev_dangerous {
-                        let t = match prev {
-                            Place::Square(ps) => Target::Square(ps),
-                            Place::Inside(_) => unreachable!("handled above"),
-                        };
-                        self.start_moving_to(id, Some(&t), false)?;
-                    }
+                    self.start_moving_to(id, Some(&Target::Square(ps)), false)?;
                 }
             }
         }
@@ -2213,7 +2210,7 @@ impl World {
 
     /// The keyword of the default order of a unit on a target, resolved
     /// through what the unit's owner perceives or remembers now.
-    pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Res<Option<Keyword>> {
+    pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Option<Keyword> {
         questions::default_keyword(self, self.e(id), target)
     }
 }

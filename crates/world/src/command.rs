@@ -255,7 +255,7 @@ impl OrderTarget {
     /// Reads a target written in a line of text. A square may also be
     /// written by its name. The error is a word that names no target.
     fn parse(world: &World, word: &str) -> Result<OrderTarget, String> {
-        Ok(match TargetRef::parse(world, word).map_err(|a| a.0)? {
+        Ok(match TargetRef::parse(world, word)? {
             TargetRef::Square(s) | TargetRef::SquareNamed(s) => OrderTarget::Square(s),
             TargetRef::Point { square, x, y } => OrderTarget::Point { square, x, y },
             TargetRef::Entity(e) => OrderTarget::Entity(e),
@@ -273,7 +273,7 @@ impl Command {
     pub(crate) fn parse(line: &str, world: &World) -> Result<(Command, Option<String>), String> {
         let mut words = line.split_whitespace();
         let Some(first) = words.next() else {
-            return Err("list index out of range".to_owned());
+            return Err("an empty command".to_owned());
         };
         let rest: Vec<&str> = words.collect();
         let command = match first.to_lowercase().as_str() {
@@ -289,9 +289,8 @@ impl Command {
             }
             "order" => Command::parse_order(&rest, world)?,
             "speed" => {
-                let s = rest.first().ok_or("list index out of range")?;
-                let f =
-                    py_float(s).map_err(|_| format!("could not convert string to float: {s:?}"))?;
+                let s = rest.first().ok_or("speed without its value")?;
+                let f = py_float(s).map_err(|_| format!("{s:?} is not a speed"))?;
                 Command::Speed(f)
             }
             "quit" => Command::Quit,
@@ -308,7 +307,7 @@ impl Command {
     /// order.
     fn parse_order(words: &[&str], world: &World) -> Result<Command, String> {
         let [queue, imperative, order @ ..] = words else {
-            return Err("list index out of range".to_owned());
+            return Err("order without its queue and imperative".to_owned());
         };
         let order = match order {
             ["reset_group", name] => Order::ResetGroup((*name).to_owned()),
@@ -329,7 +328,7 @@ impl Command {
                     _ => return Err(format!("too many words in an order: {order:?}")),
                 })
             }
-            [] => return Err("list index out of range".to_owned()),
+            [] => return Err("order without its order".to_owned()),
         };
         Ok(Command::Order {
             order,

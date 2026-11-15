@@ -236,7 +236,7 @@ impl<'a> Truth<'a> {
         self.w.unit_upgrades(unit)
     }
 
-    fn default_order(&self, unit: EntityId, target: OrderTarget) -> Result<Option<Keyword>, Abort> {
+    fn default_order(&self, unit: EntityId, target: OrderTarget) -> Option<Keyword> {
         self.w.default_keyword(unit, &TargetRef::from(target))
     }
 }
@@ -541,9 +541,8 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
         for target in targets(w, v, u) {
             let answer = v.default_order(u.id, target);
             let kind = match &answer {
-                Ok(Some(k)) => k.as_str(),
-                Ok(None) => "nothing",
-                Err(_) => "error",
+                Some(k) => k.as_str(),
+                None => "nothing",
             };
             t.saw(format!(
                 "default order {kind}{}",
@@ -879,8 +878,8 @@ fn a_default_order_reads_the_owners_own_unit_as_it_is_now() {
     let v = Truth { w: &w, me };
     let s = seat(&w, me);
     let target = OrderTarget::Entity(catapult);
-    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Repair)));
-    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Repair)));
+    assert_eq!(v.default_order(peasant, target), Some(Keyword::Repair));
+    assert_eq!(s.default_order(peasant, target), Some(Keyword::Repair));
 }
 
 /// In cheat mode a player perceives only what is on the squares: its own
@@ -925,6 +924,6 @@ fn in_cheat_mode_the_seats_own_unit_inside_is_remembered() {
     let v = Truth { w: &w, me };
     let s = seat(&w, me);
     let target = OrderTarget::Entity(catapult);
-    assert_eq!(v.default_order(peasant, target), Ok(Some(Keyword::Go)));
-    assert_eq!(s.default_order(peasant, target), Ok(Some(Keyword::Go)));
+    assert_eq!(v.default_order(peasant, target), Some(Keyword::Go));
+    assert_eq!(s.default_order(peasant, target), Some(Keyword::Go));
 }

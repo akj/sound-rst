@@ -704,9 +704,14 @@ starting_resources 10 10
         let footmen = nb(&w, cp, "footman");
         let used_food = w.player(cp).used_food;
         let p = find(&w, cp, "priest", 0).unwrap();
+        let mana = w.c(p).unwrap().mana;
         take(&mut w, p, "use a_resurrection a1");
         w.update();
-        assert_eq!(w.drain_warnings(), ["NotEnoughSpaceError"]);
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        // Impossible, for lack of space, and free.
+        let o = &w.e(p).orders()[0];
+        assert_eq!(o.progress(), crate::orders::Progress::Impossible);
+        assert_eq!(w.c(p).unwrap().mana, mana);
         assert_eq!(nb(&w, cp, "footman"), footmen);
         assert_eq!(w.player(cp).used_food, used_food);
         let unplaced = w
@@ -1472,7 +1477,7 @@ mod test_worldplayercomputer {
         };
         assert!(!is_ok(&mut w));
         let gold = w.rules.type_id("goldmine").unwrap();
-        w.create_deposit(gold, a1, "75").unwrap();
+        w.create_deposit(gold, a1, 75_000).unwrap();
         assert!(is_ok(&mut w));
         create(&mut w, "lumbermill", owner, a1); // stores resource 1
         assert!(is_ok(&mut w));
@@ -2023,7 +2028,7 @@ starting_squares a1
         let (cp, b) = (ps[0], ps[1]);
         let (a1, c1) = (sq(&w, "a1"), sq(&w, "c1"));
         let gold = w.rules.type_id("goldmine").unwrap();
-        let mine = w.create_deposit(gold, a1, "75").unwrap();
+        let mine = w.create_deposit(gold, a1, 75_000).unwrap();
         let scout = create(&mut w, "footman", cp, a1);
         assert!(is_perceiving(&mut w, cp, mine));
         assert!(w.is_ok_for_warehouse(cp, a1, 0));

@@ -20,12 +20,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::abort::{Abort, Res};
 use crate::entity::{CreatureKind, Entity, EntityId, Place, SquareId, Target};
 use crate::nofloat::{floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass, Role};
-use crate::world::{Abort, Res, TPlace};
+use crate::world::TPlace;
 
 mod door;
 mod handicap;
@@ -373,7 +374,7 @@ impl Door<'_> {
         let planned = match self.follow_plan() {
             // The original catches a recursion error of its plan here, and
             // goes on with the next line of the plan at its next turn.
-            Err(Abort(m)) if m == RECURSION_ERROR => {
+            Err(Abort::Unclassified(m)) if m == RECURSION_ERROR => {
                 let ai_type = match self.kind() {
                     PlayerKind::Computer { ai_type } => ai_type.clone(),
                     _ => String::new(),
@@ -558,7 +559,7 @@ impl Door<'_> {
                 .map(|t| self.rules().ty(t).can_use.clone())
                 .unwrap_or_default();
             for a in abilities {
-                if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
+                if !self.is_order_allowed(u, Keyword::Use, Some(&a)) {
                     continue;
                 }
                 let rules = self.rules();
@@ -655,7 +656,7 @@ impl Door<'_> {
     /// Stops a unit with the stop order, if it has something to stop: a
     /// human gives no stop order to a unit standing idle.
     fn stop(&mut self, u: EntityId) -> Res {
-        if self.is_order_allowed(u, Keyword::Stop, None)? {
+        if self.is_order_allowed(u, Keyword::Stop, None) {
             self.give(u, Request::stop(), true)?;
         }
         Ok(())

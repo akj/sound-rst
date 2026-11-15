@@ -25,7 +25,7 @@ use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upg
 use crate::rules::AirGround;
 use crate::square::Square;
 use crate::triggers::{Expr, list_to_tree};
-use crate::world::{Abort, World};
+use crate::world::World;
 
 /// The map cannot be loaded. The message says why, and where.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -300,7 +300,7 @@ impl World {
             let first_letter = b.first().is_some_and(u8::is_ascii_alphabetic);
             let is_a_square = first_letter && {
                 let Some(second) = b.get(1) else {
-                    return Err(MapError(format!("string index out of range: {x}")));
+                    return Err(MapError(format!("{x}: a one-letter word")));
                 };
                 second.is_ascii_digit()
                     && (b.len() == 2 || (b.len() == 3 && b.get(2).is_some_and(u8::is_ascii_digit)))
@@ -486,9 +486,7 @@ impl World {
                     .iter()
                     .map(|x| {
                         py_int(x)
-                            .map_err(|_| {
-                                map_error(line, &format!("invalid literal for int(): {x}"))
-                            })
+                            .map_err(|_| map_error(line, &format!("{x} is not a whole number")))
                             .and_then(|n| number(line, n))
                     })
                     .collect()
@@ -536,7 +534,7 @@ impl World {
                     let t = args
                         .first()
                         .cloned()
-                        .ok_or_else(|| map_error(line, "list index out of range"))?;
+                        .ok_or_else(|| map_error(line, "no passage type"))?;
                     let mut squares = rest.to_vec();
                     self.check_squares(line, &mut squares);
                     if w == "south_north" {
@@ -612,7 +610,7 @@ impl World {
                     let t = args
                         .first()
                         .cloned()
-                        .ok_or_else(|| map_error(line, "list index out of range"))?;
+                        .ok_or_else(|| map_error(line, "no terrain type"))?;
                     let mut squares = rest.to_vec();
                     self.check_squares(line, &mut squares);
                     for sq in squares {
@@ -622,9 +620,8 @@ impl World {
                 "speed" | "cover" => {
                     let mut t = Vec::new();
                     for x in words.iter().skip(1).take(2) {
-                        let f = py_float(x).map_err(|_| {
-                            map_error(line, &format!("could not convert string to float: {x}"))
-                        })?;
+                        let f = py_float(x)
+                            .map_err(|_| map_error(line, &format!("{x} is not a number")))?;
                         let v = crate::nofloat::float_to_int(f * 100.0)
                             .map_err(|_| map_error(line, "invalid value"))?;
                         t.push(number(line, v)?);
@@ -802,9 +799,7 @@ impl World {
     fn create_squares_and_grid(&mut self) -> Result<(), MapError> {
         let sw = self.map.square_width;
         if self.map.nb_columns > 26 {
-            return Err(MapError(
-                "string index out of range: too many columns".into(),
-            ));
+            return Err(MapError("more than 26 columns".into()));
         }
         if self.map.nb_lines > MAX_LINES {
             return Err(MapError(format!(
@@ -919,11 +914,17 @@ impl World {
                 .rules
                 .type_id(&cls)
                 .ok_or_else(|| MapError(format!("unknown deposit type {cls}")))?;
-            if let Ok(q) = to_int(&n) {
+            let q = to_int(&n);
+            if let Ok(q) = q {
                 number(&format!("{cls} {n}"), q)?;
             }
+            // A quantity that is not a number is an error only where the
+            // deposit is created.
             if self.can_receive(s, AirGround::Ground, None) {
-                let d = self.create_deposit(tid, s, &n).map_err(|e| MapError(e.0))?;
+                let q = q.map_err(|_| MapError(format!("{cls} {n}: not a quantity")))?;
+                let d = self
+                    .create_deposit(tid, s, q)
+                    .map_err(|_| MapError(format!("no room for {cls} on {z}")))?;
                 let m = self.create_meadow(s, None);
                 // `d` is the deposit created above: the meadow is created
                 // after it, to have the next id.
@@ -936,7 +937,7 @@ impl World {
         for z in self.meadow_squares() {
             let s = self
                 .square_by_name(&z)
-                .ok_or_else(|| MapError(format!("KeyError: '{z}'")))?;
+                .ok_or_else(|| MapError(format!("no square {z}")))?;
             self.create_meadow(s, None);
         }
         Ok(())
@@ -964,11 +965,11 @@ impl World {
                 let letter = ALPHABET
                     .chars()
                     .nth(col)
-                    .ok_or_else(|| MapError("string index out of range".into()))?;
+                    .ok_or_else(|| MapError(format!("no column after {i}")))?;
                 let j = format!("{letter}{}", i.get(1..).unwrap_or_default());
                 let si = self
                     .square_by_name(&i)
-                    .ok_or_else(|| MapError(format!("KeyError: '{i}'")))?;
+                    .ok_or_else(|| MapError(format!("no square {i}")))?;
                 match self.square_by_name(&j) {
                     None => self.warn(format!(
                         "couldn't create a west-east passage from {i} to {j}"
@@ -994,7 +995,7 @@ impl World {
                 let j = format!("{}{line}", i.get(..1).unwrap_or_default());
                 let si = self
                     .square_by_name(&i)
-                    .ok_or_else(|| MapError(format!("KeyError: '{i}'")))?;
+                    .ok_or_else(|| MapError(format!("no square {i}")))?;
                 match self.square_by_name(&j) {
                     None => self.warn(format!(
                         "couldn't create a south-north passage from {i} to {j}"
@@ -1039,9 +1040,7 @@ impl World {
                 .random
                 .choice_index(factions)
                 .and_then(|i| self.rules.faction_at(i))
-                .ok_or_else(|| {
-                    MapError("Cannot choose from an empty sequence (no faction)".into())
-                })?;
+                .ok_or_else(|| MapError("the rules have no faction to choose".into()))?;
             Some(f)
         } else {
             self.rules.faction_id(&controller.faction)
@@ -1058,9 +1057,9 @@ impl World {
         self.plm(pid).allied = vec![pid];
         self.plm(pid).allied_control = vec![pid];
         if matches!(kind, PlayerKind::Computer { .. })
-            && let Err(Abort(m)) = self.new_computer(pid)
+            && let Err(e) = self.new_computer(pid)
         {
-            self.warn(m);
+            self.warn_stopped("set-up", &self.who(pid), &e);
         }
         Ok(pid)
     }
@@ -1158,7 +1157,12 @@ impl World {
                             let s = square
                                 .as_deref()
                                 .and_then(|n| self.square_by_name(n))
-                                .ok_or_else(|| MapError(format!("KeyError: {square:?}")))?;
+                                .ok_or_else(|| {
+                                    MapError(format!(
+                                        "no square {}",
+                                        square.as_deref().unwrap_or("")
+                                    ))
+                                })?;
                             units.push((s, *count, t));
                         }
                     }

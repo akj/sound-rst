@@ -44,7 +44,6 @@ use crate::orders::{Keyword, MenuEntry, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
 use crate::rules::{Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
-use crate::world::{Abort, Res};
 
 /// What one seat knows of a game, from what it was sent: see the
 /// [module](self).
@@ -408,16 +407,10 @@ impl SeatView {
     /// The keyword of the order a unit the player controls would choose
     /// for `target` if it received the default order now. The target is
     /// resolved through what the player perceives or remembers. Nothing
-    /// for a unit the player does not control.
-    pub fn default_order(
-        &self,
-        unit: EntityId,
-        target: OrderTarget,
-    ) -> Result<Option<Keyword>, Abort> {
-        match self.unit(unit) {
-            Some(u) => questions::default_keyword(self, u, &TargetRef::from(target)),
-            None => Ok(None),
-        }
+    /// for a unit the player does not control, or for a point outside its
+    /// square.
+    pub fn default_order(&self, unit: EntityId, target: OrderTarget) -> Option<Keyword> {
+        questions::default_keyword(self, self.unit(unit)?, &TargetRef::from(target))
     }
 
     // lookups
@@ -583,23 +576,21 @@ impl<'a> Knowledge<'a> for &'a SeatView {
         self,
         owner: PlayerId,
         target: &TargetRef,
-    ) -> Res<Option<Resolved<SeatTarget, &'a KnownEntity>>> {
+    ) -> Option<Resolved<SeatTarget, &'a KnownEntity>> {
         let map = &self.start.map;
         let place = Resolved {
             target: SeatTarget::Place,
             entity: None,
         };
         match *target {
-            TargetRef::Square(_) | TargetRef::SquareNamed(_) => Ok(Some(place)),
-            TargetRef::Point { square, x, y } => {
-                if !map.square(square).is_some_and(|s| s.contains(x, y)) {
-                    return Err(Abort::new("the zoom is outside its square"));
-                }
-                Ok(Some(place))
-            }
+            TargetRef::Square(_) | TargetRef::SquareNamed(_) => Some(place),
+            TargetRef::Point { square, x, y } => map
+                .square(square)
+                .is_some_and(|s| s.contains(x, y))
+                .then_some(place),
             TargetRef::Entity(id) => {
                 if map.square_by_protocol_id(id.0).is_some() {
-                    return Ok(Some(place));
+                    return Some(place);
                 }
                 let owners = owner != self.player()
                     && self
@@ -610,17 +601,17 @@ impl<'a> Knowledge<'a> for &'a SeatView {
                     .or_else(|| find(&self.turn.perceived, id))
                     .filter(|e| e.place.is_some())
                 {
-                    return Ok(Some(Resolved {
+                    return Some(Resolved {
                         target: SeatTarget::Perceived(id),
                         entity: Some(e),
-                    }));
+                    });
                 }
-                Ok(find(&self.turn.remembered, id).map(|e| Resolved {
+                find(&self.turn.remembered, id).map(|e| Resolved {
                     target: SeatTarget::Remembered(id),
                     entity: Some(e),
-                }))
+                })
             }
-            TargetRef::Nothing => Ok(None),
+            TargetRef::Nothing => None,
         }
     }
 

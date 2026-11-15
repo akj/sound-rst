@@ -8,10 +8,11 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 
+use crate::abort::{Abort, Invariant, Res};
 use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::nofloat::int_distance;
 use crate::rules::AirGround;
-use crate::world::{Abort, INF, Res, World};
+use crate::world::{INF, World};
 
 /// A vertex of a path graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -277,9 +278,7 @@ impl World {
             return Ok(false);
         }
         let Some(p) = player else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'is_very_dangerous'",
-            ));
+            return Err(Invariant::AvoidingDangerForNobody.into());
         };
         Ok(match n {
             Node::Square(s) => self.square_is_very_dangerous(p, s),
@@ -421,13 +420,15 @@ impl World {
             }
             queue.remove(&v);
         }
-        if !pred.contains_key(&end_n) {
+        // The destination is reached when it has a distance. A node to avoid
+        // or blocked is never given one, nor a predecessor.
+        let Some(&d) = final_d.get(&end_n) else {
             return Ok(if places {
                 PathResult::Places(Vec::new())
             } else {
                 PathResult::Next(None, INF)
             });
-        }
+        };
         let mut path = vec![end_n];
         let mut cur = end_n;
         while cur != start_n {
@@ -445,9 +446,6 @@ impl World {
                 .collect();
             return Ok(PathResult::Places(squares));
         }
-        match final_d.get(&end_n) {
-            Some(&d) => Ok(PathResult::Next(Some(path[1]), d)),
-            None => Err(Abort::new(format!("KeyError: {}", self.square(dest).name))),
-        }
+        Ok(PathResult::Next(Some(path[1]), d))
     }
 }
