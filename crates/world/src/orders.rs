@@ -11,7 +11,7 @@ use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
 use crate::rules::{AirGround, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
-use crate::world::{TPlace, World};
+use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// The most orders a unit can queue.
 pub const ORDERS_QUEUE_LIMIT: usize = 10;
@@ -2751,7 +2751,10 @@ impl World {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughMana));
             return Ok(());
         }
-        self.use_effect_execute(unit, uid, &kind, &t, &effect)?;
+        if !self.use_effect_execute(unit, uid, &kind, &t, &effect)? {
+            self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
+            return Ok(());
+        }
         if let Some(c) = self.cm(unit) {
             c.mana -= t.stats.mana_cost;
         }
@@ -2884,10 +2887,10 @@ impl World {
         kind: &str,
         t: &crate::rules::UnitType,
         effect: &[String],
-    ) -> Res {
+    ) -> Res<bool> {
         let target = self.target_of(unit, uid).expect("checked");
         let Some(p) = self.e(unit).player() else {
-            return Ok(());
+            return Ok(true);
         };
         let decay = || -> Res<i64> {
             let s = effect
@@ -2898,7 +2901,7 @@ impl World {
         match kind {
             "teleportation" => {
                 let Target::Square(s) = target else {
-                    return Ok(());
+                    return Ok(true);
                 };
                 for u in self.effect_targets(unit, kind, t, &Target::Entity(unit)) {
                     let a = self.e(u).airground_type;
@@ -2951,6 +2954,7 @@ impl World {
                 let (tx, ty) = self.t_xy(&target);
                 let mut corpses = self.effect_targets(unit, kind, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
+                let mut risen = false;
                 for _ in 0..n {
                     if corpses.is_empty() {
                         break;
@@ -2967,12 +2971,16 @@ impl World {
                     {
                         continue;
                     }
-                    self.resurrect(c, *dead, p)?;
+                    // The next corpses are no nearer to free space.
+                    match self.resurrect(c, *dead, p) {
+                        Ok(()) => risen = true,
+                        Err(NotEnoughSpace) => return Ok(risen),
+                    }
                 }
             }
             _ => {}
         }
-        Ok(())
+        Ok(true)
     }
 
     fn resurrect(
@@ -2980,7 +2988,7 @@ impl World {
         corpse: EntityId,
         mut u: crate::entity::Entity<Creature>,
         p: crate::entity::PlayerId,
-    ) -> Res {
+    ) -> Result<(), NotEnoughSpace> {
         u.kind.player = None;
         u.kind.hp = u.stats.hp_max / 3;
         let id = self.register_unplaced(u.into_entity());
@@ -2992,7 +3000,7 @@ impl World {
             // objects updated each turn.
             self.set_player(id, None);
             self.unregister_entity(id);
-            return Err(Abort::new("NotEnoughSpaceError"));
+            return Err(NotEnoughSpace);
         }
         let decay = self.e(id).stats.decay;
         let time = self.time;

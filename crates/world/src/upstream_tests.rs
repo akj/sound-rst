@@ -704,12 +704,14 @@ starting_resources 10 10
         let footmen = nb(&w, cp, "footman");
         let used_food = w.player(cp).used_food;
         let p = find(&w, cp, "priest", 0).unwrap();
+        let mana = w.c(p).unwrap().mana;
         take(&mut w, p, "use a_resurrection a1");
         w.update();
-        assert_eq!(
-            w.drain_warnings(),
-            ["the update of priest 36 of player 12 stopped at turn 1: NotEnoughSpaceError"]
-        );
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        // Impossible, for lack of space, and free.
+        let o = &w.e(p).orders()[0];
+        assert_eq!(o.progress(), crate::orders::Progress::Impossible);
+        assert_eq!(w.c(p).unwrap().mana, mana);
         assert_eq!(nb(&w, cp, "footman"), footmen);
         assert_eq!(w.player(cp).used_food, used_food);
         let unplaced = w

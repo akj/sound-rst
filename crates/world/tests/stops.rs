@@ -36,7 +36,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("ai/order_sites.rs",     [  0,  0,  0,  0, 26,  0, 17]),
     ("map.rs",                [  0,  0,  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  0,  0,  3]),
-    ("orders.rs",             [  0,  0, 17,  8,  0, 14,  3]),
+    ("orders.rs",             [  0,  0, 17,  7,  0, 14,  3]),
     ("pathfinding.rs",        [  0,  0,  1,  1,  0,  0,  3]),
     ("player.rs",             [  0,  0,  0,  0,  0,  0,  1]),
     ("playerlogic.rs",        [  0,  0,  2,  5,  0,  2,  4]),
