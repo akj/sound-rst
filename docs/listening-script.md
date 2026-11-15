@@ -1,6 +1,6 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, and listening to a recorded game added to part 4 at `2220932`.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
@@ -128,6 +128,32 @@ This is the oldest unheard change: speech moved to its own thread in pull reques
 4.10. During a story, press Control+Shift+C. Expected: "copied", then the line again, and the story goes on.
 
 4.11. In a training game, let the computer beat you. Expected: "You have been defeated" is said while the battle sounds carry on.
+
+### Listening to a recorded game
+
+Since pull request 80. First play a training game on jl1 against the quiet computer for a couple of minutes, then quit it from the game menu.
+
+4.12. In the single-player menu, choose "listen to a game", then press Down. Expected: "last finished game , jl1" and its length and age.
+
+4.13. Press Enter. Expected: "watching" and your login, then "objective: neutralized enemy", then the game as you heard it when you played.
+
+4.14. Press F3. Expected: the time, "of" the length, then "speed normal".
+
+4.15. Press Shift+Space. Expected: "paused". Wait five seconds: nothing moves. Press Z: your gold. Press Shift+Space again: "speed normal".
+
+4.16. Press Equals. Expected: "speed fast 2". Press Minus: "speed normal".
+
+4.17. Press the right bracket. Expected: a time about a minute later, "of" the length, and no news of the skipped minute. Press the left bracket: back about a minute.
+
+4.18. Press Control+F12. Expected: "watching" and the computer's name. You hear its units and resources when you ask, but no events. Control+Shift+F12: "watching" and your login.
+
+4.19. Press Backspace. Expected: "watching: you give no orders". Pressing it again does not repeat that.
+
+4.20. Press F10, then K, then Enter. Expected: "keep this game's record", then "kept in the records folder".
+
+4.21. Press Equals until you hear "speed fastest, silent". Expected: only percentages, then "end of the recording", the result and the score, then the single-player menu.
+
+4.22. Throughout: does NVDA pass Minus, Equals, the brackets and Shift+Space to the game, or does it take any of them?
 
 ## Part 5. What you should not know, sound behind you, and upgrades
 
