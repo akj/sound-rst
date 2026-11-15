@@ -129,6 +129,7 @@ pub use message::{
     StartMessage, TurnMessage,
 };
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
+pub use received::MAX_OBJECTIVES;
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;

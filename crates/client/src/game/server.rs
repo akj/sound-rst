@@ -29,6 +29,10 @@ use crate::net::{Incoming, Seated};
 /// How long the start of the game may take to come after the seat.
 const JOIN_WAIT: f64 = 30.0;
 
+/// The most objectives a game on a server gives the player, over the
+/// whole game: the interface remembers each.
+const MAX_OBJECTIVES_SEEN: usize = 4 * soundrts_world::MAX_OBJECTIVES;
+
 /// The most events waiting to be told. The interface tells one at each
 /// pass of its loop, about a thousand a second, and a busy turn has a few
 /// dozen: a server that sends more is not playing a game.
@@ -44,6 +48,9 @@ pub struct ServerGame {
     /// The bytes of commands sent since the last turn came.
     sent_since_turn: usize,
     end: End,
+    /// The game told the player it is over for them, and the end has not
+    /// come yet: the game ends when it comes.
+    quit: bool,
 }
 
 /// Whether the server has sent the end of the game for the seat.
@@ -62,6 +69,7 @@ impl ServerGame {
             next_turn: now,
             sent_since_turn: 0,
             end: End::Waiting,
+            quit: false,
         };
         game.next_turn = game.after_a_turn(now);
         game
@@ -182,20 +190,14 @@ impl GameInterface {
     /// the server ended it, the connection is lost, or a frame cannot be
     /// right.
     pub(crate) fn server_update(&mut self, cx: &mut Client) {
-        let (gone, ended) = match &cx.net {
-            Some(n) if n.closed.is_none() => match &n.game {
-                Some(g) => (false, g.ended),
-                None => (true, true),
-            },
-            _ => (true, true),
-        };
-        if gone {
-            if !self.end_loop {
-                self.srv_quit(cx);
-            }
-            return;
+        let gone = cx
+            .net
+            .as_ref()
+            .is_none_or(|n| n.closed.is_some() || n.game.is_none());
+        if !gone {
+            self.send_pending(cx);
         }
-        self.send_pending(cx);
+        // What came before a lost connection is taken first.
         while let Some(frame) = crate::net::game_link(cx).and_then(|l| l.frames.pop_front()) {
             if let Err(why) = self.take_frame(cx, frame) {
                 self.cannot_be_right(cx, &why);
@@ -205,8 +207,18 @@ impl GameInterface {
                 return;
             }
         }
-        if ended && self.srv_queue.is_empty() && !self.end_loop {
+        let ended = gone || crate::net::game_link(cx).is_some_and(|l| l.ended);
+        if ended && (gone || self.srv_queue.is_empty()) && !self.end_loop {
             self.srv_quit(cx);
+        }
+    }
+
+    /// The game told the player it is over for them. On a server, the
+    /// loop ends once the end has come, with the statistics of the score.
+    pub(crate) fn quit_heard(&mut self, cx: &mut Client) {
+        match self.server() {
+            Some(server) if matches!(server.end, End::Waiting) => server.quit = true,
+            _ => self.srv_quit(cx),
         }
     }
 
@@ -276,12 +288,18 @@ impl GameInterface {
         match *frame {
             SeatFrame::Change(change) => self.take_change(cx, change),
             SeatFrame::End(end) => {
+                end.check().map_err(|e| format!("the end: {e}"))?;
+                let mut quit = false;
                 if let Some(server) = self.server() {
                     server.end = End::Came(end);
+                    quit = server.quit;
                 }
                 // The server has taken the player out of the game.
                 if let Some(link) = crate::net::game_link(cx) {
                     link.ended = true;
+                }
+                if quit {
+                    self.srv_quit(cx);
                 }
                 Ok(())
             }
@@ -354,6 +372,11 @@ impl GameInterface {
         // that joins, cannot be right: so a stream cannot grow it without
         // bound.
         encode_turn(&m).map_err(|e| format!("a turn: {e}"))?;
+        let seen = &self.objectives_seen;
+        let new = m.state.objectives.iter().filter(|o| !seen.contains(o));
+        if seen.len() + new.count() > MAX_OBJECTIVES_SEEN {
+            return Err("more objectives than a game gives".into());
+        }
         let end_of_turn = m.time > last.time && m.state.players.contains(&self.me);
         if end_of_turn {
             let now = cx.clock.now();

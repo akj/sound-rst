@@ -670,6 +670,56 @@ fn only_the_rooms_host_sets_the_speed_of_a_game_on_a_server() {
     );
 }
 
+/// The frames of a turn whose events end with the player's game over,
+/// as the world tells it.
+fn turn_told_over(stream: &mut FakeStream) -> Vec<SeatFrame> {
+    let mut frames = stream.turn(Vec::new());
+    if let Some(SeatFrame::Change(c)) = frames.first_mut() {
+        c.events.push(soundrts_world::Event::Quit);
+    }
+    frames
+}
+
+#[test]
+fn a_game_told_over_waits_for_its_end_and_says_the_score() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
+    let t0 = h.clock.now();
+    for frame in turn_told_over(&mut stream) {
+        server.frame_at(t0, frame);
+    }
+    server.frame_at(t0 + 2.0, stream.end());
+    h.run_for(&mut g, 1.0);
+    assert!(!g.game.end_loop, "the game ended before its end came");
+    h.run_for(&mut g, 2.0);
+    assert!(g.game.end_loop, "the end came, and the game went on");
+    h.finish(&mut g);
+    assert!(
+        g.game.view().stats().is_some(),
+        "the score has its statistics"
+    );
+}
+
+#[test]
+fn what_came_before_a_lost_connection_is_taken() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());
+    let t0 = h.clock.now();
+    for frame in turn_told_over(&mut stream) {
+        server.frame_at(t0, frame);
+    }
+    server.frame_at(t0, stream.end());
+    server.close_at(t0);
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.end_loop);
+    assert_eq!(g.game.view().turn(), 1);
+    h.finish(&mut g);
+    assert!(
+        g.game.view().stats().is_some(),
+        "the score has its statistics"
+    );
+}
+
 #[test]
 fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));

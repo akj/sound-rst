@@ -32,8 +32,9 @@ use soundrts::style::Style;
 use soundrts::testkit::{FakeStream, Harness, Script, TestGame, slot, upstream_root};
 use soundrts_protocol::game::{SeatFrame, encode_frame};
 use soundrts_protocol::{AiLevel, ClockChange, Login, SeatChange, Speed};
-use soundrts_world::Event;
 use soundrts_world::msg::MsgPart;
+use soundrts_world::player::{Objective, StatEvent, StatTarget};
+use soundrts_world::{Event, Place};
 
 /// The longest one case may take: reading the changed text as an installed
 /// layer and as a downloaded one, then looking up what the game looks up.
@@ -527,6 +528,50 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
             ),
         ),
         ("bytes that are no frame", with(8, vec![0xff; 40])),
+        ("food out of range", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Whole(mut m) = frame(frames, 2) else {
+                panic!("a whole message");
+            };
+            m.state.available_food = i64::MAX;
+            m.state.used_food = -1;
+            s[2] = encoded(SeatFrame::Whole(m));
+            s
+        }),
+        ("an entity inside itself", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Whole(mut m) = frame(frames, 2) else {
+                panic!("a whole message");
+            };
+            let e = &mut m.perceived[0];
+            e.place = Some(Place::Inside(e.id));
+            s[2] = encoded(SeatFrame::Whole(m));
+            s
+        }),
+        ("too many objectives", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Whole(mut m) = frame(frames, 2) else {
+                panic!("a whole message");
+            };
+            m.state.objectives = (0..=soundrts_world::MAX_OBJECTIVES)
+                .map(|i| Objective {
+                    number: i.to_string(),
+                    description: vec![1],
+                })
+                .collect();
+            s[2] = encoded(SeatFrame::Whole(m));
+            s
+        }),
+        ("statistics out of range", {
+            let mut s = frames.to_vec();
+            let SeatFrame::End(mut end) = frame(frames, n - 1) else {
+                panic!("an end");
+            };
+            end.stats
+                .add(StatEvent::Gathered, StatTarget::Resource(9), i64::MAX);
+            s[n - 1] = encoded(SeatFrame::End(end));
+            s
+        }),
         ("more events than a game can tell", {
             let mut s = frames.to_vec();
             let SeatFrame::Change(mut c) = frame(frames, 3) else {

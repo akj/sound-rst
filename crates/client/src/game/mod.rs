@@ -882,7 +882,7 @@ impl GameInterface {
                     self.speed = s;
                 }
             }
-            SrvEvent::Quit => self.srv_quit(cx),
+            SrvEvent::Quit => self.quit_heard(cx),
             SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m)?,
         }
         Ok(())
