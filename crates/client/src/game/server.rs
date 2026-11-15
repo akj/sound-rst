@@ -1350,7 +1350,8 @@ impl GameInterface {
         if is_room_host(cx) {
             crate::net::send(cx, ClientMsg::SetGameSpeed { speed });
         } else {
-            cx.voice.item(&text(words::ONLY_THE_HOST_SETS_THE_SPEED));
+            cx.voice
+                .item(&text(words::ONLY_THE_ORGANIZER_SETS_THE_SPEED));
         }
     }
 }

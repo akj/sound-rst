@@ -705,7 +705,7 @@ fn only_the_rooms_host_sets_the_speed_of_a_game_on_a_server() {
     assert_eq!(sent, [], "{said:#?}");
     assert_eq!(
         said.last().map(String::as_str),
-        Some("only the host can change the speed"),
+        Some("only the organizer can change the speed"),
         "{said:#?}"
     );
 }
