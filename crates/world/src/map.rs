@@ -1128,7 +1128,7 @@ impl World {
         let resources = self.rules.normalized_cost_or_resources(&start.resources);
         let mut units: Vec<(SquareId, i64, String)> = Vec::new();
         let mut upgrades = Upgrades::default();
-        let mut forbidden = Vec::new();
+        let mut forbidden = BTreeSet::new();
         for item in &start.items {
             match item {
                 // A name of no type forbids nothing: no unit can be told to

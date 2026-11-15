@@ -197,118 +197,6 @@ impl Hash for World {
     }
 }
 
-/// The names the hashes of ids read, so that the digest is fed what the
-/// state fed when it held names. Set by [`World::digest_u64`] while it
-/// hashes.
-pub(crate) struct HashTexts {
-    rules: Rules,
-    /// Each square's protocol id and name.
-    squares: Vec<(u32, String)>,
-}
-
-thread_local! {
-    static HASH_TEXTS: std::cell::RefCell<Option<HashTexts>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-pub(crate) struct HashTextsGuard;
-
-impl Drop for HashTextsGuard {
-    fn drop(&mut self) {
-        HASH_TEXTS.with(|h| *h.borrow_mut() = None);
-    }
-}
-
-impl HashTexts {
-    /// Makes the names of `w` available to the hashes until the guard is
-    /// dropped.
-    pub(crate) fn set(w: &World) -> HashTextsGuard {
-        let texts = HashTexts {
-            rules: w.rules.clone(),
-            squares: w.squares.iter().map(|s| (s.id, s.name.clone())).collect(),
-        };
-        HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
-        HashTextsGuard
-    }
-
-    fn with<R>(f: impl FnOnce(&HashTexts) -> R) -> R {
-        HASH_TEXTS.with(|t| f(t.borrow().as_ref().expect("hashed by World::digest_u64")))
-    }
-
-    fn type_name(&self, t: crate::rules::TypeId) -> String {
-        self.rules.ty(t).name.clone()
-    }
-
-    /// Feeds the upgrades as the list of names they were: each name as
-    /// many times as its level.
-    pub(crate) fn upgrades<H: Hasher>(u: &crate::player::Upgrades, state: &mut H) {
-        Self::with(|t| {
-            let names: Vec<String> = u
-                .iter()
-                .flat_map(|(id, n)| std::iter::repeat_n(t.type_name(id), n as usize))
-                .collect();
-            names.hash(state);
-        });
-    }
-
-    /// Feeds a player's faction as its name.
-    pub(crate) fn faction<H: Hasher>(
-        f: Option<crate::rules::FactionId>,
-        controller_faction: &str,
-        state: &mut H,
-    ) {
-        Self::with(|t| {
-            let name = match f {
-                Some(f) => t.rules.faction(f).name.clone(),
-                None => controller_faction.to_owned(),
-            };
-            name.hash(state);
-        });
-    }
-
-    #[expect(clippy::indexing_slicing, reason = "temporary: the proof of the ids")]
-    fn square(&self, s: SquareId) -> &(u32, String) {
-        &self.squares[s.0 as usize]
-    }
-
-    /// The text of a target, as [`crate::orders::TargetRef::text`].
-    fn target_text(&self, t: crate::orders::TargetRef) -> String {
-        use crate::orders::TargetRef;
-        match t {
-            TargetRef::Square(s) => self.square(s).0.to_string(),
-            TargetRef::SquareNamed(s) => self.square(s).1.clone(),
-            TargetRef::Point { square, x, y } => {
-                format!("zoom-{}-{x}-{y}", self.square(square).0)
-            }
-            TargetRef::Entity(e) => e.to_string(),
-            TargetRef::Nothing => "None".to_owned(),
-        }
-    }
-
-    /// Feeds a rallying point as the text it was kept as.
-    pub(crate) fn rallying_point<H: Hasher>(t: Option<crate::orders::TargetRef>, state: &mut H) {
-        Self::with(|texts| t.map(|t| texts.target_text(t)).hash(state));
-    }
-
-    /// Feeds the text id a zoom target was kept with: a point given by the
-    /// player had one.
-    pub(crate) fn zoom_id<H: Hasher>(given: bool, s: SquareId, x: i64, y: i64, state: &mut H) {
-        Self::with(|texts| {
-            given
-                .then(|| format!("zoom-{}-{x}-{y}", texts.square(s).0))
-                .hash(state)
-        });
-    }
-
-    /// Feeds types as the list of their names.
-    pub(crate) fn types<H: Hasher>(types: &[crate::rules::TypeId], state: &mut H) {
-        Self::with(|t| {
-            let names: Vec<String> = types.iter().map(|&id| t.type_name(id)).collect();
-            names.hash(state);
-        });
-    }
-}
-
 // Slices of integers hash as their bytes in memory, which the hasher
 // cannot reorder.
 #[cfg(not(target_endian = "little"))]
@@ -1349,7 +1237,6 @@ impl World {
     /// `truth` feature has it.
     #[cfg(feature = "truth")]
     pub fn digest_u64(&self) -> u64 {
-        let _texts = HashTexts::set(self);
         let mut h = Fnv1a::default();
         self.hash(&mut h);
         h.finish()

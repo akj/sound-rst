@@ -236,7 +236,7 @@ impl PlayerStats {
 /// The upgrades a player has, each with its level: how many times it was
 /// researched or given. In the order the player first got them, which is
 /// the order a player's allies get them in.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Upgrades(Vec<(TypeId, u32)>);
 
@@ -303,9 +303,8 @@ pub struct Player {
     /// Build orders whose cost is reserved.
     pub budget: Vec<Order>,
     pub upgrades: Upgrades,
-    /// The types the player may not build, train, research or use, in the
-    /// order the map lists them.
-    pub forbidden_techs: Vec<TypeId>,
+    /// The types the player may not build, train, research or use.
+    pub forbidden_techs: BTreeSet<TypeId>,
     pub observed_before_squares: BTreeSet<SquareId>,
     pub strictly_observed_before_squares: BTreeSet<SquareId>,
     pub observed_squares: BTreeSet<SquareId>,
@@ -414,7 +413,7 @@ impl Hash for Player {
         kind.hash(state);
         controller.hash(state);
         neutral.hash(state);
-        crate::world::HashTexts::faction(*faction, &controller.faction, state);
+        faction.hash(state);
         allied.hash(state);
         number.hash(state);
         perception.hash(state);
@@ -422,8 +421,8 @@ impl Hash for Player {
         objectives.hash(state);
         units.hash(state);
         budget.hash(state);
-        crate::world::HashTexts::upgrades(upgrades, state);
-        crate::world::HashTexts::types(forbidden_techs, state);
+        upgrades.hash(state);
+        forbidden_techs.hash(state);
         observed_before_squares.hash(state);
         strictly_observed_before_squares.hash(state);
         observed_squares.hash(state);
@@ -490,7 +489,7 @@ impl Player {
             units: Vec::new(),
             budget: Vec::new(),
             upgrades: Upgrades::default(),
-            forbidden_techs: Vec::new(),
+            forbidden_techs: BTreeSet::new(),
             observed_before_squares: BTreeSet::new(),
             strictly_observed_before_squares: BTreeSet::new(),
             observed_squares: BTreeSet::new(),

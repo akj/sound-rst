@@ -9,6 +9,8 @@
 //! order menu, one cost, one requirements check, one default order, one
 //! blocked exit and one count of comrades, and the two cannot drift.
 
+use std::collections::BTreeSet;
+
 use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
@@ -83,7 +85,7 @@ pub(crate) trait UnitFacts: EntityFacts {
 #[derive(Clone, Copy)]
 pub(crate) struct PlayerFacts<'a> {
     pub upgrades: &'a Upgrades,
-    pub forbidden_techs: &'a [TypeId],
+    pub forbidden_techs: &'a BTreeSet<TypeId>,
     /// The player has everything any requirement asks for.
     pub has_everything: bool,
     pub is_human: bool,

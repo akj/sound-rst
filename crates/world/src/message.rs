@@ -264,7 +264,7 @@ pub struct ControlledPlayer {
     /// The upgrades it has, with their levels.
     pub upgrades: Upgrades,
     /// The types it may not build, train, research or use.
-    pub forbidden_techs: Vec<TypeId>,
+    pub forbidden_techs: BTreeSet<TypeId>,
     /// It has everything any requirement asks for: the random computer
     /// player, or the all-techs cheat.
     pub has_everything: bool,
