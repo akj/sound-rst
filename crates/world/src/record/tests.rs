@@ -159,6 +159,61 @@ fn a_game_loaded_tells_what_the_saved_one_told_and_plays_on_the_same() {
 }
 
 #[test]
+fn a_record_replayed_a_turn_at_a_time_tells_each_seat_what_it_was_told_live() {
+    // Before the human plays as the computer, at turn 77.
+    let turns = 70;
+    let mut live = Host::new(&setup()).unwrap();
+    let (me, them) = (live.seats()[0], live.seats()[1]);
+    let mut told = Vec::new();
+    for turn in 0..turns {
+        give(&mut live, me, turn);
+        let report = live.step(me);
+        told.push((
+            report.end_of_turn,
+            report.then,
+            report.message,
+            live.message(them),
+        ));
+    }
+    let mut replayer = Replayer::new(live.record()).unwrap();
+    assert_eq!(replayer.turns_run(), 0);
+    for (turn, (end, then, message, theirs)) in told.into_iter().enumerate() {
+        assert!(!replayer.is_over());
+        let mut seats = replayer.step_seats(&[me]).unwrap();
+        assert_eq!(seats.len(), 1);
+        let seat = seats.remove(0);
+        assert_eq!(seat.end_of_turn, end, "turn {turn}");
+        assert_eq!(seat.then, then, "turn {turn}");
+        assert_eq!(seat.message, message, "turn {turn}");
+        // Any seat's message, a computer's too.
+        assert_eq!(replayer.message(them).unwrap(), theirs, "turn {turn}");
+    }
+    assert!(replayer.is_over());
+    assert!(replayer.step_seats(&[me]).unwrap().is_empty());
+    assert_eq!(replayer.turns_run(), turns);
+    assert_eq!(replayer.game_end(me).unwrap(), live.game_end(me));
+}
+
+#[test]
+fn a_record_replayed_a_turn_at_a_time_stops_at_a_refused_command_for_good() {
+    let (host, _) = play(30);
+    let text = String::from_utf8(host.record().to_bytes()).unwrap();
+    let no_cheats = text.replacen(r#""allow_cheatmode":true"#, r#""allow_cheatmode":false"#, 1);
+    let (record, _) = Record::read(no_cheats.as_bytes()).unwrap();
+    let mut replayer = Replayer::new(&record).unwrap();
+    for _ in 0..5 {
+        replayer.step_seats(&[]).unwrap();
+    }
+    let me = replayer.host().seats()[0];
+    let refused = Err(ReplayError::Refused { turn: 5 });
+    assert_eq!(replayer.step_seats(&[me]).map(|_| ()), refused);
+    assert_eq!(replayer.turns_run(), 5);
+    assert_eq!(replayer.step_seats(&[me]).map(|_| ()), refused);
+    assert_eq!(replayer.message(me).map(|_| ()), refused);
+    assert_eq!(replayer.turns_run(), 5);
+}
+
+#[test]
 fn a_record_reads_back_as_written() {
     let (host, _) = play(150);
     let bytes = host.record().to_bytes();

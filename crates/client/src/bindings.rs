@@ -50,8 +50,11 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// beside the next on F9; the idle soldiers of a type here with Shift and
 /// the original's key that selects that type here (F to Semicolon), and
 /// all over the map with Control Shift; key help on Control F1, beside
-/// help on F1; and, for a watcher, the next player to follow on Control
-/// F12 and the previous one with Shift, beside the other players on F12.
+/// help on F1; for a watcher, the next player to follow on Control
+/// F12 and the previous one with Shift, beside the other players on F12;
+/// and, for someone listening to a recorded game, slower and faster on
+/// Minus and Equals, pause and resume on Shift Space, and a minute back
+/// and forward on the left and right brackets, five with Shift.
 /// Each key is one the original leaves free and that neither Windows nor a
 /// screen reader takes. Shift Z is left to maps, which bind it to a third
 /// resource.
@@ -63,6 +66,9 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\nSHIFT v: combat_status\n\
     SHIFT F11: say_faction\n\
     CTRL F12: follow_player 1\nCTRL SHIFT F12: follow_player -1\n\
+    MINUS: listen_speed -1\nEQUALS: listen_speed 1\nSHIFT SPACE: listen_pause\n\
+    LEFTBRACKET: listen_jump -1\nRIGHTBRACKET: listen_jump 1\n\
+    SHIFT LEFTBRACKET: listen_jump -5\nSHIFT RIGHTBRACKET: listen_jump 5\n\
     SHIFT f: select_units local idle soldier1\nSHIFT g: select_units local idle soldier2\n\
     SHIFT h: select_units local idle soldier3\nSHIFT j: select_units local idle soldier4\n\
     SHIFT k: select_units local idle soldier5\nSHIFT l: select_units local idle soldier6\n\

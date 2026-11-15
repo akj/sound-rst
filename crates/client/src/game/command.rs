@@ -165,6 +165,13 @@ pub enum GameCommand {
     Objectives(i64),
     /// A watcher follows the next player (1) or the previous one (-1).
     FollowPlayer(i64),
+    /// A listener to a recorded game plays it faster (1) or slower (-1).
+    ListenSpeed(i64),
+    /// A listener pauses the recorded game, or resumes it.
+    ListenPause,
+    /// A listener goes forward (or back, below 0) this many minutes of
+    /// game time.
+    ListenJump(i64),
     GameMenu,
     SayPlayers,
     /// The player's own faction.
@@ -240,6 +247,9 @@ pub const COMMAND_NAMES: &[&str] = &[
     "jump_to_alert",
     "objectives",
     "follow_player",
+    "listen_speed",
+    "listen_pause",
+    "listen_jump",
     "gamemenu",
     "say_players",
     "say_faction",
@@ -418,6 +428,21 @@ impl GameCommand {
                     None => 1,
                 })
             }
+            "listen_speed" => {
+                arity(args, 0, 1)?;
+                C::ListenSpeed(match args.first() {
+                    Some(a) => int(a)?.signum(),
+                    None => 1,
+                })
+            }
+            "listen_pause" => none(C::ListenPause)?,
+            "listen_jump" => {
+                arity(args, 1, 1)?;
+                match int(&args[0])? {
+                    0 => return Err("0 minutes is no jump".into()),
+                    n => C::ListenJump(n.clamp(-600, 600)),
+                }
+            }
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
             "say_faction" => none(C::SayFaction)?,
@@ -574,6 +599,15 @@ impl GameCommand {
             C::SayTime => "say the time".into(),
             C::Objectives(i) => format!("{} objective", direction(*i)),
             C::FollowPlayer(i) => format!("watching, follow the {} player", direction(*i)),
+            C::ListenSpeed(i) if *i < 0 => "listening, play slower".into(),
+            C::ListenSpeed(_) => "listening, play faster".into(),
+            C::ListenPause => "listening, pause or resume".into(),
+            C::ListenJump(n) => {
+                let way = if *n < 0 { "back" } else { "forward" };
+                let n = n.unsigned_abs();
+                let unit = if n == 1 { "minute" } else { "minutes" };
+                format!("listening, go {way} {n} {unit}")
+            }
             C::SayPlayers => "say the names of the players".into(),
             C::SayFaction => "say your faction".into(),
             C::PlayersStatus => "say who is an ally or an enemy".into(),
@@ -815,6 +849,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 179);
+        assert_eq!(seen.len(), 186);
     }
 }

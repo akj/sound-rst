@@ -143,8 +143,11 @@ impl Paths {
     pub fn tmp(&self) -> PathBuf {
         self.user.join("tmp")
     }
-    pub fn replays(&self) -> PathBuf {
-        self.user.join("replays")
+    /// The records of games a player can listen to: the last finished
+    /// games, those kept, and any a player puts there (see
+    /// [`crate::saves`]).
+    pub fn records(&self) -> PathBuf {
+        self.user.join("records")
     }
     /// The saved games (see [`crate::saves`]).
     pub fn saves(&self) -> PathBuf {
@@ -179,7 +182,7 @@ impl Paths {
         let dirs = [
             self.user.clone(),
             self.tmp(),
-            self.replays(),
+            self.records(),
             self.saves(),
             downloaded.clone(),
             self.user.join("single"),
