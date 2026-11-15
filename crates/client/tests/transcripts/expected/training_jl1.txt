@@ -26,6 +26,7 @@ length 1064 1551043
 length 1065 3132608
 length 1067 175147
 length 1069 367120
+length 1070 155873
 length 1091 247279
 length 1098 185533
 length 1099 270839
@@ -637,291 +638,289 @@ length 9999 208980
 @689661 sounds 29 ad575bc79c9fd6ae
 @689661 step 203 key SHIFT ALT g
 @689661 voice item "exploit , , press tab to select the target and then press enter to confirm"
-@697061 sounds 28 694dfef1218a1b51
+@697061 sounds 23 99543ac6dc3a1bb4
 @697061 step 204 key TAB
 @697061 voice item [1003] "wood in the fog of war , to the southeast , contains 75 wood , exploit" vol=0.065,0.998
-@704480 sounds 38 2ce7e76590693296
+@704480 sounds 27 a3f98e6a364c9c3e
 @704480 step 205 key CTRL SHIFT RETURN
 @704480 voice item "exploit wood in the fog of war ,"
-@707680 sounds 16 f396add878fbefc3
+@707680 sounds 19 93924a2c49708bd9
 @707680 step 206 key LEFT
 @707680 voice item [1091] "b 1 , 1 town hall , 2 farm and 2 peasant"
-@712728 sounds 63 38cb605e64c9220d
+@712728 sounds 59 6d82f2252f6cf943
 @712728 step 207 key LEFT
-@712728 voice item [1091] "a 1 , meadows , in the fog of war , 1 footman enemy , 1 gold mine"
-@720076 sounds 42 ae9a950df691500d
-@720076 step 208 key w
-@720076 voice item "town hall 1 at b 1 , awaiting your orders"
-@724576 sounds 22 5104c94aa64e4875
-@724576 step 209 key TAB
-@724576 voice item [1003] "gold mine in the fog of war , to the southwest , contains 75 gold" vol=0.998,0.065
-@731495 sounds 31 b6b89b5c4f8b757d
-@731495 step 210 key BACKSPACE
-@731495 voice item "rally to gold mine in the fog of war , ,"
-@735495 sounds 22 f7957adbbaa98058
-@735495 step 211 key e
-@735495 voice item "peasant 1 at b 1 , awaiting your orders"
-@739795 sounds 18 7e974bb3aa51f018
-@739795 step 212 key TAB
-@739795 voice item [1003] "a meadow to the east" vol=0.229,0.973
-@741814 sounds 20 4a75d502a66b6d71
-@741814 step 213 key TAB
-@741814 voice item [1003] "a meadow in the fog of war , to the northwest" vol=0.817,0.577
-@746333 voice info "7 wood"
-@747134 sounds 40 1105b7709c4c7bba
-@747134 step 214 key BACKSPACE
-@747134 voice item "go to a meadow in the fog of war , ,"
-@750734 sounds 26 020960e2b849f510
-@750734 step 215 key SHIFT KP_ENTER
-@750752 step 216 key CTRL KP_ENTER
-@751052 sounds 4 2ca2e9b451aad601
-@751052 step 217 key CTRL SHIFT KP_ENTER
-@751352 sounds 3 707f00cd4d7fd148
-@751352 step 218 key SHIFT BACKSPACE
-@751352 voice item "go to a meadow in the fog of war , ,"
-@754952 sounds 27 4cc93d2eb6d9daa2
-@754952 step 219 key CTRL BACKSPACE
-@754952 voice item "go to a meadow ,"
-@756552 sounds 8 35a0282280faa0c2
-@756552 step 220 key CTRL SHIFT BACKSPACE
-@756552 voice item "go to a meadow ,"
-@758152 sounds 12 5aa94772a0276f57
-@758152 step 221 key F1
-@758152 voice item "f 10 to open the menu"
-@760652 sounds 14 aac691b6120bcb04
-@760652 step 222 key F1
-@760652 voice item "direction arrows to move on the map"
-@764152 sounds 15 48290f249055e46c
-@764152 step 223 key SHIFT F1
-@764152 voice item "f 10 to open the menu"
-@766652 sounds 14 ed34c1a88994bb4d
-@766652 step 224 key F2
-@766652 voice item "e to control the next peasant"
-@769552 sounds 12 3cc63a57c7f4cdec
-@769552 step 225 key F3
-@769552 voice item "12 minutes 12 seconds , speed 1.0"
-@774052 sounds 22 f4f01c37325332db
-@774052 step 226 key F9
-@774052 voice item "neutralized enemy , 1 of 1"
-@777052 sounds 17 5ff89eb2c15b0bef
-@777052 step 227 key F11
-@777052 voice item "player , quiet computer ,"
-@779552 sounds 11 e6f216beea3bb289
-@779552 step 228 key F5
-@779552 voice history "7 wood"
-@779852 sounds 2 2658cebb2fb8d513
-@779852 step 229 interrupt_after 0.3 key F5
-@779852 voice cut queue=0
-@779852 voice history "1 footman enemy at a 2"
-@782452 voice history "7 wood"
-@783852 sounds 23 224fec089074f119
-@783852 step 230 wait 4
-@784052 sounds 4 da9b3ef1dfff7b1d
-@784052 step 231 key F6
-@784552 sounds 1 7a585f5d907750bf
-@784552 step 232 interrupt_after 0.5 key LALT
-@784552 step 233 release LALT
-@785052 sounds 2 7b5d330f0582f1c8
-@785052 step 234 interrupt_after 0.5 key LALT
-@785052 step 235 release LALT
-@785252 sounds 1 bcd9179b27b6a176
-@785252 step 236 key RALT
-@785253 step 237 release RALT
-@785553 sounds 4 a6af91f4fb147d3f
-@785553 step 238 key LSHIFT
-@785554 step 239 release LSHIFT
-@785852 sounds 4 aaa9d4b027717165
-@785852 step 240 key RSHIFT
-@785853 step 241 release RSHIFT
-@786152 sounds 1 38f487265cdd3a64
-@786152 step 242 key HOME
-@786152 voice item "60 percent of the volume"
-@788952 voice info "9 wood"
-@789753 sounds 20 03d960ca3df4fd5e
-@789753 step 243 key KP_PLUS
-@789753 voice item "70 percent of the volume"
-@792553 sounds 17 816795e11ed74a36
-@792553 step 244 key END
-@792553 voice item "60 percent of the volume"
-@795353 sounds 13 de99e41188c537fa
-@795353 step 245 key KP_MINUS
-@795353 voice item "50 percent of the volume"
-@798153 sounds 13 7d0fb7fbebbefb86
-@798153 step 246 key CTRL BACKQUOTE
-@798452 step 247 key CTRL F3
-@798452 voice item [1039] [1003] "is now on"
-@799478 sounds 7 2bf30f88b1309c52
-@799478 step 248 key CTRL SHIFT F3
-@805351 sounds 43 7d1473e903c7db17
-@805351 step 249 wait_turns 20
-@805352 sounds 1 978b5c953db8d3b1
-@805352 step 250 key CTRL SHIFT F3
-@805652 sounds 3 e294391a3c59da5d
-@805652 step 251 key CTRL SHIFT F2
-@805652 voice item "cheat mode is now on"
-@807652 voice info "2 peasant and 1 farm enemy at a 3"
-@811552 voice info "7 enemy at a 4"
-@813352 voice info "23 enemy at b 4"
-@815452 voice info "1 farm enemy at c 4"
-@817752 voice info ", 2 peasant and 1 farm enemy at a 3"
-@821852 voice info ", 7 enemy at a 4"
-@823852 voice info "1 archer enemy at b 4"
-@826353 sounds 140 b5d4044f53ac93a0
-@826353 step 252 key BACKQUOTE
-@826353 voice menu "Enter a command."
-@827953 step 253 key r (type r)
-@827953 voice item "r . r"
-@828453 step 254 key RETURN
-@828453 voice item "r"
-@828553 sounds 10 3d7c7291da42a5a9
-@828553 step 255 key z
-@828553 voice item "1001 gold"
-@830253 sounds 8 5c1f5c1c4b694e6f
-@830253 step 256 key BACKQUOTE
-@830253 voice menu "Enter a command."
-@831853 step 257 key h (type h)
-@831853 voice item "h . h"
-@832353 step 258 key RETURN
-@832353 voice item "h"
-@832353 voice item "p: pause/unpause, s: set speed, r: get 1000 resources, t: get all techs, m: infinite mana, a: add units, v: instant victory"
-@845453 voice info "1 archer enemy at b 4"
-@847956 sounds 104 c1dc16a098964f59
-@847956 step 259 key BACKQUOTE
-@847956 voice menu "Enter a command."
-@849556 step 260 key ESCAPE
-@849558 sounds 10 9ec44869e9e1462e
-@849558 step 261 key w
-@849558 voice item "town hall 1 at b 1 , awaiting your orders"
-@854058 sounds 25 d8ca645998c4998a
-@854058 step 262 key a
-@854058 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@861358 sounds 38 69add47c10704c07
-@861358 step 263 key RETURN
-@861358 voice item "recruit peasant"
-@862858 sounds 12 004bca6560434fc6
-@862858 step 264 key ALT g
-@862858 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@862858 voice item "recruit peasant"
-@864358 sounds 10 caf2eced28d39748
-@864358 step 265 key ALT g
-@864358 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@864358 voice item "recruit peasant"
-@865858 sounds 14 1022076071871f59
-@865858 step 266 key e
-@865858 voice item "peasant 1 at a 1 , awaiting your orders"
-@870158 sounds 44 21fcd8c8c5801494
-@870158 step 267 key ALT a
-@870158 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
-@886958 voice info "peasant 3 ready!"
-@888758 voice info "peasant 4 ready!"
-@890559 sounds 246 4ebc78b55faef0fe
-@890559 step 268 key b
-@890559 voice item "build barracks on , requires 7 gold and 9 wood , press tab to select the target and then press enter to confirm"
-@902059 voice info "peasant 5 ready!"
-@903859 voice info "1 town hall at building enemy at a 3"
-@907860 sounds 196 c11ab1c0c78b60c1
-@907860 step 269 key TAB
-@907860 voice item [1003] "gold mine to the southwest , contains 73 gold , build barracks on" vol=0.998,0.065
-@914779 sounds 91 6c36a03c17ed763c
-@914779 step 270 key RETURN
-@914779 voice item "build barracks on gold mine"
-@917479 sounds 37 f26eca612e3feaf2
-@917479 step 271 key CTRL SHIFT F4
-@917479 voice item "you are quiet computer"
-@919679 voice info "7 gold"
-@920479 voice info "10 wood"
-@921579 voice info "33 food to 30"
-@923680 sounds 43 660fa3ba0f68de18
-@923680 step 272 key SPACE
-@923680 voice item "a 1 , you are not controlling any unit"
-@927680 sounds 31 f52dee15546c0772
-@927680 step 273 key CTRL SHIFT F4
-@927680 voice item "you are player"
-@929080 sounds 20 c80493beb6fd790c
-@929080 step 274 key CTRL SHIFT F2
-@929080 voice item "cheat mode is now off"
-@931180 sounds 22 900c28f3f35166c6
-@931180 step 275 key F10
-@931180 voice menu "Menu"
-@931580 step 276 key DOWN
-@931580 voice item "cancel game ,"
-@932880 sounds 1 5a9cc007f188a6d6
-@932880 step 277 key DOWN
-@932880 voice item "set the game speed to slow ,"
-@935680 sounds 1 0c885f0daaea4afe
-@935680 step 278 key DOWN
-@935680 voice item "set the game speed to normal ,"
-@938680 sounds 1 5e6520d3dfae7973
-@938680 step 279 key DOWN
-@938680 voice item "set the game speed to fast ,"
-@941480 sounds 1 50025f45aec7a9d2
-@941480 step 280 key RETURN
-@941480 voice confirmation "set the game speed to fast"
-@944080 sounds 33 2972fc86115f0bdb
-@944080 step 281 key F3
-@944080 voice item "14 minutes 53 seconds , speed 1.1"
-@948580 sounds 65 e6f4ffc92f8c9e16
-@948580 step 282 key CTRL c
-@948580 voice menu "Menu"
-@948980 step 283 key ESCAPE
-@948980 voice confirmation "continue game"
-@950280 sounds 18 0e0507c0e49a5458
-@950280 step 284 key ALT F4
-@950280 voice menu "Menu"
-@950680 step 285 key UP
-@950680 voice item "continue game ,"
-@952180 sounds 1 c8e4867bfcbec980
-@952180 step 286 key RETURN
-@952181 sounds 1 860f384d8cbe6b2e
-@952181 step 287 key ESCAPE
-@952181 voice confirmation "continue game"
-@969132 voice info "1000 gold"
-@974532 sounds 362 04e90ac8d2cfa8c5
-@974532 step 288 wait_turns 150
-@974533 step 289 key z
-@974533 voice item "1001 gold"
-@976233 sounds 30 5b86bbbaf517edbd
-@976233 step 290 key x
-@976233 voice item "1017 wood"
-@977933 sounds 32 5dd39ae56e6455d0
-@977933 step 291 key c
-@977933 voice item "17 food to 5"
-@1000332 sounds 360 078888f0966011d6
-@1000332 step 292 wait_turns 150
-@1000334 sounds 1 72a00be87911bfbf
-@1000334 step 293 key F3
-@1000334 voice item "16 minutes 42 seconds , speed 2.0"
-@1004834 sounds 72 48ab0e16e7d6d9fd
-@1004834 step 294 key c
-@1004834 voice item "17 food to 5"
-@1027332 sounds 367 6d339f2c7344ede3
-@1027332 step 295 wait_turns 150
-@1027333 step 296 key z
-@1027333 voice item "1014 gold"
-@1029033 sounds 26 8456d0b4327a4eeb
-@1029033 step 297 key CTRL F3
-@1029033 voice item [1039] [1003] "is now off"
-@1030159 sounds 20 7fb1dbc314d8af52
-@1030159 step 298 key F10
-@1030159 voice menu "Menu"
-@1030559 step 299 key DOWN
-@1030559 voice item "cancel game ,"
-@1031859 sounds 1 18f79426321f6ab1
-@1031859 step 300 key RETURN
-@1031859 voice confirmation "cancel game"
-@1032961 voice info "Defeat at 17 minutes 41 seconds"
-@1036861 voice info "5 units produced , 0 lost , 0 neutralized"
-@1041561 voice info "3 building produced , 0 lost , 0 neutralized"
-@1046561 voice info "35 gold gathered , consumed"
-@1049661 voice info "28 wood gathered , consumed"
-@1052761 voice info "score press F5 to listen again"
-@1055961 voice menu "please make a selection"
-@1058261 sounds 13 2193ae996e2f2ef0
-@1058261 step 301 key ESCAPE
-@1058261 voice confirmation "go back to the previous menu"
-@1061071 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@1066171 sounds 1 6bf96ebc53a40f98
-@1066171 step 302 key ESCAPE
-@1066171 voice confirmation "quit,"
-@1066681 sounds 1 6ea17edc5e60cb0b
-@1066681 end
+@712728 voice item [1091] "a 1 , meadows , in the fog of war , 1 gold mine"
+@718076 sounds 26 6d583393c7c03c86
+@718076 step 208 key w
+@718076 voice item "town hall 1 at b 1 , awaiting your orders"
+@722576 sounds 19 d6a83eee0a89a57e
+@722576 step 209 key TAB
+@722576 voice item [1003] "gold mine in the fog of war , to the southwest , contains 75 gold" vol=0.998,0.065
+@729495 sounds 34 4975868f3bdbddba
+@729495 step 210 key BACKSPACE
+@729495 voice item "rally to gold mine in the fog of war , ,"
+@733495 sounds 21 91042601afda341d
+@733495 step 211 key e
+@733495 voice item "peasant 1 at b 1 , awaiting your orders"
+@737795 sounds 27 0d1637934df359cd
+@737795 step 212 key TAB
+@737795 voice item [1003] "a meadow to the east" vol=0.229,0.973
+@739814 sounds 11 095d6506a7b43f80
+@739814 step 213 key TAB
+@739814 voice item [1003] "a meadow in the fog of war , to the northwest" vol=0.817,0.577
+@744333 sounds 33 861deb27ef7d4bed
+@744333 step 214 key BACKSPACE
+@744333 voice item "go to a meadow in the fog of war , ,"
+@747933 voice info "7 wood"
+@748734 sounds 30 eb41438dec46150e
+@748734 step 215 key SHIFT KP_ENTER
+@748952 sounds 2 698498aeb660edfa
+@748952 step 216 key CTRL KP_ENTER
+@749252 sounds 3 539158bb436f6c6b
+@749252 step 217 key CTRL SHIFT KP_ENTER
+@749552 sounds 1 88c0dd139428876c
+@749552 step 218 key SHIFT BACKSPACE
+@749552 voice item "go to a meadow ,"
+@751152 sounds 15 5904a3ded3d06131
+@751152 step 219 key CTRL BACKSPACE
+@751152 voice item "go to a meadow ,"
+@752752 sounds 13 db5684792d9c8720
+@752752 step 220 key CTRL SHIFT BACKSPACE
+@752752 voice item "go to a meadow ,"
+@754352 sounds 12 fb7f7ca3f1b90be6
+@754352 step 221 key F1
+@754352 voice item "f 10 to open the menu"
+@756852 sounds 11 2d30f258c1353a50
+@756852 step 222 key F1
+@756852 voice item "direction arrows to move on the map"
+@760352 sounds 17 1f4b0bf62ecd3621
+@760352 step 223 key SHIFT F1
+@760352 voice item "f 10 to open the menu"
+@762852 sounds 10 52d5ad57409e6726
+@762852 step 224 key F2
+@762852 voice item "e to control the next peasant"
+@765752 sounds 15 fa9f6e02c43496ed
+@765752 step 225 key F3
+@765752 voice item "12 minutes 8 seconds , speed 1.0"
+@769952 sounds 19 14c819045a7b8999
+@769952 step 226 key F9
+@769952 voice item "neutralized enemy , 1 of 1"
+@772952 sounds 13 f403bede11dfc6fe
+@772952 step 227 key F11
+@772952 voice item "player , quiet computer ,"
+@775452 sounds 13 3b39a50f937e77da
+@775452 step 228 key F5
+@775452 voice history "7 wood"
+@775752 sounds 1 c06a13522fcc0674
+@775752 step 229 interrupt_after 0.3 key F5
+@775752 voice cut queue=0
+@775752 voice history "1 footman enemy at a 2"
+@778352 voice history "7 wood"
+@779752 sounds 22 eafbbb437a0e7e64
+@779752 step 230 wait 4
+@779852 step 231 key F6
+@780352 sounds 2 e79330d39d069dd4
+@780352 step 232 interrupt_after 0.5 key LALT
+@780352 step 233 release LALT
+@780852 step 234 interrupt_after 0.5 key LALT
+@780852 step 235 release LALT
+@781052 step 236 key RALT
+@781053 step 237 release RALT
+@781352 sounds 4 3d7cd7fa290881cd
+@781352 step 238 key LSHIFT
+@781353 step 239 release LSHIFT
+@781652 sounds 3 4ca93422867db44f
+@781652 step 240 key RSHIFT
+@781653 step 241 release RSHIFT
+@781952 sounds 1 4a4bde008ea1253e
+@781952 step 242 key HOME
+@781952 voice item "60 percent of the volume"
+@784752 sounds 24 65a7fd42c24d790c
+@784752 step 243 key KP_PLUS
+@784752 voice item "70 percent of the volume"
+@787552 voice info "9 wood"
+@788353 sounds 18 b1bc353867416276
+@788353 step 244 key END
+@788353 voice item "60 percent of the volume"
+@791153 sounds 18 e2f572dd652e9052
+@791153 step 245 key KP_MINUS
+@791153 voice item "50 percent of the volume"
+@793953 sounds 13 c25e63f53acd5581
+@793953 step 246 key CTRL BACKQUOTE
+@794252 sounds 2 73e558175895d7a9
+@794252 step 247 key CTRL F3
+@794252 voice item [1039] [1003] "is now on"
+@795278 sounds 4 445178b1860a4cc5
+@795278 step 248 key CTRL SHIFT F3
+@801151 sounds 46 a42703fd5206875e
+@801151 step 249 wait_turns 20
+@801152 sounds 1 ce34bbcef5458193
+@801152 step 250 key CTRL SHIFT F3
+@801452 sounds 2 07884a573cc2e64c
+@801452 step 251 key CTRL SHIFT F2
+@801452 voice item "cheat mode is now on"
+@803452 voice info "4 peasant and 1 farm enemy at a 3"
+@807352 voice info "9 enemy at a 4"
+@809152 voice info "19 enemy at b 4"
+@811252 voice info "1 farm enemy at c 4"
+@813552 voice info ", 4 peasant and 1 farm enemy at a 3"
+@817652 voice info ", 9 enemy at a 4"
+@819653 sounds 119 8747fd3b4d23b2b0
+@819653 step 252 key BACKQUOTE
+@819653 voice menu "Enter a command."
+@821253 step 253 key r (type r)
+@821253 voice item "r . r"
+@821753 step 254 key RETURN
+@821753 voice item "r"
+@821853 sounds 9 a17fce2584588fab
+@821853 step 255 key z
+@821853 voice item "1001 gold"
+@823553 sounds 9 26531a87bc7f091f
+@823553 step 256 key BACKQUOTE
+@823553 voice menu "Enter a command."
+@825153 step 257 key h (type h)
+@825153 voice item "h . h"
+@825653 step 258 key RETURN
+@825653 voice item "h"
+@825653 voice item "p: pause/unpause, s: set speed, r: get 1000 resources, t: get all techs, m: infinite mana, a: add units, v: instant victory"
+@838753 voice info "1 archer enemy at b 4"
+@841256 sounds 122 6261324a02b3f9cd
+@841256 step 259 key BACKQUOTE
+@841256 voice menu "Enter a command."
+@842856 step 260 key ESCAPE
+@842859 sounds 10 730f34c665b8c2e4
+@842859 step 261 key w
+@842859 voice item "town hall 1 at b 1 , awaiting your orders"
+@847359 voice info "1 archer enemy at b 4"
+@849860 sounds 42 5aede637765ac60d
+@849860 step 262 key a
+@849860 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@857160 sounds 46 23ec83e111c61bf5
+@857160 step 263 key RETURN
+@857160 voice item "recruit peasant"
+@858660 sounds 14 709763f320fcf1fa
+@858660 step 264 key ALT g
+@858660 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@858660 voice item "recruit peasant"
+@860160 sounds 12 7a8e7e4ebcac8e6d
+@860160 step 265 key ALT g
+@860160 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@860160 voice item "recruit peasant"
+@861660 sounds 17 4c49ab4800bbb0c0
+@861660 step 266 key e
+@861660 voice item "peasant 1 at a 1 , awaiting your orders"
+@865960 sounds 35 0e0fb806307219a4
+@865960 step 267 key ALT a
+@865960 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
+@882760 voice info "peasant 3 ready!"
+@884560 voice info "peasant 4 ready!"
+@886361 sounds 247 e8c32341bb0b5d15
+@886361 step 268 key b
+@886361 voice item "build barracks on , requires 7 gold and 9 wood , press tab to select the target and then press enter to confirm"
+@897861 voice info "peasant 5 ready!"
+@899662 sounds 168 109b085885f46429
+@899662 step 269 key TAB
+@899662 voice item [1003] "gold mine to the southwest , contains 73 gold , build barracks on" vol=0.998,0.065
+@906581 voice info "1 town hall at building enemy at a 3"
+@910582 sounds 131 18ce1458b85befc8
+@910582 step 270 key RETURN
+@910582 voice item "build barracks on gold mine"
+@913282 sounds 37 6a210a4088b11458
+@913282 step 271 key CTRL SHIFT F4
+@913282 voice item "you are quiet computer"
+@915482 voice info "7 gold"
+@916282 voice info "10 wood"
+@917382 voice info "33 food to 30"
+@919483 sounds 45 46ff905398fd2857
+@919483 step 272 key SPACE
+@919483 voice item "a 1 , you are not controlling any unit"
+@923483 sounds 25 c1121fc7a1bded94
+@923483 step 273 key CTRL SHIFT F4
+@923483 voice item "you are player"
+@924883 sounds 20 4491f1f478318fee
+@924883 step 274 key CTRL SHIFT F2
+@924883 voice item "cheat mode is now off"
+@926983 sounds 23 d8cefba5e5850e35
+@926983 step 275 key F10
+@926983 voice menu "Menu"
+@927383 step 276 key DOWN
+@927383 voice item "cancel game ,"
+@928683 sounds 1 2e7c92cf3ebc3f6c
+@928683 step 277 key DOWN
+@928683 voice item "set the game speed to slow ,"
+@931483 sounds 1 cc89bb97abf0c154
+@931483 step 278 key DOWN
+@931483 voice item "set the game speed to normal ,"
+@934483 sounds 1 f4fd328d86d171b0
+@934483 step 279 key DOWN
+@934483 voice item "set the game speed to fast ,"
+@937283 sounds 1 ab52c30401df1f45
+@937283 step 280 key RETURN
+@937283 voice confirmation "set the game speed to fast"
+@939883 sounds 35 e0777bc7af9b7f3d
+@939883 step 281 key F3
+@939883 voice item "14 minutes 49 seconds , speed 1.1"
+@944383 sounds 62 c0f240fe1048045e
+@944383 step 282 key CTRL c
+@944383 voice menu "Menu"
+@944783 step 283 key ESCAPE
+@944783 voice confirmation "continue game"
+@946083 sounds 20 754ef596eb17667f
+@946083 step 284 key ALT F4
+@946083 voice menu "Menu"
+@946483 step 285 key UP
+@946483 voice item "continue game ,"
+@947983 sounds 1 d1b7e2ec09547ba6
+@947983 step 286 key RETURN
+@947984 sounds 1 6ad1a6524ef59165
+@947984 step 287 key ESCAPE
+@947984 voice confirmation "continue game"
+@964935 voice info "1000 gold"
+@970335 sounds 365 072b4eb1cb9fcc92
+@970335 step 288 wait_turns 150
+@970336 step 289 key z
+@970336 voice item "1000 gold"
+@972036 sounds 19 8efa44fd9bce6865
+@972036 step 290 key x
+@972036 voice item "1017 wood"
+@973736 sounds 35 96918dcf35cff209
+@973736 step 291 key c
+@973736 voice item "17 food to 5"
+@996135 sounds 362 2b6c083a264ad1bb
+@996135 step 292 wait_turns 150
+@996136 step 293 key F3
+@996136 voice item "16 minutes 37 seconds , speed 2.0"
+@1000636 sounds 80 a5a5cb250435d525
+@1000636 step 294 key c
+@1000636 voice item "17 food to 5"
+@1023135 sounds 361 3ef909bc6b8cf737
+@1023135 step 295 wait_turns 150
+@1023136 step 296 key z
+@1023136 voice item "1014 gold"
+@1024836 sounds 28 acd54fa9e5cf0ba0
+@1024836 step 297 key CTRL F3
+@1024836 voice item [1039] [1003] "is now off"
+@1025962 sounds 18 679f17c814d8b8a3
+@1025962 step 298 key F10
+@1025962 voice menu "Menu"
+@1026362 step 299 key DOWN
+@1026362 voice item "cancel game ,"
+@1027662 sounds 1 f147442967cb5220
+@1027662 step 300 key RETURN
+@1027662 voice confirmation "cancel game"
+@1028764 voice info "Defeat at 17 minutes 36 seconds"
+@1032664 voice info "5 units produced , 0 lost , 0 neutralized"
+@1037364 voice info "3 building produced , 0 lost , 0 neutralized"
+@1042364 voice info "35 gold gathered , consumed"
+@1045464 voice info "28 wood gathered , consumed"
+@1048564 voice info "score press F5 to listen again"
+@1051764 voice menu "please make a selection"
+@1054064 sounds 14 c31f3895f4945e41
+@1054064 step 301 key ESCAPE
+@1054064 voice confirmation "go back to the previous menu"
+@1056874 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@1061974 sounds 1 7de41f831c468f6d
+@1061974 step 302 key ESCAPE
+@1061974 voice confirmation "quit,"
+@1062484 sounds 1 e2b76f45ec63fbd7
+@1062484 end

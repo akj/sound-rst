@@ -133,94 +133,94 @@ length 9999 208980
 @70570 voice item "invite aggressive computer ,"
 @73370 sounds 1 7335e8de64040cdf
 @73370 step 37 key DOWN
-@73370 voice item "invite aggressive computer 2 ,"
-@76570 sounds 1 e561ad1fa9647f96
-@76570 step 38 key RETURN
-@76570 voice confirmation "invite aggressive computer 2"
-@79580 voice menu "please make a selection"
-@81880 sounds 1 596ab9860f11b3c0
-@81880 step 39 key DOWN
-@81880 voice item "start ,"
-@82580 sounds 1 90dc4161ff56a873
-@82580 step 40 key DOWN
-@82580 voice item "cancel , cancel this game"
-@85080 sounds 1 c42944cd1847a2e7
-@85080 step 41 key UP
-@85080 voice item "start ,"
-@85780 sounds 1 3fddcd6e22421e87
-@85780 step 42 key RETURN
-@85780 voice confirmation "start"
-@86290 voice info "objective: neutralized enemy"
-@89191 voice item "a 4 , 1 town hall , 1 farm and 1 peasant"
-@89691 sounds 9 4bd2e4176488be1b
-@89691 step 43 wait_turns 3
-@93991 voice info ", 1 wood at a 3"
-@95891 voice info ", 1 gold mine at a 5"
-@98291 voice info ", 1 gold mine and 2 wood at b 3"
-@101992 sounds 81 2005eb69819dc96a
-@101992 step 44 key F10
-@101992 voice menu "Menu"
-@102392 step 45 key DOWN
-@102392 voice item "cancel game ,"
-@103692 sounds 1 0810d5e90d079a41
-@103692 step 46 key RETURN
-@103692 voice confirmation "cancel game"
-@104794 voice info "Defeat at 0 minutes 13 seconds"
-@108394 voice info "1 units produced , 0 lost , 0 neutralized"
-@113094 voice info "2 building produced , 0 lost , 0 neutralized"
-@118094 voice info "10 gold gathered , 0 consumed"
-@121594 voice info "10 wood gathered , 0 consumed"
-@125094 voice info "score 23 press F5 to listen again"
-@128994 voice menu "please make a selection"
-@131294 sounds 14 07143d541f2baf60
-@131294 step 47 key s
-@131294 voice item "start a game on"
-@132794 sounds 1 c7046c0e6ad2ae36
-@132794 step 48 key RETURN
-@132794 voice confirmation "start a game on"
-@134304 voice menu "start a game on"
-@135804 sounds 1 937ce1022aa2014b
-@135804 step 49 key DOWN
-@135804 voice item "jl2 2 ,"
-@136904 sounds 1 efb8d913af226b01
-@136904 step 50 key DOWN
-@136904 voice item "jl3 3 ,"
-@138004 sounds 1 af1747c29afc9e2d
-@138004 step 51 key UP
-@138004 voice item "jl2 2 ,"
-@139104 sounds 1 00b30aacb2ebb9f4
-@139104 step 52 key RETURN
-@139104 voice confirmation "jl2 2"
-@140014 voice menu "please make a selection"
-@142314 sounds 1 985a0d47c1615833
-@142314 step 53 key DOWN
-@142314 voice item "invite quiet computer ,"
-@144614 sounds 1 7cb23df41e9c285b
-@144614 step 54 key DOWN
-@144614 voice item "invite aggressive computer ,"
-@147414 sounds 1 7dff342f65c1c7ae
-@147414 step 55 key DOWN
-@147414 voice item "invite aggressive computer 2 ,"
-@150614 sounds 1 1acb439934321513
-@150614 step 56 key DOWN
-@150614 voice item "cancel , cancel this game"
-@153114 sounds 1 83a606006a9ac515
-@153114 step 57 key DOWN
-@153114 voice item "invite quiet computer ,"
-@155414 sounds 1 574e1943f869c8fb
-@155414 step 58 key RETURN
-@155414 voice confirmation "invite quiet computer"
-@157524 voice menu "please make a selection"
-@159824 sounds 1 b65b637056f74353
-@159824 step 59 key ESCAPE
-@159824 voice confirmation "cancel"
-@160434 voice menu "please make a selection"
-@162734 sounds 1 3f207d4af7954e70
-@162734 step 60 key ESCAPE
-@162734 voice confirmation "go back to the previous menu"
-@165544 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@170644 sounds 1 a6585e385ff9739a
-@170644 step 61 key ESCAPE
-@170644 voice confirmation "quit,"
-@171154 sounds 1 d87256dc9eab986b
-@171154 end
+@73370 voice item "invite random computer with unlimited resources and no requirements ,"
+@80270 sounds 1 e561ad1fa9647f96
+@80270 step 38 key RETURN
+@80270 voice confirmation "invite random computer with unlimited resources and no requirements"
+@86980 voice menu "please make a selection"
+@89280 sounds 1 23606a81008cd52a
+@89280 step 39 key DOWN
+@89280 voice item "start ,"
+@89980 sounds 1 ddef60b03080d489
+@89980 step 40 key DOWN
+@89980 voice item "cancel , cancel this game"
+@92480 sounds 1 872120345f430aac
+@92480 step 41 key UP
+@92480 voice item "start ,"
+@93180 sounds 1 638a62cf231e9ce3
+@93180 step 42 key RETURN
+@93180 voice confirmation "start"
+@93690 voice info "objective: neutralized enemy"
+@96592 voice item "a 4 , 1 town hall , 1 farm and 1 peasant"
+@97091 sounds 9 e795a311655eb762
+@97091 step 43 wait_turns 3
+@101392 voice info ", 1 wood at a 3"
+@103292 voice info ", 1 gold mine at a 5"
+@105692 voice info ", 1 gold mine and 2 wood at b 3"
+@109393 sounds 81 3289b0cd5e254ccb
+@109393 step 44 key F10
+@109393 voice menu "Menu"
+@109793 step 45 key DOWN
+@109793 voice item "cancel game ,"
+@111093 sounds 1 e1820f30e5bac2b9
+@111093 step 46 key RETURN
+@111093 voice confirmation "cancel game"
+@112195 voice info "Defeat at 0 minutes 13 seconds"
+@115795 voice info "1 units produced , 0 lost , 0 neutralized"
+@120495 voice info "2 building produced , 0 lost , 0 neutralized"
+@125495 voice info "10 gold gathered , 0 consumed"
+@128995 voice info "10 wood gathered , 0 consumed"
+@132495 voice info "score 23 press F5 to listen again"
+@136395 voice menu "please make a selection"
+@138695 sounds 14 b5376b25af4f35aa
+@138695 step 47 key s
+@138695 voice item "start a game on"
+@140195 sounds 1 1ce4f76a48d9c810
+@140195 step 48 key RETURN
+@140195 voice confirmation "start a game on"
+@141705 voice menu "start a game on"
+@143205 sounds 1 1984239867245169
+@143205 step 49 key DOWN
+@143205 voice item "jl2 2 ,"
+@144305 sounds 1 628edeca087c856b
+@144305 step 50 key DOWN
+@144305 voice item "jl3 3 ,"
+@145405 sounds 1 e3abfc4357e9beeb
+@145405 step 51 key UP
+@145405 voice item "jl2 2 ,"
+@146505 sounds 1 b9dff5727c3aeebb
+@146505 step 52 key RETURN
+@146505 voice confirmation "jl2 2"
+@147415 voice menu "please make a selection"
+@149715 sounds 1 976b8538d2988afe
+@149715 step 53 key DOWN
+@149715 voice item "invite quiet computer ,"
+@152015 sounds 1 bbd2aa02ff04c65b
+@152015 step 54 key DOWN
+@152015 voice item "invite aggressive computer ,"
+@154815 sounds 1 b94f57a1c7268772
+@154815 step 55 key DOWN
+@154815 voice item "invite random computer with unlimited resources and no requirements ,"
+@161715 sounds 1 cfb694167b4ff68c
+@161715 step 56 key DOWN
+@161715 voice item "cancel , cancel this game"
+@164215 sounds 1 917c1f6b5540ca39
+@164215 step 57 key DOWN
+@164215 voice item "invite quiet computer ,"
+@166515 sounds 1 6b46041bd1edd8df
+@166515 step 58 key RETURN
+@166515 voice confirmation "invite quiet computer"
+@168625 voice menu "please make a selection"
+@170925 sounds 1 e5937d7850f9b075
+@170925 step 59 key ESCAPE
+@170925 voice confirmation "cancel"
+@171535 voice menu "please make a selection"
+@173835 sounds 1 5f6737cae71926f7
+@173835 step 60 key ESCAPE
+@173835 voice confirmation "go back to the previous menu"
+@176645 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@181745 sounds 1 6454a1374a442b02
+@181745 step 61 key ESCAPE
+@181745 voice confirmation "quit,"
+@182255 sounds 1 9bfb97b956ff26bb
+@182255 end

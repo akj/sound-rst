@@ -481,18 +481,18 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
 fn the_measures_of_a_game_on_jl1() {
     let g = play(&Files::load(), "jl1", 1, &["aggressive".to_owned()], 4000);
     let expected = [
-        "jl1 seed 1: game time 606.3 seconds",
+        "jl1 seed 1: game time 607.5 seconds",
         "jl1 seed 1: ended, nobody left playing",
         "jl1 seed 1 computer 1 aggressive: first saw an enemy at 16.8 seconds",
-        "jl1 seed 1 computer 1 aggressive: first attack at 548.7 seconds",
-        "jl1 seed 1 computer 1 aggressive: stuck at the population limit, 18.6 seconds",
-        "jl1 seed 1 computer 1 aggressive: stuck at the population limit, short of a farm's cost, 17.1 seconds",
-        "jl1 seed 1 computer 1 aggressive: defeated at 606.3 seconds",
+        "jl1 seed 1 computer 1 aggressive: first attack at 555.9 seconds",
+        "jl1 seed 1 computer 1 aggressive: stuck at the population limit, 19.2 seconds",
+        "jl1 seed 1 computer 1 aggressive: stuck at the population limit, short of a farm's cost, 17.7 seconds",
+        "jl1 seed 1 computer 1 aggressive: defeated at 607.5 seconds",
         "jl1 seed 1 computer 2 aggressive: first saw an enemy at 16.8 seconds",
         "jl1 seed 1 computer 2 aggressive: first attack at 427.8 seconds",
         "jl1 seed 1 computer 2 aggressive: stuck at the population limit, 50.7 seconds",
         "jl1 seed 1 computer 2 aggressive: stuck at the population limit, short of a farm's cost, 26.4 seconds",
-        "jl1 seed 1 computer 2 aggressive: won at 606.3 seconds",
+        "jl1 seed 1 computer 2 aggressive: won at 607.5 seconds",
     ];
     assert_eq!(game_lines(&g), expected);
 }

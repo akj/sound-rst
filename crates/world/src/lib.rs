@@ -151,12 +151,12 @@ pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers}
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
 /// the digest of a world (`World::digest_u64`).
-pub const SIM_VERSION: u32 = 11;
+pub const SIM_VERSION: u32 = 12;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.
 #[cfg(test)]
-const TRACES_HASH: u64 = 0x7516_c30b_d413_4f95;
+const TRACES_HASH: u64 = 0x4970_7cc8_c855_fca4;
 
 #[cfg(test)]
 mod sim_version {
