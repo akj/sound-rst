@@ -19,7 +19,7 @@ use tracing::{info, warn};
 
 use crate::ServerConfig;
 use crate::connection::{ConnId, Outbox, Queued, encode};
-use crate::game::{self, Ending, GameInput, Joining};
+use crate::game::{self, Ending, GameInput, GameTx, Joining, SeatId, WatcherId};
 use crate::room::{Member, Occupant, Phase, Room};
 
 pub(crate) type LobbyTx = mpsc::UnboundedSender<LobbyInput>;
@@ -51,13 +51,16 @@ pub(crate) enum LobbyInput {
     },
     /// A game is over for this human.
     LeftGame { room: RoomId, conn: ConnId },
-    /// A game gave this player back their seat. They are sent
-    /// nothing of the game before the lobby hears of it.
+    /// A game gave this player or watcher back their seat. They are
+    /// sent nothing of the game before the lobby hears of it.
     Returned {
         room: RoomId,
         conn: ConnId,
-        slot: SlotIndex,
+        seat: SeatId,
     },
+    /// A watcher's seat is gone from a game: it left, its game is over,
+    /// or it did not come back in time.
+    WatcherLeft { room: RoomId, watcher: WatcherId },
     /// A game had no seat for this player's token.
     ReturnRefused { room: RoomId, conn: ConnId },
     /// A game's task ended.
@@ -76,6 +79,7 @@ pub(crate) fn spawn(config: &ServerConfig, player_count: Arc<AtomicU32>) -> Lobb
         name: config.name.clone(),
         max_clients: config.max_clients,
         max_rooms: config.max_rooms,
+        max_watchers: config.max_watchers,
         games: GameConfig {
             grace: config.grace_period,
             load_budget: config.load_budget,
@@ -136,6 +140,7 @@ struct NewRoom {
     map: MapInfo,
     speed: Speed,
     open: bool,
+    watchers: bool,
 }
 
 /// Maps by hash, as the `ServerMsg::Map` that sends them, while a room
@@ -175,6 +180,8 @@ struct Lobby {
     name: ServerName,
     max_clients: usize,
     max_rooms: usize,
+    /// The most watchers in one room.
+    max_watchers: usize,
     games: GameConfig,
     seed: Option<i64>,
     overruns: game::Overruns,
@@ -219,7 +226,7 @@ impl Lobby {
                 } => {
                     if let Some(player) = self.players.get(&conn) {
                         let outbox = player.outbox.clone();
-                        let pass = self.pass_to_game(conn, queued, |slot| GameInput::Command {
+                        let pass = self.pass_to_player(conn, queued, |slot| GameInput::Command {
                             slot,
                             command,
                             bytes,
@@ -231,7 +238,8 @@ impl Lobby {
                 }
                 LobbyInput::Gone { conn } => self.gone(conn),
                 LobbyInput::LeftGame { room, conn } => self.left_game(room, conn),
-                LobbyInput::Returned { room, conn, slot } => self.returned(room, conn, slot),
+                LobbyInput::Returned { room, conn, seat } => self.returned(room, conn, seat),
+                LobbyInput::WatcherLeft { room, watcher } => self.watcher_left(room, watcher),
                 LobbyInput::ReturnRefused { room, conn } => self.return_refused(room, conn),
                 LobbyInput::GameEnded { room, ending } => self.game_ended(room, ending),
             }
@@ -320,8 +328,8 @@ impl Lobby {
             Place::InRoom(id) => self.take_out_of_room(id, conn),
             Place::Playing(id) => {
                 let room = &self.rooms[&id];
-                if let (Phase::Playing { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) {
-                    let _ = game.send((GameInput::Dropped { slot }, None));
+                if let (Phase::Playing { game }, Some(seat)) = (&room.phase, room.seat_of(conn)) {
+                    let _ = game.send((GameInput::Dropped { seat }, None));
                 }
             }
         }
@@ -340,16 +348,27 @@ impl Lobby {
         match msg {
             ClientMsg::Hello { .. } => Err(Refusal::NotNow),
             ClientMsg::Chat { channel, text } => self.chat(conn, channel, text),
-            ClientMsg::CreateRoom { map, speed, open } => {
-                self.create_room(conn, NewRoom { map, speed, open })
-            }
+            ClientMsg::CreateRoom {
+                map,
+                speed,
+                open,
+                watchers,
+            } => self.create_room(
+                conn,
+                NewRoom {
+                    map,
+                    speed,
+                    open,
+                    watchers,
+                },
+            ),
             ClientMsg::Map { map } => self.map_uploaded(conn, map),
             ClientMsg::GetMap { hash } => {
                 // Only for a room the player is in or invited to: the same
                 // answer as for a map the server does not have.
                 let allowed = self.rooms.values().any(|r| {
                     r.map.hash == hash
-                        && (r.slot_of(conn).is_some()
+                        && (r.seat_of(conn).is_some()
                             || matches!(&r.phase, Phase::Gathering { invited } if invited.contains(&conn)))
                 });
                 if !allowed {
@@ -360,6 +379,7 @@ impl Lobby {
                 Ok(())
             }
             ClientMsg::JoinRoom { room } => self.join(conn, room),
+            ClientMsg::Watch { room } => self.watch(conn, room),
             ClientMsg::LeaveRoom => {
                 let id = self.gathering_room(conn)?;
                 self.players[&conn].outbox.send(&ServerMsg::RoomExited {
@@ -376,7 +396,7 @@ impl Lobby {
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
             ClientMsg::LeaveGame => {
-                self.pass_to_game(conn, queued, |slot| GameInput::Leave { slot })
+                self.pass_to_game(conn, queued, |seat| GameInput::Leave { seat })
             }
             ClientMsg::Start { texts } => self.start(conn, texts),
             ClientMsg::ReturnToGame { room, token } => self.return_to_game(conn, room, token),
@@ -388,18 +408,33 @@ impl Lobby {
             ClientMsg::RemovePlayer { slot } => {
                 self.host_control(conn, queued, |by| GameInput::Remove { by, slot })
             }
+            ClientMsg::Follow { step } => {
+                self.pass_to_watcher(conn, queued, |watcher| GameInput::Follow { watcher, step })
+            }
         }
     }
 
     // -- Chat --------------------------------------------------------------
 
+    /// A chat line. In a room or a game, a watcher's line reaches every
+    /// player and watcher there, marked as a watcher's; a line to the
+    /// allies reaches only players, and a watcher has none.
     fn chat(&mut self, conn: ConnId, channel: Channel, text: ChatText) -> Answer {
         let player = &self.players[&conn];
+        let watcher = match (channel, &player.place) {
+            (Channel::Room, Place::InRoom(id)) | (Channel::Game, Place::Playing(id)) => {
+                self.rooms[id].watcher_of(conn).is_some()
+            }
+            _ => false,
+        };
         let line = ChatLine {
             channel,
             from: player.login.clone(),
+            watcher,
             text,
         };
+        // Whether a connection is still in room `id` or its game.
+        let here = |id: RoomId, c: ConnId| matches!(self.players.get(&c), Some(p) if matches!(p.place, Place::InRoom(r) | Place::Playing(r) if r == id));
         let to: Vec<&Outbox> = match (channel, &player.place) {
             (Channel::Lobby, Place::Lobby { .. } | Place::InRoom(_)) => self
                 .players
@@ -407,18 +442,24 @@ impl Lobby {
                 .filter(|p| matches!(p.place, Place::Lobby { .. } | Place::InRoom(_)))
                 .map(|p| &p.outbox)
                 .collect(),
-            (Channel::Room, Place::InRoom(id)) => {
-                self.rooms[id].members().map(|(_, m)| &m.outbox).collect()
-            }
-            (Channel::Game | Channel::Allies, Place::Playing(id)) => {
+            (Channel::Room, Place::InRoom(id)) | (Channel::Game, Place::Playing(id)) => {
                 let room = &self.rooms[id];
-                let alliance =
-                    room.slots[room.slot_of(conn).expect("a player is in their game")].alliance;
+                room.everyone()
+                    .filter(|(c, _)| here(*id, *c))
+                    .map(|(_, o)| o)
+                    .collect()
+            }
+            (Channel::Allies, Place::Playing(id)) => {
+                // Only players: a watcher, a former player's too, has no
+                // allies and hears none.
+                let room = &self.rooms[id];
+                let Some(SeatId::Player(slot)) = room.seat_of(conn) else {
+                    return Err(Refusal::NotNow);
+                };
+                let alliance = room.slots[slot].alliance;
                 room.members()
-                    .filter(|(_, m)| {
-                        matches!(self.players.get(&m.conn), Some(p) if matches!(p.place, Place::Playing(r) if r == *id))
-                    })
-                    .filter(|(i, _)| channel == Channel::Game || room.slots[*i].alliance == alliance)
+                    .filter(|(i, m)| here(*id, m.conn) && room.slots[*i].alliance == alliance)
+                    .filter(|(_, m)| room.watcher_of(m.conn).is_none())
                     .map(|(_, m)| &m.outbox)
                     .collect()
             }
@@ -503,6 +544,7 @@ impl Lobby {
             new.map,
             new.speed,
             new.open,
+            new.watchers,
             player.content.clone(),
         );
         info!(room = id.0, host = %player.login, map = %room.map.file_name, "room opened");
@@ -549,9 +591,67 @@ impl Lobby {
         let joined = RoomChange::Joined {
             player: soundrts_protocol::SlotPlayer::Human(player.login.clone()),
         };
-        notify_others(room, conn, joined);
+        room.notify_but(Some(conn), joined);
         self.room_changed(id);
         self.move_player(conn, Place::InRoom(id));
+        Ok(())
+    }
+
+    /// Joins a room, or its game, to watch. Everyone in it is told. In a
+    /// game that runs, the watcher is seated at once ([`GameInput::Watch`]).
+    fn watch(&mut self, conn: ConnId, id: RoomId) -> Answer {
+        let player = &self.players[&conn];
+        if !matches!(player.place, Place::Lobby { creating: None }) {
+            return Err(Refusal::NotNow);
+        }
+        let room = self.rooms.get_mut(&id).ok_or(Refusal::NoSuchRoom)?;
+        if room.content != player.content {
+            return Err(Refusal::Incompatible);
+        }
+        if !room.takes_watchers {
+            return Err(Refusal::NoWatchers);
+        }
+        let invited = match &room.phase {
+            Phase::Gathering { invited } => invited.contains(&conn),
+            Phase::Playing { .. } => false,
+        };
+        if !room.open && !invited {
+            return Err(Refusal::NotNow);
+        }
+        if room.watchers.len() >= self.max_watchers {
+            return Err(Refusal::WatchersFull);
+        }
+        let login = player.login.clone();
+        let outbox = player.outbox.clone();
+        let watcher = room.add_watcher(conn, login.clone(), outbox.clone());
+        if let Phase::Gathering { invited } = &mut room.phase {
+            invited.remove(&conn);
+        }
+        info!(room = id.0, %login, "watching");
+        outbox.send(&ServerMsg::Room {
+            change: RoomChange::Entered,
+            room: room.state(),
+        });
+        room.notify_but(
+            Some(conn),
+            RoomChange::Watching {
+                login: login.clone(),
+            },
+        );
+        let place = match &room.phase {
+            Phase::Gathering { .. } => Place::InRoom(id),
+            Phase::Playing { game } => {
+                let joining = Joining {
+                    seat: SeatId::Watcher(watcher),
+                    conn,
+                    login,
+                    outbox,
+                };
+                let _ = game.send((GameInput::Watch(joining), None));
+                Place::Playing(id)
+            }
+        };
+        self.move_player(conn, place);
         Ok(())
     }
 
@@ -562,6 +662,13 @@ impl Lobby {
         let Some(room) = self.rooms.get_mut(&id) else {
             return;
         };
+        if let Some(watcher) = room.watcher_of(conn) {
+            if let Some(w) = room.remove_watcher(watcher) {
+                info!(room = id.0, login = %w.login, "stopped watching");
+                room.notify(RoomChange::StoppedWatching { login: w.login });
+            }
+            return;
+        }
         let Some(slot) = room.slot_of(conn) else {
             return;
         };
@@ -589,11 +696,25 @@ impl Lobby {
         self.room_changed(id);
     }
 
+    /// Closes a room; its watchers waiting for its game are back in the
+    /// lobby.
     fn close_room(&mut self, id: RoomId) {
         let Some(room) = self.rooms.remove(&id) else {
             return;
         };
         info!(room = id.0, "room closed");
+        for w in &room.watchers {
+            let waiting = self
+                .players
+                .get(&w.conn)
+                .is_some_and(|p| matches!(p.place, Place::InRoom(r) if r == id));
+            if waiting {
+                w.outbox.send(&ServerMsg::RoomExited {
+                    reason: RoomExit::Closed,
+                });
+                self.move_player(w.conn, IN_LOBBY);
+            }
+        }
         if !self.rooms.values().any(|r| r.map.hash == room.map.hash) {
             self.maps.remove(&room.map.hash);
         }
@@ -700,7 +821,8 @@ impl Lobby {
         if room.host == conn {
             return Err(Refusal::NotNow);
         }
-        let slot = room.slot_of(conn).expect("a member");
+        // A watcher has no slot to be ready in.
+        let slot = room.slot_of(conn).ok_or(Refusal::NotNow)?;
         let Occupant::Human(member) = &mut room.slots[slot].occupant else {
             unreachable!("slot_of finds humans");
         };
@@ -753,15 +875,19 @@ impl Lobby {
             seed,
             slots.iter().map(controller).collect(),
         );
-        let seats: Vec<Joining> = room
-            .members()
-            .map(|(slot, m)| Joining {
-                slot,
-                conn: m.conn,
-                login: m.login.clone(),
-                outbox: m.outbox.clone(),
-            })
-            .collect();
+        let players = room.members().map(|(slot, m)| Joining {
+            seat: SeatId::Player(slot),
+            conn: m.conn,
+            login: m.login.clone(),
+            outbox: m.outbox.clone(),
+        });
+        let watchers = room.watchers.iter().map(|w| Joining {
+            seat: SeatId::Watcher(w.id),
+            conn: w.conn,
+            login: w.login.clone(),
+            outbox: w.outbox.clone(),
+        });
+        let seats: Vec<Joining> = players.chain(watchers).collect();
         let settings = game::Settings {
             speed: room.speed,
             grace: self.games.grace,
@@ -783,23 +909,62 @@ impl Lobby {
 
     // -- Games -------------------------------------------------------------
 
-    /// Passes an input to the game this player plays, for their
-    /// slot.
+    /// The game this player plays or watches, and their seat in it.
+    fn seat_in_game(&self, conn: ConnId) -> Result<(&GameTx, SeatId), Refusal> {
+        let Place::Playing(id) = self.players[&conn].place else {
+            return Err(Refusal::NotNow);
+        };
+        let room = &self.rooms[&id];
+        match (&room.phase, room.seat_of(conn)) {
+            (Phase::Playing { game }, Some(seat)) => Ok((game, seat)),
+            _ => Err(Refusal::NotNow),
+        }
+    }
+
+    /// Passes an input to the game this player plays or watches, for
+    /// their seat.
     fn pass_to_game(
+        &mut self,
+        conn: ConnId,
+        queued: Queued,
+        input: impl FnOnce(SeatId) -> GameInput,
+    ) -> Answer {
+        let (game, seat) = self.seat_in_game(conn)?;
+        let _ = game.send((input(seat), Some(queued)));
+        Ok(())
+    }
+
+    /// Passes an input to the game this player plays, for their slot. A
+    /// watcher has none: whatever it sends of a player's is refused here.
+    fn pass_to_player(
         &mut self,
         conn: ConnId,
         queued: Queued,
         input: impl FnOnce(SlotIndex) -> GameInput,
     ) -> Answer {
-        let Place::Playing(id) = self.players[&conn].place else {
-            return Err(Refusal::NotNow);
-        };
-        let room = &self.rooms[&id];
-        let (Phase::Playing { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) else {
-            return Err(Refusal::NotNow);
-        };
-        let _ = game.send((input(slot), Some(queued)));
-        Ok(())
+        match self.seat_in_game(conn)? {
+            (game, SeatId::Player(slot)) => {
+                let _ = game.send((input(slot), Some(queued)));
+                Ok(())
+            }
+            (_, SeatId::Watcher(_)) => Err(Refusal::NotNow),
+        }
+    }
+
+    /// Passes a watcher's input to the game it watches.
+    fn pass_to_watcher(
+        &mut self,
+        conn: ConnId,
+        queued: Queued,
+        input: impl FnOnce(WatcherId) -> GameInput,
+    ) -> Answer {
+        match self.seat_in_game(conn)? {
+            (game, SeatId::Watcher(watcher)) => {
+                let _ = game.send((input(watcher), Some(queued)));
+                Ok(())
+            }
+            (_, SeatId::Player(_)) => Err(Refusal::NotNow),
+        }
     }
 
     /// Passes the room's host's input to the game they play.
@@ -815,7 +980,7 @@ impl Lobby {
         if self.rooms[&id].host != conn {
             return Err(Refusal::NotNow);
         }
-        self.pass_to_game(conn, queued, input)
+        self.pass_to_player(conn, queued, input)
     }
 
     /// Asks a game for the seat of `token`. The player waits in the
@@ -842,9 +1007,9 @@ impl Lobby {
         Ok(())
     }
 
-    /// A game gave `slot` back to this player: the slot is theirs
+    /// A game gave `seat` back to this player or watcher: it is theirs
     /// from now on. If they are gone meanwhile, the seat is dropped again.
-    fn returned(&mut self, id: RoomId, conn: ConnId, slot: SlotIndex) {
+    fn returned(&mut self, id: RoomId, conn: ConnId, seat: SeatId) {
         let waiting = self
             .players
             .get(&conn)
@@ -856,20 +1021,54 @@ impl Lobby {
             return;
         };
         if !waiting {
-            let _ = game.send((GameInput::Dropped { slot }, None));
+            let _ = game.send((GameInput::Dropped { seat }, None));
             return;
         }
         let player = &self.players[&conn];
-        let Some(Occupant::Human(member)) = room.slots.get_mut(slot).map(|s| &mut s.occupant)
-        else {
+        match seat {
+            SeatId::Player(slot) => {
+                let Some(Occupant::Human(member)) =
+                    room.slots.get_mut(slot).map(|s| &mut s.occupant)
+                else {
+                    return;
+                };
+                let old = std::mem::replace(&mut member.conn, conn);
+                member.outbox = player.outbox.clone();
+                if room.host == old {
+                    room.host = conn;
+                }
+            }
+            SeatId::Watcher(watcher) => {
+                let Some(w) = room.watcher(watcher) else {
+                    return;
+                };
+                w.conn = conn;
+                w.outbox = player.outbox.clone();
+            }
+        }
+        // Who watches may have changed while the connection was lost.
+        player.outbox.send(&ServerMsg::Room {
+            change: RoomChange::Entered,
+            room: room.state(),
+        });
+        self.move_player(conn, Place::Playing(id));
+    }
+
+    /// A watcher's seat is gone from the game of room `id`: it is no
+    /// longer in the room, everyone there hears it, and, if it is still
+    /// connected and in the game, it is back in the lobby.
+    fn watcher_left(&mut self, id: RoomId, watcher: WatcherId) {
+        let Some(room) = self.rooms.get_mut(&id) else {
             return;
         };
-        let old = std::mem::replace(&mut member.conn, conn);
-        member.outbox = player.outbox.clone();
-        if room.host == old {
-            room.host = conn;
-        }
-        self.move_player(conn, Place::Playing(id));
+        let Some(w) = room.remove_watcher(watcher) else {
+            return;
+        };
+        info!(room = id.0, login = %w.login, "stopped watching");
+        room.notify(RoomChange::StoppedWatching {
+            login: w.login.clone(),
+        });
+        self.left_game(id, w.conn);
     }
 
     fn return_refused(&mut self, id: RoomId, conn: ConnId) {
@@ -920,8 +1119,18 @@ impl Lobby {
         if let Some((_, host)) = room.members().find(|(_, m)| m.conn == room.host) {
             game::tell(&host.outbox, &SeatFrame::NotStarted(reason));
         }
-        let members: Vec<ConnId> = room.members().map(|(_, m)| m.conn).collect();
+        // The watchers first: the room closes once its last player is out,
+        // and sends its watchers back to the lobby then.
+        let members: Vec<ConnId> = room
+            .watchers
+            .iter()
+            .map(|w| w.conn)
+            .chain(room.members().map(|(_, m)| m.conn))
+            .collect();
         for conn in members {
+            if !self.rooms.contains_key(&id) {
+                break;
+            }
             let here = self
                 .players
                 .get(&conn)
@@ -1037,17 +1246,5 @@ fn lobby_player(player: &Player) -> LobbyPlayer {
     LobbyPlayer {
         login: player.login.clone(),
         whereabouts: player.place.whereabouts(),
-    }
-}
-
-fn notify_others(room: &Room, conn: ConnId, change: RoomChange) {
-    let text = encode(&ServerMsg::Room {
-        change,
-        room: room.state(),
-    });
-    for (_, m) in room.members() {
-        if m.conn != conn {
-            m.outbox.send_text(text.clone());
-        }
     }
 }

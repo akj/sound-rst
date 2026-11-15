@@ -51,6 +51,9 @@ pub struct ServerConfig {
     pub max_clients: usize,
     /// The most rooms, games included, at once.
     pub max_rooms: usize,
+    /// The most watchers in one room or game. A watcher costs the server
+    /// little: it is sent what the player it follows is sent.
+    pub max_watchers: usize,
     /// How long a new connection has to say hello.
     pub hello_timeout: Duration,
     /// How often the server pings each connection.
@@ -89,6 +92,7 @@ impl Default for ServerConfig {
             port: DEFAULT_PORT,
             max_clients: 40,
             max_rooms: 10,
+            max_watchers: soundrts_protocol::MAX_WATCHERS,
             hello_timeout: Duration::from_secs(10),
             heartbeat_interval: Duration::from_secs(5),
             heartbeat_timeout: Duration::from_secs(20),

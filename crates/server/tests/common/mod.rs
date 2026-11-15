@@ -354,6 +354,7 @@ pub async fn open_room(
         map: info.clone(),
         speed: Speed::Fast4,
         open,
+        watchers: true,
     })
     .await;
     let mut msg = h.recv().await;

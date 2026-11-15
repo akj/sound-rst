@@ -367,7 +367,8 @@ fn two_players_play_a_game_on_a_server_and_leave_it() {
     let bob = std::thread::spawn(move || {
         let mut s = Script::new().wait_for("andrew invites you");
         s = keys(s, &[Key::Down, Key::Return]);
-        s = s.wait_for_exact("jl1 1");
+        // Who joins hears whether the room takes watchers.
+        s = s.wait_for_exact("jl1 1 , watchers welcome");
         // "I am ready"
         s = s.at(0.3).type_text("i").at(0.6).tap(Key::Return);
         s = s.wait_for("Menu please make a selection");

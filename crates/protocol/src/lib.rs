@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -46,6 +46,9 @@ pub const MAX_ALLIANCE: u8 = 8;
 
 /// The most chat lines a server keeps for the lobby and sends on arrival.
 pub const CHAT_HISTORY_LINES: usize = 50;
+
+/// The most watchers a room takes, unless its server says otherwise.
+pub const MAX_WATCHERS: usize = 8;
 
 /// The most bytes of commands one player can have waiting for one turn.
 /// The server refuses commands beyond it with [`Refusal::SlowDown`].
@@ -578,6 +581,8 @@ pub struct RoomSummary {
     pub content: ContentHash,
     pub players: Vec<SlotPlayer>,
     pub started: bool,
+    /// Whether people may join the room, or its game, only to watch.
+    pub takes_watchers: bool,
 }
 
 /// Who is in a room: the lobby's whole state, sent on arrival.
@@ -641,6 +646,11 @@ pub struct RoomState {
     pub open: bool,
     pub content: ContentHash,
     pub slots: Vec<Slot>,
+    /// Whether people may join the room, or its game, only to watch.
+    pub takes_watchers: bool,
+    /// Who watches, in the order they came. A watcher has no slot: no
+    /// units, no part in the game.
+    pub watchers: Vec<Login>,
 }
 
 /// What changed in a room, so that a client can say it in a few words.
@@ -667,6 +677,14 @@ pub enum RoomChange {
     Host {
         host: Login,
     },
+    /// Someone joined the room, or its game, to watch.
+    Watching {
+        login: Login,
+    },
+    /// A watcher left, or did not come back in time.
+    StoppedWatching {
+        login: Login,
+    },
 }
 
 /// Why you are no longer in a room.
@@ -677,6 +695,8 @@ pub enum RoomExit {
     Left,
     /// The host removed you.
     Removed,
+    /// No player is left in the room, which closed.
+    Closed,
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +721,9 @@ pub enum Channel {
 pub struct ChatLine {
     pub channel: Channel,
     pub from: Login,
+    /// The line comes from a watcher of the room or its game: everyone in
+    /// it hears that.
+    pub watcher: bool,
     pub text: ChatText,
 }
 
@@ -777,11 +800,13 @@ pub enum ClientMsg {
     },
 
     /// Creates a room with you as host. The server asks for the map with
-    /// [`ServerMsg::SendMap`] if it does not have it.
+    /// [`ServerMsg::SendMap`] if it does not have it. `watchers`: whether
+    /// people may join only to watch.
     CreateRoom {
         map: MapInfo,
         speed: Speed,
         open: bool,
+        watchers: bool,
     },
     /// A map file: the one the server asked for.
     Map {
@@ -792,6 +817,15 @@ pub enum ClientMsg {
         hash: MapHash,
     },
     JoinRoom {
+        room: RoomId,
+    },
+    /// Joins a room only to watch, before its game starts or while it
+    /// runs: an open room, or one you are invited to before it starts.
+    /// Everyone in the room is told. In a game that runs, you are sent
+    /// the game as [`ClientMsg::ReturnToGame`] would be, following the
+    /// first player still in it. Leave it with [`ClientMsg::LeaveRoom`]
+    /// or [`ClientMsg::LeaveGame`].
+    Watch {
         room: RoomId,
     },
     LeaveRoom,
@@ -851,6 +885,21 @@ pub enum ClientMsg {
     RemovePlayer {
         slot: SlotIndex,
     },
+    /// A watcher follows the next player still in the game, or the
+    /// previous one: from the next turn it is sent that player's whole
+    /// message, then theirs each turn.
+    Follow {
+        step: Step,
+    },
+}
+
+/// Which way [`ClientMsg::Follow`] goes along the players, in the room's
+/// order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Step {
+    Next,
+    Previous,
 }
 
 /// From the server to a client.
@@ -934,6 +983,10 @@ pub enum Refusal {
     SlowDown,
     /// The message could not be read.
     Invalid,
+    /// The room takes no watchers.
+    NoWatchers,
+    /// The room has as many watchers as it takes.
+    WatchersFull,
 }
 
 /// What a server answers to [`DISCOVERY_REQUEST`].

@@ -10,6 +10,7 @@ fn line(channel: Channel, from: &Login, text: &str) -> ServerMsg {
         line: ChatLine {
             channel,
             from: from.clone(),
+            watcher: false,
             text: chat(text),
         },
     }
@@ -47,11 +48,13 @@ async fn lobby_chat_reaches_everyone_out_of_a_game_and_is_kept() {
             ChatLine {
                 channel: Channel::Lobby,
                 from: andrew,
+                watcher: false,
                 text: chat("hello all"),
             },
             ChatLine {
                 channel: Channel::Lobby,
                 from: bob,
+                watcher: false,
                 text: chat("à bientôt"),
             },
         ]

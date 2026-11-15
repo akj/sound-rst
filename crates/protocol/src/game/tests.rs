@@ -192,10 +192,11 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
         let bytes = encode_frame(&frame).unwrap();
         assert_eq!(decode_frame(&bytes), Ok(frame));
     }
-    // A token that is not one is refused.
-    let seated = |token: &str| {
+    // A token that is not one is refused; a seat is a player's or a
+    // watcher's.
+    let seated_as = |you: Role, token: &str| {
         let mut bytes = encode_frame(&SeatFrame::Seated {
-            you: 0,
+            you,
             map: crate::MapInfo {
                 file_name: crate::MapFileName::new("jl1.txt").unwrap(),
                 hash: crate::MapHash::of(b""),
@@ -213,6 +214,14 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
         bytes[at..].copy_from_slice(token.as_bytes());
         decode_frame(&bytes)
     };
+    let seated = |token: &str| seated_as(Role::Player(0), token);
+    assert!(matches!(
+        seated_as(Role::Watcher, &"b".repeat(32)),
+        Ok(SeatFrame::Seated {
+            you: Role::Watcher,
+            ..
+        })
+    ));
     assert!(seated(&"0".repeat(32)).is_ok());
     assert!(seated(&"G".repeat(32)).is_err());
 }

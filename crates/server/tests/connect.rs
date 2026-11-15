@@ -260,6 +260,7 @@ async fn a_message_larger_than_the_server_holds_closes_the_connection() {
         map: info,
         speed: Speed::Normal,
         open: true,
+        watchers: true,
     })
     .await;
     c.expect_closed().await;

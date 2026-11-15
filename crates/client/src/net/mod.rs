@@ -21,17 +21,17 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use soundrts_protocol::game::SeatFrame;
+use soundrts_protocol::game::{Role, SeatFrame};
 use soundrts_protocol::{
     Channel, ChatText, ClientMsg, ContentHash, Invalid, LobbySnapshot, Login, MapData, MapHash,
-    MapInfo, Refusal, RoomExit, RoomId, SeatToken, ServerMsg, SlotIndex, Speed,
+    MapInfo, Refusal, RoomExit, RoomId, SeatToken, ServerMsg, Speed,
 };
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
 use self::chat::{ChatLog, line_msg, line_news};
 use self::conn::{Connection, NetEvent, Opening};
-use self::lobby::{LobbyModel, MapState, RoomModel, TooMany, check_room};
+use self::lobby::{LobbyModel, MapState, RoomModel, TooMany, check_room, check_watchers};
 use self::words::text;
 use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
@@ -78,12 +78,12 @@ pub struct Invitation {
     pub by: Login,
 }
 
-/// The seat a server gave the player in a game it runs: the game starts
-/// for the player.
+/// The seat a server gave the player in a game it runs, to play or to
+/// watch: the game starts for the player.
 #[derive(Clone, Debug)]
 pub struct Seated {
-    /// The player's slot in the room.
-    pub you: SlotIndex,
+    /// The player's slot in the room, or that the player watches.
+    pub you: Role,
     pub map: MapInfo,
     pub speed: Speed,
     pub paused: bool,
@@ -104,10 +104,10 @@ pub const MAX_QUEUED_FRAMES: usize = 1024;
 /// be.
 pub type Incoming = Result<Box<SeatFrame>, Invalid>;
 
-/// What the server sends a game being played.
+/// What the server sends a game being played or watched.
 pub struct GameLink {
-    /// The player's slot.
-    pub you: SlotIndex,
+    /// The player's slot, or that the player watches.
+    pub you: Role,
     /// The frames received and not taken by the game yet, in order. At
     /// most [`MAX_QUEUED_FRAMES`].
     pub frames: VecDeque<Incoming>,
@@ -117,8 +117,8 @@ pub struct GameLink {
 }
 
 impl GameLink {
-    /// The link of a game where the player has slot `you`.
-    pub fn new(you: SlotIndex) -> GameLink {
+    /// The link of a game where the player has the seat `you`.
+    pub fn new(you: Role) -> GameLink {
         GameLink {
             you,
             frames: VecDeque::new(),
@@ -194,10 +194,10 @@ impl Net {
         (self.redial)()
     }
 
-    /// The player is back in the game they played, of slot `you`, on
-    /// `conn`, a new connection, with the lobby as it now is: what comes
-    /// next on it goes to the game.
-    pub fn returned(&mut self, conn: Connection, lobby: LobbyModel, you: SlotIndex) {
+    /// The player is back in the game they played or watched, in the seat
+    /// `you`, on `conn`, a new connection, with the lobby as it now is:
+    /// what comes next on it goes to the game.
+    pub fn returned(&mut self, conn: Connection, lobby: LobbyModel, you: Role) {
         self.conn = conn;
         self.lobby = lobby;
         self.closed = None;
@@ -302,11 +302,13 @@ impl Net {
             }
             ServerMsg::RoomExited { reason } => {
                 self.room = None;
-                if reason == RoomExit::Removed {
-                    cx.news(News::new(
-                        Category::System,
-                        text(words::YOU_HAVE_BEEN_REMOVED),
-                    ));
+                let said = match reason {
+                    RoomExit::Left => None,
+                    RoomExit::Removed => Some(words::YOU_HAVE_BEEN_REMOVED),
+                    RoomExit::Closed => Some(words::ROOM_CLOSED),
+                };
+                if let Some(said) = said {
+                    cx.news(News::new(Category::System, text(said)));
                     self.interrupts += 1;
                 }
                 self.changed();
@@ -350,6 +352,8 @@ impl Net {
                         }
                         m
                     }
+                    Refusal::NoWatchers => [msg(mp::BEEP), text(words::NO_WATCHERS)].concat(),
+                    Refusal::WatchersFull => [msg(mp::BEEP), text(words::WATCHERS_FULL)].concat(),
                     _ => msg(mp::BEEP),
                 };
                 cx.news(News::new(Category::System, m));
@@ -364,7 +368,10 @@ impl Net {
     /// lobby changes are checked as they are applied.
     fn check(&self, m: &ServerMsg) -> Result<(), TooMany> {
         match m {
-            ServerMsg::Room { room, .. } => check_room(&room.map, room.slots.len()),
+            ServerMsg::Room { room, .. } => {
+                check_room(&room.map, room.slots.len())?;
+                check_watchers(room.watchers.len())
+            }
             _ => Ok(()),
         }
     }
@@ -518,7 +525,7 @@ pub fn chat_char(c: char) -> bool {
     !c.is_control()
 }
 
-/// Asks for a chat line and sends it: to the game's players in a game
+/// Asks for a chat line and sends it: to everyone in the game in a game
 /// (from the game menu), to the room in a room, else to the lobby. A beep
 /// without a server.
 pub fn chat_in_menus(cx: &mut Client) -> Result<(), Exit> {

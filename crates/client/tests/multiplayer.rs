@@ -22,6 +22,7 @@ fn chat(from: &str, text: &str) -> ServerMsg {
         line: ChatLine {
             channel: Channel::Lobby,
             from: login(from),
+            watcher: false,
             text: ChatText::clean(text).unwrap(),
         },
     }
@@ -178,6 +179,8 @@ fn room_state(map: &MapInfo, slots: Vec<Slot>) -> RoomState {
         speed: Speed::Normal,
         open: true,
         content: ContentHash::new("x").unwrap(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots,
     }
 }
@@ -225,6 +228,39 @@ fn what_changes_in_the_room_is_said() {
                 &alone,
             ),
         );
+        // Someone joins only to watch, and the room's list names her as a
+        // watcher, in no slot.
+        let mut watched = alone.clone();
+        watched.watchers.push(login("carol"));
+        s.at(
+            70.0,
+            room(
+                RoomChange::Watching {
+                    login: login("carol"),
+                },
+                &watched,
+            ),
+        );
+        let mut three = watched.clone();
+        three.slots.push(slot(human("bob"), 2, false));
+        s.at(
+            75.0,
+            room(
+                RoomChange::Joined {
+                    player: human("bob"),
+                },
+                &three,
+            ),
+        );
+        s.at(
+            80.0,
+            room(
+                RoomChange::StoppedWatching {
+                    login: login("carol"),
+                },
+                &two,
+            ),
+        );
     });
     assert_eq!(
         from(&said(&h), "jl1 1"),
@@ -235,6 +271,9 @@ fn what_changes_in_the_room_is_said() {
             "move bob to alliance 1",
             "bob human",
             "bob has just quit the game . 1 players on 2 Not enough players to start. The minimum is 2 . andrew",
+            "carol is watching",
+            "bob has just joined 2 players on 2 the game will start when the organizer is ready . andrew . bob . watching: carol",
+            "carol stopped watching",
         ]
     );
 }
@@ -1626,4 +1665,159 @@ fn the_hold_starts_again_while_the_server_has_not_noticed_the_loss() {
     h.run_for(&mut g, hold + 20.0);
     assert!(!g.game.end_loop, "the client gave up");
     assert!(!g.game.returning(), "the seat is not back");
+}
+
+// Watching.
+
+#[test]
+fn the_lobby_offers_to_watch_an_open_game_that_takes_watchers() {
+    let mut script = Script::new();
+    for i in 0..4 {
+        script = script.at(10.0 + f64::from(i)).tap(Key::Down);
+    }
+    for i in 0..3 {
+        script = script.at(15.0 + f64::from(i)).tap(Key::Up);
+    }
+    let script = script.at(20.0).tap(Key::Return).at(30.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = jl1(h);
+        let content = h.client.res.content_hash();
+        let summary = |id, takes_watchers, open| RoomSummary {
+            id: RoomId(id),
+            host: login("bob"),
+            map: map.clone(),
+            speed: Speed::Normal,
+            open,
+            content: content.clone(),
+            players: vec![human("bob"), SlotPlayer::Computer(AiLevel::Easy)],
+            started: true,
+            takes_watchers,
+        };
+        // A game that takes watchers; one that takes none; one closed.
+        for room in [
+            summary(1, true, true),
+            summary(2, false, true),
+            summary(3, true, false),
+        ] {
+            s.at(
+                5.0,
+                ServerMsg::Lobby {
+                    change: LobbyChange::RoomOpened { room },
+                },
+            );
+        }
+    });
+    let said = said(&h);
+    let items: Vec<&String> = said
+        .iter()
+        .filter(|s| s.starts_with("watch") || s.contains("game on") || s.contains("quit"))
+        .collect();
+    assert!(items[0].starts_with("watch bob jl1 1"), "{said:#?}");
+    assert!(items[1].starts_with("start a game on"), "{said:#?}");
+    // The one game to watch, then back to it, and chosen; the others are
+    // not offered.
+    assert_eq!(
+        said.iter().filter(|s| s.starts_with("watch bob")).count(),
+        3,
+        "{said:#?}"
+    );
+    assert_eq!(server.sent(), [ClientMsg::Watch { room: RoomId(1) }]);
+}
+
+#[test]
+fn the_host_says_whether_a_room_takes_watchers_when_creating_it() {
+    let mut script = Script::new();
+    let mut at = 10.0;
+    let mut key = |s: Script, k: Key| {
+        at += 1.0;
+        s.at(at).tap(k)
+    };
+    // start a game on > the first map > the watchers setting, changed >
+    // normal speed.
+    for k in [Key::Down, Key::Return, Key::Down, Key::Return] {
+        script = key(script, k);
+    }
+    for k in [Key::Down; 4] {
+        script = key(script, k);
+    }
+    script = key(script, Key::Return);
+    for k in [Key::Up; 3] {
+        script = key(script, k);
+    }
+    script = key(script, Key::Return);
+    let script = script.at(at + 10.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |_, _| {});
+    let said = said(&h);
+    assert!(said.contains(&"watchers , welcome".to_owned()), "{said:#?}");
+    assert!(said.contains(&"not welcome".to_owned()), "{said:#?}");
+    let created: Vec<bool> = server
+        .sent()
+        .iter()
+        .filter_map(|m| match m {
+            ClientMsg::CreateRoom {
+                speed: Speed::Normal,
+                watchers,
+                ..
+            } => Some(*watchers),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(created, [false], "{:?}", server.sent());
+}
+
+/// Carol watches Andrew's game against a computer on jl1, on a fake
+/// server, in its room: nothing of it is handled yet.
+fn watching_fake_game(h: &mut Harness) -> (FakeServer, FakeStream, TestGame) {
+    let server = h.join_fake_server("carol", &["andrew"]);
+    let stream = FakeStream::new(h, "jl1", &two_slots(), 0, 1).watching();
+    let mut room = soundrts::testkit::fake_room(jl1(h), two_slots());
+    room.watchers.push(login("carol"));
+    h.enter_fake_room(&room);
+    let g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+    (server, stream, g)
+}
+
+#[test]
+fn a_watcher_starts_on_the_first_unit_of_the_player_it_follows_and_leaves_at_once() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("carol"));
+    let (server, _stream, mut g) = watching_fake_game(&mut h);
+    // The game may be paused: what the first message shows is known at
+    // once, with no turn played.
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(!g.game.dobjets.is_empty(), "the units are known");
+    assert!(g.game.place.is_some(), "the cursor is on a square");
+    h.run_until_voice_idle(&mut g);
+    assert!(
+        said(&h).contains(&"watching andrew".to_owned()),
+        "{:#?}",
+        said(&h)
+    );
+    // Cancel game, once, leaves.
+    h.key(&mut g, Key::F10, Mods::NONE);
+    h.key(&mut g, Key::Down, Mods::NONE);
+    h.press(Key::Return, Mods::NONE);
+    h.step(&mut g);
+    assert!(g.game.end_loop, "still watching: {:#?}", said(&h));
+    assert!(server.commands().is_empty());
+}
+
+#[test]
+fn a_returning_player_learns_who_came_to_watch_meanwhile() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g, room) = game_in_room(&mut h);
+    let t0 = h.clock.now();
+    server.close_at(t0 + 0.5);
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    let mut watched = room.clone();
+    watched.watchers.push(login("dave"));
+    back.at(t0 + 1.0, self::room(RoomChange::Entered, &watched));
+    stream.turn(Vec::new());
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(t0 + 1.5, frame);
+    }
+    h.run_for(&mut g, 4.0);
+    assert!(!g.game.returning(), "back");
+    let net = h.client.net.as_ref().unwrap();
+    assert_eq!(net.room.as_ref().unwrap().state.watchers, [login("dave")]);
 }

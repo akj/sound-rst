@@ -138,6 +138,12 @@ pub fn apply_change(
 /// the last message the seat was sent at each turn it is sent one; the end
 /// once.
 ///
+/// A watcher's seat is sent the stream of the player it follows, exactly
+/// as that player's own seat is. When it follows another player, it is
+/// sent that player's whole message, and changes from it after: a whole
+/// message during the game is only ever a watcher's, and says whom it
+/// now follows.
+///
 /// A turn's change is the end of the seat's turn, with the turn's events.
 /// When something came after the end of the turn (the players leaving,
 /// when the turn ended the game), a second change of the same game time
@@ -156,12 +162,13 @@ pub enum SeatFrame {
     /// lobby's [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded)
     /// follows.
     End(GameEnd),
-    /// You have a seat in a game: when it starts, and when you
-    /// return to it. Keep `token` to return if your connection is lost:
-    /// the game holds the seat for `hold` after it notices the loss. The
-    /// players' names and alliances come with the game.
+    /// You have a seat in a game: when it starts, when you join it to
+    /// watch, and when you return to it. Keep `token` to return if your
+    /// connection is lost: the game holds the seat for `hold` after it
+    /// notices the loss. The players' names and alliances come with the
+    /// game.
     Seated {
-        you: SlotIndex,
+        you: Role,
         map: MapInfo,
         speed: Speed,
         paused: bool,
@@ -183,6 +190,16 @@ pub enum SeatFrame {
     Stopped(StopReason),
     /// To the room's host: the game did not start, and the room goes on.
     NotStarted(StartRefusal),
+}
+
+/// Whose seat a seat of a game is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    /// The player of this slot of the room plays.
+    Player(SlotIndex),
+    /// Someone watches: no units, no part in the game, and nothing it
+    /// sends changes the game.
+    Watcher,
 }
 
 pub fn encode_frame(frame: &SeatFrame) -> Result<Vec<u8>, Invalid> {

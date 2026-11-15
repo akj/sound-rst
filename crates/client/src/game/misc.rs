@@ -14,7 +14,7 @@ use crate::input::{Event, Key, KeyDown};
 use crate::menu::{Action, Flow, Menu, TextEntry, Typed};
 use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
-use soundrts_protocol::Channel;
+use soundrts_protocol::{Channel, Step};
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
@@ -136,6 +136,10 @@ impl GameInterface {
             }
             C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
             C::Objectives(inc) => self.cmd_objectives(cx, *inc),
+            C::FollowPlayer(inc) => {
+                let step = if *inc < 0 { Step::Previous } else { Step::Next };
+                self.follow_player(cx, step);
+            }
             C::GameMenu => self.cmd_gamemenu(cx),
             C::SayPlayers => {
                 let mut m = Vec::new();
@@ -147,6 +151,13 @@ impl GameInterface {
                         m.extend(self.faction_title(cx, p));
                     }
                     m.extend(msg(mp::COMMA));
+                }
+                // On a server, who watches the game: nobody listens unknown.
+                let room = cx.net.as_ref().and_then(|n| n.room.as_ref());
+                if self.on_a_server()
+                    && let Some(watchers) = room.map(|r| r.watchers())
+                {
+                    m.extend(watchers);
                 }
                 cx.voice.item(&m);
             }
@@ -535,7 +546,7 @@ impl GameInterface {
     /// Asks the world to quit; asked again, or while the connection is
     /// lost, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
-        if self.leave_while_returning(cx) {
+        if self.leave_while_returning(cx) || self.leave_while_watching(cx) {
             return;
         }
         if !self.already_asked_to_quit {
