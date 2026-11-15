@@ -1264,7 +1264,7 @@ impl Harness {
             self.pump_until(|n| n.room.as_ref().is_some_and(|r| r.state.slots.len() > i + 1));
         }
         let texts = crate::multiplayer::game_texts(&mut self.client, &m).expect("the texts");
-        crate::net::send(&mut self.client, ClientMsg::StartHosted { texts });
+        crate::net::send(&mut self.client, ClientMsg::Start { texts });
         self.pump_until(|n| {
             n.started.is_some() && n.game.as_ref().is_some_and(|g| g.frames.len() >= 2)
         });

@@ -742,7 +742,7 @@ fn start_game(cx: &mut Client) -> Result<Flow, Exit> {
         .and_then(|r| r.map())
         .and_then(|map| game_texts(cx, &map));
     match texts {
-        Some(texts) => net::send(cx, ClientMsg::StartHosted { texts }),
+        Some(texts) => net::send(cx, ClientMsg::Start { texts }),
         None => cx
             .voice
             .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat()),

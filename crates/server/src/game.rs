@@ -1,4 +1,4 @@
-//! One task per hosted game: the server runs the game itself and sends
+//! One task per game: the server runs the game itself and sends
 //! each seat only what its player knows.
 //!
 //! The task builds the game from the set-up the lobby made, owns the
@@ -54,7 +54,7 @@ const SEAT_BACKLOG: usize = 4;
 /// heartbeat too, so it is dropped long before this many pile up.
 const MAX_MISSED_EVENTS: usize = 1000;
 
-/// How a hosted game runs: from the server's settings and the room.
+/// How a game runs: from the server's settings and the room.
 #[derive(Clone, Debug)]
 pub(crate) struct Settings {
     pub speed: Speed,
@@ -69,13 +69,13 @@ pub(crate) struct Settings {
     pub overruns: Overruns,
 }
 
-/// While this many builds or turns of hosted games run on past their
-/// budget, the server starts no hosted game.
+/// While this many builds or turns of games run on past their
+/// budget, the server starts no game.
 pub(crate) const MAX_OVERRUNNING: usize = 2;
 
-/// The world's work, of any hosted game on the server, that ran past its
+/// The world's work, of any game on the server, that ran past its
 /// budget and still runs. Nothing can stop it, so it is counted until it
-/// ends, and while there is too much of it no hosted game starts: a
+/// ends, and while there is too much of it no game starts: a
 /// player who makes games slow on purpose cannot pile it up.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Overruns(Arc<AtomicUsize>);
@@ -155,10 +155,10 @@ pub(crate) struct Joining {
     pub outbox: Outbox,
 }
 
-/// What the lobby passes to a hosted game. The lobby has checked who may
+/// What the lobby passes to a game. The lobby has checked who may
 /// send it: a seat's own player for a command, and the room's host for
 /// the clock and removals.
-pub(crate) enum HostedInput {
+pub(crate) enum GameInput {
     Command {
         slot: SlotIndex,
         command: Command,
@@ -194,12 +194,12 @@ pub(crate) enum HostedInput {
     },
 }
 
-/// Where the lobby passes inputs to a hosted game. An input from a client
+/// Where the lobby passes inputs to a game. An input from a client
 /// comes with its bytes, counted against the client's allowance until the
 /// game has handled it.
-pub(crate) type HostedTx = mpsc::UnboundedSender<(HostedInput, Option<Queued>)>;
+pub(crate) type GameTx = mpsc::UnboundedSender<(GameInput, Option<Queued>)>;
 
-/// How a hosted game's task ended, for the lobby.
+/// How a game's task ended, for the lobby.
 #[derive(Debug)]
 pub(crate) enum Ending {
     /// The game could not be built: the room goes back to gathering.
@@ -210,9 +210,9 @@ pub(crate) enum Ending {
     Stopped(StopReason),
 }
 
-/// Starts a hosted game's task. The game reports to the lobby each seat
+/// Starts a game's task. The game reports to the lobby each seat
 /// whose game is over ([`LobbyInput::LeftGame`]), returns accepted or
-/// refused, and how it ended ([`LobbyInput::HostedEnded`]), even if it
+/// refused, and how it ended ([`LobbyInput::GameEnded`]), even if it
 /// panics.
 pub(crate) fn spawn(
     room: RoomId,
@@ -222,17 +222,17 @@ pub(crate) fn spawn(
     seats: Vec<Joining>,
     settings: Settings,
     lobby: LobbyTx,
-) -> HostedTx {
+) -> GameTx {
     let (tx, rx) = mpsc::unbounded_channel();
     let reporter = lobby.clone();
     let task = tokio::spawn(run(room, setup, slots, map, seats, settings, lobby, rx));
     tokio::spawn(async move {
         let ending = task.await.unwrap_or_else(|e| {
-            warn!(room = room.0, error = %e, "hosted game failed");
+            warn!(room = room.0, error = %e, "game failed");
             Ending::Stopped(StopReason::Crashed)
         });
-        info!(room = room.0, ?ending, "hosted game ended");
-        let _ = reporter.send(LobbyInput::HostedEnded { room, ending });
+        info!(room = room.0, ?ending, "game ended");
+        let _ = reporter.send(LobbyInput::GameEnded { room, ending });
     });
     tx
 }
@@ -339,9 +339,9 @@ async fn run(
     joining: Vec<Joining>,
     settings: Settings,
     lobby: LobbyTx,
-    mut inputs: mpsc::UnboundedReceiver<(HostedInput, Option<Queued>)>,
+    mut inputs: mpsc::UnboundedReceiver<(GameInput, Option<Queued>)>,
 ) -> Ending {
-    info!(room = room.0, "hosted game building");
+    info!(room = room.0, "game building");
     #[cfg(feature = "fault-injection")]
     let setup_rules: String = setup.rules.chars().take(64).collect();
     let mut host = match build(setup, settings.load_budget, &settings.overruns).await {
@@ -392,11 +392,7 @@ async fn run(
         game.seats.insert(j.slot, seat);
         game.connect(&host, j.slot, j.conn, j.outbox);
     }
-    info!(
-        room = room.0,
-        seats = game.seats.len(),
-        "hosted game started"
-    );
+    info!(room = room.0, seats = game.seats.len(), "game started");
 
     while !game.seats.is_empty() {
         let deadline = game.next_deadline();
@@ -440,7 +436,7 @@ async fn run(
             },
         }
     }
-    info!(room = room.0, turns = game.turn, "hosted game over");
+    info!(room = room.0, turns = game.turn, "game over");
     Ending::Over
 }
 
@@ -771,14 +767,14 @@ impl Game {
 
     // -- Inputs --------------------------------------------------------------
 
-    fn on_input(&mut self, host: &Host, input: HostedInput) {
+    fn on_input(&mut self, host: &Host, input: GameInput) {
         match input {
-            HostedInput::Command {
+            GameInput::Command {
                 slot,
                 command,
                 bytes,
             } => self.command(slot, command, bytes),
-            HostedInput::Leave { slot } => {
+            GameInput::Leave { slot } => {
                 if let Some(seat) = self.seats.get(&slot) {
                     self.quit(seat.player);
                     self.end_seat(host, slot);
@@ -788,18 +784,18 @@ impl Game {
                     });
                 }
             }
-            HostedInput::Dropped { slot } => self.dropped(slot),
-            HostedInput::Return {
+            GameInput::Dropped { slot } => self.dropped(slot),
+            GameInput::Return {
                 conn,
                 token,
                 outbox,
             } => self.take_back(host, conn, &token, outbox),
-            HostedInput::Pause { by } => self.clock_change(by, ClockChange::Paused),
-            HostedInput::Resume { by } => self.clock_change(by, ClockChange::Resumed),
-            HostedInput::Speed { by, speed } => {
+            GameInput::Pause { by } => self.clock_change(by, ClockChange::Paused),
+            GameInput::Resume { by } => self.clock_change(by, ClockChange::Resumed),
+            GameInput::Speed { by, speed } => {
                 self.clock_change(by, ClockChange::Speed { speed });
             }
-            HostedInput::Remove { by, slot } => self.remove(host, by, slot),
+            GameInput::Remove { by, slot } => self.remove(host, by, slot),
         }
     }
 

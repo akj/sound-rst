@@ -131,7 +131,7 @@ pub fn apply_change(
 }
 
 /// One binary frame of a seat's game stream, from the server: what a
-/// hosted game sends a seat, in this order. That it has a seat, the start,
+/// game sends a seat, in this order. That it has a seat, the start,
 /// then the whole message, when the seat joins the game or returns to it; a change from
 /// the last message the seat was sent at each turn it is sent one; the end
 /// once.
@@ -154,7 +154,7 @@ pub enum SeatFrame {
     /// lobby's [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded)
     /// follows.
     End(GameEnd),
-    /// You have a seat in a hosted game: when it starts, and when you
+    /// You have a seat in a game: when it starts, and when you
     /// return to it. Keep `token` to return if your connection is lost.
     /// The players' names and alliances come with the game.
     Seated {

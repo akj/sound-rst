@@ -108,7 +108,7 @@ async fn room(clients: &mut [Client], computers: usize) -> RoomId {
     room
 }
 
-/// What a client is told: a JSON message, or a frame of a hosted game
+/// What a client is told: a JSON message, or a frame of a game
 /// that is not of the stream itself.
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -195,13 +195,13 @@ impl Seat {
             arrivals: Vec::new(),
             left: false,
         };
-        seat.until_hosted().await;
+        seat.until_seated().await;
         seat
     }
 
     /// Reads until the server says the client has a seat, then its start
     /// and whole message.
-    async fn until_hosted(&mut self) {
+    async fn until_seated(&mut self) {
         loop {
             match heard(&mut self.c).await {
                 Heard::Game(SeatFrame::Seated { you, token, .. }) => {
@@ -369,12 +369,12 @@ fn go(units: Vec<EntityId>, square: soundrts_world::SquareId) -> [Command; 2] {
     ]
 }
 
-/// Starts a hosted game of the room: `clients[0]` hosts, `players` are the
+/// Starts a game of the room: `clients[0]` hosts, `players` are the
 /// humans in slot order.
 async fn start(clients: Vec<Client>, texts: &GameTexts) -> Vec<Seat> {
     let mut clients = clients;
     clients[0]
-        .send(ClientMsg::StartHosted {
+        .send(ClientMsg::Start {
             texts: texts.clone(),
         })
         .await;
@@ -493,7 +493,7 @@ fn left_at(seat: &Seat) -> i64 {
 }
 
 #[tokio::test]
-async fn a_hosted_game_runs_to_its_end_and_each_seat_sees_what_the_host_says() {
+async fn a_game_runs_to_its_end_and_each_seat_sees_what_the_host_says() {
     let server = hosting_server(|_| {});
     let mut clients = clients(server.local_addr(), &["andrew", "bob"]).await;
     let room = room(&mut clients, 2).await;
@@ -736,7 +736,7 @@ async fn a_dropped_player_returns_with_their_token() {
     })
     .await;
     b.c = c;
-    b.until_hosted().await;
+    b.until_seated().await;
     assert_eq!((b.slot, &b.token), (1, &token));
     a.hear(news(1, SeatChange::Returned)).await;
     // Bob plays on, and a second return to the seat he holds is refused.
@@ -873,7 +873,7 @@ async fn a_game_that_cannot_be_built_is_refused_and_the_room_goes_on() {
     let room = room(&mut clients, 0).await;
     let mut bad = texts();
     bad.map = text("nb_columns x\n");
-    clients[0].send(ClientMsg::StartHosted { texts: bad }).await;
+    clients[0].send(ClientMsg::Start { texts: bad }).await;
     let refusal = heard_until(&mut clients[0], |h| {
         matches!(
             h,
@@ -907,7 +907,7 @@ async fn a_game_slower_to_build_or_play_than_its_budget_is_stopped() {
     let mut first = clients(server.local_addr(), &["andrew"]).await;
     room(&mut first, 1).await;
     // Each build too slow is refused but runs on; while two do, the server
-    // starts no hosted game, and once they end it does again.
+    // starts no game, and once they end it does again.
     let started = Instant::now();
     for expected in [
         StartRefusal::TooSlow,
@@ -915,7 +915,7 @@ async fn a_game_slower_to_build_or_play_than_its_budget_is_stopped() {
         StartRefusal::Busy,
     ] {
         first[0]
-            .send(ClientMsg::StartHosted {
+            .send(ClientMsg::Start {
                 texts: slow(fault::SLOW_TO_BUILD),
             })
             .await;
@@ -976,8 +976,7 @@ async fn hostile_start_texts_and_commands_are_refused_without_a_panic() {
 
     // A text over the loaders' limit cannot be read at all.
     let too_long = "x".repeat(soundrts_world::defs::MAX_TEXT_BYTES + 1);
-    let json =
-        format!(r#"{{"type":"start_hosted","texts":{{"rules":"{too_long}","ai":"","map":""}}}}"#);
+    let json = format!(r#"{{"type":"start","texts":{{"rules":"{too_long}","ai":"","map":""}}}}"#);
     clients[0].send_text(&json).await;
     clients[0].skip_to(&refused(Refusal::Invalid)).await;
 
@@ -1005,9 +1004,7 @@ async fn hostile_start_texts_and_commands_are_refused_without_a_panic() {
             map: text(&String::from_utf8_lossy(&map)),
             ..good.clone()
         };
-        clients[0]
-            .send(ClientMsg::StartHosted { texts: scrambled })
-            .await;
+        clients[0].send(ClientMsg::Start { texts: scrambled }).await;
         match heard_until(&mut clients[0], |h| {
             matches!(
                 h,

@@ -90,7 +90,7 @@ pub(crate) struct ConnSettings {
 
 pub(crate) enum Outbound {
     Text(Utf8Bytes),
-    /// A frame of a hosted game's stream.
+    /// A frame of a game's stream.
     Binary(Bytes),
     /// Close the connection after what came before.
     Close,
@@ -114,7 +114,7 @@ impl Outbox {
         self.push(Outbound::Text(text));
     }
 
-    /// Sends a frame of a hosted game's stream.
+    /// Sends a frame of a game's stream.
     pub(crate) fn send_binary(&self, bytes: Bytes) {
         self.push(Outbound::Binary(bytes));
     }
@@ -162,7 +162,7 @@ pub(crate) async fn serve(
     {
         debug!(%peer, error = %e, "cannot set the send buffer");
     }
-    let deadline = crate::hosted::after(timeouts.hello);
+    let deadline = crate::game::after(timeouts.hello);
     // The WebSocket reserves room for a whole frame as soon as its header
     // comes, so the hello is read with frames no larger than a hello.
     let hello_config = WebSocketConfig::default()
@@ -234,7 +234,7 @@ pub(crate) async fn serve(
     let others = Allowance::new(MAX_QUEUED_BYTES);
     let mut invalid_in_a_row = 0;
     let mut heard = Instant::now();
-    let mut ping = tokio::time::interval_at(crate::hosted::after(timeouts.ping), timeouts.ping);
+    let mut ping = tokio::time::interval_at(crate::game::after(timeouts.ping), timeouts.ping);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         let silent = heard.checked_add(timeouts.silence).unwrap_or(heard);
@@ -271,7 +271,7 @@ pub(crate) async fn serve(
                         }
                         let large = matches!(
                             incoming,
-                            Incoming::Msg(ClientMsg::Map { .. } | ClientMsg::StartHosted { .. })
+                            Incoming::Msg(ClientMsg::Map { .. } | ClientMsg::Start { .. })
                         );
                         let allowance = if large { &maps } else { &others };
                         let Some(queued) = allowance.take(bytes) else {
@@ -346,7 +346,7 @@ pub(crate) async fn serve(
     let _ = lobby.send(LobbyInput::Gone { conn });
 }
 
-/// What a client sent, decoded: a JSON message, or a hosted game's
+/// What a client sent, decoded: a JSON message, or a game's
 /// command as a binary frame.
 enum Incoming {
     Msg(ClientMsg),
@@ -515,7 +515,7 @@ impl Limits {
         let window = match msg {
             ClientMsg::Chat { .. } => &mut self.chat,
             ClientMsg::Invite { .. } => &mut self.invitations,
-            ClientMsg::Map { .. } | ClientMsg::GetMap { .. } | ClientMsg::StartHosted { .. } => {
+            ClientMsg::Map { .. } | ClientMsg::GetMap { .. } | ClientMsg::Start { .. } => {
                 &mut self.maps
             }
             _ => return true,

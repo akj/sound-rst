@@ -97,7 +97,7 @@ pub fn human(login: &Login) -> SlotPlayer {
     SlotPlayer::Human(login.clone())
 }
 
-/// A message from the server: JSON, or a binary frame of a hosted game.
+/// A message from the server: JSON, or a binary frame of a game.
 #[derive(Debug)]
 pub enum Frame {
     Msg(ServerMsg),
@@ -449,9 +449,7 @@ pub fn texts() -> GameTexts {
 /// builds it from [`texts`]. Every client is then past the moves into the
 /// game; the game's frames come after.
 pub async fn start_game(clients: &mut [Client], room: RoomId, players: &[usize]) {
-    clients[0]
-        .send(ClientMsg::StartHosted { texts: texts() })
-        .await;
+    clients[0].send(ClientMsg::Start { texts: texts() }).await;
     let last_player = clients[*players.last().unwrap()].login.clone();
     let last = moved(&last_player, Whereabouts::Playing(room));
     sync(clients, &last).await;

@@ -756,18 +756,18 @@ async fn starting_needs_the_host_everyone_ready_and_enough_players() {
     let room = open_room(&mut all, 0, &map(3, 4), true).await;
 
     // Too few players.
-    all[0].send(ClientMsg::StartHosted { texts: texts() }).await;
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
     all[0].expect(refused(Refusal::CannotStart)).await;
     join_room(&mut all, 1, room).await;
     add_computer(&mut all, room).await;
     // Bob is not ready.
-    all[0].send(ClientMsg::StartHosted { texts: texts() }).await;
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
     all[0].expect(refused(Refusal::CannotStart)).await;
     // Only the host starts.
-    all[1].send(ClientMsg::StartHosted { texts: texts() }).await;
+    all[1].send(ClientMsg::Start { texts: texts() }).await;
     all[1].expect(refused(Refusal::NotNow)).await;
     // Nor can someone in the lobby.
-    all[2].send(ClientMsg::StartHosted { texts: texts() }).await;
+    all[2].send(ClientMsg::Start { texts: texts() }).await;
     all[2].expect(refused(Refusal::NotNow)).await;
 }
 
@@ -782,7 +782,7 @@ async fn a_good_start() {
     ready(&mut all, 1, &[0, 1]).await;
     let (andrew, bob) = (all[0].login.clone(), all[1].login.clone());
 
-    all[0].send(ClientMsg::StartHosted { texts: texts() }).await;
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
     let slots = [
         slot(human(&andrew), 1, true),
         slot(human(&bob), 2, true),

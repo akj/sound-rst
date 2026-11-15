@@ -2,7 +2,7 @@
 //! games played on it.
 //!
 //! The server runs each game's simulation, and sends each player only what
-//! that player knows (`hosted`). See `soundrts-protocol` for the messages.
+//! that player knows (`game`). See `soundrts-protocol` for the messages.
 //!
 //! [`start`] runs a server on its own thread with its own runtime, so a
 //! program that is not async can embed it. The `soundrts-server` binary is
@@ -14,7 +14,7 @@
 
 mod connection;
 mod discovery;
-mod hosted;
+mod game;
 mod lobby;
 mod room;
 mod upnp;
@@ -33,7 +33,7 @@ use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "fault-injection")]
-pub use hosted::fault;
+pub use game::fault;
 pub use upnp::UpnpOutcome;
 
 /// How a server runs. [`Default`] gives the values of a server players host.
@@ -58,18 +58,18 @@ pub struct ServerConfig {
     /// How long the server waits to hear anything from a connection, a
     /// ping's answer included, before it closes it as dead.
     pub heartbeat_timeout: Duration,
-    /// How long a hosted game holds the seat of a player whose connection
+    /// How long a game holds the seat of a player whose connection
     /// was lost, for them to return.
     pub grace_period: Duration,
-    /// The longest a hosted game may take to build before its start is
+    /// The longest a game may take to build before its start is
     /// refused.
     pub load_budget: Duration,
-    /// The longest one turn of a hosted game may take, every seat's
+    /// The longest one turn of a game may take, every seat's
     /// message included, before the game is stopped.
     pub turn_budget: Duration,
     /// The bytes the system may hold for one client that it has not read
     /// yet, before the server's writes to it wait. Small enough that a
-    /// hosted game soon sees a seat whose connection is not keeping up,
+    /// game soon sees a seat whose connection is not keeping up,
     /// rather than queueing old turns for it in the system; large enough
     /// for a map to download at 640 KB a second over a link with 100 ms
     /// of round trip. `None` leaves the system's own, which grows.

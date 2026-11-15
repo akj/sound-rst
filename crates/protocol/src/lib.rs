@@ -3,7 +3,7 @@
 //! A server is a lobby and a chat, and it runs the games played on it: it
 //! sends each seat only what that player knows. The server knows nothing
 //! about rules or maps beyond what a room's host sends it, so it needs no
-//! game data: the host starts a game with [`ClientMsg::StartHosted`] and
+//! game data: the host starts a game with [`ClientMsg::Start`] and
 //! the texts it is built from.
 //!
 //! Each message of the lobby is one WebSocket text frame holding one JSON
@@ -51,7 +51,7 @@ pub const CHAT_HISTORY_LINES: usize = 50;
 /// The server refuses commands beyond it with [`Refusal::SlowDown`].
 pub const MAX_TURN_ORDER_BYTES: usize = 32 * 1024;
 
-/// The largest command a player sends in a hosted game, encoded.
+/// The largest command a player sends in a game, encoded.
 pub const MAX_COMMAND_BYTES: usize = 4096;
 
 /// The length of a [`SeatToken`], in hex digits: 128 random bits.
@@ -358,7 +358,7 @@ impl From<MapBytes> for String {
     }
 }
 
-/// One of the texts a hosted game is built from: at most
+/// One of the texts a game is built from: at most
 /// [`MAX_TEXT_BYTES`](soundrts_world::defs::MAX_TEXT_BYTES), the limit the
 /// world's loaders hold every text to.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -400,7 +400,7 @@ impl From<GameText> for String {
     }
 }
 
-/// What the server lacks to build a hosted game, as the hosting client
+/// What the server lacks to build a game, as the hosting client
 /// loaded it: the layers' rules and computer-player scripts, each joined
 /// in layer order, and the map's definition. The server has the rest.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,7 +410,7 @@ pub struct GameTexts {
     pub map: GameText,
 }
 
-/// What proves a returning player held a seat of a hosted game: given to
+/// What proves a returning player held a seat of a game: given to
 /// that player alone when the game starts. [`SEAT_TOKEN_CHARS`] lower
 /// case hex digits.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -708,7 +708,7 @@ pub struct ChatLine {
 // Games
 // ---------------------------------------------------------------------------
 
-/// What happened to a seat of a hosted game, told to every player in it.
+/// What happened to a seat of a game, told to every player in it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeatChange {
     /// The player's connection was lost. Their units keep their last
@@ -724,7 +724,7 @@ pub enum SeatChange {
     Removed { by: Login },
 }
 
-/// What the room's host did to the clock of a hosted game.
+/// What the room's host did to the clock of a game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClockChange {
     Paused,
@@ -732,7 +732,7 @@ pub enum ClockChange {
     Speed { speed: Speed },
 }
 
-/// Why a hosted game could not start. The room stays as it was.
+/// Why a game could not start. The room stays as it was.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartRefusal {
     /// The rules, scripts or map cannot make a game: the world's error.
@@ -745,7 +745,7 @@ pub enum StartRefusal {
     Busy,
 }
 
-/// Why the server stopped a hosted game for everyone in it.
+/// Why the server stopped a game for everyone in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StopReason {
     /// The game failed inside the server.
@@ -828,26 +828,26 @@ pub enum ClientMsg {
     /// the stream to every human, or [`game::SeatFrame::NotStarted`] to the
     /// host. Once it runs, a player sends their commands as binary frames
     /// ([`game::encode_command`]).
-    StartHosted {
+    Start {
         texts: GameTexts,
     },
     /// You leave the game: you quit it, and return to the lobby.
     LeaveGame,
-    /// Takes back your seat of a hosted game after your connection was
+    /// Takes back your seat of a game after your connection was
     /// lost: from the lobby, with the token the game gave you.
     ReturnToGame {
         room: RoomId,
         token: SeatToken,
     },
-    /// The room's host stops the clock of a hosted game.
+    /// The room's host stops the clock of a game.
     PauseGame,
     /// The room's host starts the clock again.
     ResumeGame,
-    /// The room's host changes the speed of a hosted game.
+    /// The room's host changes the speed of a game.
     SetGameSpeed {
         speed: Speed,
     },
-    /// The room's host takes a player out of a hosted game.
+    /// The room's host takes a player out of a game.
     RemovePlayer {
         slot: SlotIndex,
     },
@@ -1048,7 +1048,7 @@ mod tests {
         assert!(GameText::new("x".repeat(most)).is_ok());
         assert!(GameText::new("x".repeat(most + 1)).is_err());
         let json = format!(
-            r#"{{"type":"start_hosted","texts":{{"rules":"{}","ai":"","map":""}}}}"#,
+            r#"{{"type":"start","texts":{{"rules":"{}","ai":"","map":""}}}}"#,
             "x".repeat(most + 1)
         );
         assert!(ClientMsg::from_json(&json).is_err());

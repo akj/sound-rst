@@ -11,7 +11,7 @@ workspace = true
 
 [features]
 # Faults a game can be made to have on purpose, for the tests that prove a
-# failing game ends only itself: see `hosted::fault`.
+# failing game ends only itself: see `game::fault`.
 fault-injection = []
 
 [dependencies]
@@ -22,7 +22,7 @@ serde_json = "1.0.154"
 # The size of a connection's send buffer.
 socket2 = "0.6.5"
 soundrts-protocol = { path = "../protocol" }
-# The game a hosted game runs.
+# The games the server runs.
 soundrts-world = { path = "../world", features = ["serde"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "signal"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
