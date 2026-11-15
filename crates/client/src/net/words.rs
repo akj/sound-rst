@@ -154,6 +154,8 @@ pub const RESUME: &str = "resume";
 pub const CONNECTION_LOST: &str = "connection lost, trying to return";
 pub const BACK_IN_THE_GAME: &str = "back in the game";
 pub const ORDERS_NOT_TAKEN: &str = "order not taken: not connected";
+/// A chat line or a flare given while the connection is lost.
+pub const NOT_SENT: &str = "not sent: not connected";
 pub const COULD_NOT_RETURN: &str = "could not return:";
 pub const THE_GAME_IS_OVER: &str = "the game is over";
 pub const THE_SEAT_WAS_GIVEN_UP: &str = "your seat was given up";

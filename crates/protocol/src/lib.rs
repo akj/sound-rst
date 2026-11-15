@@ -602,12 +602,30 @@ pub struct LobbySnapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "change")]
 pub enum LobbyChange {
-    PlayerArrived { player: LobbyPlayer },
-    PlayerLeft { login: Login },
-    PlayerMoved { player: LobbyPlayer },
-    RoomOpened { room: RoomSummary },
-    RoomChanged { room: RoomSummary },
-    RoomClosed { id: RoomId },
+    PlayerArrived {
+        player: LobbyPlayer,
+    },
+    PlayerLeft {
+        login: Login,
+    },
+    PlayerMoved {
+        player: LobbyPlayer,
+    },
+    /// A player who took their seat of a game back with its token, on a
+    /// connection given a numbered login, has the seat's login again.
+    PlayerRenamed {
+        from: Login,
+        to: Login,
+    },
+    RoomOpened {
+        room: RoomSummary,
+    },
+    RoomChanged {
+        room: RoomSummary,
+    },
+    RoomClosed {
+        id: RoomId,
+    },
 }
 
 // ---------------------------------------------------------------------------

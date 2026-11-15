@@ -1483,6 +1483,84 @@ fn orders_given_while_away_are_not_taken_and_the_player_hears_it_once() {
 }
 
 #[test]
+fn chat_lines_and_flares_given_while_away_are_not_sent_and_the_player_hears_it_once() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, _, mut g, _) = game_in_room(&mut h);
+    server.close_at(h.clock.now());
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    assert!(g.game.returning());
+    let from = h.utterances().len();
+    for mods in [Mods::NONE, Mods::SHIFT] {
+        h.key(&mut g, Key::F7, mods);
+        h.key(&mut g, Key::H, Mods::NONE);
+        h.key(&mut g, Key::I, Mods::NONE);
+        h.key(&mut g, Key::Return, Mods::NONE);
+    }
+    h.key(&mut g, Key::F7, Mods::CTRL);
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(
+        said,
+        [
+            "enter your message",
+            "h . h",
+            "i . hi",
+            "hi",
+            "not sent: not connected",
+            "enter your message to your allies",
+            "h . h",
+            "i . hi",
+            "hi",
+        ]
+    );
+    assert!(
+        !server
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Chat { .. } | ClientMsg::Flare { .. })),
+        "{:?}",
+        server.sent()
+    );
+}
+
+#[test]
+fn a_host_back_under_a_numbered_login_hosts_and_has_the_login_again() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, stream, mut g, room) = game_in_room(&mut h);
+    let has_pause = |h: &mut Harness, g: &mut TestGame| {
+        let from = h.utterances().len();
+        h.key(g, Key::F10, Mods::NONE);
+        for _ in 0..6 {
+            h.key(g, Key::Down, Mods::NONE);
+        }
+        let said = h.said_since(from);
+        h.key(g, Key::Escape, Mods::NONE);
+        said.contains(&"pause ,".to_owned())
+    };
+    assert!(has_pause(&mut h, &mut g));
+    server.close_at(h.clock.now());
+    // Another connection held "andrew" when this one said hello.
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew2", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(0.0, frame);
+    }
+    h.run_for(&mut g, 3.0);
+    assert!(!g.game.returning(), "the seat is back");
+    assert!(has_pause(&mut h, &mut g), "the host's item is there");
+    let renamed = ServerMsg::Lobby {
+        change: LobbyChange::PlayerRenamed {
+            from: login("andrew2"),
+            to: login("andrew"),
+        },
+    };
+    back.at(h.clock.now(), renamed);
+    h.run_for(&mut g, 1.0);
+    assert_eq!(h.client.net.as_ref().unwrap().lobby.you, login("andrew"));
+}
+
+#[test]
 fn escape_leaves_the_game_at_once_while_returning() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let (server, _, mut g, _) = game_in_room(&mut h);

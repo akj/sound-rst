@@ -1239,7 +1239,8 @@ impl Game {
     /// anything, so that whatever is sent after it finds it in the game.
     fn take_back(&mut self, host: &Host, conn: ConnId, token: &SeatToken, outbox: Outbox) {
         let found = self.seats.iter().find_map(|(&id, s)| {
-            (matches!(s.link, Link::Dropped { .. }) && s.token.matches(token)).then_some(id)
+            let held = matches!(s.link, Link::Dropped { deadline } if deadline > Instant::now());
+            (held && s.token.matches(token)).then_some(id)
         });
         let Some(id) = found else {
             let _ = self.lobby.send(LobbyInput::ReturnRefused {

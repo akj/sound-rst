@@ -245,7 +245,7 @@ impl GameInterface {
             Typed::Done(line) => {
                 let channel = chat.channel;
                 self.mode = chat.closed();
-                crate::net::send_chat(cx, channel, &line);
+                self.send_chat(cx, channel, &line);
             }
             Typed::Cancelled => self.mode = chat.closed(),
             Typed::Typing | Typed::Ignored => self.mode = Mode::Chat(chat),

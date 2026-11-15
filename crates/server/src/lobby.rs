@@ -1002,7 +1002,8 @@ impl Lobby {
     }
 
     /// A game gave `seat` back to this player or watcher: it is theirs
-    /// from now on. If they are gone meanwhile, the seat is dropped again.
+    /// from now on, and so is its login ([`Lobby::give_login_back`]). If
+    /// they are gone meanwhile, the seat is dropped again.
     fn returned(&mut self, id: RoomId, conn: ConnId, seat: SeatId) {
         let waiting = self
             .players
@@ -1018,8 +1019,8 @@ impl Lobby {
             let _ = game.send((GameInput::Dropped { seat }, None));
             return;
         }
-        let player = &self.players[&conn];
-        match seat {
+        let outbox = self.players[&conn].outbox.clone();
+        let login = match seat {
             SeatId::Player(slot) => {
                 let Some(Occupant::Human(member)) =
                     room.slots.get_mut(slot).map(|s| &mut s.occupant)
@@ -1027,25 +1028,55 @@ impl Lobby {
                     return;
                 };
                 let old = std::mem::replace(&mut member.conn, conn);
-                member.outbox = player.outbox.clone();
+                member.outbox = outbox.clone();
                 if room.host == old {
                     room.host = conn;
                 }
+                member.login.clone()
             }
             SeatId::Watcher(watcher) => {
                 let Some(w) = room.watcher(watcher) else {
                     return;
                 };
                 w.conn = conn;
-                w.outbox = player.outbox.clone();
+                w.outbox = outbox.clone();
+                w.login.clone()
             }
-        }
+        };
         // Who watches may have changed while the connection was lost.
-        player.outbox.send(&ServerMsg::Room {
+        outbox.send(&ServerMsg::Room {
             change: RoomChange::Entered,
             room: room.state(),
         });
+        self.give_login_back(conn, login);
         self.move_player(conn, Place::Playing(id));
+    }
+
+    /// Gives back the login of the seat a player took back with its token.
+    /// Their new connection was given a numbered login if another
+    /// connection held the seat's login when it said hello: another window,
+    /// or someone who took it while they were away. If that connection is
+    /// gone by now, the login is theirs again, and everyone on the server
+    /// is told; if it is still here, they keep the numbered one, and are
+    /// still the seat's player.
+    fn give_login_back(&mut self, conn: ConnId, login: Login) {
+        let held = self
+            .players
+            .iter()
+            .any(|(&c, p)| c != conn && p.login.as_str().eq_ignore_ascii_case(login.as_str()));
+        let Some(player) = self.players.get_mut(&conn) else {
+            return;
+        };
+        if player.login == login {
+            return;
+        }
+        if held {
+            info!(seat = %login, login = %player.login, "the seat's login is held by another");
+            return;
+        }
+        let from = std::mem::replace(&mut player.login, login.clone());
+        info!(%from, to = %login, "the seat's login given back");
+        self.broadcast(LobbyChange::PlayerRenamed { from, to: login });
     }
 
     /// A watcher's seat is gone from the game of room `id`: it is no

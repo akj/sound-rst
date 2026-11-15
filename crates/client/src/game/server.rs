@@ -21,7 +21,8 @@
 //!
 //! When the connection is lost during the game, the game goes on without
 //! it ([`Link::Returning`]): the player hears it, asks the questions of
-//! the last view and reviews the log, and the orders given are not taken.
+//! the last view and reviews the log, and the orders given, the chat lines
+//! and the flares are not taken.
 //! Meanwhile the client opens a new connection to the same server, says
 //! hello, and presents the seat's token, again after a pause, for as long as
 //! the server holds the seat. The server sends the seat, the start and
@@ -35,8 +36,8 @@ use std::time::Duration;
 
 use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
-    ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, RoomState,
-    SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
+    Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId,
+    RoomState, SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::msg::msg;
 use soundrts_world::msgparts as mp;
@@ -138,6 +139,9 @@ struct Returning {
     until: f64,
     attempt: Attempt,
     orders: Orders,
+    /// Whether the player wrote a chat line or sent a flare while away,
+    /// and heard that it was not sent.
+    unsent: Orders,
 }
 
 /// One attempt to return, in the order it goes.
@@ -177,8 +181,8 @@ struct Clock {
     token: SeatToken,
 }
 
-/// Whether the player gave orders while away, and heard that they are not
-/// taken.
+/// Whether the player gave orders (or sent something) while away, and
+/// heard that they are not taken.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Orders {
     NoneGiven,
@@ -290,11 +294,23 @@ fn server_speed(factor: f64) -> Option<Speed> {
         .find(|s| s.factor() == factor)
 }
 
-/// Whether the player is the host of the room whose game is played.
+/// Whether the player is the host of the room whose game is played: the
+/// host is the player of their slot, whatever the login of the connection
+/// that took the seat back. A watcher is not.
 fn is_room_host(cx: &Client) -> bool {
-    cx.net
-        .as_ref()
-        .is_some_and(|n| n.room.as_ref().is_some_and(|r| r.is_host(&n.lobby.you)))
+    let Some(net) = &cx.net else {
+        return false;
+    };
+    let (Some(room), Some(link)) = (&net.room, &net.game) else {
+        return false;
+    };
+    let Role::Player(slot) = link.you else {
+        return false;
+    };
+    room.state
+        .slots
+        .get(slot)
+        .is_some_and(|s| s.player == SlotPlayer::Human(room.state.host.clone()))
 }
 
 /// Builds the interface of the seat a server gave the player, from the
@@ -689,6 +705,7 @@ impl GameInterface {
                 until: now + server.seat.hold,
                 attempt: Attempt::Pause { at: now },
                 orders: Orders::NoneGiven,
+                unsent: Orders::NoneGiven,
             }));
         }
     }
@@ -704,6 +721,28 @@ impl GameInterface {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// A chat line or a flare while the client returns to the seat: not
+    /// sent. Whether it was given then.
+    fn refuse_unsent_while_returning(&mut self) -> bool {
+        match self.server().map(|s| &mut s.link) {
+            Some(Link::Returning(r)) => {
+                if r.unsent == Orders::NoneGiven {
+                    r.unsent = Orders::Given;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Sends a chat line typed in the game, unless the connection is lost:
+    /// then the player hears once that it was not sent.
+    pub(crate) fn send_chat(&mut self, cx: &mut Client, channel: Channel, line: &str) {
+        if !self.refuse_unsent_while_returning() {
+            crate::net::send_chat(cx, channel, line);
         }
     }
 
@@ -748,8 +787,9 @@ impl GameInterface {
         true
     }
 
-    /// One step of the return: says once that orders are not taken, then
-    /// moves the attempt on.
+    /// One step of the return: says once that orders are not taken, and
+    /// once that a chat line or a flare was not sent, then moves the
+    /// attempt on.
     fn return_update(&mut self, cx: &mut Client) {
         let super::Source::Server(server) = &mut self.source else {
             return;
@@ -760,6 +800,10 @@ impl GameInterface {
         if r.orders == Orders::Given {
             r.orders = Orders::Told;
             cx.voice.item(&text(words::ORDERS_NOT_TAKEN));
+        }
+        if r.unsent == Orders::Given {
+            r.unsent = Orders::Told;
+            cx.voice.item(&text(words::NOT_SENT));
         }
         match r.attempt(&server.seat, &self.seat, cx) {
             Outcome::Waiting => {}
@@ -1250,7 +1294,7 @@ impl GameInterface {
             cx.voice.item(&text(words::NOBODY_TO_TELL));
             return;
         }
-        if self.refuse_while_watching() || self.refuse_while_returning() {
+        if self.refuse_while_watching() || self.refuse_unsent_while_returning() {
             return;
         }
         let Some(square) = self.place else {

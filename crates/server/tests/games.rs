@@ -755,6 +755,81 @@ async fn a_dropped_player_returns_with_their_token() {
 }
 
 #[tokio::test]
+async fn a_player_back_under_a_numbered_login_has_the_seats_login_again() {
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob"]).await;
+    let room = room(&mut clients, 1).await;
+    let mut seats = start(clients, &texts()).await;
+    let mut b = seats.pop().unwrap();
+    let mut a = seats.pop().unwrap();
+    let andrew = a.c.login.clone();
+    let token = a.token.clone();
+    let old = std::mem::replace(&mut a.c, Client::connect(addr).await);
+    old.close().await;
+    b.hear(news(0, SeatChange::Dropped)).await;
+
+    // While Andrew is away, another connection says hello as "andrew": a
+    // second window, or someone else. Andrew's new connection is then
+    // numbered, and the server no longer has "andrew" playing, so his
+    // client presents the token on it.
+    let (other, _) = Client::hello(addr, "andrew").await;
+    let (mut back, lobby) = Client::hello(addr, "andrew").await;
+    assert_eq!(lobby.you, login("andrew2"));
+    assert!(
+        !lobby
+            .players
+            .iter()
+            .any(|p| p.whereabouts == Whereabouts::Playing(room) && p.login == andrew)
+    );
+    // The other connection goes before the seat is back.
+    other.close().await;
+    back.skip_to(&ServerMsg::Lobby {
+        change: LobbyChange::PlayerLeft {
+            login: andrew.clone(),
+        },
+    })
+    .await;
+    back.send(ClientMsg::ReturnToGame { room, token }).await;
+    a.c = back;
+    a.until_seated().await;
+
+    // The seat's login is his again: everyone is told, and he writes and
+    // hosts as "andrew".
+    let renamed = ServerMsg::Lobby {
+        change: LobbyChange::PlayerRenamed {
+            from: login("andrew2"),
+            to: andrew.clone(),
+        },
+    };
+    // Andrew may be told before his seat, which the seat's reading skips.
+    b.hear(renamed).await;
+    a.c.send(ClientMsg::Chat {
+        channel: Channel::Game,
+        text: chat("back"),
+    })
+    .await;
+    b.hear(ServerMsg::Chat {
+        line: ChatLine {
+            channel: Channel::Game,
+            from: andrew.clone(),
+            watcher: false,
+            text: chat("back"),
+        },
+    })
+    .await;
+    a.c.send(ClientMsg::PauseGame).await;
+    b.hear(SeatFrame::Clock {
+        by: andrew.clone(),
+        change: ClockChange::Paused,
+    })
+    .await;
+    // A newcomer who asks for "andrew" is numbered.
+    let (_, lobby) = Client::hello(addr, "andrew").await;
+    assert_eq!(lobby.you, login("andrew2"));
+}
+
+#[tokio::test]
 async fn a_player_not_back_in_time_has_quit() {
     let server = hosting_server(|c| c.grace_period = Duration::from_millis(500));
     let addr = server.local_addr();
