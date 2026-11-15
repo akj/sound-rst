@@ -280,3 +280,47 @@ fn closing_the_window_during_a_game_saves_it_as_the_last_game() {
     assert!(list[0].header.last_game);
     assert!(list[0].header.game_time_ms > 0);
 }
+
+#[test]
+fn the_command_line_check_replays_a_record_or_a_save_and_says_how_it_ended() {
+    let (mut h, mut g) = training();
+    h.run_until_turn(&mut g, 20);
+    let dir = tempfile::tempdir().unwrap();
+    let record = dir.path().join("game.jsonl");
+    let mut bytes = Vec::new();
+    g.game.host().record().write(&mut bytes).unwrap();
+    std::fs::write(&record, &bytes).unwrap();
+    let report = check_record(&record).unwrap();
+    let (first, second) = report.split_once(".\n").unwrap();
+    assert!(
+        first.starts_with(&format!(
+            "{}: 20 turns replayed, 0 min 6 s of game time, in ",
+            record.display()
+        )),
+        "{report}"
+    );
+    assert_eq!(second, "In the game at the end: player, ai_quiet.\n");
+    // A save reads as its record.
+    let save = g.game.save_game(&mut h.client, Slot::New).unwrap();
+    assert!(check_record(&save).unwrap().contains(": 20 turns replayed"));
+    // Cut short, then of another version.
+    std::fs::write(&record, &bytes[..bytes.len() - 3]).unwrap();
+    assert!(
+        check_record(&record)
+            .unwrap()
+            .contains("; the record was cut short and replayed to its last whole turn.\n")
+    );
+    let other = String::from_utf8(bytes).unwrap().replacen(
+        &format!("\"sim_version\":{SIM_VERSION}"),
+        "\"sim_version\":1",
+        1,
+    );
+    std::fs::write(&record, other).unwrap();
+    assert_eq!(
+        check_record(&record),
+        Err(format!(
+            "{}: made by version 1 of the simulation, this is version {SIM_VERSION}",
+            record.display()
+        ))
+    );
+}

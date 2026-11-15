@@ -244,6 +244,8 @@ The server listens on TCP port 2501 for players and answers on UDP port 2501 to 
 
 Add `--records <folder>` to keep a record of each game played on the server. The server writes the record when the game ends, or when it stops the game, and keeps the newest 100. A record holds what the game was built from and every player's commands, so it replays the whole game. It also holds the players' logins. It does not hold the chat. A game stopped because a turn took too long is not recorded.
 
+To replay a record, or a saved game, from the command line, run `soundrts --check-record <file>`. It says how many turns ran and who was still in the game at the end, or why the file cannot be replayed. Use it to reproduce a bug report that comes with a record or a save. It needs no game data.
+
 ### A public server
 
 A server on the Internet should encrypt its connections, so that logins, chat and games do not cross the Internet as they are. The server does not speak TLS itself. Put it behind a reverse proxy that does, such as Caddy or nginx, as web servers are run. With Caddy:

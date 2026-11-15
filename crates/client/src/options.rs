@@ -15,6 +15,8 @@ pub struct Options {
     pub probe: bool,
     /// Downloads the game data if the game finds none, then exits.
     pub fetch_data: bool,
+    /// Replays a game's record or a save, says how it went, then exits.
+    pub check_record: Option<PathBuf>,
 }
 
 /// A command line the program cannot follow.
@@ -25,7 +27,7 @@ impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data]",
+            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data] [--check-record <file>]",
             self.0
         )
     }
@@ -60,6 +62,9 @@ impl Options {
                 }
                 "--probe" => options.probe = true,
                 "--fetch-data" => options.fetch_data = true,
+                "--check-record" => {
+                    options.check_record = Some(PathBuf::from(value("--check-record")?))
+                }
                 _ => {}
             }
         }
@@ -93,6 +98,7 @@ mod tests {
                 soundpacks: Some("sp".into()),
                 probe: true,
                 fetch_data: false,
+                check_record: None,
             })
         );
         assert_eq!(
@@ -100,6 +106,11 @@ mod tests {
             Ok(Some("a b".into()))
         );
         assert!(parse(&["--mods"]).is_err());
+        assert_eq!(
+            parse(&["--check-record", "game.jsonl"]).map(|o| o.check_record),
+            Ok(Some("game.jsonl".into()))
+        );
+        assert!(parse(&["--check-record"]).is_err());
         assert_eq!(
             parse(&["--fetch-data"]),
             Ok(Options {

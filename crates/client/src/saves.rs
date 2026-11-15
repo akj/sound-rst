@@ -461,6 +461,78 @@ fn age(seconds: u64) -> Msg {
     .concat()
 }
 
+/// Replays the record or the save at `path`, for the command line
+/// (`--check-record`): how many turns ran and how the game ended, or why it
+/// cannot be replayed. This is how a game a bug report brings is played
+/// again.
+pub fn check_record(path: &Path) -> Result<String, String> {
+    let named = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+    let limit = MAX_RECORD_BYTES.saturating_add(MAX_SAVE_HEADER_BYTES);
+    let bytes = read_file(path, limit as u64).map_err(|e| named(&e))?;
+    let (record, completeness) = match Record::read(&bytes) {
+        Ok(read) => read,
+        // A save: its own line, then the record.
+        Err(ReadError::NotARecord) => {
+            let saved = read_save_bytes(&bytes).map_err(|e| named(&e))?;
+            (saved.record, saved.completeness)
+        }
+        Err(e) => return Err(named(&e)),
+    };
+    let started = std::time::Instant::now();
+    let host = soundrts_world::Host::replay(&record, |_| std::ops::ControlFlow::Continue(()))
+        .map_err(|e| named(&format!("cannot be replayed: {e}")))?;
+    let took = started.elapsed().as_secs_f64();
+    let seconds = record.game_time_ms() / 1000;
+    let mut out = format!(
+        "{}: {} turns replayed, {} min {} s of game time, in {took:.1} s",
+        path.display(),
+        record.turns_run(),
+        seconds / 60,
+        seconds % 60,
+    );
+    if completeness == Completeness::CutShort {
+        out.push_str("; the record was cut short and replayed to its last whole turn");
+    }
+    out.push_str(".\n");
+    out.push_str(&how_it_ended(&host));
+    out.push('\n');
+    Ok(out)
+}
+
+/// Who is still in the game and who won, by the logins of the set-up.
+fn how_it_ended(host: &soundrts_world::Host) -> String {
+    let seats = host.seats();
+    let Some(&first) = seats.first() else {
+        return "The game has no player.".to_owned();
+    };
+    let controllers = &host.record().setup().controllers;
+    let name = |p: PlayerId| -> String {
+        seats
+            .iter()
+            .position(|&s| s == p)
+            .and_then(|i| controllers.get(i))
+            .map_or_else(|| format!("player {}", p.0), |c| c.login())
+    };
+    let list = |players: Vec<PlayerId>| -> String {
+        players.into_iter().map(name).collect::<Vec<_>>().join(", ")
+    };
+    let in_game = host.message(first).state.players;
+    let winners: Vec<PlayerId> = seats
+        .iter()
+        .copied()
+        .filter(|&s| host.message(s).state.has_victory)
+        .collect();
+    let mut out = if in_game.is_empty() {
+        "The game is over: no player is left in it.".to_owned()
+    } else {
+        format!("In the game at the end: {}.", list(in_game))
+    };
+    if !winners.is_empty() {
+        out.push_str(&format!(" Won: {}.", list(winners)));
+    }
+    out
+}
+
 pub mod load;
 
 #[cfg(test)]
