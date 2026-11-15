@@ -1859,6 +1859,9 @@ impl World {
                         }
                     }
                 }
+                // Taken out first, the units inside stay their player's when
+                // the old building is deleted.
+                let inside = self.em(unit).inside.as_mut().map(std::mem::take);
                 self.delete(unit);
                 let nu = self
                     .create_creature(type_id, Some(p), place, x, y)
@@ -1868,6 +1871,21 @@ impl World {
                 }
                 if hp != hp_max {
                     self.em(nu).hp = hp;
+                }
+                // They go into the new building, or out beside it if they no
+                // longer fit: without collision if the square is full, as
+                // from a building destroyed.
+                for o in inside.unwrap_or_default() {
+                    if self.have_enough_space(nu, self.e(o)) {
+                        let _ = self.move_to(o, Some(Place::Inside(nu)), Some((0, 0)), 90);
+                    } else {
+                        let _ = self.move_to(o, Some(place), Some((x, y)), 90);
+                        if self.e(o).place == Some(Place::Inside(unit)) {
+                            self.em(o).stats.collision = 0;
+                            let _ = self.move_to(o, Some(place), Some((x, y)), 90);
+                        }
+                        self.notify(o, EntityEvent::Exit, false);
+                    }
                 }
                 self.notify(nu, EntityEvent::Complete, false);
                 if leave_meadow && let Place::Square(s) = place {

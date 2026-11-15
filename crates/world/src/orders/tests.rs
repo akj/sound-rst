@@ -462,6 +462,47 @@ fn a_converted_unit_has_its_new_owners_upgrades_and_none_of_its_old_owners() {
     assert_eq!(bonuses(&w, knight), (12_000, 2_500, 2));
 }
 
+/// Two archers of `a` in a scout tower that is then upgraded to a guard
+/// tower, with a mod's `extra` rules: the archers and the guard tower.
+fn upgrade_an_occupied_tower(extra: &str) -> (World, PlayerId, Vec<EntityId>, EntityId) {
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower 2 archer");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    let archers = all(&w, a, "archer");
+    order(&mut w, a, &archers, &format!("enter {tower}"));
+    // A building with an order cannot be upgraded: the tower has loaded
+    // both archers.
+    update_until(&mut w, |w| {
+        w.e(tower).inside.as_ref().unwrap().len() == 2 && w.e(tower).orders.is_empty()
+    });
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    update_until(&mut w, |w| !all(w, a, "guardtower").is_empty());
+    let guardtower = find(&w, a, "guardtower");
+    (w, a, archers, guardtower)
+}
+
+#[test]
+fn units_inside_a_building_upgraded_are_inside_the_new_building() {
+    let (w, a, archers, guardtower) = upgrade_an_occupied_tower("");
+    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..]));
+    for &u in &archers {
+        assert_eq!(w.e(u).player, Some(a));
+        assert_eq!(w.e(u).place, Some(Place::Inside(guardtower)));
+    }
+    assert_eq!(all(&w, a, "archer"), archers);
+}
+
+#[test]
+fn units_that_no_longer_fit_in_a_building_upgraded_are_beside_it() {
+    // A mod whose guard tower holds one archer.
+    let (w, a, archers, guardtower) =
+        upgrade_an_occupied_tower("def guardtower\ntransport_capacity 1\n");
+    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..1]));
+    assert_eq!(w.e(archers[1]).player, Some(a));
+    assert_eq!(w.e(archers[1]).place, w.e(guardtower).place);
+}
+
 #[test]
 fn load_all_never_loads_the_transport_into_itself() {
     // A mod whose flying machine fits in a transport.
