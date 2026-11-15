@@ -255,10 +255,21 @@ impl World {
 
     // upgrades
 
+    /// Gives a unit its type's stats with its player's upgrades. A unit
+    /// that changes hands, resurrected or converted, keeps no bonus of
+    /// before. Collision stays: it says whether the unit holds the space
+    /// where it stands.
     fn upgrade_to_player_level(&mut self, id: EntityId) -> Res {
         let Some(p) = self.e(id).player else {
             return Ok(());
         };
+        if let Some(t) = self.e(id).type_id {
+            let mut stats = self.rules.ty(t).stats.clone();
+            let e = self.em(id);
+            stats.collision = e.stats.collision;
+            e.stats = stats;
+            e.damage_level = 0;
+        }
         for upg in self.can_use(id) {
             if self.pl(p).upgrades.contains(&upg) {
                 for level in 0..self.pl(p).level(&upg) {
