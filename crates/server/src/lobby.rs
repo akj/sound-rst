@@ -444,10 +444,7 @@ impl Lobby {
                 .collect(),
             (Channel::Room, Place::InRoom(id)) | (Channel::Game, Place::Playing(id)) => {
                 let room = &self.rooms[id];
-                let members = room.members().map(|(_, m)| (m.conn, &m.outbox));
-                let watchers = room.watchers.iter().map(|w| (w.conn, &w.outbox));
-                members
-                    .chain(watchers)
+                room.everyone()
                     .filter(|(c, _)| here(*id, *c))
                     .map(|(_, o)| o)
                     .collect()

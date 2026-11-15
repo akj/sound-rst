@@ -1653,6 +1653,28 @@ async fn a_player_whose_game_is_over_comes_back_to_watch_it_as_a_watcher() {
     })
     .await;
     w.hear(refused(Refusal::NotNow)).await;
+    // He hears a line to the game once, as everyone in it does.
+    let hello = ServerMsg::Chat {
+        line: ChatLine {
+            channel: Channel::Game,
+            from: a.c.login.clone(),
+            watcher: false,
+            text: chat("hello"),
+        },
+    };
+    a.c.send(ClientMsg::Chat {
+        channel: Channel::Game,
+        text: chat("hello"),
+    })
+    .await;
+    w.hear(hello.clone()).await;
+    w.read_for(TURN * 4).await;
+    let lines = w
+        .told
+        .iter()
+        .filter(|h| **h == Heard::Msg(hello.clone()))
+        .count();
+    assert_eq!(lines, 1);
     // He follows, as a watcher does: Andrew is the only player left.
     let wholes_before = wholes(&w);
     w.c.send(ClientMsg::Follow { step: Step::Next }).await;

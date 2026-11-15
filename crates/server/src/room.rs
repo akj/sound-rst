@@ -164,12 +164,20 @@ impl Room {
             .or_else(|| self.slot_of(conn).map(SeatId::Player))
     }
 
-    /// Everyone in the room, players and watchers, but `but`.
-    fn everyone_but(&self, but: Option<ConnId>) -> impl Iterator<Item = &Outbox> {
-        let members = self.members().map(|(_, m)| (m.conn, &m.outbox));
+    /// Everyone in the room, players and watchers, each connection once:
+    /// a player whose game is over may also watch it.
+    pub fn everyone(&self) -> impl Iterator<Item = (ConnId, &Outbox)> {
+        let members = self
+            .members()
+            .map(|(_, m)| (m.conn, &m.outbox))
+            .filter(|(c, _)| self.watcher_of(*c).is_none());
         let watchers = self.watchers.iter().map(|w| (w.conn, &w.outbox));
-        members
-            .chain(watchers)
+        members.chain(watchers)
+    }
+
+    /// Everyone in the room but `but`.
+    fn everyone_but(&self, but: Option<ConnId>) -> impl Iterator<Item = &Outbox> {
+        self.everyone()
             .filter(move |(c, _)| Some(*c) != but)
             .map(|(_, o)| o)
     }
