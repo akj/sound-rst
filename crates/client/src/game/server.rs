@@ -952,6 +952,30 @@ impl GameInterface {
         self.on_a_server() || self.view().players().first() == Some(&self.me)
     }
 
+    /// Whether the game is paused, for the game menu of the room's host in
+    /// a game on a server; `None` for anyone else.
+    pub(crate) fn paused_for_the_host(&mut self, cx: &Client) -> Option<bool> {
+        let paused = self.server()?.paused;
+        is_room_host(cx).then_some(paused)
+    }
+
+    /// Asks the server to pause the game, or to resume it if it is
+    /// paused: the room's host only. The server tells every player.
+    pub(crate) fn pause_or_resume(&mut self, cx: &mut Client) {
+        if self.refuse_while_returning() {
+            return;
+        }
+        let Some(server) = self.server() else {
+            return;
+        };
+        let m = if server.paused {
+            ClientMsg::ResumeGame
+        } else {
+            ClientMsg::PauseGame
+        };
+        crate::net::send(cx, m);
+    }
+
     /// Asks the server to play at the speed `factor` of the game menu: the
     /// room's host only. Anyone else hears that only the host can.
     fn set_server_speed(&mut self, cx: &mut Client, factor: f64) {

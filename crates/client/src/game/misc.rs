@@ -25,6 +25,8 @@ use super::{GameInterface, Mode, Oops, POSITIONAL_BEEP_SOUND, R, Stop, Story, TU
 enum GameMenuChoice {
     Quit,
     Speed(f64),
+    /// Pauses a game on a server, or resumes it.
+    PauseOrResume,
 }
 
 /// The game menu, the choice made in it, and the story it was opened
@@ -423,9 +425,10 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
-    /// Opens the game menu: quit, the speeds, continue. The keys go to it
-    /// until a choice is made. In single-player the world waits meanwhile,
-    /// and its sounds stop; in a game on a server, the game goes on.
+    /// Opens the game menu: quit, the speeds, continue; on a server, for
+    /// the room's host, pause or resume. The keys go to it until a choice
+    /// is made. In single-player the world waits meanwhile, and its sounds
+    /// stop; in a game on a server, the game goes on.
     fn cmd_gamemenu(&mut self, cx: &mut Client) {
         if !self.on_a_server() {
             cx.stop_sound(false);
@@ -462,6 +465,10 @@ impl GameInterface {
                 set(GameMenuChoice::Speed(4.0)),
                 None,
             );
+        }
+        if let Some(paused) = self.paused_for_the_host(cx) {
+            let item = if paused { words::RESUME } else { words::PAUSE };
+            menu.append(text(item), set(GameMenuChoice::PauseOrResume), None);
         }
         menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
         menu.say_title(cx);
@@ -512,6 +519,7 @@ impl GameInterface {
     fn game_menu_chosen(&mut self, cx: &mut Client, choice: Option<GameMenuChoice>) {
         match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
+            Some(GameMenuChoice::PauseOrResume) => self.pause_or_resume(cx),
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.

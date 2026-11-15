@@ -144,6 +144,10 @@ pub const TOOK_TOO_LONG_TO_BUILD: &str = "it took too long to build";
 pub const SERVER_BUSY: &str = "the server is busy, try again later";
 pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
 pub const ONLY_THE_HOST_SETS_THE_SPEED: &str = "only the host can change the speed";
+/// The game menu's item that stops the clock of a game on a server.
+pub const PAUSE: &str = "pause";
+/// The game menu's item that starts it again.
+pub const RESUME: &str = "resume";
 
 // Returning to a game on a server after the connection is lost.
 

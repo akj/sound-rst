@@ -1506,3 +1506,100 @@ fn a_seat_the_server_no_longer_holds_ends_the_game_with_the_reason() {
         ]
     );
 }
+
+// Pausing a game on a server.
+
+/// Andrew opens the game menu of a game on a fake server whose room `host`
+/// hosts, and goes down its items: what he heard.
+fn game_menu_items(host: &str) -> Vec<String> {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let (_server, _, mut g) = fake_game(&mut h, &slots);
+    let mut room = soundrts::testkit::fake_room(jl1(&mut h), slots);
+    room.host = login(host);
+    h.enter_fake_room(&room);
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    h.key(&mut g, Key::F10, Mods::NONE);
+    for _ in 0..7 {
+        h.key(&mut g, Key::Down, Mods::NONE);
+    }
+    let said = h.said_since(from);
+    h.key(&mut g, Key::Escape, Mods::NONE);
+    said
+}
+
+#[test]
+fn only_the_rooms_host_is_offered_to_pause_a_game_on_a_server() {
+    let speeds = [
+        "set the game speed to slow ,",
+        "set the game speed to normal ,",
+        "set the game speed to fast ,",
+        "set the game speed to fast 4 ,",
+    ];
+    let host = [
+        &["Menu", "cancel game ,"][..],
+        &speeds,
+        &["pause ,", "continue game ,"],
+    ]
+    .concat();
+    assert_eq!(game_menu_items("andrew"), host);
+    let others = [
+        &["Menu", "cancel game ,"][..],
+        &speeds,
+        &["continue game ,", "cancel game ,"],
+    ]
+    .concat();
+    assert_eq!(game_menu_items("bob"), others);
+}
+
+#[test]
+fn the_rooms_host_pauses_and_resumes_a_game_on_a_server() {
+    let live = LiveKeys::default();
+    let mut h = Harness::with_config(
+        "en",
+        Script::new().keep_open().with_live(live.clone()),
+        config("andrew"),
+    );
+    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Fast4, 1);
+    h.clock.follow_real_time();
+    h.run_for(&mut g, 1.0);
+    // F10, then the item after the four speeds.
+    let choose = |live: &LiveKeys, at: f64| {
+        live.tap_at(at, Key::F10, Mods::NONE);
+        for i in 0..6 {
+            live.tap_at(at + 0.3 * (i + 1) as f64, Key::Down, Mods::NONE);
+        }
+        live.tap_at(at + 2.4, Key::Return, Mods::NONE);
+    };
+    let from = h.utterances().len();
+    choose(&live, h.clock.now());
+    let start = std::time::Instant::now();
+    while !h.said_since(from).contains(&"paused by andrew".to_owned()) {
+        assert!(
+            start.elapsed() < soundrts::testkit::WAIT_LIMIT,
+            "{:#?}",
+            h.said_since(from)
+        );
+        h.step(&mut g);
+    }
+    let paused_at = g.game.view().turn();
+    h.run_for(&mut g, 1.0);
+    assert_eq!(g.game.view().turn(), paused_at, "turns came while paused");
+    choose(&live, h.clock.now());
+    let start = std::time::Instant::now();
+    while g.game.view().turn() < paused_at + 10
+        || !h.said_since(from).contains(&"resumed by andrew".to_owned())
+    {
+        assert!(
+            start.elapsed() < soundrts::testkit::WAIT_LIMIT,
+            "{:#?}",
+            h.said_since(from)
+        );
+        h.step(&mut g);
+    }
+    server.shutdown();
+    let said = h.said_since(from);
+    assert!(said.contains(&"pause ,".to_owned()), "{said:#?}");
+    assert!(said.contains(&"resume ,".to_owned()), "{said:#?}");
+}
