@@ -62,7 +62,7 @@ struct Seat {
     /// The time it was stuck at its population limit: the turns at whose
     /// end its used food was at least its food (no room for any unit), its
     /// food was below the map's food limit (a farm would raise it), no farm
-    /// of its faction was being built, it had a worker, and no unit or
+    /// of its faction was being built or ordered built, it had a worker, and no unit or
     /// building of an enemy true player stood on a square where it has a
     /// building or a worker. A base under attack or without workers has its
     /// limit set by the enemy, not by its economy: its defeat says the rest.
@@ -90,6 +90,7 @@ struct Played {
 
 /// A computer's farm: its type and its cost.
 struct Farm {
+    name: String,
     type_id: Option<TypeId>,
     cost: Vec<i64>,
 }
@@ -103,6 +104,7 @@ fn farm_of(w: &World, p: PlayerId) -> Farm {
             .unit_type(&name)
             .map(|t| t.cost.clone())
             .unwrap_or_default(),
+        name,
     }
 }
 
@@ -163,11 +165,15 @@ fn attacks(w: &World, p: PlayerId) -> bool {
     })
 }
 
+/// A farm site of `p` stands, or a worker has the order to build one.
 fn builds_a_farm(w: &World, p: PlayerId, farm: &Farm) -> bool {
     units(w, p).any(|e| {
         e.site
             .as_ref()
             .is_some_and(|s| Some(s.building_type) == farm.type_id)
+            || e.orders
+                .iter()
+                .any(|o| o.keyword == Keyword::Build && o.type_name.as_deref() == Some(&farm.name))
     })
 }
 
@@ -431,7 +437,7 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
         .flat_map(|m| seeds.iter().map(move |&s| (m.as_str(), s)))
         .collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let mut played: Vec<Played> = std::thread::scope(|scope| {
+    let played: Vec<Played> = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..jobs.max(1))
             .map(|_| {
                 scope.spawn(|| {
@@ -441,11 +447,7 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
                         let Some(&(map, seed)) = cases.get(i) else {
                             break done;
                         };
-                        let g = play(&files, map, seed, &ais, turns);
-                        for line in game_lines(&g) {
-                            eprintln!("{line}");
-                        }
-                        done.push((i, g));
+                        done.push((i, play(&files, map, seed, &ais, turns)));
                     }
                 })
             })
@@ -457,11 +459,18 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
         all.sort_by_key(|(i, _)| *i);
         all.into_iter().map(|(_, g)| g).collect()
     });
-    played.sort_by_key(|g| (maps.iter().position(|m| *m == g.map), g.seed));
+    for line in played.iter().flat_map(game_lines) {
+        eprintln!("{line}");
+    }
     eprintln!("summary over seeds {}", env_or("SWEEP_SEEDS", "1-20"));
     for map in &maps {
         let games: Vec<&Played> = played.iter().filter(|g| &g.map == map).collect();
-        for ai in ais.iter().collect::<BTreeSet<_>>() {
+        let present: BTreeSet<&str> = games
+            .iter()
+            .flat_map(|g| &g.seats)
+            .map(|s| s.ai.as_str())
+            .collect();
+        for ai in present {
             for line in summary_lines(&games, ai) {
                 eprintln!("{line}");
             }
