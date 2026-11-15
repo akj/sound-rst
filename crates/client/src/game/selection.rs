@@ -203,16 +203,26 @@ impl GameInterface {
     }
 
     /// Puts each unit that took the place of another, by an upgrade, in
-    /// its place in the group, and as the selected object if the turn's
-    /// message `m` knows it. Done before the turn's entities are taken,
-    /// which keep the selected object only if it is still known.
+    /// its place wherever the interface names it between turns: the group,
+    /// the group last sent, the order picked and the order to do again,
+    /// and the selected object if the turn's message `m` knows it. Done
+    /// before the turn's entities are taken, which keep the selected object
+    /// only if it is still known. The commands not yet sent followed when
+    /// the turn came (see [`GameInterface::follow_replaced_in_commands`]).
     pub(super) fn follow_replaced_units(&mut self, m: &TurnMessage) {
         for e in &m.events {
             let &Event::Replaced { old, new } = e else {
                 continue;
             };
-            for u in self.group.iter_mut().filter(|u| **u == old) {
-                *u = new;
+            let follow = |u: &mut EntityId| {
+                if *u == old {
+                    *u = new;
+                }
+            };
+            self.group.iter_mut().for_each(follow);
+            self.previous_group.iter_mut().flatten().for_each(follow);
+            for o in self.order.iter_mut().chain(&mut self.previous_order) {
+                follow(&mut o.unit);
             }
             let known = m.perceived.iter().chain(&m.remembered).any(|e| e.id == new);
             if self.target == Some(old) && known {
@@ -513,16 +523,16 @@ impl GameInterface {
     pub fn orders(&self, cx: &Client, menu: OrderMenu) -> Vec<OrderTypeView> {
         let mut result: Vec<OrderTypeView> = Vec::new();
         let mut done: Vec<String> = Vec::new();
-        for u in &self.group {
-            if !self.dobjets.contains_key(u) {
+        for (u, id) in self.group_now() {
+            if !self.dobjets.contains_key(&u) {
                 continue;
             }
             let entries = match menu {
-                OrderMenu::Active => self.view_menu(*u, true),
-                OrderMenu::Included => self.view_menu(*u, false),
+                OrderMenu::Active => self.view_menu(id, true),
+                OrderMenu::Included => self.view_menu(id, false),
                 OrderMenu::InactiveOnly => {
-                    let strict = self.view_menu(*u, true);
-                    self.view_menu(*u, false)
+                    let strict = self.view_menu(id, true);
+                    self.view_menu(id, false)
                         .into_iter()
                         .filter(|o| !strict.contains(o))
                         .collect()
@@ -531,7 +541,7 @@ impl GameInterface {
             for o in entries {
                 if !done.contains(&o) {
                     if let Some(v) =
-                        OrderTypeView::new(&o, *u, self.view(), cx.res.style(), &cx.log)
+                        OrderTypeView::new(&o, id, self.view(), cx.res.style(), &cx.log)
                     {
                         result.push(v);
                     }
@@ -638,6 +648,7 @@ impl GameInterface {
         if let Some(mut o) = self.previous_order.clone()
             && !self.group.is_empty()
         {
+            o.unit = followed(&self.replaced_in_turns_waiting(), o.unit);
             let owner = self.dobjets.get(&o.unit).and_then(EntityView::player);
             if owner.is_some_and(|p| !self.view().controls(p)) {
                 let listed = self.orders(cx, OrderMenu::Included);
@@ -658,10 +669,13 @@ impl GameInterface {
         Ok(())
     }
 
-    /// Sends an order to the units of the group that may receive it.
+    /// Sends an order to the units of the group that may receive it, by
+    /// the ids the game gives them now (see [`GameInterface::group_now`]).
     pub(crate) fn send_order(&mut self, cx: &Client, order: Order, flags: OrderFlags) -> R {
         let g: Vec<EntityId> = match &order {
-            Order::Default(_) | Order::JoinGroup(_) => self.group.clone(),
+            Order::Default(_) | Order::JoinGroup(_) => {
+                self.group_now().into_iter().map(|(_, id)| id).collect()
+            }
             // In no unit's menu: no unit receives it, as in the original.
             Order::ResetGroup(_) => self.units_offering(None)?,
             Order::Keyword(o) => {
@@ -673,31 +687,65 @@ impl GameInterface {
                 self.units_offering(Some(&entry))?
             }
         };
+        let mut command = Command::Order {
+            order,
+            queue: flags.queue(),
+            imperative: flags.imperative,
+        };
+        for (old, new) in self.replaced_in_turns_waiting() {
+            follow_in_command(&mut command, old, new);
+        }
         if self.previous_group.as_ref() != Some(&g) {
             self.send_command(cx, Command::Control(g.clone()));
             self.previous_group = Some(g);
         }
-        self.send_command(
-            cx,
-            Command::Order {
-                order,
-                queue: flags.queue(),
-                imperative: flags.imperative,
-            },
-        );
+        self.send_command(cx, command);
         Ok(())
     }
 
-    /// The units of the group whose menu has the order `entry`; none for no
-    /// entry. Every unit of the group must be known.
+    /// The units of the group, each with the id the game gives it now. A
+    /// unit replaced in a turn that has come and is not yet taken has the
+    /// id of the unit it became: the game and the seat's view know only
+    /// that one, while the interface's copies know only the old one until
+    /// it takes the turn.
+    fn group_now(&self) -> Vec<(EntityId, EntityId)> {
+        let replaced = self.replaced_in_turns_waiting();
+        let now = |u| followed(&replaced, u);
+        self.group.iter().map(|&u| (u, now(u))).collect()
+    }
+
+    /// The units replaced in the turns that have come and wait to be
+    /// taken, old and new, in order.
+    fn replaced_in_turns_waiting(&self) -> Vec<(EntityId, EntityId)> {
+        let ends = self.srv_queue.iter().filter_map(|e| match e {
+            super::SrvEvent::EndOfTurn(m) => Some(m),
+            _ => None,
+        });
+        ends.flat_map(|m| replacements(m)).collect()
+    }
+
+    /// Makes the commands not yet sent name the units that took the place
+    /// of others in the turn `m`, as soon as it comes: they may be sent
+    /// before the interface takes the turn.
+    pub(super) fn follow_replaced_in_commands(&mut self, m: &TurnMessage) {
+        for (old, new) in replacements(m) {
+            for c in &mut self.pending_commands {
+                follow_in_command(c, old, new);
+            }
+        }
+    }
+
+    /// The units of the group whose menu has the order `entry`, by the ids
+    /// the game gives them now; none for no entry. Every unit of the group
+    /// must be known.
     fn units_offering(&self, entry: Option<&str>) -> R<Vec<EntityId>> {
         let mut g = Vec::new();
-        for uid in &self.group {
-            if !self.dobjets.contains_key(uid) {
+        for (uid, id) in self.group_now() {
+            if !self.dobjets.contains_key(&uid) {
                 return Err(Oops::missing(uid.0));
             }
-            if entry.is_some_and(|e| self.view_menu(*uid, false).iter().any(|o| o == e)) {
-                g.push(*uid);
+            if entry.is_some_and(|e| self.view_menu(id, false).iter().any(|o| o == e)) {
+                g.push(id);
             }
         }
         Ok(g)
@@ -789,19 +837,24 @@ impl GameInterface {
     /// Says what the default order means for each kind of unit of the
     /// group: "gather a goldmine, go to a goldmine".
     fn say_default_confirmation(&mut self, cx: &mut Client) -> R {
-        let target = self.ui_order_target()?;
+        let target = match self.ui_order_target()? {
+            OrderTarget::Entity(t) => {
+                OrderTarget::Entity(followed(&self.replaced_in_turns_waiting(), t))
+            }
+            t @ (OrderTarget::Square(_) | OrderTarget::Point { .. }) => t,
+        };
         let mut msgs: Vec<Msg> = Vec::new();
-        for u in self.group.clone() {
+        for (u, id) in self.group_now() {
             if !self.dobjets.contains_key(&u) {
                 continue;
             }
             let keyword = self
                 .view()
-                .default_order(u, target)
+                .default_order(id, target)
                 .map_err(|e| Oops::new(e.0))?;
             if let Some(keyword) = keyword {
                 let order = keyword.as_str();
-                let o = OrderTypeView::new(order, u, self.view(), cx.res.style(), &cx.log)
+                let o = OrderTypeView::new(order, id, self.view(), cx.res.style(), &cx.log)
                     .ok_or_else(|| Oops::missing(order))?;
                 let m = [o.title, self.ui_target_title(cx)?].concat();
                 if !msgs.contains(&m) {
@@ -832,6 +885,45 @@ impl GameInterface {
         }
         self.order = None;
         Ok(())
+    }
+}
+
+/// The units replaced in the turn `m`, old and new, in order.
+fn replacements(m: &TurnMessage) -> impl Iterator<Item = (EntityId, EntityId)> + '_ {
+    m.events.iter().filter_map(|e| match *e {
+        Event::Replaced { old, new } => Some((old, new)),
+        _ => None,
+    })
+}
+
+/// The unit `u` became through `replaced`, in order: itself if none.
+fn followed(replaced: &[(EntityId, EntityId)], mut u: EntityId) -> EntityId {
+    for &(old, new) in replaced {
+        if u == old {
+            u = new;
+        }
+    }
+    u
+}
+
+/// Makes a command name `new` where it named `old`: the units it
+/// controls, or the unit its order aims at.
+fn follow_in_command(c: &mut Command, old: EntityId, new: EntityId) {
+    let aimed = OrderTarget::Entity(old);
+    match c {
+        Command::Control(units) => {
+            for u in units.iter_mut().filter(|u| **u == old) {
+                *u = new;
+            }
+        }
+        Command::Order { order, .. } => match order {
+            Order::Default(t) if *t == aimed => *t = OrderTarget::Entity(new),
+            Order::Keyword(o) if o.target() == Some(&aimed) => {
+                *o = o.clone().at(OrderTarget::Entity(new));
+            }
+            Order::Default(_) | Order::Keyword(_) | Order::ResetGroup(_) | Order::JoinGroup(_) => {}
+        },
+        Command::Speed(_) | Command::Quit | Command::Cheat(_) => {}
     }
 }
 
@@ -885,6 +977,316 @@ mod tests {
         let said = h.key(&mut g, Key::Num6, Mods::NONE);
         assert_eq!(g.game.group, [first, second]);
         assert_eq!(said, [", You control 2 dark archer , ,"]);
+    }
+
+    #[test]
+    fn what_names_a_unit_upgraded_names_the_unit_it_became() {
+        let (mut h, mut g) = training();
+        let me = g.game.me;
+        let townhall = unit(&g, me, "townhall");
+        let w = g.game.host().world();
+        let home = w.entity(townhall).unwrap().square().unwrap();
+        let home = g.game.view().square(home).name().to_owned();
+        cheat(
+            &mut g,
+            me,
+            &format!("add_units {home} lumbermill 2 scouttower"),
+        );
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        let w = g.game.host().world();
+        let towers = w.player(me).units.iter().copied();
+        let towers: Vec<EntityId> = towers
+            .filter(|&u| &*w.entity(u).unwrap().type_name == "scouttower")
+            .collect();
+        let (upgraded, other) = (towers[0], towers[1]);
+        // The first tower is upgraded from the order menu.
+        g.game.group = vec![upgraded];
+        let pick = |g: &crate::testkit::TestGame, cx: &Client, menu, entry: &str| {
+            let listed = g.game.orders(cx, menu).into_iter();
+            let entry = Some(entry);
+            listed
+                .filter(|o| o.keyword == Keyword::UpgradeTo)
+                .find(|o| o.type_name.as_deref() == entry)
+                .unwrap()
+        };
+        let o = pick(&g, &h.client, OrderMenu::Active, "guardtower");
+        g.game.select_order(&mut h.client, o, true);
+        g.game
+            .cmd_validate(&mut h.client, OrderFlags::default())
+            .unwrap();
+        // An order picked for it waits for its target.
+        let o = pick(&g, &h.client, OrderMenu::Included, "cannontower");
+        g.game.order = Some(o);
+        run_until(&mut h, &mut g, |game| {
+            game.dobjets
+                .values()
+                .any(|v| &*v.model.type_name == "guardtower")
+        });
+        let guardtower = unit(&g, me, "guardtower");
+        assert_eq!(g.game.order.as_ref().map(|o| o.unit), Some(guardtower));
+        assert_eq!(
+            g.game.previous_order.as_ref().map(|o| o.unit),
+            Some(guardtower)
+        );
+        assert_eq!(g.game.previous_group, Some(vec![guardtower]));
+        // "Do again" on the other tower says what the upgrade costs: the
+        // player has the lumber mill it requires.
+        g.game.order = None;
+        g.game.group = vec![other];
+        let from = h.utterances().len();
+        g.game
+            .cmd_do_again(&mut h.client, false, OrderFlags::default())
+            .unwrap();
+        assert_eq!(
+            h.said_since(from),
+            ["upgrade to guard tower , requires 5 gold and 2 wood , press enter to confirm"]
+        );
+        g.game
+            .cmd_validate(&mut h.client, OrderFlags::default())
+            .unwrap();
+        let turn = g.game.view().turn() + 1;
+        h.run_until_turn(&mut g, turn);
+        let w = g.game.host().world();
+        let orders = &w.entity(other).unwrap().orders;
+        let orders: Vec<_> = orders.iter().map(|o| o.words(w)).collect();
+        assert_eq!(orders, [["upgrade_to", "guardtower"]]);
+    }
+
+    /// A game on a fake server whose game, played here by `host`, has
+    /// just upgraded the player's town hall `old` to the keep `new`; the
+    /// turn `upgraded` that tells it is not yet sent. The player's group
+    /// is the town hall.
+    struct UpgradeOnAServer {
+        h: crate::testkit::Harness,
+        g: crate::testkit::TestGame,
+        server: crate::testkit::FakeServer,
+        host: soundrts_world::Host,
+        before: std::sync::Arc<TurnMessage>,
+        upgraded: std::sync::Arc<TurnMessage>,
+        old: EntityId,
+        new: EntityId,
+    }
+
+    impl UpgradeOnAServer {
+        fn new() -> UpgradeOnAServer {
+            use crate::clock::Clock;
+            use crate::testkit::{FakeStream, Harness, Script, controller, slot, upstream_root};
+            use soundrts_protocol::game::SeatFrame;
+            use soundrts_protocol::{Login, SlotPlayer, Speed};
+            use soundrts_world::{Cheat, GameSetup, Host, KeywordOrder, Queue, TurnChange};
+            let read = |f: &str| std::fs::read_to_string(upstream_root().join(f)).unwrap();
+            let mut h = Harness::new("en", Script::new().keep_open());
+            let server = h.join_fake_server("andrew", &["bob"]);
+            let slots = [
+                slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
+                slot(SlotPlayer::Human(Login::new("bob").unwrap()), 2),
+            ];
+            let stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1);
+            let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+            h.run_until_turn(&mut g, 0);
+            let controllers = slots.iter().map(controller).collect();
+            let mut setup = GameSetup::multiplayer(
+                read("res/rules.txt"),
+                read("res/ai.txt"),
+                read("res/multi/jl1.txt"),
+                1,
+                controllers,
+            );
+            setup.allow_cheatmode = true;
+            let mut host = Host::new(&setup).unwrap();
+            let me = host.seats()[0];
+            let add = Cheat::Trigger("add_units a1 barracks townhall".into());
+            let _ = host.queue(me, Command::Cheat(add));
+            let _ = host.queue(me, Command::Cheat(Cheat::Resources));
+            let before = host.step(me).message;
+            let change = TurnChange::between(g.game.view().message(), &before);
+            server.frame_at(h.clock.now(), SeatFrame::Change(change));
+            h.run_until_turn(&mut g, 1);
+            let w = host.world();
+            let mut units = w.player(me).units.iter().copied();
+            let old = units
+                .find(|&u| &*w.entity(u).unwrap().type_name == "townhall")
+                .unwrap();
+            let _ = host.queue(me, Command::Control(vec![old]));
+            let upgrade = KeywordOrder::typed(Keyword::UpgradeTo, "keep").unwrap();
+            let _ = host.queue(
+                me,
+                Command::Order {
+                    order: Order::Keyword(upgrade),
+                    queue: Queue::Replace,
+                    imperative: false,
+                },
+            );
+            let upgraded = loop {
+                let m = host.step(me).message;
+                if m.events.iter().any(|e| matches!(e, Event::Replaced { .. })) {
+                    break m;
+                }
+                assert!(host.world().time < 240_000, "the upgrade did not end");
+            };
+            let new = replacements(&upgraded).next().unwrap().1;
+            g.game.group = vec![old];
+            UpgradeOnAServer {
+                h,
+                g,
+                server,
+                host,
+                before,
+                upgraded,
+                old,
+                new,
+            }
+        }
+
+        /// Sends the turn of the upgrade, runs the client until it has taken
+        /// it, and plays here what the client sent. The units the player
+        /// controls then.
+        fn send_the_upgrade_and_play(&mut self) -> Option<Vec<EntityId>> {
+            use crate::clock::Clock;
+            use soundrts_protocol::game::SeatFrame;
+            use soundrts_world::TurnChange;
+            let change = TurnChange::between(&self.before, &self.upgraded);
+            let now = self.h.clock.now();
+            self.server.frame_at(now, SeatFrame::Change(change));
+            let turn = self.upgraded.time / 300;
+            self.h.run_until_turn(&mut self.g, turn);
+            self.h.step(&mut self.g);
+            let me = self.g.game.me;
+            for (c, _) in self.server.commands() {
+                let _ = self.host.queue(me, c);
+            }
+            self.host.step(me);
+            self.host.world().player(me).group.clone()
+        }
+    }
+
+    #[test]
+    fn an_order_given_before_the_interface_takes_the_turn_of_an_upgrade_goes_to_the_new_unit() {
+        let mut t = UpgradeOnAServer::new();
+        let (old, new) = (t.old, t.new);
+        let style = t.h.client.res.style();
+        let train = OrderTypeView::new(
+            "train peasant",
+            old,
+            t.g.game.view(),
+            style,
+            &t.h.client.log,
+        );
+        t.g.game.order = train;
+        // Enter, pressed when the turn has come and before it is taken.
+        t.h.press(Key::Return, Mods::NONE);
+        assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
+        let w = t.host.world();
+        let orders = &w.entity(new).unwrap().orders;
+        let orders: Vec<_> = orders.iter().map(|o| o.words(w)).collect();
+        assert_eq!(orders, [["train", "peasant"]]);
+        assert_eq!(t.g.game.group, [new]);
+        assert_eq!(t.g.game.previous_group, Some(vec![new]));
+    }
+
+    #[test]
+    fn an_order_aimed_before_the_interface_takes_the_turn_of_an_upgrade_goes_to_the_new_unit() {
+        let mut t = UpgradeOnAServer::new();
+        let (old, new) = (t.old, t.new);
+        let style = t.h.client.res.style();
+        let view = t.g.game.view();
+        let rally = OrderTypeView::new("rallying_point", old, view, style, &t.h.client.log);
+        let b1 = view.square_at(1, 0).unwrap();
+        let b1_id = view.square(b1).protocol_id();
+        t.g.game.order = rally;
+        (t.g.game.place, t.g.game.target, t.g.game.zoom) = (Some(b1), None, None);
+        // Enter, pressed when the turn has come and before it is taken.
+        t.h.press(Key::Return, Mods::NONE);
+        assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
+        let rallying_point = t.host.world().entity(new).unwrap().rallying_point.clone();
+        assert_eq!(rallying_point, Some(b1_id.to_string()));
+    }
+
+    #[test]
+    fn what_is_said_in_the_turn_of_an_upgrade_before_it_is_taken_asks_about_the_new_unit() {
+        let mut t = UpgradeOnAServer::new();
+        let (old, new) = (t.old, t.new);
+        let w = t.host.world();
+        let me = t.g.game.me;
+        let of_type = |ty: &str| {
+            let mut units = w.player(me).units.iter().copied();
+            units.find(|&u| u != old && u != new && &*w.entity(u).unwrap().type_name == ty)
+        };
+        let (peasant, other) = (of_type("peasant").unwrap(), of_type("townhall").unwrap());
+        // "Do again" an upgrade listed for the town hall, on the other one;
+        // then a peasant's default order aimed at the town hall.
+        let style = t.h.client.res.style();
+        let view = t.g.game.view();
+        t.g.game.previous_order =
+            OrderTypeView::new("upgrade_to keep", old, view, style, &t.h.client.log);
+        t.g.game.group = vec![other];
+        let from = t.h.utterances().len();
+        t.h.press(Key::R, Mods::ALT);
+        t.h.press(Key::Return, Mods::NONE);
+        t.send_the_upgrade_and_play();
+        let said = t.h.said_since(from);
+        let requires = "upgrade to keep , requires 10 gold and 15 wood , press enter to confirm";
+        assert_eq!(said.first().map(String::as_str), Some(requires));
+        let w = t.host.world();
+        let orders: Vec<_> = w
+            .entity(other)
+            .unwrap()
+            .orders
+            .iter()
+            .map(|o| o.words(w))
+            .collect();
+        assert_eq!(orders, [["upgrade_to", "keep"]]);
+        let mut t = UpgradeOnAServer::new();
+        (t.g.game.group, t.g.game.target, t.g.game.order) = (vec![peasant], Some(t.old), None);
+        let from = t.h.utterances().len();
+        t.h.press(Key::Backspace, Mods::NONE);
+        t.send_the_upgrade_and_play();
+        let said = t.h.said_since(from);
+        assert_eq!(
+            said.first().map(String::as_str),
+            Some("go to town hall 1 ,")
+        );
+        let w = t.host.world();
+        let orders: Vec<_> = w
+            .entity(peasant)
+            .unwrap()
+            .orders
+            .iter()
+            .map(|o| o.words(w))
+            .collect();
+        assert_eq!(orders, [["go", &t.new.0.to_string()]]);
+    }
+
+    #[test]
+    fn a_command_waiting_to_be_sent_when_the_turn_of_an_upgrade_comes_names_the_new_unit() {
+        use soundrts_protocol::MAX_TURN_ORDER_BYTES;
+        use soundrts_protocol::game::encode_command;
+        let mut t = UpgradeOnAServer::new();
+        let (old, new) = (t.old, t.new);
+        // As many commands as the server takes for a turn, then an order
+        // to the town hall, which waits for the next turn.
+        let filler = Command::Order {
+            order: Order::JoinGroup("x".repeat(1024)),
+            queue: soundrts_world::Queue::Replace,
+            imperative: false,
+        };
+        let len = encode_command(&filler).unwrap().len();
+        for _ in 0..=MAX_TURN_ORDER_BYTES / 2 / len {
+            t.g.game.send_command(&t.h.client, filler.clone());
+        }
+        t.h.step(&mut t.g);
+        let a1 = t.g.game.view().square_at(0, 0).unwrap();
+        let order = Order::Default(OrderTarget::Square(a1));
+        let flags = OrderFlags::default();
+        t.g.game.send_order(&t.h.client, order, flags).unwrap();
+        t.h.step(&mut t.g);
+        assert!(
+            t.g.game
+                .pending_commands
+                .contains(&Command::Control(vec![old]))
+        );
+        assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
     }
 
     #[test]

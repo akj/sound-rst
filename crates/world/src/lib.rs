@@ -116,7 +116,7 @@ pub use change::{
     ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
     StateChange, TurnChange,
 };
-pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
+pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue, Refused};
 #[cfg(feature = "truth")]
 pub use entity::Entity;
 pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
@@ -139,7 +139,7 @@ pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers}
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
 /// the digest of a world (`World::digest_u64`).
-pub const SIM_VERSION: u32 = 8;
+pub const SIM_VERSION: u32 = 9;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.

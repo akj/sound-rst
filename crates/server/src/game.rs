@@ -34,9 +34,7 @@ use soundrts_protocol::{
     ChatText, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapInfo, Refusal, RoomId, SeatChange,
     SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step, StopReason,
 };
-use soundrts_world::{
-    Command, Event, GameSetup, Host, Order, OrderTarget, PlayerId, SeatTurn, TurnMessage,
-};
+use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, TurnMessage};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::Bytes;
@@ -347,8 +345,6 @@ struct Game {
     turn: u64,
     /// The players still in the game, as of the last turn a seat was sent.
     in_game: Vec<PlayerId>,
-    /// How many squares the map has.
-    squares: usize,
 }
 
 /// What a connected seat is sent of the coming turn.
@@ -434,7 +430,6 @@ async fn run(
         command_bytes: BTreeMap::new(),
         turn: 0,
         in_game: host.seats().to_vec(),
-        squares: host.game_start().map.squares.len(),
     };
     for j in joining {
         game.seat(&host, j);
@@ -679,28 +674,6 @@ fn frames(
             }
         })
         .collect()
-}
-
-/// Whether the square a command's order names, if any, is one of the
-/// map's `squares`: the world takes it as one of its own.
-fn on_the_map(command: &Command, squares: usize) -> bool {
-    let target = match command {
-        Command::Order {
-            order: Order::Keyword(order),
-            ..
-        } => order.target(),
-        Command::Order {
-            order: Order::Default(target),
-            ..
-        } => Some(target),
-        _ => None,
-    };
-    match target {
-        Some(OrderTarget::Square(q) | OrderTarget::Point { square: q, .. }) => {
-            usize::try_from(q.0).is_ok_and(|q| q < squares)
-        }
-        Some(OrderTarget::Entity(_)) | None => true,
-    }
 }
 
 /// The events of a turn that a seat not sent it is told when it catches
@@ -1136,7 +1109,7 @@ impl Game {
                 slot,
                 command,
                 bytes,
-            } => self.command(slot, command, bytes),
+            } => self.command(host, slot, command, bytes),
             GameInput::Leave { seat } => {
                 let Some(side) = self.seats.get(&seat).map(|s| s.side) else {
                     return;
@@ -1169,7 +1142,7 @@ impl Game {
         }
     }
 
-    fn command(&mut self, slot: SlotIndex, command: Command, bytes: usize) {
+    fn command(&mut self, host: &Host, slot: SlotIndex, command: Command, bytes: usize) {
         let Some(seat) = self.seats.get(&SeatId::Player(slot)) else {
             return;
         };
@@ -1184,7 +1157,10 @@ impl Game {
             });
             return;
         }
-        if !on_the_map(&command, self.squares) {
+        // What names a square or player the game does not have comes from
+        // a broken or hostile client: the sender hears it now, as the world
+        // would refuse it at the turn without telling anyone.
+        if host.check(seat.side, &command).is_err() {
             outbox.send(&ServerMsg::Refused {
                 reason: Refusal::Invalid,
             });

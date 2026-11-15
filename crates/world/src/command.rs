@@ -161,6 +161,64 @@ pub enum OrderTarget {
     Entity(EntityId),
 }
 
+impl OrderTarget {
+    /// The square it names.
+    pub fn square(self) -> Option<SquareId> {
+        match self {
+            OrderTarget::Square(s) | OrderTarget::Point { square: s, .. } => Some(s),
+            OrderTarget::Entity(_) => None,
+        }
+    }
+}
+
+/// Why the world refuses a command when it is queued: it names a player
+/// or a square the game does not have, which no player's interface can
+/// name. An entity may have died since the player named it, so a command
+/// naming no entity is taken, and comes to nothing when it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    NoSuchPlayer(PlayerId),
+    NoSuchSquare(SquareId),
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Refused::NoSuchPlayer(p) => write!(f, "no player {}", p.0),
+            Refused::NoSuchSquare(s) => write!(f, "no square {}", s.0),
+        }
+    }
+}
+
+impl Command {
+    /// The square the command names, if any.
+    fn square(&self) -> Option<SquareId> {
+        match self {
+            Command::Order { order, .. } => match order {
+                Order::Keyword(o) => o.target().and_then(|t| t.square()),
+                Order::Default(t) => t.square(),
+                Order::ResetGroup(_) | Order::JoinGroup(_) => None,
+            },
+            Command::Cheat(Cheat::AddUnits { square, .. }) => *square,
+            Command::Control(_) | Command::Speed(_) | Command::Quit | Command::Cheat(_) => None,
+        }
+    }
+}
+
+impl crate::World {
+    /// Whether the world takes a command of `player`, or refuses it at
+    /// once (see [`Refused`]).
+    pub fn check_command(&self, player: PlayerId, command: &Command) -> Result<(), Refused> {
+        if !self.has_player(player) {
+            return Err(Refused::NoSuchPlayer(player));
+        }
+        match command.square() {
+            Some(s) if !self.has_square(s) => Err(Refused::NoSuchSquare(s)),
+            Some(_) | None => Ok(()),
+        }
+    }
+}
+
 /// A cheat. Each is refused unless the game allows cheats.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

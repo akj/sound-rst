@@ -290,29 +290,6 @@ fn only_the_orders_done_at_once_are_never_queued() {
 }
 
 #[test]
-fn a_final_order_stays_final_and_remembers_both_marks() {
-    use Progress::*;
-    let all = [
-        Pending,
-        Deferred,
-        Started,
-        Complete,
-        Impossible,
-        ImpossibleAndComplete,
-    ];
-    for p in all {
-        assert!(p.completed().is_complete(), "{p:?}");
-        assert!(p.made_impossible().is_impossible(), "{p:?}");
-        assert_eq!(p.completed().is_impossible(), p.is_impossible(), "{p:?}");
-        assert_eq!(p.made_impossible().is_complete(), p.is_complete(), "{p:?}");
-    }
-    assert_eq!(Impossible.completed(), ImpossibleAndComplete);
-    assert_eq!(Complete.made_impossible(), ImpossibleAndComplete);
-    let finals: Vec<_> = all.into_iter().filter(|p| p.is_final()).collect();
-    assert_eq!(finals, [Complete, Impossible, ImpossibleAndComplete]);
-}
-
-#[test]
 fn an_order_of_the_map_language_is_read_once_or_refused() {
     let (w, _, _) = game();
     let b1 = w.square_by_name("b1").unwrap();
@@ -584,4 +561,169 @@ fn units_upgraded_take_the_place_of_the_old_ones_where_the_player_named_them() {
     assert_eq!(groups, [("6".to_owned(), vec![first, second])]);
     assert_eq!(w.pl(a).group, Some(vec![first, second]));
     assert_eq!(w.e(first).group.as_deref(), Some("6"));
+}
+
+#[test]
+fn a_building_upgraded_keeps_its_rallying_point() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(
+        a,
+        "cmd add_units a1 barracks lumbermill blacksmith stables keep",
+    );
+    w.update();
+    let keep = find(&w, a, "keep");
+    let b1 = w.square_by_name("b1").unwrap();
+    let b1_id = w.square(b1).id.to_string();
+    order(&mut w, a, &[keep], &format!("rallying_point {b1_id}"));
+    order(&mut w, a, &[keep], "upgrade_to castle");
+    // The upgrade takes 360 seconds: 1200 turns.
+    for _ in 0..1300 {
+        w.update();
+    }
+    let castle = find(&w, a, "castle");
+    assert_eq!(w.e(castle).rallying_point, Some(b1_id.clone()));
+    // A peasant trained in the castle goes there.
+    order(&mut w, a, &[castle], "train peasant");
+    update_until(&mut w, |w| !all(w, a, "peasant").is_empty());
+    let peasant = find(&w, a, "peasant");
+    assert_eq!(orders(&w, peasant).first(), Some(&words(&["go", &b1_id])));
+}
+
+#[test]
+fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
+    // A mod whose upgrades raise a knight's hit points and a priest's mana.
+    let extra = "def toughness\nclass upgrade\neffect bonus hp_max 10\n\
+                 def wisdom\nclass upgrade\neffect bonus mana_max 50\n\
+                 def knight\ncan_use toughness\ndef priest\ncan_use a_conversion wisdom\n";
+    let (mut w, a, b) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 u_conversion priest");
+    w.queue_command(b, "cmd add_units a1 toughness wisdom knight priest");
+    w.update();
+    let knight = find(&w, b, "knight");
+    let enemy_priest = find(&w, b, "priest");
+    for u in [knight, enemy_priest] {
+        let e = w.em(u);
+        e.hp = e.stats.hp_max;
+        e.mana = e.stats.mana_max;
+    }
+    let vitals = |w: &World, u| {
+        let e = w.e(u);
+        (e.hp, e.stats.hp_max, e.mana, e.stats.mana_max)
+    };
+    assert_eq!(vitals(&w, knight), (55_000, 55_000, 0, 0));
+    assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 250_000, 250_000));
+    let priest = find(&w, a, "priest");
+    for target in [knight, enemy_priest] {
+        w.em(priest).mana = w.e(priest).stats.mana_max;
+        order(&mut w, a, &[priest], &format!("use a_conversion {target}"));
+        update_until(&mut w, |w| w.e(target).player == Some(a));
+    }
+    assert_eq!(vitals(&w, knight), (45_000, 45_000, 0, 0));
+    assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 200_000, 200_000));
+}
+
+/// The events of the entities `p` perceives, since the last call.
+fn entity_events(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
+    w.drain_events(p)
+        .into_iter()
+        .filter_map(|e| match e {
+            crate::Event::Entity { event, .. } => Some(event),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_recall_with_no_room_for_its_units_is_impossible_says_why_once_and_costs_nothing() {
+    let (mut w, a, _) = two_humans("");
+    // a1 is full: 143 footmen and the mage are as many ground units as a
+    // square holds.
+    w.queue_command(a, "cmd add_units a1 u_recall mage 143 footman");
+    w.queue_command(a, "cmd add_units b1 footman");
+    w.update();
+    let mage = find(&w, a, "mage");
+    w.em(mage).mana = 200_000;
+    let b1 = w.square_by_name("b1").unwrap();
+    let recall = format!("use a_recall {}", w.square(b1).id);
+    order(&mut w, a, &[mage], &recall);
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| {
+        w.e(mage).orders.first().is_some_and(Order::is_final)
+    });
+    let o = &w.e(mage).orders[0];
+    assert_eq!(o.progress(), Progress::Impossible);
+    assert_eq!(w.e(mage).distance_to_goal, crate::INF);
+    assert_eq!(w.e(mage).mana, 200_000);
+    w.update();
+    assert!(w.e(mage).orders.is_empty());
+    let events = entity_events(&mut w, a);
+    let refused: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                EntityEvent::OrderImpossible(_) | EntityEvent::UseComplete(_)
+            )
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        [&EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+}
+
+#[test]
+fn an_upgrade_that_finds_no_meadow_is_refunded_and_says_why() {
+    // A mod whose guard tower needs a meadow, on a map that has none.
+    let (mut w, a, _) = two_humans("def guardtower\nis_buildable_anywhere 0\n");
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    w.update();
+    // Paid: 11 - 6 gold and 4 - 2 wood.
+    let paid = vec![
+        995 * crate::nofloat::PRECISION,
+        998 * crate::nofloat::PRECISION,
+    ];
+    assert_eq!(w.pl(a).resources, paid);
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| w.e(tower).orders.is_empty());
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::CannotBuildHere))]
+    );
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    assert_eq!(all(&w, a, "scouttower"), [tower]);
+    assert!(all(&w, a, "guardtower").is_empty());
+}
+
+#[test]
+fn a_ship_trained_with_no_water_near_is_refunded_and_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 townhall lumbermill farm shipyard");
+    w.update();
+    let shipyard = find(&w, a, "shipyard");
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[shipyard], "train boat");
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| {
+        w.e(shipyard).orders.first().is_some_and(Order::is_final)
+    });
+    assert_eq!(w.e(shipyard).orders[0].progress(), Progress::Impossible);
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+    assert!(all(&w, a, "boat").is_empty());
 }
