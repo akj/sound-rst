@@ -74,13 +74,19 @@ impl Sel {
 enum Kind {
     Meadow,
     Deposit,
+    /// A deposit of this resource type.
+    DepositOf(i64),
 }
 
 impl Kind {
-    fn matches(self, e: &Entity) -> bool {
+    fn matches(self, rules: &crate::Rules, e: &Entity) -> bool {
         match self {
             Kind::Meadow => e.class == EntityClass::Meadow,
             Kind::Deposit => e.class == EntityClass::Deposit,
+            Kind::DepositOf(rt) => {
+                e.class == EntityClass::Deposit
+                    && e.type_id.and_then(|t| rules.ty(t).resource_type) == Some(rt)
+            }
         }
     }
 }
@@ -123,6 +129,8 @@ pub(crate) struct Computer {
     /// Whether units waiting on a target may go, by target.
     time_has_come: Vec<(Option<Target>, bool)>,
     safe_cnt: i64,
+    /// The cost of the first purchase of its turn that lacked a resource.
+    lacking: Option<Vec<i64>>,
 }
 
 fn same_opt(a: &Option<Target>, b: &Option<Target>) -> bool {
@@ -350,6 +358,7 @@ impl World {
         if !self.should_play_this_turn(p)? {
             return Ok(());
         }
+        self.csm(p).lacking = None;
         self.update_effect_users_and_workers(p)?;
         self.update_time_has_come(p);
         self.send_workers_to_forgotten_building_sites(p)?;
@@ -379,7 +388,7 @@ impl World {
         // A recursion error here ends the player's update with a warning, as
         // the original's ends at the world's catch.
         self.ai_get(p, NB_WORKERS_TO_GET, &peasant)?;
-        match self.follow_plan(p) {
+        let planned = match self.follow_plan(p) {
             // The original catches a recursion error of its plan here, and
             // goes on with the next line of the plan at its next turn.
             Err(Abort(m)) if m == RECURSION_ERROR => {
@@ -400,7 +409,9 @@ impl World {
                 Ok(())
             }
             other => other,
-        }
+        };
+        planned?;
+        self.gather_what_is_lacking(p)
     }
 
     /// The cpu intensive players play in turns, one tenth of them each turn.
@@ -708,6 +719,67 @@ impl World {
             self.take_order(u, gather, true, false, None)?;
             add_count(&mut self.csm(p).gathered_deposits, &Some(deposit), 1);
         }
+        Ok(())
+    }
+
+    /// Moves a worker to the resource that the first purchase of the turn
+    /// lacks and the fewest workers gather, from the resource it does not
+    /// lack that the most workers gather, leaving that one a gatherer: one
+    /// worker a turn, to a deposit it knows and can walk to safely.
+    fn gather_what_is_lacking(&mut self, p: PlayerId) -> Res {
+        let Some(cost) = self.cs(p).lacking.clone() else {
+            return Ok(());
+        };
+        let lacking = self.missing_resources(p, &cost)?;
+        if lacking.is_empty() {
+            return Ok(());
+        }
+        let mut gatherers: Vec<Vec<(EntityId, Target)>> =
+            vec![Vec::new(); self.pl(p).resources.len()];
+        for &u in &self.cs(p).workers {
+            let e = self.e(u);
+            if let Some(Order {
+                kind: OrderKind::Gather { aim, .. },
+                ..
+            }) = e.orders.first()
+                && matches!(e.place, Some(Place::Square(_)))
+                && let Some(t) = &aim.target
+                && let Ok(rt) = self.deposit_resource_type(t)
+                && let Some(g) = gatherers.get_mut(rt as usize)
+            {
+                g.push((u, t.clone()));
+            }
+        }
+        let to = *lacking
+            .iter()
+            .min_by_key(|&&r| gatherers[r].len())
+            .expect("not empty");
+        let Some(from) = (0..gatherers.len())
+            .filter(|r| !lacking.contains(r))
+            .max_by_key(|&r| (gatherers[r].len(), std::cmp::Reverse(r)))
+        else {
+            return Ok(());
+        };
+        if gatherers[from].len() <= 1 {
+            return Ok(());
+        }
+        let (u, old) = gatherers[from][0].clone();
+        let place = self.e(u).place;
+        let Some(deposit) = self.choose(p, Kind::DepositOf(to as i64), None, place, true)? else {
+            return Ok(());
+        };
+        let start = Self::square_of(place)?;
+        let dest = Self::square_of(self.t_place_of(&deposit))?;
+        if self.shortest_path_distance_to(start, dest, Some(p), AirGround::Ground, true)?
+            == crate::INF
+        {
+            return Ok(());
+        }
+        let id = self.t_entity(&deposit).expect("an entity").id;
+        self.take_order(u, Request::gather(TargetRef::Entity(id)), true, false, None)?;
+        let gathered = &mut self.csm(p).gathered_deposits;
+        add_count(gathered, &Some(old), -1);
+        add_count(gathered, &Some(deposit), 1);
         Ok(())
     }
 
@@ -1262,12 +1334,12 @@ impl World {
         let start = starting_place.or(self.e(first_unit).place);
         let mut candidates: Vec<(EntityId, Target)> = Vec::new();
         for &o in &self.pl(p).perception {
-            if kind.matches(self.e(o)) {
+            if kind.matches(&self.rules, self.e(o)) {
                 candidates.push((o, Target::Entity(o)));
             }
         }
         for r in self.pl(p).memory.values() {
-            if kind.matches(&r.snapshot) {
+            if kind.matches(&self.rules, &r.snapshot) {
                 candidates.push((
                     r.snapshot.id,
                     Target::Memory(crate::entity::MemoryRef {
@@ -1518,6 +1590,7 @@ impl World {
     fn ai_gather(&mut self, p: PlayerId, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
         if !self.missing_resources(p, cost)?.is_empty() {
+            self.csm(p).lacking.get_or_insert_with(|| cost.to_vec());
             return Ok(false);
         }
         let limit = self.food_limit();
@@ -1836,6 +1909,92 @@ starting_squares a1
         assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
         w.csm(p).workers = vec![outside, inside];
         assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+    }
+
+    /// The workers of `p` gathering each resource: gold, then wood.
+    fn gatherers(w: &World, p: PlayerId) -> Vec<usize> {
+        let mut n = vec![0; w.pl(p).resources.len()];
+        for &u in &w.pl(p).units {
+            if let Some(Order {
+                kind: OrderKind::Gather { aim, .. },
+                ..
+            }) = w.e(u).orders.first()
+                && let Some(t) = &aim.target
+            {
+                n[w.deposit_resource_type(t).unwrap() as usize] += 1;
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn at_its_limit_without_gold_for_a_farm_the_computer_sends_workers_from_wood_to_gold() {
+        // 9 peasants fill the food of a townhall and a farm. A farm costs 5
+        // gold and 5 wood: the computer has no gold and 50 wood, and every
+        // peasant gathers wood.
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 4
+goldmines 1000 a1
+woods 1000 a1
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+starting_units townhall farm 9 peasant
+starting_resources 0 50
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("easy")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let wood = w.square(a1).objects.clone().into_iter().find(|&o| {
+            w.e(o).class == EntityClass::Deposit
+                && w.deposit_resource_type(&Target::Entity(o)) == Ok(1)
+        });
+        let wood = wood.unwrap();
+        w.update();
+        for u in w.pl(p).units.clone() {
+            if w.e(u).class == EntityClass::Worker {
+                let gather = Request::gather(TargetRef::Entity(wood));
+                w.take_order(u, gather, true, false, None).unwrap();
+            }
+        }
+        let limit = w.food_limit();
+        assert_eq!((w.pl(p).used_food, w.pl(p).available_food(limit)), (9, 9));
+        w.update();
+        assert_eq!(gatherers(&w, p), [0, 9]);
+        // The computer plays one turn in 10. One of its peasants explores.
+        // Each turn, one peasant goes from wood to gold, until one is left
+        // on wood; with the gold, the farm is ordered.
+        let mut seen = Vec::new();
+        for _ in 0..8 {
+            for _ in 0..10 {
+                w.update();
+            }
+            seen.push(gatherers(&w, p));
+        }
+        assert_eq!(
+            seen,
+            [
+                [1, 7],
+                [2, 6],
+                [3, 5],
+                [4, 4],
+                [5, 3],
+                [6, 2],
+                [7, 1],
+                [7, 1]
+            ]
+        );
+        for _ in 0..20 {
+            w.update();
+        }
+        let farm = Sel::One("farm".to_owned());
+        assert_eq!((w.nb(p, &farm), w.future_nb(p, &farm)), (1, 2));
     }
 
     #[test]

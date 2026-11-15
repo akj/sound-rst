@@ -127,155 +127,155 @@ length 9999 208980
 @101252 voice info ", 1 gold mine and 2 wood at j 8"
 @104952 voice info "3 peasant enemy at c 1"
 @107552 voice info "22 wood"
-@108653 sounds 806 fd6a4ff3e54cfd75
+@108653 sounds 815 82038c4bc31cfd21
 @108653 step 18 key CTRL RIGHT
 @108653 voice item "b 3 , meadows , plateau"
-@111153 sounds 49 cd0f2f84a9eb0950
+@111153 sounds 41 0572d9b281af86d1
 @111153 step 19 key CTRL RIGHT
 @111153 voice item "c 3 , meadows"
-@112653 sounds 21 aa1fccae62333985
-@112653 step 20 key BACKQUOTE
-@112653 voice menu "Enter a command."
-@114253 step 21 key a (type a 3 footman)
-@114253 voice item "a . a"
-@114753 step 22 key SPACE (type a 3 footman)
-@114753 voice item "  . a "
-@115353 step 23 key 3 (type a 3 footman)
-@115353 voice item "3 . a 3"
-@116453 step 24 key SPACE (type a 3 footman)
-@116453 voice item "  . a 3 "
-@117453 step 25 key f (type a 3 footman)
-@117453 voice item "f . a 3 f"
-@118553 step 26 key o (type a 3 footman)
-@118553 voice item "o . a 3 fo"
-@119753 step 27 key o (type a 3 footman)
-@119753 voice item "o . a 3 foo"
-@121053 step 28 key t (type a 3 footman)
-@121053 voice item "t . a 3 foot"
-@122453 step 29 key m (type a 3 footman)
-@122453 voice item "m . a 3 footm"
-@123953 step 30 key a (type a 3 footman)
-@123953 voice item "a . a 3 footma"
-@125553 step 31 key n (type a 3 footman)
-@125553 voice item "n . a 3 footman"
-@127253 step 32 key RETURN
-@127253 voice item "a 3 footman"
-@128553 voice info "footman 1 at c 3"
-@130553 voice info "footman 2 at c 3"
-@132553 voice info "footman 3 at c 3"
-@134553 voice info "1 peasant enemy at c 1"
-@137153 voice info "1 farm at building enemy at c 1"
-@140654 sounds 217 01a54cc7d1608460
-@140654 step 33 key CTRL DOWN
-@140654 voice item "c 2 , sea"
-@141754 sounds 23 37f7509b5e8827d0
-@141754 step 34 key BACKQUOTE
-@141754 voice menu "Enter a command."
-@143354 step 35 key a (type a boat)
-@143354 voice item "a . a"
-@143854 step 36 key SPACE (type a boat)
-@143854 voice item "  . a "
-@144454 step 37 key b (type a boat)
-@144454 voice item "b . a b"
-@145154 step 38 key o (type a boat)
-@145154 voice item "o . a bo"
-@145954 step 39 key a (type a boat)
-@145954 voice item "a . a boa"
-@146854 step 40 key t (type a boat)
-@146854 voice item "t . a boat"
-@147854 step 41 key RETURN
-@147854 voice item "a boat"
-@148454 voice info "boat 1 at c 2"
-@148455 sounds 36 d25bc3c0717e589c
-@148455 step 42 wait_turns 3
-@150154 voice info "9 food to 8"
-@151655 sounds 43 fe0d0901141b44f1
-@151655 step 43 key q
-@151655 voice item "boat 1 at c 2 , awaiting your orders"
-@155657 sounds 80 2e666ebd193c6d0d
-@155657 step 44 key a
-@155657 voice item "go to , , press tab to select the target and then press enter to confirm"
-@162857 voice info "1 farm enemy at c 1"
-@165158 sounds 207 c877e37cdf340106
-@165158 step 45 key a
-@165158 voice item "patrol to , , press tab to select the target and then press enter to confirm"
-@172758 voice info "1 peasant enemy at c 1"
-@175358 voice info "30 wood"
-@176459 sounds 278 dfb5c8b13636f847
-@176459 step 46 key a
-@176459 voice item "load , , press tab to select the target and then press enter to confirm"
-@183559 voice info "1 barracks at building enemy at d 1"
-@187460 sounds 268 d891d05a5913577f
-@187460 step 47 key a
-@187460 voice item "load all from , , press tab to select the target and then press enter to confirm"
-@195460 sounds 157 bebeef9c3cc04950
-@195460 step 48 key CTRL UP
-@195460 voice item "c 3 , meadows , 3 footman"
-@198360 sounds 52 bb7340b6c9727340
-@198360 step 49 key RETURN
-@198360 voice item "load all from c 3"
-@206355 voice info "1 barracks enemy at d 1"
-@207255 sounds 131 07e9c7af86022f83
-@207255 step 50 wait_turns 30
-@209056 sounds 27 153daed150267c95
-@209056 step 51 key SPACE
-@209056 voice item "c 2 You control boat 1 at c 2 ,"
-@212756 sounds 114 835bf808a06db1f2
-@212756 step 52 key a
-@212756 voice item "go to , , press tab to select the target and then press enter to confirm"
-@219956 voice info "20 gold"
-@221056 voice info "40 wood"
-@222156 voice info "1 footman enemy at d 1"
-@224757 sounds 270 8eaf5650c5f01015
-@224757 step 53 key a
-@224757 voice item "patrol to , , press tab to select the target and then press enter to confirm"
-@232357 sounds 174 ca0fc95344c666f8
-@232357 step 54 key a
-@232357 voice item "load , , press tab to select the target and then press enter to confirm"
-@239457 voice info "1 footman enemy at d 1"
-@242058 sounds 253 c1fbb64f602252fb
-@242058 step 55 key a
-@242058 voice item "load all from , , press tab to select the target and then press enter to confirm"
-@250058 sounds 194 9f482ba2306ce878
-@250058 step 56 key a
-@250058 voice item "unload all to , , press tab to select the target and then press enter to confirm"
-@258058 voice info "1 footman enemy at d 1"
-@260659 sounds 246 8fc51c5811fe260a
-@260659 step 57 key CTRL UP
-@260659 voice item "c 3 , meadows"
-@262159 sounds 36 2bc6825fda884cc9
-@262159 step 58 key RETURN
-@262159 voice item "unload all to c 3"
-@266055 voice info "1 footman enemy at d 1"
-@271155 sounds 129 45bc4019163f40ba
-@271155 step 59 wait_turns 30
-@271159 sounds 1 6395b64d3ffa72b5
-@271159 step 60 key SPACE
-@271159 voice item "c 2 You control boat 1 at c 2 ,"
-@274859 sounds 98 0b8be6563d95ce67
-@274859 step 61 key CTRL UP
-@274859 voice item "c 3 , meadows , 3 footman"
-@277759 sounds 53 b79319be72822e89
-@277759 step 62 key F10
-@277759 voice menu "Menu"
-@278159 step 63 key DOWN
-@278159 voice item "cancel game ,"
-@279459 sounds 1 f56300494ac69c76
-@279459 step 64 key RETURN
-@279459 voice confirmation "cancel game"
-@280561 voice info "Defeat at 3 minutes 33 seconds"
-@284161 voice info "8 units produced , 0 lost , 0 neutralized"
-@288861 voice info "2 building produced , 0 lost , 0 neutralized"
-@293861 voice info "24 gold gathered , 0 consumed"
-@297361 voice info "48 wood gathered , 0 consumed"
-@300861 voice info "score 82 press F5 to listen again"
-@304761 voice menu "please make a selection"
-@307061 sounds 28 f25e8efe828ac3d0
-@307061 step 65 key ESCAPE
-@307061 voice confirmation "go back to the previous menu"
-@309871 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@314971 sounds 1 6f57610c17df1bf0
-@314971 step 66 key ESCAPE
-@314971 voice confirmation "quit,"
-@315481 sounds 1 843df61ed6a4b69e
-@315481 end
+@112653 voice info "1 peasant enemy at c 1"
+@115254 sounds 60 36c6d372039657ae
+@115254 step 20 key BACKQUOTE
+@115254 voice menu "Enter a command."
+@116854 step 21 key a (type a 3 footman)
+@116854 voice item "a . a"
+@117354 step 22 key SPACE (type a 3 footman)
+@117354 voice item "  . a "
+@117954 step 23 key 3 (type a 3 footman)
+@117954 voice item "3 . a 3"
+@119054 step 24 key SPACE (type a 3 footman)
+@119054 voice item "  . a 3 "
+@120054 step 25 key f (type a 3 footman)
+@120054 voice item "f . a 3 f"
+@121154 step 26 key o (type a 3 footman)
+@121154 voice item "o . a 3 fo"
+@122354 step 27 key o (type a 3 footman)
+@122354 voice item "o . a 3 foo"
+@123654 step 28 key t (type a 3 footman)
+@123654 voice item "t . a 3 foot"
+@125054 step 29 key m (type a 3 footman)
+@125054 voice item "m . a 3 footm"
+@126554 step 30 key a (type a 3 footman)
+@126554 voice item "a . a 3 footma"
+@128154 step 31 key n (type a 3 footman)
+@128154 voice item "n . a 3 footman"
+@129854 step 32 key RETURN
+@129854 voice item "a 3 footman"
+@131154 voice info "footman 1 at c 3"
+@133154 voice info "footman 2 at c 3"
+@135154 voice info "footman 3 at c 3"
+@137154 voice info "1 farm at building enemy at c 1"
+@140656 sounds 178 994af9e25c0353b5
+@140656 step 33 key CTRL DOWN
+@140656 voice item "c 2 , sea"
+@141756 sounds 24 4693ec05bf9277cd
+@141756 step 34 key BACKQUOTE
+@141756 voice menu "Enter a command."
+@143356 step 35 key a (type a boat)
+@143356 voice item "a . a"
+@143856 step 36 key SPACE (type a boat)
+@143856 voice item "  . a "
+@144456 step 37 key b (type a boat)
+@144456 voice item "b . a b"
+@145156 step 38 key o (type a boat)
+@145156 voice item "o . a bo"
+@145956 step 39 key a (type a boat)
+@145956 voice item "a . a boa"
+@146856 step 40 key t (type a boat)
+@146856 voice item "t . a boat"
+@147856 step 41 key RETURN
+@147856 voice item "a boat"
+@148456 voice info "boat 1 at c 2"
+@148457 sounds 39 071cc310df4c0ced
+@148457 step 42 wait_turns 3
+@150156 voice info "9 food to 8"
+@151656 voice info "1 farm enemy at c 1"
+@153957 sounds 86 d5e2b66b6649fc86
+@153957 step 43 key q
+@153957 voice item "boat 1 at c 2 , awaiting your orders"
+@157957 sounds 103 f518b3ad7c565ac3
+@157957 step 44 key a
+@157957 voice item "go to , , press tab to select the target and then press enter to confirm"
+@165157 sounds 192 7c666c8ed80835cd
+@165157 step 45 key a
+@165157 voice item "patrol to , , press tab to select the target and then press enter to confirm"
+@172757 voice info "1 peasant enemy at c 1"
+@175357 voice info "30 wood"
+@176457 voice info "1 barracks at building enemy at d 1"
+@180358 sounds 382 72d7e09dd52b451d
+@180358 step 46 key a
+@180358 voice item "load , , press tab to select the target and then press enter to confirm"
+@187458 sounds 146 134160e4aae857c5
+@187458 step 47 key a
+@187458 voice item "load all from , , press tab to select the target and then press enter to confirm"
+@195458 sounds 150 1ace69dd6e86f43f
+@195458 step 48 key CTRL UP
+@195458 voice item "c 3 , meadows , 3 footman"
+@198358 sounds 58 23c0f56b60a73ce6
+@198358 step 49 key RETURN
+@198358 voice item "load all from c 3"
+@201557 voice info "1 barracks enemy at d 1"
+@207257 sounds 124 953661bbf3190bd9
+@207257 step 50 wait_turns 30
+@207258 step 51 key SPACE
+@207258 voice item "c 2 You control boat 1 at c 2 ,"
+@210958 sounds 101 21de5d718193feba
+@210958 step 52 key a
+@210958 voice item "go to , , press tab to select the target and then press enter to confirm"
+@218158 voice info "20 gold"
+@219258 voice info "1 footman enemy at d 1"
+@221858 voice info "40 wood"
+@222959 sounds 278 e9a09e3e974e9266
+@222959 step 53 key a
+@222959 voice item "patrol to , , press tab to select the target and then press enter to confirm"
+@230559 voice info "1 footman enemy at d 1"
+@233160 sounds 254 8814d0d1654cefdb
+@233160 step 54 key a
+@233160 voice item "load , , press tab to select the target and then press enter to confirm"
+@240260 sounds 196 a2a6b57888ef966c
+@240260 step 55 key a
+@240260 voice item "load all from , , press tab to select the target and then press enter to confirm"
+@248260 voice info "1 footman enemy at d 1"
+@250861 sounds 277 25494befcfd82a19
+@250861 step 56 key a
+@250861 voice item "unload all to , , press tab to select the target and then press enter to confirm"
+@258861 sounds 220 cc11e844f0765e73
+@258861 step 57 key CTRL UP
+@258861 voice item "c 3 , meadows"
+@260361 voice info "1 footman enemy at d 1"
+@262962 sounds 72 f02d6736fff6d54f
+@262962 step 58 key RETURN
+@262962 voice item "unload all to c 3"
+@271757 sounds 124 689f6f4491129781
+@271757 step 59 wait_turns 30
+@271760 step 60 key SPACE
+@271760 voice item "c 2 You control boat 1 at c 2 ,"
+@275460 voice info "1 footman enemy at d 1"
+@278061 sounds 170 479efa832e0756eb
+@278061 step 61 key CTRL UP
+@278061 voice item "c 3 , meadows , 3 footman"
+@280961 voice info "52 wood"
+@282062 sounds 71 e3d942a4e3a68800
+@282062 step 62 key F10
+@282062 voice menu "Menu"
+@282462 step 63 key DOWN
+@282462 voice item "cancel game ,"
+@283762 sounds 1 49c1707111d70f74
+@283762 step 64 key RETURN
+@283762 voice confirmation "cancel game"
+@284864 voice info "Defeat at 3 minutes 38 seconds"
+@288464 voice info "8 units produced , 0 lost , 0 neutralized"
+@293164 voice info "2 building produced , 0 lost , 0 neutralized"
+@298164 voice info "24 gold gathered , 0 consumed"
+@301664 voice info "54 wood gathered , 0 consumed"
+@305164 voice info "score 88 press F5 to listen again"
+@309064 voice menu "please make a selection"
+@311364 sounds 24 f1940be68d1fac71
+@311364 step 65 key ESCAPE
+@311364 voice confirmation "go back to the previous menu"
+@314174 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@319274 sounds 1 d5272dad37c97c9b
+@319274 step 66 key ESCAPE
+@319274 voice confirmation "quit,"
+@319784 sounds 1 7ce241c9266989a1
+@319784 end
