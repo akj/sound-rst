@@ -2673,9 +2673,17 @@ impl World {
             t => t,
         };
         let (x, y) = self.t_xy(&target);
+        // Land remembered may be gone since the player last saw it: another
+        // building took it earlier in this turn.
         let place = match &target {
             Target::Square(s) => Place::Square(*s),
-            _ => self.t_place_of(&target).ok_or(Invariant::LandGone)?,
+            _ => match self.t_place_of(&target) {
+                Some(place) => place,
+                None => {
+                    self.mark_as_impossible(unit, uid, Some(Reason::CannotBuildHere));
+                    return Ok(());
+                }
+            },
         };
         let is_exit = target.entity_id().is_some_and(|e| self.e(e).is_exit());
         let remember_land = !(is_exit || bt.stats.is_buildable_anywhere != 0);

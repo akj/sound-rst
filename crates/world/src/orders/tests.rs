@@ -1132,3 +1132,47 @@ fn an_upgrade_to_a_flying_type_in_a_full_sky_is_refunded_and_says_why() {
     assert!(all(&w, a, "guardtower").is_empty());
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+#[test]
+fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
+    let (mut w, me, _) = game();
+    w.plm(me).resources = vec![1000 * crate::nofloat::PRECISION; 2];
+    // The player perceives its square.
+    w.update();
+    let s = home(&w, me);
+    let peasant = find(&w, me, "peasant");
+    let meadow = w
+        .square(s)
+        .objects
+        .iter()
+        .copied()
+        .find(|&o| w.e(o).is_a_building_land());
+    let meadow = meadow.unwrap();
+    // Queued, not yet carried out.
+    let build = Request::build("farm", TargetRef::Entity(meadow));
+    w.take_order(peasant, build, true, false, None).unwrap();
+    let uid = w.e(peasant).orders()[0].uid;
+    let before = w.pl(me).resources.clone();
+    // The player remembers the meadow; another building takes it earlier
+    // in this turn, after the player's memory was brought up to date.
+    let snapshot = std::sync::Arc::new(w.e(meadow).clone());
+    let remembered = crate::player::Remembrance {
+        time_stamp: w.time,
+        snapshot: snapshot.clone(),
+    };
+    w.plm(me).memory.insert(meadow, remembered);
+    let memory = crate::entity::MemoryRef {
+        owner: me,
+        snapshot,
+    };
+    w.set_target(peasant, uid, Some(Target::Memory(memory)));
+    w.delete(meadow);
+    entity_events(&mut w, me);
+    assert_eq!(w.order_execute(peasant, uid), Ok(()));
+    assert_eq!(w.e(peasant).orders()[0].progress(), Progress::Impossible);
+    let events = entity_events(&mut w, me);
+    let refused = EntityEvent::OrderImpossible(Some(Reason::CannotBuildHere));
+    assert!(events.contains(&refused), "{events:?}");
+    assert!(all(&w, me, "buildingsite").is_empty());
+    assert!(w.pl(me).resources >= before);
+}
