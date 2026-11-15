@@ -461,3 +461,19 @@ fn a_converted_unit_has_its_new_owners_upgrades_and_none_of_its_old_owners() {
     update_until(&mut w, |w| w.e(knight).player == Some(a));
     assert_eq!(bonuses(&w, knight), (12_000, 2_500, 2));
 }
+
+#[test]
+fn load_all_never_loads_the_transport_into_itself() {
+    // A mod whose flying machine fits in a transport.
+    let (mut w, a, _) = two_humans("def new_flyingmachine\ntransport_volume 1\n");
+    w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
+    w.update();
+    let transport = find(&w, a, "new_flyingmachine");
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let here = format!("load_all {}", w.square(a1).id);
+    order(&mut w, a, &[transport], &here);
+    update_until(&mut w, |w| w.e(transport).orders.is_empty());
+    assert_eq!(w.e(transport).place, Some(Place::Square(a1)));
+    assert_eq!(w.e(transport).inside.as_deref(), Some(&[footman][..]));
+}

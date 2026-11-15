@@ -1821,7 +1821,7 @@ impl World {
         let mut units = self.pl(p).units.clone();
         units.sort_by_key(|&u| std::cmp::Reverse(self.e(u).stats.transport_volume));
         for u in units {
-            if self.e(u).place == place && self.have_enough_space(id, self.e(u)) {
+            if u != id && self.e(u).place == place && self.have_enough_space(id, self.e(u)) {
                 self.load(id, u);
             }
         }
