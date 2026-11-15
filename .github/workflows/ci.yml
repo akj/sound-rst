@@ -12,17 +12,24 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Backtraces keep their line numbers. The rest of the debug information
+  # is only more to compile, link and cache.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+# The jobs run side by side, so a run takes as long as the slowest of them.
+# Each keeps its compiled dependencies between runs: a run compiles this
+# repository's own crates and nothing else, unless Cargo.lock or the
+# toolchain changed.
 jobs:
-  check:
+  lint:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - name: Fetch the original game
-        shell: pwsh
-        run: ./scripts/fetch-upstream.ps1
+      - uses: actions/checkout@v6
       - name: Check formatting
         run: cargo fmt --check
+      - uses: Swatinem/rust-cache@v2
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The tests turn on `soundrts-world/truth`, which gives the whole world
@@ -31,18 +38,42 @@ jobs:
       # and entities only as `KnownEntity`.
       - name: Build the interface without the whole world
         run: cargo check -p soundrts --lib --bins
+
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch the original game
+        shell: pwsh
+        run: ./scripts/fetch-upstream.ps1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      # nextest runs every test in its own process, several at a time across
+      # the test programs. `cargo test` runs the programs one after another.
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace --no-fail-fast
+      # nextest does not run documentation tests.
+      - name: Test the documentation
+        run: cargo test --workspace --doc
 
   # The simulation and the server must also build and pass on Linux, where
   # a server is likely to run. The client needs Windows.
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Fetch the original game
         shell: pwsh
         run: ./scripts/fetch-upstream.ps1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
       - name: Test the simulation, the protocol and the server
-        run: cargo test -p soundrts-world -p soundrts-protocol -p soundrts-server
+        run: cargo nextest run -p soundrts-world -p soundrts-protocol -p soundrts-server --no-fail-fast
+      - name: Test the documentation
+        run: cargo test -p soundrts-world -p soundrts-protocol -p soundrts-server --doc
