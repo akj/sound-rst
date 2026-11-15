@@ -189,8 +189,10 @@ impl Host {
     /// Runs one turn: the commands queued, then 300 ms of game time.
     /// Returns what `seat` was told and the warnings since the last step.
     pub fn step(&mut self, seat: PlayerId) -> TurnReport {
-        self.world.update();
+        // Counted first: the record of a turn that fails replays to the
+        // failure.
         self.record.step();
+        self.world.update();
         let SeatTurn {
             end_of_turn,
             then,
@@ -211,8 +213,8 @@ impl Host {
     /// a seat left out. Each of `seats` is one of [`Host::seats`], once.
     /// The warnings wait for [`Host::drain_warnings`].
     pub fn step_seats(&mut self, seats: &[PlayerId]) -> Vec<SeatTurn> {
-        self.world.update();
         self.record.step();
+        self.world.update();
         let mut turns = std::collections::BTreeMap::new();
         for seat in self.seats.clone() {
             if seats.contains(&seat) {

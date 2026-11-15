@@ -30,11 +30,13 @@ impl GameInterface {
         self.view().players().contains(&self.me) && !self.view().has_victory()
     }
 
-    /// What the interface keeps beside the record in a save.
+    /// What the interface keeps beside the record in a save. A unit of
+    /// the selection replaced in a turn not yet taken (an upgrade) is
+    /// saved as the unit that took its place, as the game has it.
     fn interface_state(&self) -> InterfaceState {
         InterfaceState {
             cursor: self.place,
-            selection: self.group.clone(),
+            selection: self.group_now().into_iter().map(|(_, now)| now).collect(),
         }
     }
 

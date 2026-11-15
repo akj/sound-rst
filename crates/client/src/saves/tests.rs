@@ -324,3 +324,47 @@ fn the_command_line_check_replays_a_record_or_a_save_and_says_how_it_ended() {
         ))
     );
 }
+
+#[test]
+fn a_unit_upgraded_in_a_turn_not_yet_taken_is_saved_as_the_unit_it_became() {
+    use crate::game::testing::{cheat, unit};
+    let (mut h, mut g) = training();
+    let me = g.game.me;
+    let townhall = unit(&g, me, "townhall");
+    let home = g
+        .game
+        .host()
+        .world()
+        .entity(townhall)
+        .unwrap()
+        .square()
+        .unwrap();
+    let home = g.game.view().square(home).name().to_owned();
+    cheat(
+        &mut g,
+        me,
+        &format!("add_units {home} lumbermill magestower archer"),
+    );
+    let turn = g.game.view().turn() + 2;
+    h.run_until_turn(&mut g, turn);
+    let archer = unit(&g, me, "archer");
+    g.game.group = vec![archer];
+    g.game
+        .host_mut()
+        .queue_line(me, &format!("control {archer}"));
+    g.game
+        .host_mut()
+        .queue_line(me, "order 0 0 upgrade_to darkarcher");
+    // Turns run until the world has the dark archer, without the
+    // interface taking them: the turn that replaced it waits.
+    for _ in 0..2000 {
+        if g.game.host().world().entity(archer).is_none() {
+            break;
+        }
+        g.game.run_turn(&mut h.client);
+    }
+    assert_eq!(g.game.group, [archer], "the turn is not taken yet");
+    let dark = unit(&g, me, "darkarcher");
+    let path = g.game.save_game(&mut h.client, Slot::New).unwrap();
+    assert_eq!(read_save(&path).unwrap().header.selection, [dark]);
+}

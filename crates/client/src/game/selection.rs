@@ -678,7 +678,7 @@ impl GameInterface {
     /// id of the unit it became: the game and the seat's view know only
     /// that one, while the interface's copies know only the old one until
     /// it takes the turn.
-    fn group_now(&self) -> Vec<(EntityId, EntityId)> {
+    pub(super) fn group_now(&self) -> Vec<(EntityId, EntityId)> {
         let replaced = self.replaced_in_turns_waiting();
         let now = |u| followed(&replaced, u);
         self.group.iter().map(|&u| (u, now(u))).collect()

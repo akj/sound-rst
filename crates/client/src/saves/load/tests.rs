@@ -330,3 +330,27 @@ fn a_mission_saved_loads_in_its_campaign_with_its_resources() {
     let at_save = Host::replay(&first.record, |_| ControlFlow::Continue(())).unwrap();
     assert_eq!(at_save.message(me), expected);
 }
+
+#[test]
+fn a_save_without_a_local_player_first_is_refused() {
+    let (mut h, g) = training();
+    let mut setup = g.game.host().record().setup().clone();
+    setup.controllers[0] = soundrts_world::Controller::human("player", false);
+    let mut host = Host::new(&setup).unwrap();
+    host.step_seats(&[]);
+    let info = SaveInfo {
+        game: SavedGame::Training {
+            map: "jl1".to_owned(),
+        },
+        title: vec![MsgPart::Text("jl1".to_owned())],
+    };
+    let dir = h.client.paths.saves();
+    let ui = InterfaceState::default();
+    let path = write_save(&dir, &info, host.record(), &ui, wall_now(), Slot::New).unwrap();
+    let from = h.utterances().len();
+    load_game(&mut h.client, &path).unwrap();
+    assert_eq!(
+        h.said_since(from),
+        ["Loading", "cannot load , the file is damaged"]
+    );
+}

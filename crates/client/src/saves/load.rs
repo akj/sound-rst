@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::{Completeness, Host, Record, ReplayError};
+use soundrts_world::{Completeness, ControllerKind, Host, Record, ReplayError};
 
 use super::{InterfaceState, SaveInfo, Saved, SavedGame, list_saves, played_seat, read_save};
 use super::{spoken_entry, wall_now};
@@ -188,8 +188,16 @@ pub fn replayed(
     let Some(host) = replay_with_progress(cx, &saved.record)? else {
         return Ok(None);
     };
-    let Some(&first) = host.seats().first() else {
-        cx.log.warning("a saved game without a player");
+    // A game saved here has the local human first; a save without one
+    // would never tell its interface a turn.
+    let local_first = host
+        .record()
+        .setup()
+        .controllers
+        .first()
+        .is_some_and(|c| matches!(c.kind, ControllerKind::Human { local: true, .. }));
+    let (Some(&first), true) = (host.seats().first(), local_first) else {
+        cx.log.warning("a saved game without a local player first");
         return cannot_load(cx).map(|()| None);
     };
     let me = played_seat(host.record(), first);
