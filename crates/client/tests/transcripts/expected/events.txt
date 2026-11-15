@@ -6,12 +6,20 @@ length 1003 18231
 length 1016 3494626
 length 1029 40907
 length 1030 652925
+length 1034 17823
+length 1035 14331
+length 1036 20590
+length 1037 13515
 length 1038 874739
 length 1039 106984
 length 1040 141814
 length 1041 210295
+length 1046 779501
 length 1047 2714059
+length 1048 1503129
+length 1049 2739773
 length 1050 913107
+length 1051 302676
 length 1053 133515
 length 1054 167528
 length 1055 2995556
@@ -27,17 +35,23 @@ length 1064 1551043
 length 1065 3132608
 length 1067 175147
 length 1069 367120
+length 1070 155873
 length 1074 826258
 length 1091 247279
+length 1098 185533
 length 1099 270839
 length 1130 667166
 length 1194 928345
 length 1195 398866
 length 1196 724172
 length 1300 2966259
+length 1309 909977
 length 1326 938594
 length 1327 39138
 length 1329 3540159
+length 1332 641701
+length 1333 654172
+length 1334 626190
 length 1339 1624512
 length 1344 471361
 length 1345 521859
@@ -52,6 +66,7 @@ length 6006 1044898
 length 6007 1358367
 length 6008 1114558
 length 6009 1483175
+length 6010 667574
 length 6100 1114558
 length 6101 1309025
 length 6102 917188
@@ -302,11 +317,11 @@ length 9999 208980
 @310856 step 80 key z
 @310856 voice item "1046 gold"
 @312556 voice info "1 peasant enemy at b 4"
-@340855 sounds 938 909e131eda8e1c0f
+@340855 sounds 938 98305b0d98acb295
 @340855 step 81 wait_turns 100
 @340856 step 82 key z
 @340856 voice item "1056 gold"
-@342556 sounds 52 e5d0a0b771d87b0a
+@342556 sounds 53 a5f5d1c682553c34
 @342556 step 83 key BACKQUOTE
 @342556 voice menu "Enter a command."
 @344156 step 84 key a (type a 10 footman)
@@ -335,7 +350,7 @@ length 9999 208980
 @358956 voice item "n . a 10 footman"
 @360956 step 96 key RETURN
 @360956 voice item "a 10 footman"
-@361557 sounds 63 9a120f78aa6c9b41
+@361557 sounds 63 df12dd6da9df0ec8
 @361557 step 97 wait_turns 3
 @362556 voice info "footman 1 at b 2"
 @364556 voice info "footman 2 at b 2"
@@ -347,53 +362,60 @@ length 9999 208980
 @376556 voice info "footman 8 at b 2"
 @378556 voice info "footman 9 at b 2"
 @380556 voice info "footman 10 at b 2"
-@382858 sounds 600 41ccdedf8a8ac5ae
+@382858 sounds 601 d94ab1b99f68e613
 @382858 step 98 key f
 @382858 voice item ", You control 10 footman , ,"
-@386058 sounds 96 0d8c77406095f2e2
+@386058 sounds 100 8f404bcc8dc8183a
 @386058 step 99 key CTRL UP
-@386058 voice item "b 3 , meadows"
-@387558 sounds 49 db0c3c3d15eca909
-@387558 step 100 key CTRL UP
-@387558 voice item "b 4 , meadows , 1 town hall , 1 farm and 3 peasant enemy"
-@393958 sounds 156 2d62e34e4a326799
-@393958 step 101 key BACKSPACE
-@393958 voice item "go to b 4 ,"
-@410757 voice info "gold mine exhausted"
-@433872 voice info "1 farm neutralized at b 4"
-@438667 voice info "1 town hall neutralized at b 4"
-@438957 sounds 2193 f227460bde4a7376
-@438957 step 102 wait_turns 150
-@442068 sounds 91 e7076c2f881b653a
-@442068 step 103 key c
-@442068 voice item "9 food to 21"
-@443868 sounds 31 a380d7207e02a8b2
-@443868 step 104 key f
-@443868 voice item ", You control 10 footman , ,"
-@447068 sounds 70 7f78bc090b6a2779
-@447068 step 105 key CTRL RIGHT
-@447068 voice item "c 4 , meadows , 9 peasant and 1 farm enemy , 1 gold mine"
-@453468 voice info "gold mine exhausted"
-@455369 sounds 193 63e1211601fc2b9c
-@455369 step 106 key BACKSPACE
-@455369 voice item "go to c 4 ,"
-@463562 voice info "1 farm neutralized at c 4"
-@466559 voice info "quiet computer has been defeated"
-@469759 voice info "quiet computer has just quit the game"
-@473459 voice info "Victory! at 6 minutes 11 seconds"
-@477259 voice info "20 units produced , 0 lost , 0 neutralized"
-@482259 voice info "3 building produced , 0 lost , 3 neutralized"
-@487259 voice info "85 gold gathered , consumed"
-@490359 voice info "10 wood gathered , consumed"
-@493459 voice info "score press F5 to listen again"
-@496659 voice menu "please make a selection"
-@496659 sounds 383 aa4aeaefd9d30e5b
-@496659 step 107 wait_game_end
-@498959 step 108 key ESCAPE
-@498959 voice confirmation "go back to the previous menu"
-@501769 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@506869 sounds 1 bd0ee943258c37fb
-@506869 step 109 key ESCAPE
-@506869 voice confirmation "quit,"
-@507379 sounds 1 25a448324f7a58cf
-@507379 end
+@386058 voice item "b 3 , meadows , 1 peasant enemy"
+@389558 sounds 92 41a7c906b8f05f01
+@389558 step 100 key CTRL UP
+@389558 voice item "b 4 , meadows , 1 town hall and 1 farm enemy"
+@394559 sounds 117 b5359e8e53bb39cd
+@394559 step 101 key BACKSPACE
+@394559 voice item "go to b 4 ,"
+@400257 voice info "1 barracks at building enemy at b 4"
+@411357 voice info "gold mine exhausted"
+@417963 voice info "1 peasant neutralized at a 4"
+@421163 voice info "1 peasant neutralized at a 4"
+@426669 voice info "1 peasant neutralized at b 4"
+@431757 voice info "1 peasant enemy at b 4"
+@439557 sounds 1856 189f7079fbef7799
+@439557 step 102 wait_turns 150
+@439564 sounds 3 87aff35ca58b0e9a
+@439564 step 103 key c
+@439564 voice item "9 food to 21"
+@441364 sounds 47 cbd9c1fc85a6a0e0
+@441364 step 104 key f
+@441364 voice item ", You control 10 footman , , go to b 4 ,"
+@445964 voice info "1 peasant enemy at b 4"
+@448564 voice info "1 peasant neutralized at b 4"
+@451764 voice info "1 town hall neutralized at b 4"
+@455164 voice info "1 barracks at building neutralized at b 4"
+@459664 voice info "1 farm neutralized at b 4"
+@462565 sounds 682 d8477d27cbcd40cd
+@462565 step 105 key CTRL RIGHT
+@462565 voice item "c 4 , meadows , 5 peasant and 1 farm enemy , 1 gold mine"
+@468965 sounds 57 1de74552fe96a03e
+@468965 step 106 key BACKSPACE
+@468965 voice item "go to c 4 ,"
+@487261 voice info "1 farm neutralized at c 4"
+@490259 voice info "quiet computer has been defeated"
+@493459 voice info "quiet computer has just quit the game"
+@497159 voice info "Victory! at 6 minutes 35 seconds"
+@500959 voice info "20 units produced , 0 lost , 4 neutralized"
+@505959 voice info "3 building produced , 0 lost , 3 neutralized"
+@510959 voice info "85 gold gathered , consumed"
+@514059 voice info "10 wood gathered , consumed"
+@517159 voice info "score press F5 to listen again"
+@520359 voice menu "please make a selection"
+@520359 sounds 677 c8c79cd0a392cd54
+@520359 step 107 wait_game_end
+@522659 step 108 key ESCAPE
+@522659 voice confirmation "go back to the previous menu"
+@525469 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@530569 sounds 1 6fbfc61b8f1ad1ac
+@530569 step 109 key ESCAPE
+@530569 voice confirmation "quit,"
+@531079 sounds 1 8dca230f73cb8453
+@531079 end
