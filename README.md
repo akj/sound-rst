@@ -266,6 +266,8 @@ cargo fmt --check
 
 The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs`, `crates/client/tests/multiplayer.rs`, `crates/client/tests/returning.rs` and `crates/client/tests/watching.rs` also run real servers, on 127.0.0.1 only; `returning.rs` pulls a player's connection out through a proxy on 127.0.0.1 and plugs it back in. One of them plays the same game twice, on the client and through a server, and checks that the player hears and plays the same. No test asks a router to forward a port.
 
+The checks on GitHub run the same tests with [cargo-nextest](https://nexte.st): every test in its own process, several at a time. A test must therefore pass alone and next to any other test. To run them that way yourself, install cargo-nextest and run `cargo nextest run --workspace`.
+
 Two sets of tests check the port against recordings:
 
 - `crates/world/tests/traces` checks the simulation. The port plays scripted games from a fixed seed, and the state of every player and unit after every turn must match the recorded hash. [The traces README](crates/world/tests/traces/README.md) explains the cases.

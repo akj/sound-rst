@@ -26,14 +26,18 @@ concurrency:
 jobs:
   binaural:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Fetch the original game
         shell: pwsh
         run: ./scripts/fetch-upstream.ps1
+      # The compiled dependencies, kept as in the CI workflow.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Keep the Steam Audio download
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: target/steamaudio-cache
           key: ${{ runner.os }}-steamaudio-4.8.1
