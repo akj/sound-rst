@@ -12,6 +12,7 @@ Usage: soundrts-server [options]
 
 Options:
   --port <port>         TCP port for players and UDP port for local discovery (default 2501)
+  --ip <address>        the address to listen on (default all); 127.0.0.1 behind a proxy
   --name <name>         the server's name, at most 64 characters (default SoundRTS)
   --max-clients <n>     the most players at once (default 40)
   --max-rooms <n>       the most rooms at once (default 10)
@@ -70,6 +71,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Option<ServerConfig>,
         let mut value = |name: &str| args.next().ok_or(format!("{name} needs a value"));
         match arg.as_str() {
             "--port" => config.port = number(&arg, value(&arg)?)?,
+            "--ip" => config.ip = ip_address(&arg, value(&arg)?)?,
             "--name" => config.name = server_name(&arg, value(&arg)?)?,
             "--max-clients" => config.max_clients = number(&arg, value(&arg)?)?,
             "--max-rooms" => config.max_rooms = number(&arg, value(&arg)?)?,
@@ -88,6 +90,12 @@ fn server_name(name: &str, value: String) -> Result<ServerName, String> {
              with no space at either end and no control character"
         )
     })
+}
+
+fn ip_address(name: &str, value: String) -> Result<std::net::IpAddr, String> {
+    value
+        .parse()
+        .map_err(|_| format!("{name} needs an IP address, not {value:?}"))
 }
 
 fn number<T: std::str::FromStr>(name: &str, value: String) -> Result<T, String> {

@@ -1145,6 +1145,7 @@ pub fn test_net_config() -> NetConfig {
         discovery_targets: Vec::new(),
         public_list_url: None,
         liveness: crate::net::conn::Liveness::default(),
+        trust: crate::net::conn::Trust::built_in(),
     }
 }
 
@@ -1398,7 +1399,8 @@ impl Harness {
     pub fn connect_to(&mut self, address: &str, wrap: impl FnOnce(Connection) -> Connection) {
         let content = self.client.res.content_hash();
         let dialer = crate::net::conn::Dialer {
-            address: address.to_owned(),
+            address: crate::net::conn::ServerAddress::parse(address).expect("an address"),
+            trust: self.client.net_config.trust.clone(),
             hello: ClientMsg::Hello {
                 protocol: PROTOCOL_VERSION,
                 login: Login::new(self.client.config.login.as_str()).expect("a login"),

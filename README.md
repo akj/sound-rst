@@ -167,7 +167,9 @@ To host a game, choose Server. The game starts a server on your computer, says t
 To join a game, choose one of these:
 
 - Choose a server in a list: the servers on your local network, the public list, your favorite servers, and the servers you used recently.
-- Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`, or paste it with Control V.
+- Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`, or paste it with Control V. For a server on the Internet that encrypts its connections, the address starts with `wss://`, for example `wss://soundrts.example.org`.
+
+A connection to an address that starts with `wss://` is encrypted: nobody between you and the server can read your login, the chat or the game. The welcome then ends with "encrypted". The game checks the server's certificate against the authorities that it carries, the same on every computer, and checks that the certificate is for the server's name. If it is not, the game does not connect, and says why: for example "not connected: the server's certificate is for another name", "is out of date" or "is not trusted". It never connects to that address without encryption. An address without `wss://`, such as a server that a player hosts, connects as before, without encryption. After a lost connection, the game returns the same way it first connected.
 
 On a server, the menu lists the invitations you received, the open games you can join, and the games you can watch. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. The speed menu also has the item "watchers": Enter changes it from "welcome" to "not welcome" and back. It is "welcome" unless you change it. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
 
@@ -197,7 +199,7 @@ The game says, in the system news, when a player loses the connection, comes bac
 
 When the room's host leaves the game, is defeated, or does not come back in time, the next player still in the game, in the room's order, becomes the host, never a watcher. Everyone hears it once, for example "bob is now the organizer", and Bob's game menu now has the pause item; he alone can change the speed or remove a player. A host whose connection is lost stays the host while the server holds the seat. A game the host paused stays paused for the next host to resume. While a game on a server is paused, cancel game in the game menu leaves it at once. When no player is left in the game, a paused game runs on to its end.
 
-Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
+Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. An address that starts with `wss://` is encrypted. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
 
 ### Watch a game
 
@@ -222,6 +224,38 @@ cargo run -p soundrts-server -- --port 2501 --name "My server"
 ```
 
 The server listens on TCP port 2501 for players and answers on UDP port 2501 to players who look for servers on the local network. Add `--upnp` to ask the router to forward the port to players on the internet. Run `cargo run -p soundrts-server -- --help` for every option. Press Ctrl+C to stop the server.
+
+### A public server
+
+A server on the Internet should encrypt its connections, so that logins, chat and games do not cross the Internet as they are. The server does not speak TLS itself. Put it behind a reverse proxy that does, such as Caddy or nginx, as web servers are run. With Caddy:
+
+1. Point a domain name, for example `soundrts.example.org`, at the machine. Open TCP ports 80 and 443 in its firewall. Caddy uses port 80 to get its certificate.
+
+2. Start the server so that only the proxy on the same machine can reach it:
+
+   ```sh
+   soundrts-server --ip 127.0.0.1 --port 2501 --name "My server"
+   ```
+
+3. Install [Caddy](https://caddyserver.com), and put this in its `Caddyfile`, with your domain name:
+
+   ```text
+   soundrts.example.org {
+       reverse_proxy 127.0.0.1:2501
+   }
+   ```
+
+   Caddy gets a certificate from Let's Encrypt, renews it, and passes the players' WebSocket connections to the server.
+
+4. Players connect to `wss://soundrts.example.org`. If the proxy listens on another port than 443, add it: `wss://soundrts.example.org:8443`.
+
+To add the server to the public list, add a line to [`servers.txt`](servers.txt) with the `wss://` address, then the name:
+
+```text
+wss://soundrts.example.org My server
+```
+
+A game older than encrypted connections cannot read a `wss://` address: it lists the server, and says that it cannot reach it. It never connects to it without encryption.
 
 ## Listening room
 

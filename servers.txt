@@ -4,8 +4,11 @@
 #
 # One server a line: its address, then optionally a space and its name.
 # The address is a host name or an IP address, with ":port" when the port
-# is not 2501. Lines that start with # are comments.
+# is not 2501. An address that starts with wss:// is reached only by an
+# encrypted connection, on port 443 unless ":port" says otherwise: a
+# server behind a proxy that speaks TLS (see the README). Lines that start
+# with # are comments.
 #
 # Example:
-# soundrts.example.org Example server
+# wss://soundrts.example.org Example server
 # 203.0.113.7:2502 Another server

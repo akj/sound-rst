@@ -3,13 +3,17 @@
 //!
 //! Each list is a text file with one server a line: its address, then
 //! optionally a space and its name. Lines starting with `#` are comments.
-//! A name is a [`ServerName`], so it never holds a line break.
+//! An address that starts with `wss://` is a server reached only by an
+//! encrypted connection ([`ServerAddress`]); a line whose address is not
+//! one is skipped. A name is a [`ServerName`], so it never holds a line
+//! break.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use soundrts_protocol::ServerName;
 
+use super::conn::ServerAddress;
 use crate::paths::Paths;
 
 /// Where the public list is published.
@@ -25,15 +29,18 @@ const RECENT_LIMIT: usize = 5;
 /// A server of a list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListedServer {
-    pub address: String,
+    pub address: ServerAddress,
     pub name: Option<ServerName>,
 }
 
 impl ListedServer {
     /// What the player hears: the name, or the address if the list gives
     /// none.
-    pub fn label(&self) -> &str {
-        self.name.as_ref().map_or(&self.address, ServerName::as_str)
+    pub fn label(&self) -> String {
+        match &self.name {
+            Some(name) => name.as_str().to_owned(),
+            None => self.address.to_string(),
+        }
     }
 }
 
@@ -43,15 +50,15 @@ pub fn parse(text: &str) -> Vec<ListedServer> {
     text.lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(|l| match l.split_once(char::is_whitespace) {
-            Some((a, n)) => ListedServer {
-                address: a.to_owned(),
-                name: ServerName::clean(n),
-            },
-            None => ListedServer {
-                address: l.to_owned(),
-                name: None,
-            },
+        .filter_map(|l| {
+            let (address, name) = match l.split_once(char::is_whitespace) {
+                Some((a, n)) => (a, ServerName::clean(n)),
+                None => (l, None),
+            };
+            Some(ListedServer {
+                address: ServerAddress::parse(address)?,
+                name,
+            })
         })
         .collect()
 }
@@ -59,7 +66,7 @@ pub fn parse(text: &str) -> Vec<ListedServer> {
 fn write(path: &Path, list: &[ListedServer]) -> std::io::Result<()> {
     let mut text = String::new();
     for s in list {
-        text.push_str(&s.address);
+        text.push_str(&s.address.to_string());
         if let Some(name) = &s.name {
             text.push(' ');
             text.push_str(name.as_str());
@@ -100,8 +107,8 @@ pub fn add_recent(paths: &Paths, server: ListedServer) -> std::io::Result<()> {
     write(&recent_path(paths), &list)
 }
 
-pub fn is_favorite(paths: &Paths, address: &str) -> bool {
-    favorites(paths).iter().any(|s| s.address == address)
+pub fn is_favorite(paths: &Paths, address: &ServerAddress) -> bool {
+    favorites(paths).iter().any(|s| s.address == *address)
 }
 
 /// Adds a server to the favorites, or removes it if it is one.
@@ -136,25 +143,57 @@ pub fn public(url: &str) -> Result<Vec<ListedServer>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::net::conn::Transport;
+
+    fn address(text: &str) -> ServerAddress {
+        ServerAddress::parse(text).unwrap()
+    }
 
     #[test]
     fn a_list_has_addresses_and_optional_names() {
-        let list = parse("# comment\n\n1.2.3.4:2501 Andrew's server\nhost.example\n");
+        let list = parse(
+            "# comment\n\n1.2.3.4:2501 Andrew's server\nhost.example\n\
+             wss://games.example.org Encrypted\nhttps://games.example.org Not one\n",
+        );
         assert_eq!(
             list,
             vec![
                 ListedServer {
-                    address: "1.2.3.4:2501".into(),
+                    address: address("1.2.3.4"),
                     name: ServerName::new("Andrew's server").ok()
                 },
                 ListedServer {
-                    address: "host.example".into(),
+                    address: address("host.example"),
                     name: None
+                },
+                ListedServer {
+                    address: address("wss://games.example.org"),
+                    name: ServerName::new("Encrypted").ok()
                 },
             ]
         );
         assert_eq!(list[0].label(), "Andrew's server");
         assert_eq!(list[1].label(), "host.example");
+        assert_eq!(list[2].address.transport(), Transport::Encrypted);
+    }
+
+    #[test]
+    fn an_encrypted_server_stays_encrypted_in_the_lists_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            root: dir.path().into(),
+            user: dir.path().into(),
+        };
+        let server = ListedServer {
+            address: address("wss://games.example.org:8443"),
+            name: None,
+        };
+        add_recent(&paths, server.clone()).unwrap();
+        toggle_favorite(&paths, server.clone()).unwrap();
+        assert_eq!(recent(&paths), std::slice::from_ref(&server));
+        assert_eq!(favorites(&paths), [server]);
+        let text = std::fs::read_to_string(recent_path(&paths)).unwrap();
+        assert_eq!(text, "wss://games.example.org:8443\n");
     }
 
     #[test]
@@ -169,7 +208,7 @@ mod tests {
         let name = "bad\n6.6.6.6 trap";
         assert!(ServerName::new(name).is_err());
         let server = ListedServer {
-            address: "1.2.3.4".into(),
+            address: address("1.2.3.4"),
             name: ServerName::clean(name),
         };
         add_recent(&paths, server).unwrap();
@@ -211,17 +250,21 @@ mod tests {
             user: dir.path().into(),
         };
         let s = |a: &str| ListedServer {
-            address: a.into(),
+            address: address(a),
             name: None,
         };
-        for a in ["a", "b", "a", "c", "d", "e", "f"] {
+        for a in ["a", "b", "a:2501", "c", "d", "e", "f"] {
             add_recent(&paths, s(a)).unwrap();
         }
-        let addresses: Vec<String> = recent(&paths).into_iter().map(|s| s.address).collect();
+        let addresses: Vec<String> = recent(&paths)
+            .into_iter()
+            .map(|s| s.address.to_string())
+            .collect();
         assert_eq!(addresses, ["f", "e", "d", "c", "a"]);
         toggle_favorite(&paths, s("x")).unwrap();
-        assert!(is_favorite(&paths, "x"));
+        assert!(is_favorite(&paths, &address("x")));
+        assert!(!is_favorite(&paths, &address("wss://x")));
         toggle_favorite(&paths, s("x")).unwrap();
-        assert!(!is_favorite(&paths, "x"));
+        assert!(!is_favorite(&paths, &address("x")));
     }
 }

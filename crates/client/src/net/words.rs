@@ -53,6 +53,13 @@ pub const ON: &str = "on";
 pub const OFF: &str = "off";
 pub const SERVER_FULL: &str = "the server is full";
 pub const NO_SERVER_FOUND: &str = "no server found";
+/// After the server's name in the welcome: the connection is encrypted.
+pub const ENCRYPTED: &str = "encrypted";
+// Why an encrypted connection was refused.
+pub const CERTIFICATE_FOR_ANOTHER_NAME: &str =
+    "not connected: the server's certificate is for another name";
+pub const CERTIFICATE_OUT_OF_DATE: &str = "not connected: the server's certificate is out of date";
+pub const CERTIFICATE_NOT_TRUSTED: &str = "not connected: the server's certificate is not trusted";
 pub const MAP_REFUSED: &str = "the map of this game is too large once unpacked";
 pub const GAME_CANNOT_START: &str = "this game cannot start here";
 pub const NO_PORT_FORWARDING: &str =

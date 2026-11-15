@@ -234,7 +234,7 @@ fn two_players_play_a_game_on_a_server_and_leave_it() {
         ..soundrts_server::ServerConfig::default()
     })
     .expect("a server");
-    let address = server.local_addr().to_string();
+    let address = soundrts::net::conn::ServerAddress::from(server.local_addr());
     let progress = Arc::new(AtomicUsize::new(0));
     let (room_tx, room_rx) = std::sync::mpsc::channel();
 
