@@ -86,6 +86,8 @@ pub enum GameCommand {
     WorkersStatus,
     /// The strength of each side on the selected square.
     FightStatus,
+    /// How the first unit controlled fights, its upgrades included.
+    CombatStatus,
     Examine,
     UnitStatus,
     SelectSquare {
@@ -156,9 +158,12 @@ pub enum GameCommand {
     /// Moves the cursor to the square of the last alert, then the one
     /// before.
     JumpToAlert,
-    Objectives,
+    /// The next (1) or previous (-1) objective, with whether it is done.
+    Objectives(i64),
     GameMenu,
     SayPlayers,
+    /// The player's own faction.
+    SayFaction,
     /// The other players: ally or enemy, and defeated.
     PlayersStatus,
     Say,
@@ -192,6 +197,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "production_status",
     "workers_status",
     "fight_status",
+    "combat_status",
     "examine",
     "unit_status",
     "select_square",
@@ -234,6 +240,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "objectives",
     "gamemenu",
     "say_players",
+    "say_faction",
     "players_status",
     "say",
     "say_allies",
@@ -298,6 +305,7 @@ impl GameCommand {
             "production_status" => none(C::ProductionStatus)?,
             "workers_status" => none(C::WorkersStatus)?,
             "fight_status" => none(C::FightStatus)?,
+            "combat_status" => none(C::CombatStatus)?,
             "examine" => none(C::Examine)?,
             "unit_status" => none(C::UnitStatus)?,
             "select_square" => {
@@ -393,9 +401,16 @@ impl GameCommand {
             "review_category" => none(C::ReviewCategory)?,
             "copy_message" => none(C::CopyMessage)?,
             "jump_to_alert" => none(C::JumpToAlert)?,
-            "objectives" => none(C::Objectives)?,
+            "objectives" => {
+                arity(args, 0, 1)?;
+                C::Objectives(match args.first() {
+                    Some(a) => int(a)?,
+                    None => 1,
+                })
+            }
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
+            "say_faction" => none(C::SayFaction)?,
             "players_status" => none(C::PlayersStatus)?,
             "say" => none(C::Say)?,
             "say_allies" => none(C::SayAllies)?,
@@ -542,11 +557,13 @@ impl GameCommand {
             C::ProductionStatus => "say what is in production".into(),
             C::WorkersStatus => "say what the workers do".into(),
             C::FightStatus => "say how the fight on this square goes".into(),
+            C::CombatStatus => "say how the controlled unit fights".into(),
             C::Examine => "describe the target or the square".into(),
             C::UnitStatus => "say the controlled units and follow them".into(),
             C::SayTime => "say the time".into(),
-            C::Objectives => "say the objectives".into(),
+            C::Objectives(i) => format!("{} objective", direction(*i)),
             C::SayPlayers => "say the names of the players".into(),
+            C::SayFaction => "say your faction".into(),
             C::PlayersStatus => "say who is an ally or an enemy".into(),
             C::SelectSquare {
                 dx,
@@ -748,6 +765,8 @@ mod tests {
             "control half the units of the same types on this square"
         );
         assert_eq!(describe("volume -1"), "lower the volume");
+        assert_eq!(describe("objectives"), "next objective");
+        assert_eq!(describe("objectives -1"), "previous objective");
     }
 
     #[test]
@@ -768,6 +787,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 159);
+        assert_eq!(seen.len(), 176);
     }
 }

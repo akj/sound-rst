@@ -63,6 +63,17 @@ pub const BADLY_HURT: &str = "badly hurt";
 pub const STRONGER: &str = "stronger";
 pub const EVEN: &str = "evenly matched";
 pub const WEAKER: &str = "weaker";
+pub const DONE: &str = "done";
+pub const NOT_DONE: &str = "not done";
+/// As in "2 of 3".
+pub const OF: &str = "of";
+pub const DAMAGE: &str = "damage";
+/// As in "damage 6 every 1.5 seconds".
+pub const EVERY: &str = "every";
+pub const NO_ATTACK: &str = "no attack";
+pub const RANGE: &str = "range";
+pub const ARMOR: &str = "armor";
+pub const HIT_POINTS: &str = "hit points";
 
 // The sound and speech settings of the options menu.
 

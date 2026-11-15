@@ -837,7 +837,7 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{cheat, enemy, run_until, training, unit};
+    use super::super::testing::{cheat, enemy, go, run_until, training, unit};
     use super::*;
     use crate::input::{Key, Mods};
 
@@ -936,5 +936,51 @@ mod tests {
             ]
         );
         assert_eq!(g.game.order.as_ref().map(|o| o.unit), Some(peasant));
+    }
+
+    #[test]
+    fn shift_selects_the_idle_soldiers_of_a_type_here_and_control_all_over_the_map() {
+        use crate::input::{Key, Mods};
+        let (mut h, mut g) = training();
+        let (me, them) = (g.game.me, enemy(&g));
+        let square_of = |g: &crate::testkit::TestGame, u: EntityId| {
+            g.game.host.world().entity(u).unwrap().square().unwrap()
+        };
+        let home = square_of(&g, unit(&g, me, "townhall"));
+        let away = square_of(&g, unit(&g, them, "townhall"));
+        let name = |g: &crate::testkit::TestGame, s| g.game.view().square(s).name().to_owned();
+        let (home_name, away_name) = (name(&g, home), name(&g, away));
+        cheat(
+            &mut g,
+            me,
+            &format!("add_units {home_name} 3 footman 1 archer"),
+        );
+        cheat(&mut g, me, &format!("add_units {away_name} 1 footman"));
+        let turn = g.game.view().turn() + 1;
+        h.run_until_turn(&mut g, turn);
+        let footmen: Vec<EntityId> = g.game.host.world().player(me).units.clone();
+        let footmen: Vec<EntityId> = footmen
+            .into_iter()
+            .filter(|&u| &*g.game.host.world().entity(u).unwrap().type_name == "footman")
+            .collect();
+        assert_eq!(footmen.len(), 4);
+        // One footman here sets off for the other side of the map.
+        go(&mut g, me, footmen[2], away);
+        h.run_until_turn(&mut g, turn + 2);
+        assert_eq!(square_of(&g, footmen[2]), home);
+        g.game.place = Some(home);
+        let said = h.key(&mut g, Key::F, Mods::SHIFT);
+        let mut group = g.game.group.clone();
+        group.sort();
+        assert_eq!(group, [footmen[0], footmen[1]]);
+        assert_eq!(said[0], ", You control 2 footman , ,");
+        let ctrl_shift = Mods {
+            shift: true,
+            ..Mods::CTRL
+        };
+        h.key(&mut g, Key::F, ctrl_shift);
+        let mut group = g.game.group.clone();
+        group.sort();
+        assert_eq!(group, [footmen[0], footmen[1], footmen[3]]);
     }
 }

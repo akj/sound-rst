@@ -155,7 +155,7 @@ length 9999 208980
 @150485 step 41 key F3
 @150485 voice item "1 minutes 13 secondes , vitesse 1.0"
 @154985 step 42 key F9
-@154985 voice item "objectif : neutralisé ennemi ."
+@154985 voice item "neutralisé ennemi , 1 of 1"
 @157985 step 43 key F1
 @157985 voice item "f 10 pour accéder au menu"
 @217751 step 44 wait_turns 200

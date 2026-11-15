@@ -46,9 +46,10 @@ fn without_a_players_file_the_games_bindings_stand() {
         ))
     );
     // 172 binding lines; "d" and "CTRL d" are each bound twice. Then the
-    // client's own fifteen: reading the chat again, chat to the allies,
-    // the news log and copying from it, the questions, and key help.
-    assert_eq!(b.len(), 185);
+    // client's own thirty-two: reading the chat again, chat to the allies,
+    // the news log and copying from it, the questions, key help, the previous objective, and
+    // the fourteen keys of idle soldiers.
+    assert_eq!(b.len(), 202);
     let news = [
         ("F4", GameCommand::Unheard),
         ("COMMA", GameCommand::ReviewPrevious),
@@ -62,6 +63,10 @@ fn without_a_players_file_the_games_bindings_stand() {
         ("SHIFT x", GameCommand::AllResourcesStatus),
         ("F12", GameCommand::PlayersStatus),
         ("CTRL F1", GameCommand::KeyHelp),
+        ("F9", GameCommand::Objectives(1)),
+        ("SHIFT F9", GameCommand::Objectives(-1)),
+        ("SHIFT v", GameCommand::CombatStatus),
+        ("SHIFT F11", GameCommand::SayFaction),
     ];
     for (key, c) in news {
         assert_eq!(b.get(&Chord::parse(key).unwrap()), Some(&c), "{key}");

@@ -124,6 +124,111 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
 }
 
 #[test]
+fn escape_skips_the_rest_of_a_story_which_stays_in_the_story_log() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "there was", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    let turn = g.game.view().turn();
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Playing));
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.view().turn() > turn, "the world goes on");
+    assert_eq!(h.said_since(from), ["once upon a time"]);
+    // The story's lines can still be reviewed.
+    let story: Vec<String> = h
+        .client
+        .voice
+        .log()
+        .filter(|e| e.category() == Some(Category::Story))
+        .map(|e| format!("{:?}", e.parts()))
+        .collect();
+    assert_eq!(
+        story[story.len() - 3..],
+        [
+            format!("{:?}", t("once upon a time")),
+            format!("{:?}", t("there was")),
+            format!("{:?}", t("the end"))
+        ]
+    );
+    // Slash goes from the alerts to the story; Comma says its newest.
+    for _ in 0..6 {
+        h.press(Key::Slash, Mods::NONE);
+        h.step(&mut g);
+    }
+    let from = h.utterances().len();
+    h.press(Key::Comma, Mods::NONE);
+    h.step(&mut g);
+    assert_eq!(h.said_since(from), ["the end"]);
+}
+
+#[test]
+fn control_shift_c_copies_during_a_story_without_skipping_a_line() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.press(
+        Key::C,
+        Mods {
+            shift: true,
+            ..Mods::CTRL
+        },
+    );
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Story(_)));
+    h.run_until_voice_idle(&mut g);
+    // The line cut off by the answer is said again.
+    assert_eq!(
+        h.said_since(from),
+        ["once upon a time", "copied", "once upon a time", "the end"]
+    );
+    assert_eq!(
+        h.desktop
+            .clipboard
+            .lock()
+            .unwrap()
+            .last()
+            .map(String::as_str),
+        Some("once upon a time")
+    );
+}
+
+#[test]
+fn escape_during_a_story_still_lets_the_news_waiting_with_it_be_said() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "there was", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.client
+        .news(News::new(Category::Production, t("news waiting")));
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Playing));
+    h.run_until_voice_idle(&mut g);
+    // Each line skipped starts and is cut at once.
+    assert_eq!(
+        h.said_since(from),
+        ["once upon a time", "there was", "the end", "news waiting"]
+    );
+}
+
+#[test]
 fn the_game_menu_and_the_console_do_not_stop_the_loop_and_the_world_waits_while_they_are_open() {
     // Were the loop held in a menu, the window would close at the
     // deadline and the step fail.
