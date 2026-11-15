@@ -20,7 +20,7 @@ use soundrts_world::msgparts as mp;
 
 use crate::audio::DEFAULT_VOLUME;
 use crate::clock::ClockRef;
-use crate::input::{Input, InputPoint};
+use crate::input::{Input, InputPoint, Key, KeyDown};
 use crate::log::Log;
 use crate::message::{Category, News, Parts, Policy, Subject, translate_and_collapse};
 use crate::net::words::{self, text};
@@ -568,6 +568,18 @@ impl Voice {
         }
     }
 
+    /// Skips the message being said, as [`Voice::say_next`] does, and gives
+    /// up the messages `ids` that wait: they are kept in the log unheard,
+    /// and none of them starts.
+    pub fn skip_with(&mut self, ids: &[EntryId]) {
+        for e in &mut self.log {
+            if e.is_waiting() && ids.contains(&e.id) {
+                e.heard = Heard::No;
+            }
+        }
+        self.say_next(false);
+    }
+
     /// Says now, and waits until the end; a key press does not interrupt.
     /// Key presses made meanwhile are dropped.
     pub fn alert(&mut self, msg: &Msg) {
@@ -590,19 +602,25 @@ impl Voice {
         self.say_now(msg, VoiceKind::Menu, Content::Now(msg.clone()));
     }
 
-    /// News said now outside a game (a campaign's cut scene), as its
-    /// policy says: spoken as [`Voice::important`], or else taken as other
-    /// news.
-    pub fn important_news(&mut self, news: News, policy: Policy) {
-        match policy {
-            Policy::Speak => self.say_now(
+    /// Tells a story now, outside a game (a campaign's cut scene), as its
+    /// policy says: each line spoken as [`Voice::important`], or else taken
+    /// as other news. A key skips the line being said; Escape skips the
+    /// rest of the story, whose lines are kept in the log unheard.
+    pub fn tell_now(&mut self, story: Vec<News>, policy: Policy) {
+        let mut lines = story.into_iter();
+        for news in lines.by_ref() {
+            if policy != Policy::Speak {
+                self.news(news, policy);
+            } else if self.say_now(
                 &news.parts.clone(),
                 VoiceKind::Important,
                 Content::News(news),
-            ),
-            other => {
-                self.news(news, other);
+            ) {
+                break;
             }
+        }
+        for news in lines.filter(|n| !n.parts.is_empty()) {
+            self.push(Content::News(news), Heard::No);
         }
     }
 
@@ -647,18 +665,26 @@ impl Voice {
     /// Says now, cutting the message being said (news cut off is said
     /// again in its turn). Outside a game, waits until the end, or until a
     /// key press unless it is an alert; the key press stays queued after a
-    /// confirmation or a menu title. In a game, does not wait.
-    fn say_now(&mut self, msg: &Msg, kind: VoiceKind, content: Content) {
+    /// confirmation or a menu title. In a game, does not wait. Whether
+    /// Escape cut it short.
+    fn say_now(&mut self, msg: &Msg, kind: VoiceKind, content: Content) -> bool {
         if msg.is_empty() {
-            return;
+            return false;
         }
         self.dismiss_current_if_cancelled();
         self.channel.play(msg, CENTERED, kind, Parts::All);
+        let mut escaped = false;
         if !self.in_game {
             let interruptible = kind != VoiceKind::Alert;
             let keep_key = matches!(kind, VoiceKind::Confirmation | VoiceKind::Menu);
             while self.channel.get_busy() {
-                if interruptible && self.key_hit(keep_key) {
+                let keys = if interruptible {
+                    self.keys_hit(keep_key)
+                } else {
+                    Vec::new()
+                };
+                if !keys.is_empty() {
+                    escaped = keys.iter().any(|k| k.key == Key::Escape);
                     break;
                 }
                 self.clock.sleep(0.1);
@@ -673,6 +699,7 @@ impl Voice {
         self.reviewed = None;
         self.go_to_next_unsaid();
         self.active = false;
+        escaped
     }
 
     /// Says now without recording in the log: a menu item, a typed
@@ -937,7 +964,7 @@ impl Voice {
             self.update();
             if !(self.waiting_exists() || self.channel.get_busy()) {
                 break;
-            } else if interruptible && self.key_hit(true) {
+            } else if interruptible && !self.keys_hit(true).is_empty() {
                 if self.waiting_exists() {
                     self.say_next(false);
                     self.input.clear_keydowns();
@@ -952,18 +979,16 @@ impl Voice {
         }
     }
 
-    /// Whether a key was pressed; the presses are put back at the end of
-    /// the queue if `keep_key`.
-    fn key_hit(&mut self, keep_key: bool) -> bool {
+    /// The keys pressed, put back at the end of the queue if `keep_key`.
+    fn keys_hit(&mut self, keep_key: bool) -> Vec<KeyDown> {
         self.input.input_point(InputPoint::Voice, self.is_idle());
         let keys = self.input.get_keydowns();
-        let hit = !keys.is_empty();
         if keep_key {
-            for k in keys {
-                self.input.post(crate::input::Event::KeyDown(k));
+            for k in &keys {
+                self.input.post(crate::input::Event::KeyDown(k.clone()));
             }
         }
-        hit
+        keys
     }
 
     /// Stops the part being said; the rest of the current message goes on.

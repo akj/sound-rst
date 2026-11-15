@@ -68,7 +68,7 @@ use crate::message::{Category, News, Subject};
 use crate::net::words;
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
-use crate::voice::{EntryId, Heard};
+use crate::voice::EntryId;
 
 use self::animation::NoiseSource;
 use self::command::GameCommand;
@@ -165,32 +165,11 @@ impl Story {
         !self.0.iter().any(|&id| cx.voice.is_waiting(id))
     }
 
-    /// Skips the rest of the story; its messages stay in the log. When
-    /// they are all that waits, the voice stops and they are kept unheard.
-    /// Otherwise each is skipped in turn, as a key for each would, so that
-    /// the news waiting with them is still said: each skip starts the next
-    /// message and cuts it at once.
+    /// Skips the rest of the story, and the message being said: the
+    /// story's messages are kept in the log unheard, none of them is
+    /// heard, and the news waiting with them is said.
     fn skip(&self, cx: &mut Client) {
-        let waiting = |cx: &Client| {
-            cx.voice
-                .log()
-                .filter(|e| matches!(e.heard(), Heard::Waiting { .. }))
-                .count()
-        };
-        let story = self.0.iter().filter(|&&id| cx.voice.is_waiting(id)).count();
-        if story == waiting(cx) {
-            cx.voice.silent_flush();
-            return;
-        }
-        // Stops when a skip leaves as many messages waiting, as while the
-        // history is walked.
-        while !self.is_told(cx) {
-            let before = waiting(cx);
-            cx.voice.say_next(false);
-            if waiting(cx) == before {
-                break;
-            }
-        }
+        cx.voice.skip_with(&self.0);
     }
 }
 

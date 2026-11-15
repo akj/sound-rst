@@ -11,6 +11,7 @@ use crate::clock::Clock;
 use crate::input::{Key, Mods};
 use crate::message::{Category, News};
 use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
+use crate::voice::Heard;
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::from(s)]
@@ -221,11 +222,16 @@ fn escape_during_a_story_still_lets_the_news_waiting_with_it_be_said() {
     h.step(&mut g);
     assert!(matches!(g.game.mode, Mode::Playing));
     h.run_until_voice_idle(&mut g);
-    // Each line skipped starts and is cut at once.
-    assert_eq!(
-        h.said_since(from),
-        ["once upon a time", "there was", "the end", "news waiting"]
-    );
+    // The lines skipped are not started.
+    assert_eq!(h.said_since(from), ["once upon a time", "news waiting"]);
+    let story: Vec<Heard> = h
+        .client
+        .voice
+        .log()
+        .filter(|e| e.category() == Some(Category::Story))
+        .map(|e| e.heard())
+        .collect();
+    assert_eq!(story[story.len() - 3..], [Heard::No; 3]);
 }
 
 #[test]

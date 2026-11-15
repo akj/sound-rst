@@ -269,16 +269,18 @@ impl Client {
     }
 
     /// Says the sounds or texts of a campaign's cut scene, outside a game,
-    /// in order, each one interruptible, as the story's policy says.
+    /// in order, as the story's policy says: a key skips a line, Escape the
+    /// rest (see [`crate::voice::Voice::tell_now`]).
     pub fn play_sequence(&mut self, names: &[String]) {
         let policy = self.config.news.of(Category::Story);
         if policy == Policy::Speak {
             self.stop_sound(true);
         }
-        for name in names {
-            let news = News::new(Category::Story, vec![MsgPart::from(name.as_str())]);
-            self.voice.important_news(news, policy);
-        }
+        let story = names
+            .iter()
+            .map(|name| News::new(Category::Story, vec![MsgPart::from(name.as_str())]))
+            .collect();
+        self.voice.tell_now(story, policy);
     }
 
     /// Gives news to the voice, as the player's policy for its category
