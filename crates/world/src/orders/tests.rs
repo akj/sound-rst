@@ -1047,3 +1047,21 @@ fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays
     assert_eq!(w.auto_explore(footman), Ok(()));
     assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == b1));
 }
+
+#[test]
+fn an_attack_on_a_unit_inside_a_transport_is_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 archer footman new_flyingmachine");
+    w.update();
+    let (archer, footman) = (find(&w, a, "archer"), find(&w, a, "footman"));
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    let hp = w.c(footman).unwrap().hp;
+    order(&mut w, a, &[archer], &format!("attack {footman}"));
+    for _ in 0..5 {
+        w.update();
+    }
+    assert!(w.e(archer).orders().is_empty());
+    assert_eq!(w.c(footman).unwrap().hp, hp);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}

@@ -1869,10 +1869,10 @@ impl World {
             OrderKind::Attack { .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
-                let vulnerable = t
-                    .as_ref()
-                    .and_then(|t| self.t_entity(t))
-                    .is_some_and(|e| e.stats.is_vulnerable != 0);
+                // A unit inside another is out of reach.
+                let vulnerable = t.as_ref().and_then(|t| self.t_entity(t)).is_some_and(|e| {
+                    e.stats.is_vulnerable != 0 && matches!(e.place, Some(Place::Square(_)))
+                });
                 if !vulnerable {
                     self.mark_as_impossible(unit, uid, None);
                     return Ok(());

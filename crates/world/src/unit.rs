@@ -1378,8 +1378,9 @@ impl World {
         if !self.pl(p).perception.contains(oid) {
             return false;
         }
+        // A unit inside another is out of reach: its transport is not.
         let o = self.e(*oid);
-        if o.place.is_none() || o.creature().is_some_and(|c| c.hp < 0) {
+        if !matches!(o.place, Some(Place::Square(_))) || o.creature().is_some_and(|c| c.hp < 0) {
             return false;
         }
         let kind = o.airground_type.ground_or_air();
