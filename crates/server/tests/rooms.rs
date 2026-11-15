@@ -773,7 +773,7 @@ async fn starting_needs_the_host_everyone_ready_and_enough_players() {
 
 #[tokio::test]
 async fn a_good_start() {
-    let server = server(|_| {});
+    let server = server(|c| c.grace_period = std::time::Duration::from_secs(42));
     let mut all = clients(server.local_addr(), &["andrew", "bob", "carol"]).await;
     let (info, data) = map(2, 4);
     let room = open_room(&mut all, 0, &(info.clone(), data), true).await;
@@ -816,14 +816,22 @@ async fn a_good_start() {
             map: m,
             speed,
             paused,
+            hold,
             ..
         } = decode_frame(&bytes).unwrap()
         else {
             panic!("{}: expected a seat", c.login);
         };
+        // The seat is held as long as the server holds a dropped seat.
         assert_eq!(
-            (y, m, speed, paused),
-            (you, info.clone(), Speed::Fast4, false)
+            (y, m, speed, paused, hold),
+            (
+                you,
+                info.clone(),
+                Speed::Fast4,
+                false,
+                std::time::Duration::from_secs(42)
+            )
         );
     }
     // A started room takes nobody, and the room's settings are fixed.

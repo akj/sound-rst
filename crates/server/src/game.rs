@@ -596,6 +596,7 @@ impl Game {
                 map: self.map.clone(),
                 speed: self.settings.speed,
                 paused,
+                hold: self.settings.grace,
                 token: seat.token.clone(),
             },
         );

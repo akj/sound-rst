@@ -246,7 +246,13 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
         login,
         content: content.clone(),
     };
-    let (conn, snapshot) = match conn::open(address, hello, CONNECT_TIMEOUT) {
+    let dialer = conn::Dialer {
+        address: address.to_owned(),
+        hello,
+        timeout: CONNECT_TIMEOUT,
+        liveness: cx.net_config.liveness,
+    };
+    let (conn, snapshot) = match dialer.open() {
         Ok(opened) => opened,
         Err(e) => {
             cx.log
@@ -265,7 +271,8 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
         cx.log
             .warning(format!("cannot save the recent servers: {e}"));
     }
-    let result = play_on(cx, conn, snapshot, content, favorite);
+    let redial = Box::new(move || dialer.start());
+    let result = play_on(cx, conn, snapshot, content, favorite, redial);
     if let Some(server) = hosted {
         server.shutdown();
     }
@@ -286,13 +293,15 @@ fn connect_error_msg(e: &ConnectError) -> Msg {
 
 /// The server's menus on an open connection, until the player leaves the
 /// server or the connection is lost. `favorite` is the server as the
-/// player can keep it among the favorites.
+/// player can keep it among the favorites; `redial` opens the connection
+/// again for a game the connection was lost in.
 pub fn play_on(
     cx: &mut Client,
     conn: Connection,
     snapshot: soundrts_protocol::LobbySnapshot,
     content: soundrts_protocol::ContentHash,
     favorite: Option<ListedServer>,
+    redial: net::Redial,
 ) -> Result<(), Exit> {
     let welcome = [
         msg(mp::WELCOME),
@@ -301,7 +310,7 @@ pub fn play_on(
         vec![literal(snapshot.server_name.as_str())],
     ]
     .concat();
-    cx.net = Some(Net::new(conn, snapshot, content));
+    cx.net = Some(Net::new(conn, snapshot, content, redial));
     cx.voice.important(&welcome);
     let result = lobby(cx, favorite.as_ref());
     // Closes the connection.

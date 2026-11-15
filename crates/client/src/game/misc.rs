@@ -524,8 +524,12 @@ impl GameInterface {
         }
     }
 
-    /// Asks the world to quit; asked again, quits at once.
+    /// Asks the world to quit; asked again, or while the connection is
+    /// lost, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
+        if self.leave_while_returning(cx) {
+            return;
+        }
         if !self.already_asked_to_quit {
             self.turn_due_at(cx.clock.now());
             self.send_command(cx, Command::Quit);
@@ -629,7 +633,13 @@ impl GameInterface {
         Ok(())
     }
 
+    /// Cancels the order being given, or leaves first person mode, zoom
+    /// mode, or the object selected. While the connection is lost, leaves
+    /// the game at once.
     fn cmd_escape(&mut self, cx: &mut Client) -> R {
+        if self.leave_while_returning(cx) {
+            return Ok(());
+        }
         if self.order.is_some() {
             cx.voice.item(&msg(mp::CANCEL));
             self.order = None;

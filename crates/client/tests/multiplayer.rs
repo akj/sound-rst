@@ -63,6 +63,7 @@ fn on_fake_server(
         snapshot("andrew", &["bob"]),
         content,
         None,
+        server.redial(),
     );
     assert!(result.is_err(), "the window closed");
     (h, server)
@@ -1225,6 +1226,7 @@ fn left_fake_server(
         snapshot("andrew", &["bob"]),
         content,
         None,
+        server.redial(),
     );
     assert!(result.is_ok(), "the client stayed on the server");
     (h, server)
@@ -1314,5 +1316,193 @@ fn a_server_that_sends_frames_far_ahead_of_the_game_is_left() {
     assert_eq!(
         net.closed.as_deref(),
         Some("too many frames ahead of the game")
+    );
+}
+
+// Returning to a game after the connection is lost.
+
+/// A game of Andrew against a computer on a fake server, in its room,
+/// joined and told; the room.
+fn game_in_room(h: &mut Harness) -> (FakeServer, FakeStream, TestGame, RoomState) {
+    let (server, stream, mut g) = fake_game(h, &two_slots());
+    let room = soundrts::testkit::fake_room(jl1(h), two_slots());
+    h.enter_fake_room(&room);
+    h.run_until_voice_idle(&mut g);
+    (server, stream, g, room)
+}
+
+/// How many times `line` was said in `said`.
+fn times(said: &[String], line: &str) -> usize {
+    said.iter().filter(|s| *s == line).count()
+}
+
+/// The seat's message without its events, which a seat is told once.
+fn eventless(m: &soundrts_world::TurnMessage) -> soundrts_world::TurnMessage {
+    let mut m = m.clone();
+    m.events.clear();
+    m
+}
+
+#[test]
+fn a_lost_connection_returns_to_the_seat_and_the_game_plays_on() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g, room) = game_in_room(&mut h);
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    turn_at(&server, &mut stream, t0);
+    server.close_at(t0 + 1.0);
+    // The turns the seat misses, then the seat given back.
+    for _ in 0..4 {
+        stream.turn(Vec::new());
+    }
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(t0 + 1.5, frame);
+    }
+    turn_at(&back, &mut stream, t0 + 2.0);
+    h.run_for(&mut g, 3.0);
+    h.run_until_voice_idle(&mut g);
+    assert!(!g.game.end_loop, "the game ended");
+    assert_eq!(g.game.view().turn(), 6);
+    assert_eq!(
+        eventless(g.game.view().message()),
+        eventless(stream.message()),
+        "the view is the seat's"
+    );
+    let said = h.said_since(from);
+    assert_eq!(
+        times(&said, "connection lost, trying to return"),
+        1,
+        "{said:#?}"
+    );
+    assert_eq!(times(&said, "back in the game"), 1, "{said:#?}");
+    assert_eq!(
+        back.sent(),
+        [ClientMsg::ReturnToGame {
+            room: room.id,
+            token: SeatToken::from_bits(1),
+        }]
+    );
+    // The commands go on the new connection.
+    g.game.send_command(&h.client, Command::Control(Vec::new()));
+    h.run_for(&mut g, 0.5);
+    assert_eq!(back.commands().len(), 1);
+    assert!(server.commands().is_empty());
+}
+
+#[test]
+fn a_return_waits_until_the_server_has_noticed_the_lost_connection() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, stream, mut g, room) = game_in_room(&mut h);
+    server.close_at(h.clock.now());
+    // The server still has Andrew playing on the old connection: the new
+    // one is "andrew2".
+    let early = server.dial_to(soundrts::testkit::welcome_back(
+        "andrew2",
+        &room,
+        &["andrew"],
+    ));
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(0.0, frame);
+    }
+    h.run_for(&mut g, 3.0);
+    assert!(early.sent().is_empty(), "{:?}", early.sent());
+    assert_eq!(back.sent().len(), 1);
+    assert!(!g.game.returning(), "the seat is back");
+}
+
+#[test]
+fn orders_given_while_away_are_not_taken_and_the_player_hears_it_once() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, _, mut g, _) = game_in_room(&mut h);
+    let from = h.utterances().len();
+    server.close_at(h.clock.now());
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    assert!(g.game.returning());
+    g.game.send_command(&h.client, Command::Control(Vec::new()));
+    g.game.send_command(&h.client, Command::Control(Vec::new()));
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.pending_commands().is_empty());
+    // The server is never reached again: the client gives up once the
+    // server no longer holds the seat.
+    let hold = soundrts::testkit::FAKE_HOLD.as_secs_f64();
+    h.run_for(&mut g, hold);
+    assert!(g.game.end_loop, "the game went on");
+    h.run_voice_for(10.0);
+    let said = h.said_since(from);
+    assert_eq!(
+        said,
+        [
+            "connection lost, trying to return",
+            "order not taken: not connected",
+            "could not return: the server could not be reached in time",
+        ]
+    );
+    assert!(server.commands().is_empty());
+}
+
+#[test]
+fn escape_leaves_the_game_at_once_while_returning() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, _, mut g, _) = game_in_room(&mut h);
+    server.close_at(h.clock.now());
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.returning());
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    assert!(g.game.end_loop, "the game went on");
+}
+
+/// What Andrew hears when the server the connection is opened again to
+/// welcomes it with `welcome` and then sends `answer`.
+fn return_refused(
+    welcome: impl FnOnce(&RoomState) -> LobbySnapshot,
+    answer: Option<ServerMsg>,
+) -> Vec<String> {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, _, mut g, room) = game_in_room(&mut h);
+    let from = h.utterances().len();
+    server.close_at(h.clock.now());
+    let back = server.dial_to(welcome(&room));
+    if let Some(answer) = answer {
+        back.at(0.0, answer);
+    }
+    h.run_for(&mut g, 3.0);
+    assert!(g.game.end_loop, "the game went on");
+    h.run_voice_for(10.0);
+    h.said_since(from)
+}
+
+#[test]
+fn a_seat_the_server_no_longer_holds_ends_the_game_with_the_reason() {
+    let refused = |reason| {
+        return_refused(
+            |room| soundrts::testkit::welcome_back("andrew", room, &[]),
+            Some(ServerMsg::Refused { reason }),
+        )
+    };
+    assert_eq!(
+        refused(Refusal::NotNow),
+        [
+            "connection lost, trying to return",
+            "could not return: your seat was given up"
+        ]
+    );
+    assert_eq!(
+        refused(Refusal::NoSuchRoom),
+        [
+            "connection lost, trying to return",
+            "could not return: the game is over"
+        ]
+    );
+    // The room is no longer in the lobby: the game is over.
+    assert_eq!(
+        return_refused(|_| snapshot("andrew", &[]), None),
+        [
+            "connection lost, trying to return",
+            "could not return: the game is over"
+        ]
     );
 }

@@ -205,6 +205,7 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
             },
             speed: crate::Speed::Normal,
             paused: false,
+            hold: std::time::Duration::from_secs(90),
             token: crate::SeatToken::from_bits(7),
         })
         .unwrap();

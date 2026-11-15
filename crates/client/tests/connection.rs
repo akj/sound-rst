@@ -195,3 +195,60 @@ fn one_pass_of_the_menus_reads_a_bounded_number_of_messages() {
         "the log keeps 100"
     );
 }
+
+/// Opens a connection to `addr` that pings a silent server after 0.2 s and
+/// gives it up after 2 s.
+fn quick_to_notice(addr: SocketAddr) -> conn::Connection {
+    let dialer = conn::Dialer {
+        address: addr.to_string(),
+        hello: hello(),
+        timeout: Duration::from_secs(5),
+        liveness: conn::Liveness {
+            ping: Duration::from_millis(200),
+            silence: Duration::from_secs(2),
+        },
+    };
+    dialer.open().unwrap().0
+}
+
+#[test]
+fn a_connection_to_a_server_that_stops_answering_is_lost() {
+    let addr = bad_server(|ws| async move {
+        // Neither reads nor sends again, and keeps the socket open, as a
+        // server behind a pulled cable.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        drop(ws);
+    });
+    let mut conn = quick_to_notice(addr);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let reason = loop {
+        match conn.poll() {
+            Some(NetEvent::Closed(r)) => break r,
+            Some(other) => panic!("{other:?}"),
+            None => {
+                assert!(Instant::now() < deadline, "the connection stayed open");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    };
+    assert_eq!(reason, "the server stopped answering");
+}
+
+#[test]
+fn a_connection_to_a_server_that_answers_pings_stays_open() {
+    let addr = bad_server(|mut ws| async move {
+        // Reads, which answers the client's pings, and sends nothing.
+        let _ = tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(Ok(_)) = ws.next().await {}
+        })
+        .await;
+    });
+    let mut conn = quick_to_notice(addr);
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(4) {
+        if let Some(e) = conn.poll() {
+            panic!("{e:?} after {:?}", start.elapsed());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
