@@ -272,6 +272,47 @@ fn every_request_has_the_words_the_original_wrote() {
 }
 
 #[test]
+fn only_the_orders_done_at_once_are_never_queued() {
+    let (w, _, _) = game();
+    let a1 = w.square_by_name("a1").unwrap();
+    for &k in Keyword::ALL {
+        let r = match k.menu_attribute() {
+            Some(_) => Request::typed(k, "footman").unwrap(),
+            None => Request::plain(k).unwrap(),
+        }
+        .at(TargetRef::Square(a1));
+        let taken = r.taken(&w).unwrap();
+        assert_eq!(matches!(taken, Taken::Now(_)), k.is_immediate(), "{k:?}");
+        if let Taken::Queued(kind) = taken {
+            assert_eq!(kind.keyword(), k);
+        }
+    }
+}
+
+#[test]
+fn a_final_order_stays_final_and_remembers_both_marks() {
+    use Progress::*;
+    let all = [
+        Pending,
+        Deferred,
+        Started,
+        Complete,
+        Impossible,
+        ImpossibleAndComplete,
+    ];
+    for p in all {
+        assert!(p.completed().is_complete(), "{p:?}");
+        assert!(p.made_impossible().is_impossible(), "{p:?}");
+        assert_eq!(p.completed().is_impossible(), p.is_impossible(), "{p:?}");
+        assert_eq!(p.made_impossible().is_complete(), p.is_complete(), "{p:?}");
+    }
+    assert_eq!(Impossible.completed(), ImpossibleAndComplete);
+    assert_eq!(Complete.made_impossible(), ImpossibleAndComplete);
+    let finals: Vec<_> = all.into_iter().filter(|p| p.is_final()).collect();
+    assert_eq!(finals, [Complete, Impossible, ImpossibleAndComplete]);
+}
+
+#[test]
 fn an_order_of_the_map_language_is_read_once_or_refused() {
     let (w, _, _) = game();
     let b1 = w.square_by_name("b1").unwrap();

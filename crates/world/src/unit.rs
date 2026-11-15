@@ -1044,7 +1044,7 @@ impl World {
 
     fn execute_orders(&mut self, id: EntityId) -> Res {
         let first = &self.e(id).orders[0];
-        if first.is_complete() || first.is_impossible() {
+        if first.is_final() {
             self.em(id).orders.remove(0);
             Ok(())
         } else {

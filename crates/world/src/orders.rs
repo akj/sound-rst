@@ -855,6 +855,72 @@ pub(crate) enum BuildStep {
     Working,
 }
 
+/// How far an order is. `Deferred` and `Started` are production's
+/// alone. `Complete`, `Impossible` and `ImpossibleAndComplete` are final:
+/// the order leaves the queue at the unit's next update.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Progress {
+    /// Queued and not done; production that has not started.
+    Pending,
+    /// Production waiting for food before it starts.
+    Deferred,
+    /// Production that has taken its food and counts its time down.
+    Started,
+    /// Done.
+    Complete,
+    /// Failed.
+    Impossible,
+    /// Failed and then marked done in the same update: a `use` with no
+    /// room where its units would go, or a trained unit with no room to
+    /// appear, refunded.
+    ImpossibleAndComplete,
+}
+
+impl Progress {
+    fn is_complete(self) -> bool {
+        match self {
+            Progress::Complete | Progress::ImpossibleAndComplete => true,
+            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Impossible => {
+                false
+            }
+        }
+    }
+
+    fn is_impossible(self) -> bool {
+        match self {
+            Progress::Impossible | Progress::ImpossibleAndComplete => true,
+            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Complete => {
+                false
+            }
+        }
+    }
+
+    /// Whether it waits only to leave the queue.
+    fn is_final(self) -> bool {
+        self.is_complete() || self.is_impossible()
+    }
+
+    fn completed(self) -> Progress {
+        match self {
+            Progress::Impossible | Progress::ImpossibleAndComplete => {
+                Progress::ImpossibleAndComplete
+            }
+            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Complete => {
+                Progress::Complete
+            }
+        }
+    }
+
+    fn made_impossible(self) -> Progress {
+        match self {
+            Progress::Complete | Progress::ImpossibleAndComplete => Progress::ImpossibleAndComplete,
+            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Impossible => {
+                Progress::Impossible
+            }
+        }
+    }
+}
+
 /// An order in a unit's queue.
 #[derive(Clone, Debug)]
 pub struct Order {
@@ -864,11 +930,7 @@ pub struct Order {
     /// a group.
     pub id: Option<u64>,
     pub is_imperative: bool,
-    is_impossible: bool,
-    is_complete: bool,
-    /// Production waiting for food.
-    is_deferred: bool,
-    has_started: bool,
+    progress: Progress,
     first_update: bool,
     pub(crate) kind: OrderKind,
 }
@@ -879,10 +941,7 @@ impl Order {
             uid,
             id: None,
             is_imperative: kind.keyword().imperative_by_default(),
-            is_impossible: false,
-            is_complete: false,
-            is_deferred: false,
-            has_started: false,
+            progress: Progress::Pending,
             first_update: true,
             kind,
         }
@@ -897,22 +956,31 @@ impl Order {
         self.kind.aim().and_then(|a| a.target.as_ref())
     }
 
+    pub fn progress(&self) -> Progress {
+        self.progress
+    }
+
     pub fn is_complete(&self) -> bool {
-        self.is_complete
+        self.progress.is_complete()
     }
 
     pub fn is_impossible(&self) -> bool {
-        self.is_impossible
+        self.progress.is_impossible()
+    }
+
+    /// Whether it waits only to leave the queue at the unit's next update.
+    pub fn is_final(&self) -> bool {
+        self.progress.is_final()
     }
 
     /// Production waiting for food.
     pub fn is_deferred(&self) -> bool {
-        self.is_deferred
+        self.progress == Progress::Deferred
     }
 
     /// Marks it complete: it leaves the queue at the unit's next update.
     pub(crate) fn complete(&mut self) {
-        self.is_complete = true;
+        self.progress = self.progress.completed();
     }
 
     /// The type of a complex order, by its name in `rules`.
@@ -1079,16 +1147,21 @@ impl std::hash::Hash for Order {
                     .map(|t| texts.type_names[t.0 as usize].clone()),
                 id: self.id,
                 target: self.target(),
-                is_impossible: self.is_impossible,
-                is_complete: self.is_complete,
+                is_impossible: self.progress.is_impossible(),
+                is_complete: self.progress.is_complete(),
                 is_imperative: self.is_imperative,
-                is_deferred: self.is_deferred,
+                is_deferred: self.progress == Progress::Deferred,
                 first_update: self.first_update,
                 mode,
                 delay,
                 storage,
                 time,
-                has_started: self.has_started,
+                // Only production starts, and it ends only once started.
+                has_started: matches!(self.kind, OrderKind::Production(_))
+                    && matches!(
+                        self.progress,
+                        Progress::Started | Progress::Complete | Progress::ImpossibleAndComplete
+                    ),
                 previous_completeness,
                 creation_time: match &self.kind {
                     OrderKind::Go { creation_time, .. } => *creation_time,
@@ -1353,7 +1426,7 @@ impl World {
         // An impossible order was never paid for, or was refunded when it
         // failed; a complete one has delivered what it paid for. Either
         // waits in the queue until the unit's next update.
-        if o.is_impossible || o.is_complete {
+        if o.progress.is_final() {
             self.notify(unit, EntityEvent::OrderOk, false);
             return;
         }
@@ -1361,7 +1434,7 @@ impl World {
             let cost = self.order_cost(unit, o);
             self.unpay(p, &cost);
         }
-        if o.has_started {
+        if o.progress == Progress::Started {
             let food = self.order_food_cost(unit, o);
             self.plm(p).used_food -= food;
         }
@@ -1491,7 +1564,7 @@ impl World {
 
     fn mark_as_impossible(&mut self, unit: EntityId, uid: u64, reason: Option<Reason>) {
         if let Some(o) = self.ordm(unit, uid) {
-            o.is_impossible = true;
+            o.progress = o.progress.made_impossible();
         }
         self.notify(unit, EntityEvent::OrderImpossible(reason), false);
         self.em(unit).distance_to_goal = crate::world::INF;
@@ -2285,33 +2358,39 @@ impl World {
             return Ok(());
         };
         let food = self.order_food_cost(unit, o);
-        if !o.has_started {
-            let limit = self.food_limit();
-            let can_start =
-                food == 0 || self.pl(p).available_food(limit) >= self.pl(p).used_food + food;
-            if can_start {
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.has_started = true;
-                    o.is_deferred = false;
+        match o.progress {
+            Progress::Pending | Progress::Deferred => {
+                let limit = self.food_limit();
+                let can_start =
+                    food == 0 || self.pl(p).available_food(limit) >= self.pl(p).used_food + food;
+                if can_start {
+                    if let Some(o) = self.ordm(unit, uid) {
+                        o.progress = Progress::Started;
+                    }
+                    self.plm(p).used_food += food;
+                    self.notify_completeness(unit, uid);
+                } else if o.progress == Progress::Pending {
+                    if let Some(o) = self.ordm(unit, uid) {
+                        o.progress = Progress::Deferred;
+                    }
+                    self.notify(unit, EntityEvent::ProductionDeferred, false);
                 }
-                self.plm(p).used_food += food;
-                self.notify_completeness(unit, uid);
-            } else if !o.is_deferred {
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.is_deferred = true;
+            }
+            Progress::Started => {
+                if production.time_left > 0 {
+                    if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
+                        p.time_left -= VIRTUAL_TIME_INTERVAL;
+                    }
+                    self.notify_completeness(unit, uid);
+                } else {
+                    self.production_complete(unit, o, production.product)?;
+                    if let Some(o) = self.ordm(unit, uid) {
+                        o.complete();
+                    }
                 }
-                self.notify(unit, EntityEvent::ProductionDeferred, false);
             }
-        } else if production.time_left > 0 {
-            if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
-                p.time_left -= VIRTUAL_TIME_INTERVAL;
-            }
-            self.notify_completeness(unit, uid);
-        } else {
-            self.production_complete(unit, o, production.product)?;
-            if let Some(o) = self.ordm(unit, uid) {
-                o.is_complete = true;
-            }
+            // A final order leaves the queue before it would run again.
+            Progress::Complete | Progress::Impossible | Progress::ImpossibleAndComplete => {}
         }
         Ok(())
     }
