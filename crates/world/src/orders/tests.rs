@@ -518,3 +518,33 @@ fn load_all_never_loads_the_transport_into_itself() {
     assert_eq!(w.e(transport).place, Some(Place::Square(a1)));
     assert_eq!(w.e(transport).inside.as_deref(), Some(&[footman][..]));
 }
+
+#[test]
+fn units_upgraded_take_the_place_of_the_old_ones_where_the_player_named_them() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 lumbermill magestower 2 archer");
+    w.update();
+    let archers = all(&w, a, "archer");
+    order(&mut w, a, &archers, "reset_group 6");
+    order(&mut w, a, &archers, "join_group 6");
+    order(&mut w, a, &archers, "upgrade_to darkarcher");
+    w.drain_events(a);
+    update_until(&mut w, |w| all(w, a, "darkarcher").len() == 2);
+    let dark = all(&w, a, "darkarcher");
+    let replaced: Vec<crate::Event> = w
+        .drain_events(a)
+        .into_iter()
+        .filter(|e| matches!(e, crate::Event::Replaced { .. }))
+        .collect();
+    // The second archer is upgraded first.
+    let (first, second) = (dark[1], dark[0]);
+    let told = |old, new| crate::Event::Replaced { old, new };
+    assert_eq!(
+        replaced,
+        [told(archers[1], second), told(archers[0], first)]
+    );
+    let groups = w.turn_message(a, Vec::new()).state.groups;
+    assert_eq!(groups, [("6".to_owned(), vec![first, second])]);
+    assert_eq!(w.pl(a).group, Some(vec![first, second]));
+    assert_eq!(w.e(first).group.as_deref(), Some("6"));
+}

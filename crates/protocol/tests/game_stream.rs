@@ -214,3 +214,32 @@ fn every_seat_gets_back_exactly_what_the_host_made() {
     );
     assert!(count.behind_50 > 0);
 }
+
+/// A unit replaced by an upgrade is told as an event about no entity:
+/// whole, in a change, and to a seat that fell behind.
+#[test]
+fn a_unit_replaced_is_told_whole_in_a_change_and_to_a_seat_behind() {
+    let mut game = Game::new(&cheat_mode_and_defeat(100), read, false);
+    let start = game.start();
+    let last = game.messages().remove(0);
+    let next = game.step().unwrap().remove(0);
+    let replaced = Event::Replaced {
+        old: EntityId(41),
+        new: EntityId(57),
+    };
+    let now = TurnMessage {
+        events: vec![replaced.clone()],
+        ..next.clone()
+    };
+    assert_eq!(
+        decode_turn(&encode_turn(&now).unwrap(), &start).unwrap(),
+        now
+    );
+    let change = TurnChange::between(&last, &now);
+    let bytes = encode_change(&change).unwrap();
+    assert_eq!(apply_change(&bytes, &last, &start).unwrap(), now);
+    let change = TurnChange::catching_up(&last, [&replaced], &next);
+    let bytes = encode_change(&change).unwrap();
+    let caught_up = apply_change(&bytes, &last, &start).unwrap();
+    assert_eq!(caught_up.events[..1], [replaced]);
+}
