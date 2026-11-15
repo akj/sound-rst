@@ -37,7 +37,7 @@ impl Seen {
             x: e.x,
             y: e.y,
             place: e.place,
-            hidden: e.is_invisible() || e.is_cloaked,
+            hidden: e.is_invisible() || e.is_cloaked(),
         }
     }
 }
@@ -48,7 +48,8 @@ impl World {
     /// `Player.is_an_enemy(o)`: the entity belongs to a player who is not an
     /// ally.
     pub(crate) fn player_is_an_enemy_of_entity(&self, p: PlayerId, e: &Entity) -> bool {
-        e.player.is_some_and(|op| !self.pl(p).allied.contains(&op))
+        e.player()
+            .is_some_and(|op| !self.pl(p).allied.contains(&op))
     }
 
     /// `Player.player_is_an_enemy(other)`.
@@ -60,7 +61,7 @@ impl World {
     /// for 3 seconds.
     pub(crate) fn observe(&mut self, p: PlayerId, o: EntityId) {
         let e = self.e(o);
-        if e.is_invisible() || e.is_cloaked {
+        if e.is_invisible() || e.is_cloaked() {
             return;
         }
         let t = self.time + 3000;
@@ -105,7 +106,7 @@ impl World {
                     .copied()
                     .filter(|u| {
                         let e = self.e(*u);
-                        e.player.is_some_and(|owner| {
+                        e.player().is_some_and(|owner| {
                             self.players.contains(&owner)
                                 && self.player_is_an_enemy(owner, p)
                                 && self.pl(owner).units.contains(u)
@@ -269,7 +270,7 @@ impl World {
                     return None;
                 };
                 let sq = self.square(s);
-                let sot = e.type_id.map(|t| &self.rules.ty(t).speed_on_terrain)?;
+                let sot = e.type_id().map(|t| &self.rules.ty(t).speed_on_terrain)?;
                 let mut actual = if let Some(i) = sot.iter().position(|t| *t == sq.type_name) {
                     to_int(sot.get(i + 1)?).ok()?
                 } else if e.airground_type == AirGround::Water {
@@ -288,19 +289,24 @@ impl World {
                 Some(actual)
             })()
             .unwrap_or(speed);
-            self.em(u).actual_speed = actual;
+            if let Some(c) = self.cm(u) {
+                c.actual_speed = actual;
+            }
         }
         for (_, g) in self.groups.clone() {
             if g.is_empty() {
                 continue;
             }
+            // Only creatures join a group.
             let min = g
                 .iter()
-                .map(|&u| self.e(u).actual_speed)
+                .map(|&u| self.c(u).map_or(0, |c| c.actual_speed))
                 .min()
                 .expect("not empty");
             for u in g {
-                self.em(u).actual_speed = min;
+                if let Some(c) = self.cm(u) {
+                    c.actual_speed = min;
+                }
             }
         }
     }
@@ -308,7 +314,7 @@ impl World {
     fn update_storage_bonus(&mut self, p: PlayerId) {
         let mut bonus = vec![0; MAX_NB_OF_RESOURCE_TYPES];
         for &u in &self.pl(p).units {
-            if let Some(t) = self.e(u).type_id {
+            if let Some(t) = self.e(u).type_id() {
                 for (r, &b) in self.rules.ty(t).storage_bonus.iter().enumerate() {
                     if r < bonus.len() {
                         bonus[r] = bonus[r].max(b);
@@ -438,14 +444,14 @@ impl World {
         }
         for &s in &observed {
             for &o in &self.square(s).objects {
-                if self.e(o).player.is_none() {
+                if self.e(o).player().is_none() {
                     perception.insert(o);
                 }
             }
         }
         for &s in &partially {
             for o in self.square(s).objects.clone() {
-                if self.e(o).player.is_none() {
+                if self.e(o).player().is_none() {
                     let seen = Seen::of(self.e(o));
                     if self.is_seeing(p, seen, false)? {
                         perception.insert(o);
@@ -511,7 +517,7 @@ impl World {
             .collect();
         for o in gone {
             let e = self.e(o);
-            if e.is_invisible() || e.is_cloaked {
+            if e.is_invisible() || e.is_cloaked() {
                 continue;
             }
             if e.place.is_some() {
@@ -548,7 +554,7 @@ impl World {
             .units
             .iter()
             .map(|&u| self.e(u))
-            .filter(|e| e.stats.speed > 0 && e.class == EntityClass::Soldier)
+            .filter(|e| e.stats.speed > 0 && e.class() == EntityClass::Soldier)
             .map(Entity::menace)
             .sum();
         self.plm(p).menace = m;
@@ -592,11 +598,12 @@ impl World {
                 }
             } else if o.is_corpse() {
                 corpses.insert(place);
-            } else if o.player.is_some_and(|op| allied.contains(&op)) && o.stats.is_vulnerable != 0
+            } else if o.player().is_some_and(|op| allied.contains(&op))
+                && o.stats.is_vulnerable != 0
             {
                 friends.insert(place);
             }
-            if o.time_limit.is_some_and(|t| t != 0) && o.stats.harm_level != 0 {
+            if o.time_limit().is_some_and(|t| t != 0) && o.stats.harm_level != 0 {
                 cataclysmic.insert(place);
             }
         }
@@ -801,11 +808,12 @@ impl World {
     fn free_project_resources_if_no_worker_on_project(&mut self, p: PlayerId) -> Res {
         // Freeing a project removes it from the budget, so walk a copy.
         for project in self.pl(p).budget.clone() {
-            let worker = self
-                .pl(p)
-                .units
-                .iter()
-                .any(|&u| self.e(u).orders.iter().any(|o| self.order_eq(o, &project)));
+            let worker = self.pl(p).units.iter().any(|&u| {
+                self.e(u)
+                    .orders()
+                    .iter()
+                    .any(|o| self.order_eq(o, &project))
+            });
             if !worker {
                 self.free_resources(p, &project)?;
             }
@@ -843,14 +851,14 @@ impl World {
         for a in self.pl(p).allied.clone() {
             for u in self.pl(a).units.clone() {
                 let e = self.e(u);
-                let stores = e.type_id.is_some_and(|t| {
+                let stores = e.type_id().is_some_and(|t| {
                     self.rules
                         .ty(t)
                         .storable_resource_types
                         .contains(&resource_type)
                 });
                 let site_stores = include_building_sites
-                    && e.site.as_ref().is_some_and(|s| {
+                    && e.site().is_some_and(|s| {
                         self.rules
                             .ty(s.building_type)
                             .storable_resource_types
@@ -975,8 +983,10 @@ impl World {
         let Some((x, y)) = self.find_free_space(place, t.airground_type, x, y) else {
             return;
         };
-        if let Ok(u) = self.create_creature(tid, Some(p), Place::Square(place), x, y) {
-            self.em(u).building_land = land;
+        if let Ok(u) = self.create_creature(tid, Some(p), Place::Square(place), x, y)
+            && let Some(c) = self.cm(u)
+        {
+            c.building_land = land;
         }
     }
 

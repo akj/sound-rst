@@ -662,7 +662,7 @@ fn a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_not
     // the queue at the next turn.
     warnings.extend(host.step(me).warnings);
     assert_eq!(host.world.player(me).group, Some(own.clone()));
-    assert!(own.iter().all(|&u| host.world.e(u).orders.is_empty()));
+    assert!(own.iter().all(|&u| host.world.e(u).orders().is_empty()));
     let names: Vec<&str> = host.world.groups.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, [long.as_str()]);
     let zoom = |at: &str| {

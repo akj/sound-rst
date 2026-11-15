@@ -1,9 +1,11 @@
 //! What squares do (`worldroom.py`): free space, building lands, terrain,
 //! and the map editor's changes.
 
-use crate::entity::{Entity, EntityId, ExitData, Place, PlayerId, SquareId, Target, ZoomTarget};
+use crate::entity::{
+    Entity, EntityId, ExitData, Kind, Place, PlayerId, SquareId, Target, ZoomTarget,
+};
 use crate::nofloat::{floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000};
-use crate::rules::{AirGround, EntityClass, Role};
+use crate::rules::{AirGround, Role};
 use crate::square::{SPACE_LIMIT, Spiral, spiral_index};
 use crate::world::World;
 
@@ -221,7 +223,7 @@ impl World {
             .objects
             .iter()
             .copied()
-            .filter(|&o| matches!(self.e(o).class, EntityClass::Deposit | EntityClass::Meadow))
+            .filter(|&o| matches!(self.e(o).kind, Kind::Deposit(_) | Kind::Meadow))
             .collect();
         let width = sq.xmax - sq.xmin;
         let nb = things.len() as i64;
@@ -248,7 +250,7 @@ impl World {
             .filter(|&&o| {
                 let e = self.e(o);
                 (e.is_a_building_land() && !e.is_exit())
-                    || (e.building_land.is_some() && e.stats.qty == 0)
+                    || (e.building_land().is_some() && e.stats.qty == 0)
             })
             .count()
     }
@@ -269,14 +271,11 @@ impl World {
     /// dense forests side by side close the path between them.
     fn update_terrain(&mut self, s: SquareId) {
         let objects = &self.square(s).objects;
-        let meadows = objects
-            .iter()
-            .filter(|&&o| self.e(o).class == EntityClass::Meadow)
-            .count();
+        let meadows = objects.iter().filter(|&&o| self.e(o).is_meadow()).count();
         let wood = self.rules.roles.get(Role::Wood);
         let woods = objects
             .iter()
-            .filter(|&&o| wood.is_some() && self.e(o).type_id == wood)
+            .filter(|&&o| wood.is_some() && self.e(o).type_id() == wood)
             .count();
         let t = if woods >= 7 {
             "_dense_forest"
@@ -298,7 +297,7 @@ impl World {
     fn set_path_blocked_by_forests(&mut self, s: SquareId, other: SquareId, blocked: bool) {
         for e in self.square(s).exits.clone() {
             if self.exit_other_side(e).and_then(|os| self.e(os).square()) == Some(other)
-                && let Some(x) = self.em(e).exit.as_mut()
+                && let Some(x) = self.em(e).exit_mut()
             {
                 x.is_blocked_by_forests = blocked;
             }
@@ -322,10 +321,10 @@ impl World {
         }
         let e1 = self.create_exit(a, exit_type, is_a_portal);
         let e2 = self.create_exit(b, exit_type, is_a_portal);
-        if let Some(x) = self.em(e1).exit.as_mut() {
+        if let Some(x) = self.em(e1).exit_mut() {
             x.other_side = Some(e2);
         }
-        if let Some(x) = self.em(e2).exit.as_mut() {
+        if let Some(x) = self.em(e2).exit_mut() {
             x.other_side = Some(e1);
         }
     }
@@ -336,13 +335,15 @@ impl World {
         exit_type: &str,
         is_a_portal: bool,
     ) -> EntityId {
-        let mut e = Entity::new(EntityClass::Exit, exit_type);
-        e.exit = Some(ExitData {
-            other_side: None,
-            is_a_portal,
-            blockers: Vec::new(),
-            is_blocked_by_forests: false,
-        });
+        let e = Entity::new(
+            exit_type,
+            Kind::Exit(ExitData {
+                other_side: None,
+                is_a_portal,
+                blockers: Vec::new(),
+                is_blocked_by_forests: false,
+            }),
+        );
         let id = self.insert_entity(e, Place::Square(s), x, y, o);
         self.sqm(s).exits.push(id);
         id

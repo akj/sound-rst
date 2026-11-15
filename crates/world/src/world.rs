@@ -8,8 +8,8 @@ use std::sync::Arc;
 use crate::collision::CollisionMatrix;
 use crate::command::Command;
 use crate::entity::{
-    Action, ActionKind, COLLISION_RADIUS, Entity, EntityId, MemoryRef, Place, PlayerId, SquareId,
-    Target,
+    Action, ActionKind, COLLISION_RADIUS, Creature, Entity, EntityId, Kind, MemoryRef, Place,
+    PlayerId, SquareId, Target,
 };
 use crate::events::{EntityEvent, Event};
 use crate::known::KnownEntity;
@@ -17,7 +17,7 @@ use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
 use crate::player::{EndOfTurn, Player};
 use crate::pyrandom::PyRandom;
-use crate::rules::{AiScripts, AirGround, EntityClass, Rules, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AiScripts, AirGround, Rules, VIRTUAL_TIME_INTERVAL};
 use crate::square::Square;
 
 /// `float("inf")` for path distances.
@@ -388,6 +388,17 @@ impl World {
             .expect("an entity id always names an entity")
     }
 
+    /// The creature with this id: `None` for an entity of another kind.
+    pub(crate) fn c(&self, id: EntityId) -> Option<&Creature> {
+        self.e(id).creature()
+    }
+
+    /// The creature with this id, to change it: `None` for an entity of
+    /// another kind.
+    pub(crate) fn cm(&mut self, id: EntityId) -> Option<&mut Creature> {
+        self.em(id).creature_mut()
+    }
+
     /// Every entity ever registered, in id order.
     pub fn entities(&self) -> impl Iterator<Item = &Entity> {
         self.entities.iter().filter_map(Option::as_ref)
@@ -571,8 +582,11 @@ impl World {
 
     /// Whether the original's class has an `update` method, which puts its
     /// instances in the active objects.
-    fn is_active_class(class: EntityClass) -> bool {
-        !matches!(class, EntityClass::Meadow | EntityClass::Exit)
+    fn is_active_kind(kind: &Kind) -> bool {
+        match kind {
+            Kind::Meadow | Kind::Exit(_) => false,
+            Kind::Deposit(_) | Kind::Corpse(_) | Kind::Creature(_) => true,
+        }
     }
 
     /// The position a new entity takes on `place`: `(x, y)`, or the place's
@@ -621,7 +635,7 @@ impl World {
         if self.entities.len() <= idx {
             self.entities.resize_with(idx + 1, || None);
         }
-        let active = Self::is_active_class(e.class);
+        let active = Self::is_active_kind(&e.kind);
         self.entities[idx] = Some(e);
         self.enter(place, id);
         if active {
@@ -630,8 +644,8 @@ impl World {
         let ent = self.em(id);
         ent.previous_place = None;
         ent.place = Some(place);
-        if ent.is_creature() {
-            ent.action = Some(Action {
+        if let Some(c) = ent.creature_mut() {
+            c.action = Some(Action {
                 kind: ActionKind::Plain,
                 target: None,
             });
@@ -653,7 +667,7 @@ impl World {
         if self.entities.len() <= idx {
             self.entities.resize_with(idx + 1, || None);
         }
-        let active = Self::is_active_class(e.class);
+        let active = Self::is_active_kind(&e.kind);
         self.entities[idx] = Some(e);
         if active {
             self.active_objects.push(id);
@@ -665,7 +679,7 @@ impl World {
         match place {
             Place::Square(s) => self.sqm(s).objects.push(id),
             Place::Inside(c) => {
-                if let Some(inside) = self.em(c).inside.as_mut() {
+                if let Some(inside) = self.cm(c).and_then(|c| c.inside.as_mut()) {
                     inside.push(id);
                 }
             }
@@ -675,7 +689,7 @@ impl World {
     fn leave(&mut self, place: Place, id: EntityId) {
         let list = match place {
             Place::Square(s) => Some(&mut self.sqm(s).objects),
-            Place::Inside(c) => self.em(c).inside.as_mut(),
+            Place::Inside(c) => self.cm(c).and_then(|c| c.inside.as_mut()),
         };
         if let Some(list) = list
             && let Some(i) = list.iter().position(|&o| o == id)
@@ -779,8 +793,8 @@ impl World {
         }
         if let Some(np) = new_place {
             self.enter(np, id);
-            if self.e(id).is_creature() {
-                self.em(id).action = Some(Action {
+            if let Some(c) = self.cm(id) {
+                c.action = Some(Action {
                     kind: ActionKind::Plain,
                     target: None,
                 });
@@ -802,13 +816,13 @@ impl World {
 
     /// `delete()` of any entity, with the behavior of its class.
     pub(crate) fn delete(&mut self, id: EntityId) {
-        match self.e(id).class {
-            EntityClass::Exit => self.exit_delete(id),
-            c if c.is_creature() => {
+        match self.e(id).kind {
+            Kind::Exit(_) => self.exit_delete(id),
+            Kind::Creature(_) => {
                 self.entity_delete_base(id);
                 self.set_player(id, None);
             }
-            _ => self.entity_delete_base(id),
+            Kind::Meadow | Kind::Deposit(_) | Kind::Corpse(_) => self.entity_delete_base(id),
         }
     }
 
@@ -826,24 +840,31 @@ impl World {
     }
 
     pub(crate) fn unblock(&mut self, id: EntityId) {
-        if let Some(exit) = self.e(id).blocked_exit {
-            if let Some(data) = self.em(exit).exit.as_mut()
+        if let Some(exit) = self.e(id).blocked_exit() {
+            if let Some(data) = self.em(exit).exit_mut()
                 && let Some(i) = data.blockers.iter().position(|&b| b == id)
             {
                 data.blockers.remove(i);
             }
-            self.em(id).blocked_exit = None;
+            if let Some(c) = self.cm(id) {
+                c.blocked_exit = None;
+            }
         }
     }
 
     /// `block(e)`: units block only one exit at a time; buildings replace
-    /// the exit they block.
+    /// the exit they block. Only a creature blocks: every caller passes a
+    /// unit, a building or a building site.
     pub(crate) fn block(&mut self, id: EntityId, exit: EntityId) {
-        if self.e(id).is_unit() && self.e(id).blocked_exit.is_some() {
+        let is_unit = self.e(id).is_unit();
+        let Some(c) = self.cm(id) else {
+            return;
+        };
+        if is_unit && c.blocked_exit.is_some() {
             return;
         }
-        self.em(id).blocked_exit = Some(exit);
-        if let Some(data) = self.em(exit).exit.as_mut() {
+        c.blocked_exit = Some(exit);
+        if let Some(data) = self.em(exit).exit_mut() {
             data.blockers.push(id);
         }
     }
@@ -1050,29 +1071,28 @@ impl World {
 
     pub(crate) fn entity_slow_update(&mut self, id: EntityId) -> Res {
         let e = self.e(id);
-        match e.class {
-            EntityClass::Deposit => {
-                if e.resource_regen != 0 && e.stats.qty < e.qty_max {
-                    let q = (e.stats.qty + e.resource_regen).min(e.qty_max);
+        match &e.kind {
+            Kind::Deposit(d) => {
+                if d.resource_regen != 0 && e.stats.qty < d.qty_max {
+                    let q = (e.stats.qty + d.resource_regen).min(d.qty_max);
                     self.em(id).stats.qty = q;
                 }
                 Ok(())
             }
-            EntityClass::Corpse => {
-                if e.time_limit.is_some_and(|t| self.time >= t) {
+            Kind::Corpse(c) => {
+                if self.time >= c.time_limit {
                     self.delete(id);
                 }
                 Ok(())
             }
-            c if c.is_creature() => {
+            Kind::Creature(_) => {
                 self.regenerate(id);
-                let e = self.e(id);
-                if e.time_limit.is_some_and(|t| self.time >= t) {
+                if self.e(id).time_limit().is_some_and(|t| self.time >= t) {
                     self.die(id, None)?;
                 }
                 Ok(())
             }
-            _ => Ok(()),
+            Kind::Meadow | Kind::Exit(_) => Ok(()),
         }
     }
 
@@ -1160,8 +1180,10 @@ impl World {
     pub(crate) fn update_cloaking(&mut self) {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
-                if self.e(u).stats.is_cloakable != 0 {
-                    self.em(u).is_cloaked = false;
+                if self.e(u).stats.is_cloakable != 0
+                    && let Some(c) = self.cm(u)
+                {
+                    c.is_cloaked = false;
                 }
             }
         }
@@ -1176,11 +1198,13 @@ impl World {
                 for vp in self.pl(p).allied.clone() {
                     for vu in self.potential_neighbors(vp, ux, uy) {
                         let v = self.e(vu);
-                        if v.stats.is_cloakable == 0 || v.is_cloaked {
+                        if v.stats.is_cloakable == 0 || v.is_cloaked() {
                             continue;
                         }
-                        if crate::nofloat::square_of_distance(v.x, v.y, ux, uy) < r2 {
-                            self.em(vu).is_cloaked = true;
+                        if crate::nofloat::square_of_distance(v.x, v.y, ux, uy) < r2
+                            && let Some(c) = self.cm(vu)
+                        {
+                            c.is_cloaked = true;
                         }
                     }
                 }
@@ -1206,7 +1230,7 @@ impl World {
                     }
                     for iu in self.potential_neighbors(ep, ux, uy) {
                         let i = self.e(iu);
-                        if !(i.is_invisible() || i.is_cloaked) {
+                        if !(i.is_invisible() || i.is_cloaked()) {
                             continue;
                         }
                         if self.pl(p).detected_units.contains(&iu) {

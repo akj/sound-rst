@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, Target};
+use crate::entity::{AiMode, Creature, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
     BuildStep, GatherStep, Keyword, MenuEntry, Order, OrderInfo, OrderKind, TargetRef,
@@ -149,11 +149,11 @@ impl EntityFacts for &Entity {
     }
 
     fn class(&self) -> EntityClass {
-        self.class
+        Entity::class(self)
     }
 
     fn owner(&self) -> Option<PlayerId> {
-        self.player
+        Entity::player(self)
     }
 
     fn place(&self) -> Option<Place> {
@@ -165,15 +165,16 @@ impl EntityFacts for &Entity {
     }
 
     fn type_id(&self, _: &Rules) -> Option<TypeId> {
-        self.type_id
+        Entity::type_id(self)
     }
 
     fn site_type(&self) -> Option<TypeId> {
-        self.site.as_ref().map(|s| s.building_type)
+        Entity::site(self).map(|s| s.building_type)
     }
 
+    /// 0 for what has no hit points, as a seat is told.
     fn hp(&self) -> i64 {
-        self.hp
+        self.creature().map_or(0, |c| c.hp)
     }
 
     fn hp_max(&self) -> i64 {
@@ -193,7 +194,7 @@ impl EntityFacts for &Entity {
     }
 
     fn exit(&self) -> Option<(bool, &[EntityId])> {
-        let x = self.exit.as_ref()?;
+        let x = Entity::exit(self)?;
         Some((x.is_blocked_by_forests, &x.blockers))
     }
 
@@ -202,11 +203,13 @@ impl EntityFacts for &Entity {
     }
 }
 
+/// A unit of a controlled player is a creature: the defaults below are
+/// what an entity of another kind would answer.
 impl UnitFacts for &Entity {
     type Order = Order;
 
     fn orders(&self) -> &[Order] {
-        &self.orders
+        Entity::orders(self)
     }
 
     fn is_idle(&self) -> bool {
@@ -214,19 +217,19 @@ impl UnitFacts for &Entity {
     }
 
     fn auto_gather(&self) -> Option<bool> {
-        self.auto_gather
+        self.work().map(|w| w.auto_gather)
     }
 
     fn auto_repair(&self) -> Option<bool> {
-        self.auto_repair
+        self.work().map(|w| w.auto_repair)
     }
 
     fn stance(&self) -> Option<AiMode> {
-        self.ai_mode
+        self.creature().and_then(Creature::stance)
     }
 
     fn inside(&self) -> Option<&[EntityId]> {
-        self.inside.as_deref()
+        Entity::inside(self)
     }
 
     fn transport_capacity(&self) -> i64 {

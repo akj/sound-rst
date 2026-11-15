@@ -59,8 +59,8 @@ fn an_order_gives_order_ok_to_the_local_human_only() {
         "a remote human has no interface"
     );
     let p = w.entity(peasant).unwrap();
-    assert_eq!(p.orders[0].keyword(), Keyword::Go);
-    assert_eq!(p.orders[0].args(&w), [square.to_string()]);
+    assert_eq!(p.orders()[0].keyword(), Keyword::Go);
+    assert_eq!(p.orders()[0].args(&w), [square.to_string()]);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn cancelling_a_training_that_was_never_paid_for_refunds_nothing() {
         w.update();
     }
     assert_eq!(w.player(me).resources, [2000, 10000]);
-    assert_eq!(w.entity(th).unwrap().orders.len(), 2);
+    assert_eq!(w.entity(th).unwrap().orders().len(), 2);
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn cancelling_a_training_that_has_finished_refunds_nothing() {
     }
     // The finished order waits in the queue until the townhall's next
     // update, which comes after the commands of the next turn.
-    assert!(w.entity(th).unwrap().orders[0].is_complete());
+    assert!(w.entity(th).unwrap().orders()[0].is_complete());
     let used_food = w.player(me).used_food;
     w.queue_command(me, &format!("control {th}"));
     w.queue_command(me, "order 0 0 cancel_training");
@@ -274,7 +274,7 @@ fn a_zoom_outside_its_square_is_refused() {
     let keywords = |w: &World| {
         w.entity(peasant)
             .unwrap()
-            .orders
+            .orders()
             .iter()
             .map(|o| o.keyword())
             .collect::<Vec<_>>()

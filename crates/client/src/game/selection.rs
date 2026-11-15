@@ -1041,7 +1041,7 @@ mod tests {
         let turn = g.game.view().turn() + 1;
         h.run_until_turn(&mut g, turn);
         let w = g.game.host().world();
-        let orders = &w.entity(other).unwrap().orders;
+        let orders = w.entity(other).unwrap().orders();
         let orders: Vec<_> = orders.iter().map(|o| o.words(w)).collect();
         assert_eq!(orders, [["upgrade_to", "guardtower"]]);
     }
@@ -1172,7 +1172,7 @@ mod tests {
         t.h.press(Key::Return, Mods::NONE);
         assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
         let w = t.host.world();
-        let orders = &w.entity(new).unwrap().orders;
+        let orders = w.entity(new).unwrap().orders();
         let orders: Vec<_> = orders.iter().map(|o| o.words(w)).collect();
         assert_eq!(orders, [["train", "peasant"]]);
         assert_eq!(t.g.game.group, [new]);
@@ -1199,7 +1199,14 @@ mod tests {
         // Enter, pressed when the turn has come and before it is taken.
         t.h.press(Key::Return, Mods::NONE);
         assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
-        let rallying_point = t.host.world().entity(new).unwrap().rallying_point;
+        let rallying_point = t
+            .host
+            .world()
+            .entity(new)
+            .unwrap()
+            .creature()
+            .unwrap()
+            .rallying_point;
         assert_eq!(
             rallying_point,
             Some(soundrts_world::orders::TargetRef::Square(b1))
@@ -1236,7 +1243,7 @@ mod tests {
         let orders: Vec<_> = w
             .entity(other)
             .unwrap()
-            .orders
+            .orders()
             .iter()
             .map(|o| o.words(w))
             .collect();
@@ -1255,7 +1262,7 @@ mod tests {
         let orders: Vec<_> = w
             .entity(peasant)
             .unwrap()
-            .orders
+            .orders()
             .iter()
             .map(|o| o.words(w))
             .collect();

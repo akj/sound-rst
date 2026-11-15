@@ -84,7 +84,7 @@ fn the_target_of_a_queued_order_changes_the_digest() {
     b.queue_command(me, &format!("order 1 0 go {c3}"));
     a.update();
     b.update();
-    assert_eq!(a.entity(peasant).unwrap().orders.len(), 2);
-    assert_eq!(b.entity(peasant).unwrap().orders.len(), 2);
+    assert_eq!(a.entity(peasant).unwrap().orders().len(), 2);
+    assert_eq!(b.entity(peasant).unwrap().orders().len(), 2);
     assert_ne!(a.digest_u64(), b.digest_u64());
 }

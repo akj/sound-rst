@@ -351,7 +351,7 @@ impl World {
                 // original, which walks it by index.
                 let mut i = 0;
                 while let Some(&o) = self.square(s).objects.get(i) {
-                    if *self.e(o).type_name == *x && self.e(o).player == Some(p) {
+                    if *self.e(o).type_name == *x && self.e(o).player() == Some(p) {
                         for order in &orders {
                             self.take_order(o, order.clone(), false, false, None)?;
                         }
@@ -496,10 +496,13 @@ impl World {
         let u = self
             .create_creature(tid, Some(p), place, x, y)
             .map_err(|NotEnoughSpace| AddUnitError::NotEnoughSpace)?;
-        self.em(u).building_land = land;
-        if decay != 0 {
-            let t = self.time + decay;
-            self.em(u).time_limit = Some(t);
+        let time = self.time;
+        // `u` was created as a creature just above.
+        if let Some(c) = self.cm(u) {
+            c.building_land = land;
+            if decay != 0 {
+                c.time_limit = Some(time + decay);
+            }
         }
         if notify {
             self.notify(u, EntityEvent::Added, false);
@@ -567,7 +570,10 @@ impl World {
     fn reset_group(&mut self, name: &str) {
         if let Some(i) = self.groups.iter().position(|(n, _)| n == name) {
             for u in self.groups[i].1.clone() {
-                self.em(u).group = None;
+                // Only creatures join a group.
+                if let Some(c) = self.cm(u) {
+                    c.group = None;
+                }
             }
             self.groups[i].1 = Vec::new();
         }
@@ -588,7 +594,7 @@ impl World {
         };
         let selection = self.pl(p).group.clone();
         for u in selection.clone().unwrap_or_default() {
-            if let Some(g) = self.e(u).group.clone() {
+            if let Some(g) = self.c(u).and_then(|c| c.group.clone()) {
                 let list = self.group_list(&g).cloned().unwrap_or_default();
                 if Some(&list) != selection.as_ref() {
                     if let Some((_, l)) = self.groups.iter_mut().find(|(n, _)| *n == g)
@@ -596,12 +602,14 @@ impl World {
                     {
                         l.remove(i);
                     }
-                    self.em(u).group = None;
+                    if let Some(c) = self.cm(u) {
+                        c.group = None;
+                    }
                 }
             }
             if self
                 .e(u)
-                .player
+                .player()
                 .is_some_and(|up| self.pl(p).allied_control.contains(&up))
             {
                 let r = match &mut given {
@@ -638,7 +646,7 @@ impl World {
         imperative: bool,
         order_id: Option<u64>,
     ) -> Res {
-        if imperative && let Some(up) = self.e(u).player {
+        if imperative && let Some(up) = self.e(u).player() {
             self.imperative_go(up, request)?;
         }
         self.take_order(u, request.clone(), forget_previous, imperative, order_id)
