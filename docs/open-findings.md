@@ -129,7 +129,7 @@ Checked today, except the two throttles marked below. Size: medium. Changes the 
 
 ### H4. Modifier keys act the moment they go down
 
-**Fixed** in pull request 26, in the recorded speech tests; not yet heard through NVDA. A modifier pressed alone acts when it is released, and only if no other key went down meanwhile. A held modifier never repeats, and other keys repeat as Windows repeats them (`EventQueue` in `crates/client/src/input.rs`). Tests in `crates/client/tests/keys.rs`: `control_alone_examines_when_it_is_released`, `control_held_with_tab_does_not_examine`, `a_held_modifier_does_not_repeat`, `shift_and_an_arrow_do_not_skip_the_news_being_said`. NVDA itself silences speech when Control goes down, which no test can show.
+**Fixed** in pull request 26, in the recorded speech tests; not yet heard through NVDA. A modifier pressed alone acts when it is released, and only if no other key went down meanwhile. A held modifier never repeats, and other keys repeat as Windows repeats them (`EventQueue` in `crates/client/src/input.rs`). Tests in `crates/client/tests/keys.rs`: `control_alone_examines_when_it_is_released`, `control_held_with_tab_does_not_examine`, `a_held_modifier_does_not_repeat`, `shift_and_an_arrow_do_not_skip_the_news_being_said`. One rare case remains, which pull request 26 declined to fix: hold Control and Shift, then press and release Alt with no other key, and Alt's command runs and skips the news. A chord with any other key no longer does. NVDA itself silences speech when Control goes down, which no test can show.
 
 Checked today; the key repeat is suspected. Size: small. Changes the transcripts. Needs your ears.
 
@@ -412,7 +412,7 @@ From the review. Size: medium each.
 
 ### G3. Bugs kept from the original
 
-**Fixed** in pull request 23. Fifteen rows are fixed, each with a test that fails without its fix. Three rows were shown not to be bugs. Row by row, in the table's order; the tests are in `crates/world/src/upstream_tests.rs` unless another file is named:
+**Fixed** in pull request 23. Fifteen rows are fixed, each with a test that fails without its fix. Two rows were shown not to be bugs, and the third was not seen in a large sample. Row by row, in the table's order; the tests are in `crates/world/src/upstream_tests.rs` unless another file is named:
 
 - Allies counted twice: fixed. `a_healer_heals_its_own_allied_units_once_per_turn`.
 - Splash centred on the map corner: fixed. `a_splash_that_kills_its_target_still_hits_the_units_beside_it`.
@@ -431,7 +431,7 @@ From the review. Size: medium each.
 - Computer 2 gives every "use" a target: fixed. `computer2_aims_only_the_abilities_that_ask_for_a_target` in `ai.rs`.
 - "Add units" deletes the newest unit: fixed. `adding_a_unit_where_there_is_no_space_leaves_the_other_units_alone`.
 - 1.005 read as 1.004: fixed. `to_int_reads_three_decimals_as_written` in `crates/world/src/nofloat.rs`.
-- Square root off by one: cannot happen for any value that fits in 64 bits. Pull request 23 sampled 15.3 million values, all exact.
+- Square root off by one: not seen. Pull request 23 sampled 15.3 million values, including values near powers of two and the top of the range, and all were exact. That is a sample, not a proof. Separately, for values near the largest 64-bit number the correction step in `int_sqrt` (`crates/world/src/nofloat.rs`) overflows. Squared distances in a game are far below that.
 
 From the review; none re-read by me. Size: small each. Batch them and re-record once.
 
@@ -746,9 +746,9 @@ From pull request 50. Open.
 **Now.**
 
 - In a campaign's cut-scene chapter between missions, Escape skips one line, as any key does.
-- In a game, when other news waits behind a story, Escape skips one line at a time, so that news is still said.
+- In a game, when other news waits behind a story, one Escape still skips the rest of the story. But each skipped line starts and is cut off at once, so you may hear the start of each.
 
-Pull request 50 notes that a small change in `crates/client/src/voice.rs` would make both exact.
+Pull request 50 notes that a small change in `crates/client/src/voice.rs` would fix both.
 
 ### N17. Copying to the clipboard may fail
 
