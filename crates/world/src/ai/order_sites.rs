@@ -2,7 +2,9 @@
 //! reach, each with the order it gives, as the words the order stores.
 
 use super::*;
+use crate::entity::PlayerId;
 use crate::player::Controller;
+use crate::world::World;
 use crate::{AiScripts, Rules};
 
 /// jl1 with an easy computer, then a human.
@@ -83,9 +85,9 @@ fn raise_dead_is_used_on_the_square_of_the_user() {
     let (mut w, c, _) = game();
     let s = home(&w, c);
     let n = add(&mut w, "necromancer", c, s);
-    w.csm(c).raise_dead_users = vec![(n, "a_raise_dead".into())];
+    w.computer_state(c).raise_dead_users = vec![(n, "a_raise_dead".into())];
     w.plm(c).places_with_corpses.insert(s);
-    w.raise_dead(c).unwrap();
+    w.door(c).raise_dead().unwrap();
     assert_eq!(orders(&w, n), [words(&["use", "a_raise_dead", &id(&w, s)])]);
 }
 
@@ -97,8 +99,9 @@ fn teleportation_is_used_on_the_place_units_are_sent_to() {
     let mage = add(&mut w, "mage", c, s);
     let footman = add(&mut w, "footman", c, s);
     // The order does not depend on the ability: the mage's own is used.
-    w.csm(c).teleportation_users = vec![(mage, "a_meteors".into())];
-    w.send_units(c, vec![footman], Some(Place::Square(far)))
+    w.computer_state(c).teleportation_users = vec![(mage, "a_meteors".into())];
+    w.door(c)
+        .send_units(vec![footman], Some(Place::Square(far)))
         .unwrap();
     assert_eq!(
         orders(&w, mage),
@@ -113,9 +116,10 @@ fn a_cataclysm_and_a_detector_are_used_on_the_place_units_are_sent_to() {
     let far = far_from(&mut w, s);
     let mage = add(&mut w, "mage", c, s);
     seen_enemies(&mut w, you, c, far, 1);
-    w.csm(c).cataclysm_users = vec![(mage, "a_meteors".into())];
-    w.csm(c).detector_users = vec![(mage, "a_meteors".into())];
-    w.send_units(c, vec![mage], Some(Place::Square(far)))
+    w.computer_state(c).cataclysm_users = vec![(mage, "a_meteors".into())];
+    w.computer_state(c).detector_users = vec![(mage, "a_meteors".into())];
+    w.door(c)
+        .send_units(vec![mage], Some(Place::Square(far)))
         .unwrap();
     let use_far = words(&["use", "a_meteors", &id(&w, far)]);
     let o = orders(&w, mage);
@@ -135,8 +139,9 @@ fn a_cataclysm_on_a_place_too_strong_to_attack_is_cast_from_nearby() {
     seen_enemies(&mut w, you, c, far, 1);
     // Too strong to attack.
     w.plm(c).enemy_menace.insert(far, i64::MAX / 1000);
-    w.csm(c).cataclysm_users = vec![(mage, "a_meteors".into())];
-    w.eventually_attack(c, vec![Some(Place::Square(far))])
+    w.computer_state(c).cataclysm_users = vec![(mage, "a_meteors".into())];
+    w.door(c)
+        .eventually_attack(vec![Some(Place::Square(far))])
         .unwrap();
     let o = orders(&w, mage);
     assert_eq!(o.len(), 3, "{o:?}");
@@ -158,9 +163,11 @@ fn workers_repair_a_building_site_without_workers() {
         .create_building_site(c, Place::Square(s), x, y, farm)
         .unwrap();
     w.update_effect_users_and_workers(c).unwrap();
-    w.send_workers_to_forgotten_building_sites(c).unwrap();
+    w.door(c)
+        .send_workers_to_forgotten_building_sites()
+        .unwrap();
     let repair = words(&["repair", &site.to_string()]);
-    let workers = w.cs(c).workers.clone();
+    let workers = w.computer_state(c).workers.clone();
     assert!(!workers.is_empty());
     for u in workers {
         assert_eq!(orders(&w, u).first(), Some(&repair));
@@ -183,13 +190,16 @@ fn workers_near_a_deposit_repair_the_warehouse_being_built_there() {
         })
         .unwrap();
     let worker = add(&mut w, "peasant", c, far);
-    w.csm(c).workers = vec![worker];
+    w.computer_state(c).workers = vec![worker];
     let townhall = w.rules.type_id("townhall").unwrap();
     let (x, y) = (w.square(far).x, w.square(far).y);
     let site = w
         .create_building_site(c, Place::Square(far), x, y, townhall)
         .unwrap();
-    w.build_a_warehouse_for(c, &Target::Entity(deposit))
+    // The worker sees the deposit and the site.
+    w.update_perception_and_memory(c).unwrap();
+    w.door(c)
+        .build_a_warehouse_for(&Target::Entity(deposit))
         .unwrap();
     assert_eq!(orders(&w, worker), [words(&["repair", &site.to_string()])]);
 }
@@ -206,13 +216,13 @@ fn workers_build_a_gate_on_the_exit_nearest_the_sensible_building() {
         .find(|&u| &*w.e(u).type_name == "townhall")
         .unwrap();
     w.update_effect_users_and_workers(c).unwrap();
-    w.csm(c).sensible_building = Some(townhall);
+    w.computer_state(c).sensible_building = Some(townhall);
     let (bx, by) = (w.e(townhall).x, w.e(townhall).y);
     let mut exits = w.square(s).exits.clone();
     exits.sort_by_key(|&x| square_of_distance(bx, by, w.e(x).x, w.e(x).y));
-    w.defensive_routine(c).unwrap();
+    w.door(c).defensive_routine().unwrap();
     let gate = words(&["build", "gate", &exits[0].to_string()]);
-    let workers = w.cs(c).workers.clone();
+    let workers = w.computer_state(c).workers.clone();
     assert!(!workers.is_empty());
     for u in workers {
         assert_eq!(orders(&w, u).first(), Some(&gate));
@@ -224,7 +234,8 @@ fn a_research_is_ordered_to_a_building_that_can_do_it() {
     let (mut w, c, _) = game();
     let s = home(&w, c);
     let blacksmith = add(&mut w, "blacksmith", c, s);
-    w.build_or_train_or_upgradeto_or_summon(c, "melee_weapon", 1, 0)
+    w.door(c)
+        .build_or_train_or_upgradeto_or_summon("melee_weapon", 1, 0)
         .unwrap();
     assert_eq!(
         orders(&w, blacksmith),
@@ -237,7 +248,8 @@ fn a_summoning_aimed_by_the_player_is_aimed_at_its_first_unit() {
     let (mut w, c, _) = game();
     let s = home(&w, c);
     let priest = add(&mut w, "priest", c, s);
-    w.build_or_train_or_upgradeto_or_summon(c, "holy_vision", 1, 0)
+    w.door(c)
+        .build_or_train_or_upgradeto_or_summon("holy_vision", 1, 0)
         .unwrap();
     let first = w.pl(c).units[0];
     assert_eq!(
@@ -254,14 +266,14 @@ fn an_explorer_stops_before_it_upgrades() {
     w.take_order(footman, Request::auto_explore(), true, false, None)
         .unwrap();
     assert_eq!(orders(&w, footman), [words(&["auto_explore"])]);
-    w.order(
-        c,
-        1,
-        Sel::One("footman".into()),
-        Request::upgrade_to("knight"),
-        false,
-    )
-    .unwrap();
+    w.door(c)
+        .order(
+            1,
+            Sel::One("footman".into()),
+            Request::upgrade_to("knight"),
+            false,
+        )
+        .unwrap();
     assert!(
         orders(&w, footman).iter().all(|o| o[0] != "auto_explore"),
         "{:?}",

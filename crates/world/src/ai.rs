@@ -9,21 +9,27 @@
 //! when a unit waits for the right time, and when a map trigger changes the
 //! AI type.
 //!
-//! The AI reads and changes the world as the original's methods on the
-//! player do, in the same order, so that it draws the same random numbers.
-//! Where the original raises an exception, the work stops with an
-//! [`Abort`], which ends the player's update as in the original. Where the
-//! original would use the id of an interior (`None`), the AI stops too.
+//! A computer reads and acts only through its [`Door`], which offers what a
+//! human in its seat could know and do: outside its tests, this module
+//! never names the world.
+//! It reads and acts in the original's order, so that it draws the same
+//! random numbers. Where the original raises an exception, the work stops
+//! with an [`Abort`], which ends the player's update as in the original.
+//! Where the original would use the id of an interior (`None`), the AI
+//! stops too.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::entity::{CreatureKind, Entity, EntityId, Place, PlayerId, SquareId, Target};
-use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
+use crate::entity::{CreatureKind, Entity, EntityId, Place, SquareId, Target};
+use crate::nofloat::{floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
-use crate::pathfinding::Viewer;
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass, Role};
-use crate::world::{Abort, Res, TPlace, World};
+use crate::world::{Abort, Res, TPlace};
+
+mod door;
+
+use door::{Door, Seen};
 
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
@@ -79,13 +85,13 @@ enum Kind {
 }
 
 impl Kind {
-    fn matches(self, rules: &crate::Rules, e: &Entity) -> bool {
+    fn matches(self, rules: &crate::Rules, e: Seen) -> bool {
         match self {
             Kind::Meadow => e.is_meadow(),
             Kind::Deposit => e.is_deposit(),
             Kind::DepositOf(rt) => e
-                .deposit()
-                .is_some_and(|d| rules.ty(d.type_id).resource_type == Some(rt)),
+                .deposit_type()
+                .is_some_and(|t| rules.ty(t).resource_type == Some(rt)),
         }
     }
 }
@@ -132,6 +138,17 @@ pub(crate) struct Computer {
     lacking: Option<Vec<i64>>,
 }
 
+impl Computer {
+    /// Whether the units waiting on a square are strong enough.
+    fn time_has_come(&self, s: SquareId) -> bool {
+        let key = Some(Target::Square(s));
+        self.time_has_come
+            .iter()
+            .find(|(t, _)| same_opt(t, &key))
+            .is_some_and(|(_, v)| *v)
+    }
+}
+
 fn same_opt(a: &Option<Target>, b: &Option<Target>) -> bool {
     match (a, b) {
         (None, None) => true,
@@ -147,54 +164,50 @@ struct Enemies {
     used: bool,
 }
 
-impl World {
+/// The square of a place, or the original's error for another place.
+fn square_of(place: Option<Place>) -> Res<SquareId> {
+    match place {
+        Some(Place::Square(s)) => Ok(s),
+        Some(Place::Inside(_)) => Err(Abort::new("'Inside' object has no attribute 'exits'")),
+        None => Err(Abort::new("'NoneType' object has no attribute 'exits'")),
+    }
+}
+
+/// A place as the target of an order: only a square is one.
+fn square_target(place: Option<Place>) -> Res<TargetRef> {
+    match place {
+        Some(Place::Square(s)) => Ok(TargetRef::Square(s)),
+        _ => Err(Abort::new("the place has no id")),
+    }
+}
+
+impl Door<'_> {
     // state
-
-    fn cs(&self, p: PlayerId) -> &Computer {
-        self.pl(p)
-            .ai
-            .as_deref()
-            .expect("a scripted computer has its state")
-    }
-
-    fn csm(&mut self, p: PlayerId) -> &mut Computer {
-        self.plm(p)
-            .ai
-            .as_deref_mut()
-            .expect("a scripted computer has its state")
-    }
-
-    /// The state of a new scripted computer, with its AI type set.
-    pub(crate) fn new_computer(&mut self, p: PlayerId) -> Res {
-        self.plm(p).ai = Some(Box::default());
-        let t = self.pl(p).ai_type().unwrap_or("timers").to_owned();
-        self.computer_set_ai(p, &t)
-    }
 
     /// `set_ai`, after the AI type of the player changed: loads the script
     /// and resets the script's settings.
-    pub(crate) fn computer_set_ai(&mut self, p: PlayerId, ai_type: &str) -> Res {
-        if ai_type == "timers" || self.pl(p).ai.is_none() {
+    fn set_ai(&mut self, ai_type: &str) -> Res {
+        if ai_type == "timers" || !self.has_state() {
             return Ok(());
         }
-        let name = self.faction_ai_type(p, ai_type);
-        let Some(plan) = self.ai_scripts.get(&name).map(<[String]>::to_vec) else {
+        let name = self.faction_ai_type(ai_type);
+        let Some(plan) = self.script(&name).map(<[String]>::to_vec) else {
             return Err(Abort::new(format!("KeyError: '{name}'")));
         };
-        let time = self.time;
-        let c = self.csm(p);
+        let time = self.time();
+        let c = self.state_mut();
         c.plan = Some(plan);
         c.line_nb = 0;
         c.previous_linechange = time;
         c.watchdog = 0;
         c.constant_attacks = 0;
         c.research = 0;
-        self.update_effect_users_and_workers(p)
+        self.update_effect_users_and_workers()
     }
 
-    fn set_line_nb(&mut self, p: PlayerId, n: i64) {
-        let time = self.time;
-        let c = self.csm(p);
+    fn set_line_nb(&mut self, n: i64) {
+        let time = self.time();
+        let c = self.state_mut();
         c.line_nb = n;
         c.previous_linechange = time;
     }
@@ -202,94 +215,63 @@ impl World {
     // hooks
 
     /// `play`: what a computer player does during its update.
-    pub(crate) fn ai_play(&mut self, p: PlayerId) -> Res {
-        match self.pl(p).kind.clone() {
+    fn play(&mut self) -> Res {
+        match self.kind().clone() {
             PlayerKind::Human => Ok(()),
-            PlayerKind::Computer2 => self.computer2_play(p),
+            PlayerKind::Computer2 => self.computer2_play(),
             PlayerKind::Computer { ai_type } => {
-                if ai_type == "timers" || self.pl(p).ai.is_none() {
+                if ai_type == "timers" || !self.has_state() {
                     return Ok(());
                 }
-                self.computer_play(p)
+                self.computer_play()
             }
         }
     }
 
     /// `Computer.on_unit_attacked`: remembers where to retaliate.
-    pub(crate) fn computer_on_unit_attacked(
-        &mut self,
-        p: PlayerId,
-        unit: EntityId,
-        attacker: EntityId,
-    ) {
-        if self.pl(p).ai.is_none() {
+    fn on_unit_attacked(&mut self, unit: EntityId, attacker: EntityId) {
+        if !self.has_state() {
             return;
         }
-        let a = self.e(attacker);
-        if a.player().is_some_and(|ap| self.pl(p).allied.contains(&ap)) || !a.is_vulnerable() {
+        let a = self.attacker(attacker);
+        if a.owner.is_some_and(|ap| self.allied().contains(&ap)) || !a.is_vulnerable {
             return;
         }
-        let u = self.e(unit);
+        let Some(u) = self.unit(unit) else {
+            return;
+        };
         if u.orders().first().map(Order::keyword) == Some(Keyword::AutoExplore) {
             return;
         }
+        let place = u.place;
         if u.stats.is_a_building != 0 {
-            self.csm(p).sensible_building = Some(unit);
+            self.state_mut().sensible_building = Some(unit);
         }
-        let place = if self.pl(p).perception.contains(&attacker) {
-            self.e(attacker).place
-        } else {
-            self.e(unit).place
+        let place = match self.known(attacker).filter(|_| self.perceives(attacker)) {
+            Some(a) => a.place(),
+            None => place,
         };
-        let c = self.csm(p);
+        let c = self.state_mut();
         if !c.attacked_places.contains(&place) {
             c.attacked_places.push(place);
         }
     }
 
-    /// `Computer.time_has_come` without the cataclysm check: whether the
-    /// units waiting on a square are strong enough.
-    pub(crate) fn computer_time_has_come(&self, p: PlayerId, s: SquareId) -> bool {
-        let Some(c) = self.pl(p).ai.as_deref() else {
-            return false;
-        };
-        let key = Some(Target::Square(s));
-        c.time_has_come
-            .iter()
-            .find(|(t, _)| same_opt(t, &key))
-            .is_some_and(|(_, v)| *v)
-    }
-
     // Computer2
 
-    fn computer2_play(&mut self, p: PlayerId) -> Res {
-        let n = self.pl(p).resources.len();
-        let pl = self.plm(p);
-        pl.cheat_has_all = true;
-        pl.resources = vec![1000 * PRECISION; n];
-        let mut targets: Vec<(EntityId, Target)> = Vec::new();
-        for &o in &self.pl(p).perception {
-            targets.push((o, Target::Entity(o)));
-        }
-        for r in self.pl(p).memory.values() {
-            targets.push((
-                r.snapshot.id,
-                Target::Memory(crate::entity::MemoryRef {
-                    owner: p,
-                    snapshot: r.snapshot.clone(),
-                }),
-            ));
-        }
-        targets.retain(|(_, t)| !self.t_entity(t).is_some_and(Entity::is_exit));
-        targets.sort_by_key(|t| t.0);
-        let ids: Vec<EntityId> = targets.into_iter().map(|(i, _)| i).collect();
+    fn computer2_play(&mut self) -> Res {
+        self.grant_handicap();
+        let mut targets: Vec<EntityId> = self.perceived().map(Seen::id).collect();
+        targets.extend(self.remembered().map(|(r, _)| r.id()));
+        // Every id is perceived or remembered: the entity it shows is known.
+        targets.retain(|&o| !self.known(o).is_some_and(Seen::is_exit));
+        targets.sort();
         let mut i = 0;
-        while i < self.pl(p).units.len() {
-            let u = self.pl(p).units[i];
-            if self.e(u).orders().is_empty()
-                && let Some(order) = self.random_order(u, &ids)?
+        while let Some(&u) = self.units().get(i) {
+            if self.unit(u).is_some_and(|e| e.orders().is_empty())
+                && let Some(order) = self.random_order(u, &targets)?
             {
-                self.take_order(u, order, true, false, None)?;
+                self.give(u, order, true)?;
             }
             i += 1;
         }
@@ -325,17 +307,15 @@ impl World {
     fn random_order(&mut self, unit: EntityId, targets: &[EntityId]) -> Res<Option<Request>> {
         let orders = Self::computer2_orders();
         let i = self
-            .random
             .choice_index(orders.len())
-            .expect("the order list is not empty");
+            .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
         let kw = orders[i];
         let mut menu = self.order_menu(unit, kw, true);
-        if menu.is_empty() {
+        let Some(i) = self.choice_index(menu.len()) else {
             return Ok(None);
-        }
-        let i = self.random.choice_index(menu.len()).expect("not empty");
+        };
         let entry = menu.swap_remove(i);
-        let mut order = Request::listed(&self.rules, &entry);
+        let mut order = Request::listed(self.rules(), &entry);
         // Of the abilities, only those that ask for a target take one.
         let args = if kw == Keyword::Use {
             self.order_info(unit, kw, entry.type_id)
@@ -344,7 +324,7 @@ impl World {
             kw.nb_args() > 0
         };
         if args {
-            let Some(j) = self.random.choice_index(targets.len()) else {
+            let Some(j) = self.choice_index(targets.len()) else {
                 return Err(Abort::new("Cannot choose from an empty sequence"));
             };
             order = order.at(TargetRef::Entity(targets[j]));
@@ -354,49 +334,48 @@ impl World {
 
     // Computer: the turn
 
-    fn computer_play(&mut self, p: PlayerId) -> Res {
-        if !self.should_play_this_turn(p)? {
+    fn computer_play(&mut self) -> Res {
+        if !self.should_play_this_turn()? {
             return Ok(());
         }
-        self.csm(p).lacking = None;
-        self.update_effect_users_and_workers(p)?;
-        self.update_time_has_come(p);
-        self.send_workers_to_forgotten_building_sites(p)?;
-        self.idle_workers_gather(p)?;
-        self.send_explorer(p)?;
-        if !self.cs(p).attacked_places.is_empty() {
-            let places = self.cs(p).attacked_places.clone();
-            self.eventually_attack(p, places)?;
-            self.csm(p).attacked_places.clear();
-        } else if self.cs(p).constant_attacks != 0 {
+        self.state_mut().lacking = None;
+        self.update_effect_users_and_workers()?;
+        self.update_time_has_come();
+        self.send_workers_to_forgotten_building_sites()?;
+        self.idle_workers_gather()?;
+        self.send_explorer()?;
+        if !self.state().attacked_places.is_empty() {
+            let places = self.state().attacked_places.clone();
+            self.eventually_attack(places)?;
+            self.state_mut().attacked_places.clear();
+        } else if self.state().constant_attacks != 0 {
             let places = self
-                .pl(p)
-                .enemy_presence
+                .enemy_presence()
                 .iter()
                 .map(|&s| Some(Place::Square(s)))
                 .collect();
-            self.eventually_attack(p, places)?;
+            self.eventually_attack(places)?;
         } else {
-            self.defensive_routine(p)?;
+            self.defensive_routine()?;
         }
-        if self.cs(p).research != 0 {
-            self.idle_buildings_research(p)?;
+        if self.state().research != 0 {
+            self.idle_buildings_research()?;
         }
-        self.raise_dead(p)?;
-        self.build_a_warehouse_if_useful(p)?;
-        let peasant = self.rules.role_name(self.pl(p).faction, Role::Worker);
+        self.raise_dead()?;
+        self.build_a_warehouse_if_useful()?;
+        let peasant = self.rules().role_name(self.faction(), Role::Worker);
         // A recursion error here ends the player's update with a warning, as
         // the original's ends at the world's catch.
-        self.ai_get(p, NB_WORKERS_TO_GET, &peasant)?;
-        let planned = match self.follow_plan(p) {
+        self.get(NB_WORKERS_TO_GET, &peasant)?;
+        let planned = match self.follow_plan() {
             // The original catches a recursion error of its plan here, and
             // goes on with the next line of the plan at its next turn.
             Err(Abort(m)) if m == RECURSION_ERROR => {
-                let ai_type = match &self.pl(p).kind {
+                let ai_type = match self.kind() {
                     PlayerKind::Computer { ai_type } => ai_type.clone(),
                     _ => String::new(),
                 };
-                let c = self.cs(p);
+                let c = self.state();
                 let line = usize::try_from(c.line_nb)
                     .ok()
                     .and_then(|i| c.plan.as_ref()?.get(i).cloned())
@@ -405,54 +384,51 @@ impl World {
                 self.warn(format!(
                     "recursion error with {ai_type}; current ai.txt line is: {line}"
                 ));
-                self.set_line_nb(p, n);
+                self.set_line_nb(n);
                 Ok(())
             }
             other => other,
         };
         planned?;
-        self.gather_what_is_lacking(p)
+        self.gather_what_is_lacking()
     }
 
     /// The cpu intensive players play in turns, one tenth of them each turn.
-    fn should_play_this_turn(&self, p: PlayerId) -> Res<bool> {
-        let players = self.cpu_intensive_players();
+    fn should_play_this_turn(&self) -> Res<bool> {
+        let players = self.planning_computers();
         let i = players
             .iter()
-            .position(|&x| x == p)
+            .position(|&x| x == self.me())
             .ok_or_else(|| Abort::new("x not in list"))?;
         let turn = (i * 10 / players.len()) as i64;
         Ok(self.turn().rem_euclid(10) == turn)
     }
 
     /// What the player's faction uses instead of the class `name`.
-    fn equivalent(&self, p: PlayerId, name: &str) -> String {
-        let faction = self.pl(p).faction;
-        match self.rules.type_id(name) {
-            Some(t) => self
-                .rules
-                .ty(self.rules.equivalent(faction, t))
-                .name
-                .clone(),
-            None => self.rules.equivalent_name(faction, name),
+    fn equivalent(&self, name: &str) -> String {
+        let faction = self.faction();
+        let rules = self.rules();
+        match rules.type_id(name) {
+            Some(t) => rules.ty(rules.equivalent(faction, t)).name.clone(),
+            None => rules.equivalent_name(faction, name),
         }
     }
 
-    fn follow_plan(&mut self, p: PlayerId) -> Res {
-        let Some(plan) = self.cs(p).plan.clone() else {
+    fn follow_plan(&mut self) -> Res {
+        let Some(plan) = self.state().plan.clone() else {
             return Ok(());
         };
         if plan.is_empty() {
             return Ok(());
         }
-        let c = self.cs(p);
-        if c.watchdog != 0 && self.time > c.previous_linechange + c.watchdog * 1000 {
+        let c = self.state();
+        if c.watchdog != 0 && self.time() > c.previous_linechange + c.watchdog * 1000 {
             let n = c.line_nb + 1;
-            self.set_line_nb(p, n);
+            self.set_line_nb(n);
         }
-        let n = self.cs(p).line_nb.rem_euclid(plan.len() as i64);
-        self.set_line_nb(p, n);
-        let line_nb = self.cs(p).line_nb;
+        let n = self.state().line_nb.rem_euclid(plan.len() as i64);
+        self.set_line_nb(n);
+        let line_nb = self.state().line_nb;
         let cmd: Vec<&str> = plan[line_nb as usize].split_whitespace().collect();
         let Some(&first) = cmd.first() else {
             return Ok(());
@@ -476,15 +452,15 @@ impl World {
                     self.warn(format!("goto: wrong destination: {dest}"));
                     line_nb + 1
                 };
-                self.set_line_nb(p, n);
+                self.set_line_nb(n);
             }
             "label" => {
-                self.set_line_nb(p, line_nb + 1);
+                self.set_line_nb(line_nb + 1);
                 arg(1)?;
             }
             "goto_random" => {
                 let choices = &cmd[1..];
-                let Some(i) = self.random.choice_index(choices.len()) else {
+                let Some(i) = self.choice_index(choices.len()) else {
                     return Err(Abort::new("Cannot choose from an empty sequence"));
                 };
                 let dest = choices[i];
@@ -495,21 +471,21 @@ impl World {
                         line_nb + 1
                     }
                 };
-                self.set_line_nb(p, n);
+                self.set_line_nb(n);
             }
             "attack" => {
-                self.csm(p).constant_attacks = 1;
-                self.set_line_nb(p, line_nb + 1);
+                self.state_mut().constant_attacks = 1;
+                self.set_line_nb(line_nb + 1);
             }
             "watchdog" | "constant_attacks" | "research" => {
                 let v = py_int(arg(1)?).map_err(|_| Abort::new("invalid literal for int()"))?;
-                let c = self.csm(p);
+                let c = self.state_mut();
                 match first {
                     "watchdog" => c.watchdog = v,
                     "constant_attacks" => c.constant_attacks = v,
                     _ => c.research = v,
                 }
-                self.set_line_nb(p, line_nb + 1);
+                self.set_line_nb(line_nb + 1);
             }
             "get" => {
                 let mut n = 1;
@@ -517,9 +493,9 @@ impl World {
                 for &w in &cmd[1..] {
                     if is_digits(w) {
                         n = py_int(w).map_err(|_| Abort::new("invalid literal for int()"))?;
-                    } else if self.rules.has_class(w) {
-                        let t = self.equivalent(p, w);
-                        if !self.ai_get(p, n, &t)? {
+                    } else if self.rules().has_class(w) {
+                        let t = self.equivalent(w);
+                        if !self.get(n, &t)? {
                             done = false;
                             break;
                         }
@@ -530,13 +506,13 @@ impl World {
                     }
                 }
                 if done {
-                    let line_nb = self.cs(p).line_nb;
-                    self.set_line_nb(p, line_nb + 1);
+                    let line_nb = self.state().line_nb;
+                    self.set_line_nb(line_nb + 1);
                 }
             }
             other => {
                 self.warn(format!("unknown command: '{other}' (in ai.txt)"));
-                self.set_line_nb(p, line_nb + 1);
+                self.set_line_nb(line_nb + 1);
             }
         }
         Ok(())
@@ -544,7 +520,7 @@ impl World {
 
     // Computer: units and their tasks
 
-    pub(crate) fn update_effect_users_and_workers(&mut self, p: PlayerId) -> Res {
+    fn update_effect_users_and_workers(&mut self) -> Res {
         let mut workers = Vec::new();
         let mut gathered: Vec<(Option<Target>, i64)> = Vec::new();
         let mut sites = Vec::new();
@@ -553,8 +529,8 @@ impl World {
         let mut cataclysm = Vec::new();
         let mut detector = Vec::new();
         let mut summon = Vec::new();
-        for u in self.pl(p).units.clone() {
-            let e = self.e(u);
+        for u in self.units().to_vec() {
+            let Some(e) = self.unit(u) else { continue };
             match e.creature().map(|c| &c.kind) {
                 Some(CreatureKind::Worker { .. }) => {
                     workers.push(u);
@@ -574,11 +550,16 @@ impl World {
                 )
                 | None => {}
             }
-            for a in self.can_use(u) {
+            let abilities = e
+                .type_id()
+                .map(|t| self.rules().ty(t).can_use.clone())
+                .unwrap_or_default();
+            for a in abilities {
                 if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
                     continue;
                 }
-                let Some(effect) = self.rules.get_words(&a, "effect") else {
+                let rules = self.rules();
+                let Some(effect) = rules.get_words(&a, "effect") else {
                     continue;
                 };
                 match effect.first().map(String::as_str) {
@@ -587,13 +568,13 @@ impl World {
                     Some("teleportation") => teleportation.push((u, a.clone())),
                     Some("summon") => {
                         for item in &effect[1..] {
-                            if self.rules.get_is_truthy(item, "harm_level") {
+                            if rules.get_is_truthy(item, "harm_level") {
                                 cataclysm.push((u, a.clone()));
                             }
-                            if self.rules.get_is_truthy(item, "is_a_detector") {
+                            if rules.get_is_truthy(item, "is_a_detector") {
                                 detector.push((u, a.clone()));
                             }
-                            if self.rules.get_is_truthy(item, "damage") {
+                            if rules.get_is_truthy(item, "damage") {
                                 summon.push((u, a.clone()));
                             }
                         }
@@ -602,7 +583,7 @@ impl World {
                 }
             }
         }
-        let c = self.csm(p);
+        let c = self.state_mut();
         c.workers = workers;
         c.gathered_deposits = gathered;
         c.building_sites = sites;
@@ -614,11 +595,11 @@ impl World {
         Ok(())
     }
 
-    fn update_time_has_come(&mut self, p: PlayerId) {
+    fn update_time_has_come(&mut self) {
         // (target, menace, units), in the order the targets first appear
         let mut waiting: Vec<(Option<Target>, i64, Vec<EntityId>)> = Vec::new();
-        for &u in &self.pl(p).units {
-            let e = self.e(u);
+        for &u in self.units() {
+            let Some(e) = self.unit(u) else { continue };
             if let Some(Order {
                 kind: OrderKind::Wait { aim, .. },
                 ..
@@ -639,22 +620,20 @@ impl World {
         let thc: Vec<(Option<Target>, bool)> = waiting
             .iter()
             .map(|(t, _, us)| {
-                let m = self.target_enemy_menace(p, t.as_ref());
-                (t.clone(), self.is_powerful_enough(p, us, m))
+                let m = self.target_enemy_menace(t.as_ref());
+                (t.clone(), self.is_powerful_enough(us, m))
             })
             .collect();
-        self.csm(p).time_has_come = thc;
-        let units = self.pl(p).units.clone();
+        self.state_mut().time_has_come = thc;
+        let units = self.units().to_vec();
         let mut cancel: BTreeSet<EntityId> = BTreeSet::new();
         for (place, _, _) in &waiting {
-            let m = self.target_enemy_menace(p, place.as_ref());
-            if !self.is_powerful_enough(p, &units, m) {
+            let m = self.target_enemy_menace(place.as_ref());
+            if !self.is_powerful_enough(&units, m) {
                 for &u in &units {
-                    let hit = self
-                        .e(u)
-                        .orders()
-                        .iter()
-                        .any(|o| matches!(&o.kind, OrderKind::Wait { aim, .. } if same_opt(&aim.target, place)));
+                    let hit = self.unit(u).is_some_and(|e| {
+                        e.orders().iter().any(|o| matches!(&o.kind, OrderKind::Wait { aim, .. } if same_opt(&aim.target, place)))
+                    });
                     if hit {
                         cancel.insert(u);
                     }
@@ -664,74 +643,75 @@ impl World {
         // The original walks a set of units: the order does not change the
         // result, so the id order is used.
         for u in cancel {
-            self.cancel_all_orders(u, true);
+            self.cancel_orders(u);
         }
     }
 
-    fn target_enemy_menace(&self, p: PlayerId, t: Option<&Target>) -> i64 {
+    fn target_enemy_menace(&self, t: Option<&Target>) -> i64 {
         match t {
-            Some(Target::Square(s)) => self.enemy_menace(p, *s),
+            Some(Target::Square(s)) => self.enemy_menace(*s),
             _ => 0,
         }
     }
 
-    fn place_enemy_menace(&self, p: PlayerId, place: Option<Place>) -> i64 {
+    fn place_enemy_menace(&self, place: Option<Place>) -> i64 {
         match place {
-            Some(Place::Square(s)) => self.enemy_menace(p, s),
+            Some(Place::Square(s)) => self.enemy_menace(s),
             _ => 0,
         }
     }
 
-    fn is_powerful_enough(&self, p: PlayerId, units: &[EntityId], enemy_menace: i64) -> bool {
+    fn is_powerful_enough(&self, units: &[EntityId], enemy_menace: i64) -> bool {
         // sometimes the food limit prevents units with more than 1 food cost
-        let ratio = if self.pl(p).used_food < self.food_limit() - 5 {
+        let ratio = if self.used_food() < self.food_limit() - 5 {
             180
         } else {
             100
         };
         let menace: i64 = units
             .iter()
-            .map(|&u| self.e(u))
+            .filter_map(|&u| self.unit(u))
             .filter(|e| e.stats.speed > 0 && e.class() == EntityClass::Soldier)
             .map(Entity::menace)
             .sum();
         menace > floordiv(enemy_menace * ratio, 100)
     }
 
-    fn send_workers_to_forgotten_building_sites(&mut self, p: PlayerId) -> Res {
-        for site in self.cs(p).building_sites.clone() {
-            let served = self.cs(p).workers.iter().any(|&u| {
-                self.e(u)
-                    .orders()
-                    .first()
+    fn send_workers_to_forgotten_building_sites(&mut self) -> Res {
+        for site in self.state().building_sites.clone() {
+            let served = self.state().workers.iter().any(|&u| {
+                self.unit(u)
+                    .and_then(|e| e.orders().first())
                     .is_some_and(|o| matches!(o.target(), Some(Target::Entity(t)) if *t == site))
             });
             if !served {
                 let repair = Request::repair(TargetRef::Entity(site));
-                self.order(p, 4, Sel::Workers, repair, true)?;
+                self.order(4, Sel::Workers, repair, true)?;
                 break;
             }
         }
         Ok(())
     }
 
-    fn idle_workers_gather(&mut self, p: PlayerId) -> Res {
+    fn idle_workers_gather(&mut self) -> Res {
         let idle: Vec<EntityId> = self
-            .cs(p)
+            .state()
             .workers
             .iter()
             .copied()
-            .filter(|&u| self.e(u).orders().is_empty())
+            .filter(|&u| self.unit(u).is_some_and(|e| e.orders().is_empty()))
             .collect();
         for u in idle {
-            let place = self.e(u).place;
-            let Some(deposit) = self.choose(p, Kind::Deposit, None, place, true)? else {
+            let place = self.unit(u).and_then(|e| e.place);
+            let Some(deposit) = self.choose(Kind::Deposit, None, place, true)? else {
                 return Ok(());
             };
-            let id = self.t_entity(&deposit).expect("an entity").id;
+            let Some(id) = target_id(&deposit) else {
+                return Ok(());
+            };
             let gather = Request::gather(TargetRef::Entity(id));
-            self.take_order(u, gather, true, false, None)?;
-            add_count(&mut self.csm(p).gathered_deposits, &Some(deposit), 1);
+            self.give(u, gather, true)?;
+            add_count(&mut self.state_mut().gathered_deposits, &Some(deposit), 1);
         }
         Ok(())
     }
@@ -740,18 +720,17 @@ impl World {
     /// lacks and the fewest workers gather, from the resource it does not
     /// lack that the most workers gather, leaving that one a gatherer: one
     /// worker a turn, to a deposit it knows and can walk to safely.
-    fn gather_what_is_lacking(&mut self, p: PlayerId) -> Res {
-        let Some(cost) = self.cs(p).lacking.clone() else {
+    fn gather_what_is_lacking(&mut self) -> Res {
+        let Some(cost) = self.state().lacking.clone() else {
             return Ok(());
         };
-        let lacking = self.missing_resources(p, &cost)?;
-        if lacking.is_empty() {
+        let lacking = self.missing_resources(&cost)?;
+        let Some(&first_lacking) = lacking.first() else {
             return Ok(());
-        }
-        let mut gatherers: Vec<Vec<(EntityId, Target)>> =
-            vec![Vec::new(); self.pl(p).resources.len()];
-        for &u in &self.cs(p).workers {
-            let e = self.e(u);
+        };
+        let mut gatherers: Vec<Vec<(EntityId, Target)>> = vec![Vec::new(); self.resources().len()];
+        for &u in &self.state().workers {
+            let Some(e) = self.unit(u) else { continue };
             if let Some(Order {
                 kind: OrderKind::Gather { aim, .. },
                 ..
@@ -764,56 +743,60 @@ impl World {
                 g.push((u, t.clone()));
             }
         }
-        let to = *lacking
+        let count = |r: usize| gatherers.get(r).map_or(0, Vec::len);
+        let to = lacking
             .iter()
-            .min_by_key(|&&r| gatherers[r].len())
-            .expect("not empty");
+            .copied()
+            .min_by_key(|&r| count(r))
+            .unwrap_or(first_lacking);
         let Some(from) = (0..gatherers.len())
             .filter(|r| !lacking.contains(r))
-            .max_by_key(|&r| (gatherers[r].len(), std::cmp::Reverse(r)))
+            .max_by_key(|&r| (count(r), std::cmp::Reverse(r)))
         else {
             return Ok(());
         };
-        if gatherers[from].len() <= 1 {
-            return Ok(());
-        }
-        let (u, old) = gatherers[from][0].clone();
-        let place = self.e(u).place;
-        let Some(deposit) = self.choose(p, Kind::DepositOf(to as i64), None, place, true)? else {
+        let Some(&[(u, ref old), _, ..]) = gatherers.get(from).map(Vec::as_slice) else {
             return Ok(());
         };
-        let start = Self::square_of(place)?;
-        let dest = Self::square_of(self.t_place_of(&deposit))?;
-        if self.shortest_path_distance_to(start, dest, Some(p), AirGround::Ground, true)?
-            == crate::INF
-        {
+        let old = old.clone();
+        let place = self.unit(u).and_then(|e| e.place);
+        let Some(deposit) = self.choose(Kind::DepositOf(to as i64), None, place, true)? else {
+            return Ok(());
+        };
+        let start = square_of(place)?;
+        let dest = square_of(self.target_place_of(&deposit))?;
+        if self.distance(start, dest, true)? == crate::INF {
             return Ok(());
         }
-        let id = self.t_entity(&deposit).expect("an entity").id;
-        self.take_order(u, Request::gather(TargetRef::Entity(id)), true, false, None)?;
-        let gathered = &mut self.csm(p).gathered_deposits;
+        let Some(id) = target_id(&deposit) else {
+            return Ok(());
+        };
+        self.give(u, Request::gather(TargetRef::Entity(id)), true)?;
+        let gathered = &mut self.state_mut().gathered_deposits;
         add_count(gathered, &Some(old), -1);
         add_count(gathered, &Some(deposit), 1);
         Ok(())
     }
 
     fn value_as_an_explorer(&self, u: EntityId) -> (bool, i64, i64) {
-        let e = self.e(u);
+        let Some(e) = self.unit(u) else {
+            return (false, 0, 0);
+        };
         let hp = e.creature().map_or(0, |c| c.hp);
         (e.airground_type == AirGround::Air, e.stats.speed, hp)
     }
 
     /// `best_explorers`: the mobile units not upgrading, best first.
-    pub(crate) fn best_explorers(&self, p: PlayerId) -> Vec<EntityId> {
+    fn best_explorers(&self) -> Vec<EntityId> {
         let mut v: Vec<EntityId> = self
-            .pl(p)
-            .units
+            .units()
             .iter()
             .copied()
             .filter(|&u| {
-                let e = self.e(u);
-                e.stats.speed > 0
-                    && e.orders().first().map(Order::keyword) != Some(Keyword::UpgradeTo)
+                self.unit(u).is_some_and(|e| {
+                    e.stats.speed > 0
+                        && e.orders().first().map(Order::keyword) != Some(Keyword::UpgradeTo)
+                })
             })
             .collect();
         v.sort_by(|&a, &b| {
@@ -824,83 +807,65 @@ impl World {
         v
     }
 
-    fn send_explorer(&mut self, p: PlayerId) -> Res {
-        let Some(&best) = self.best_explorers(p).first() else {
+    fn is_exploring(&self, u: EntityId) -> bool {
+        self.unit(u)
+            .and_then(|e| e.orders().first())
+            .map(Order::keyword)
+            == Some(Keyword::AutoExplore)
+    }
+
+    fn send_explorer(&mut self) -> Res {
+        let Some(&best) = self.best_explorers().first() else {
             return Ok(());
         };
-        let first_is = |w: &World, u: EntityId| {
-            w.e(u).orders().first().map(Order::keyword) == Some(Keyword::AutoExplore)
-        };
-        if first_is(self, best) {
+        if self.is_exploring(best) {
             return Ok(());
         }
-        let explorer = self
-            .pl(p)
-            .units
-            .iter()
-            .copied()
-            .find(|&u| first_is(self, u));
+        let explorer = self.units().iter().copied().find(|&u| self.is_exploring(u));
         if let Some(explorer) = explorer {
             if self.value_as_an_explorer(explorer) == self.value_as_an_explorer(best) {
                 return Ok(());
             }
-            let first = self.pl(p).units[0];
-            let t = self.square_target(self.e(first).place)?;
-            self.take_order(explorer, Request::go(t), true, false, None)?;
+            let first = self.units().first().copied();
+            let t = square_target(first.and_then(|f| self.unit(f)).and_then(|e| e.place))?;
+            self.give(explorer, Request::go(t), true)?;
         }
-        self.take_order(best, Request::auto_explore(), true, false, None)
+        self.give(best, Request::auto_explore(), true)
     }
 
     /// `_idle_fighters`: soldiers without orders, or only going to a square
     /// without enemies.
-    fn idle_fighters(&self, p: PlayerId) -> Vec<EntityId> {
-        self.pl(p)
-            .units
+    fn idle_fighters(&self) -> Vec<EntityId> {
+        self.units()
             .iter()
             .copied()
             .filter(|&u| {
-                let e = self.e(u);
-                e.class() == EntityClass::Soldier
-                    && (e.orders().is_empty()
-                        || e.orders().len() == 1
-                            && matches!(&e.orders()[0].kind, OrderKind::Go { aim, .. }
-                                if !matches!(&aim.target,
-                                    Some(Target::Square(s)) if self.pl(p).enemy_presence.contains(s))))
+                self.unit(u).is_some_and(|e| {
+                    e.class() == EntityClass::Soldier
+                        && (e.orders().is_empty()
+                            || e.orders().len() == 1
+                                && matches!(&e.orders()[0].kind, OrderKind::Go { aim, .. }
+                                    if !matches!(&aim.target,
+                                        Some(Target::Square(s)) if self.enemy_presence().contains(s))))
+                })
             })
             .collect()
     }
 
-    fn friendly_presence(&self, p: PlayerId, place: Option<Place>) -> bool {
-        matches!(place, Some(Place::Square(s)) if self.pl(p).places_with_friends.contains(&s))
+    fn friendly_presence(&self, place: Option<Place>) -> bool {
+        matches!(place, Some(Place::Square(s)) if self.places_with_friends().contains(&s))
     }
 
-    /// The id of a square, as an order argument.
-    /// A place as the target of an order: only a square is one.
-    fn square_target(&self, place: Option<Place>) -> Res<TargetRef> {
-        match place {
-            Some(Place::Square(s)) => Ok(TargetRef::Square(s)),
-            _ => Err(Abort::new("the place has no id")),
-        }
-    }
-
-    fn square_of(place: Option<Place>) -> Res<SquareId> {
-        match place {
-            Some(Place::Square(s)) => Ok(s),
-            Some(Place::Inside(_)) => Err(Abort::new("'Inside' object has no attribute 'exits'")),
-            None => Err(Abort::new("'NoneType' object has no attribute 'exits'")),
-        }
-    }
-
-    fn eventually_attack(&mut self, p: PlayerId, places: Vec<Option<Place>>) -> Res {
-        let units = self.idle_fighters(p);
+    fn eventually_attack(&mut self, places: Vec<Option<Place>>) -> Res {
+        let units = self.idle_fighters();
         if units.is_empty() {
             return Ok(());
         }
         let mut places = places;
-        places.sort_by_key(|&pl| self.place_enemy_menace(p, pl));
+        places.sort_by_key(|&pl| self.place_enemy_menace(pl));
         for &place in &places {
-            if self.units_should_attack(p, &units, place)? {
-                return self.send_units(p, units, place);
+            if self.units_should_attack(&units, place)? {
+                return self.send_units(units, place);
             }
         }
         let (Some(&first), Some(&last)) = (places.first(), places.last()) else {
@@ -910,78 +875,69 @@ impl World {
             .iter()
             .copied()
             .filter(|&u| {
-                let e = self.e(u);
-                e.time_limit().is_some_and(|t| t != 0) && e.stats.speed != 0
+                self.unit(u)
+                    .is_some_and(|e| e.time_limit().is_some_and(|t| t != 0) && e.stats.speed != 0)
             })
             .collect();
         if !temp.is_empty() {
-            self.send_units(p, temp, first)?;
+            self.send_units(temp, first)?;
         }
-        if self.friendly_presence(p, last) {
+        if self.friendly_presence(last) {
             return Ok(());
         }
         let mut enemies = Enemies {
             place: last,
             used: false,
         };
-        for (u, a) in self.cs(p).cataclysm_users.clone() {
-            if !self.e(u).orders().is_empty() || !self.cataclysm_is_efficient(p, &a, &mut enemies) {
+        for (u, a) in self.state().cataclysm_users.clone() {
+            let busy = self.unit(u).is_none_or(|e| !e.orders().is_empty());
+            if busy || !self.cataclysm_is_efficient(&a, &mut enemies) {
                 continue;
             }
-            let start = Self::square_of(self.e(u).place)?;
-            let path = self.shortest_path_places(
-                start,
-                Self::square_of(last)?,
-                None,
-                AirGround::Ground,
-                false,
-            )?;
-            if path.len() > 2 {
-                let before = TargetRef::Square(path[path.len() - 2]);
-                self.take_order(u, Request::go(before), false, false, None)?;
-            }
-            let t = self.square_target(last)?;
-            let cataclysm = Request::use_ability(a.clone()).at(t);
-            self.take_order(u, cataclysm, false, false, None)?;
-            if self
-                .e(u)
-                .orders()
-                .first()
-                .is_some_and(|o| !o.is_impossible())
+            let start = square_of(self.unit(u).and_then(|e| e.place))?;
+            let path = self.path_through_walls(start, square_of(last)?)?;
+            if let [.., before, _] = path[..]
+                && path.len() > 2
             {
-                let t = self.square_target(self.e(u).place)?;
-                self.take_order(u, Request::go(t), false, false, None)?;
+                self.give(u, Request::go(TargetRef::Square(before)), false)?;
+            }
+            let t = square_target(last)?;
+            let cataclysm = Request::use_ability(a.clone()).at(t);
+            self.give(u, cataclysm, false)?;
+            if self.first_order_is_possible(u) {
+                let t = square_target(self.unit(u).and_then(|e| e.place))?;
+                self.give(u, Request::go(t), false)?;
             }
         }
         Ok(())
     }
 
+    /// Whether the first order of the unit has not failed.
+    fn first_order_is_possible(&self, u: EntityId) -> bool {
+        self.unit(u)
+            .and_then(|e| e.orders().first())
+            .is_some_and(|o| !o.is_impossible())
+    }
+
     /// `_cataclysm_is_efficient`: the ability summons something harmful
     /// to one of the enemies.
-    fn cataclysm_is_efficient(&mut self, p: PlayerId, a: &str, enemies: &mut Enemies) -> bool {
+    fn cataclysm_is_efficient(&mut self, a: &str, enemies: &mut Enemies) -> bool {
         let mut names: BTreeSet<String> = BTreeSet::new();
         if !enemies.used {
             enemies.used = true;
-            let pl = self.pl(p);
-            for &o in &pl.perception {
-                let e = self.e(o);
-                if e.place == enemies.place && self.player_is_an_enemy_of_entity(p, e) {
-                    names.insert(e.type_name.to_string());
-                }
-            }
-            for r in pl.memory.values() {
-                let e = &r.snapshot;
-                if e.place == enemies.place && self.player_is_an_enemy_of_entity(p, e) {
-                    names.insert(e.type_name.to_string());
+            let known = self.perceived().chain(self.remembered().map(|(r, _)| r));
+            for e in known {
+                if e.place() == enemies.place && self.is_an_enemy(e) {
+                    names.insert(e.type_name().to_owned());
                 }
             }
         }
-        let Some(effect) = self.rules.get_words(a, "effect") else {
+        let Some(effect) = self.rules().get_words(a, "effect") else {
             return false;
         };
         if effect.first().map(String::as_str) == Some("summon") {
             for item in &effect[1..] {
-                if self.rules.get_is_truthy(item, "harm_level") {
+                if self.rules().get_is_truthy(item, "harm_level") {
                     for t in &names {
                         if self.can_harm(item, t) {
                             return true;
@@ -993,57 +949,37 @@ impl World {
         false
     }
 
-    fn units_should_attack(
-        &mut self,
-        p: PlayerId,
-        units: &[EntityId],
-        place: Option<Place>,
-    ) -> Res<bool> {
-        let m = self.place_enemy_menace(p, place);
-        if !self.is_powerful_enough(p, units, m) {
+    fn units_should_attack(&mut self, units: &[EntityId], place: Option<Place>) -> Res<bool> {
+        let m = self.place_enemy_menace(place);
+        if !self.is_powerful_enough(units, m) {
             return Ok(false);
         }
-        let start = Self::square_of(self.e(units[0]).place)?;
-        let path = self.shortest_path_places(
-            start,
-            Self::square_of(place)?,
-            None,
-            AirGround::Ground,
-            false,
-        )?;
-        if path.is_empty() {
-            Ok(false)
-        } else if path.len() <= 2 {
-            Ok(true)
-        } else {
-            let before = path[path.len() - 2];
-            Ok(self
-                .shortest_path_to(start, before, Some(p), AirGround::Ground, true)?
-                .is_some())
+        let first = units.first().and_then(|&u| self.unit(u));
+        let start = square_of(first.and_then(|e| e.place))?;
+        let path = self.path_through_walls(start, square_of(place)?)?;
+        match path[..] {
+            [] => Ok(false),
+            [_] | [_, _] => Ok(true),
+            [.., before, _] => self.has_a_safe_path(start, before),
         }
     }
 
-    fn send_units(&mut self, p: PlayerId, units: Vec<EntityId>, place: Option<Place>) -> Res {
+    fn send_units(&mut self, units: Vec<EntityId>, place: Option<Place>) -> Res {
         let Some(place) = place else {
             return Ok(());
         };
         let units: Vec<EntityId> = units
             .into_iter()
-            .filter(|&u| self.e(u).place != Some(place))
+            .filter(|&u| self.unit(u).and_then(|e| e.place) != Some(place))
             .collect();
         for &u in &units {
-            self.cancel_all_orders(u, true);
+            self.cancel_orders(u);
         }
         let mut used_teleportation = false;
-        for (u, a) in self.cs(p).teleportation_users.clone() {
-            let t = self.square_target(Some(place))?;
-            self.take_order(u, Request::use_ability(a).at(t), true, false, None)?;
-            if self
-                .e(u)
-                .orders()
-                .first()
-                .is_some_and(|o| !o.is_impossible())
-            {
+        for (u, a) in self.state().teleportation_users.clone() {
+            let t = square_target(Some(place))?;
+            self.give(u, Request::use_ability(a).at(t), true)?;
+            if self.first_order_is_possible(u) {
                 used_teleportation = true;
             }
         }
@@ -1052,51 +988,47 @@ impl World {
             used: false,
         };
         for u in units {
-            let start = Self::square_of(self.e(u).place)?;
-            let path = self.shortest_path_places(
-                start,
-                Self::square_of(Some(place))?,
-                None,
-                AirGround::Ground,
-                false,
-            )?;
-            if !used_teleportation && path.len() > 2 {
-                let before = TargetRef::Square(path[path.len() - 2]);
-                self.take_order(u, Request::go(before), false, false, None)?;
-                if !self.friendly_presence(p, Some(place)) {
-                    for (u_, a) in self.cs(p).cataclysm_users.clone() {
-                        if u_ == u && self.cataclysm_is_efficient(p, &a, &mut enemies) {
-                            let t = self.square_target(Some(place))?;
+            let start = square_of(self.unit(u).and_then(|e| e.place))?;
+            let path = self.path_through_walls(start, square_of(Some(place))?)?;
+            if !used_teleportation
+                && let [.., before, _] = path[..]
+                && path.len() > 2
+            {
+                self.give(u, Request::go(TargetRef::Square(before)), false)?;
+                if !self.friendly_presence(Some(place)) {
+                    for (u_, a) in self.state().cataclysm_users.clone() {
+                        if u_ == u && self.cataclysm_is_efficient(&a, &mut enemies) {
+                            let t = square_target(Some(place))?;
                             let cataclysm = Request::use_ability(a).at(t);
-                            self.take_order(u, cataclysm, false, false, None)?;
+                            self.give(u, cataclysm, false)?;
                         }
                     }
                 }
             }
-            for (u_, a) in self.cs(p).summon_users.clone() {
+            for (u_, a) in self.state().summon_users.clone() {
                 if u_ == u {
-                    let t = self.square_target(Some(place))?;
-                    self.take_order(u, Request::use_ability(a).at(t), false, false, None)?;
+                    let t = square_target(Some(place))?;
+                    self.give(u, Request::use_ability(a).at(t), false)?;
                 }
             }
-            for (u_, a) in self.cs(p).detector_users.clone() {
+            for (u_, a) in self.state().detector_users.clone() {
                 if u_ == u {
-                    let t = self.square_target(Some(place))?;
-                    self.take_order(u, Request::use_ability(a).at(t), false, false, None)?;
+                    let t = square_target(Some(place))?;
+                    self.give(u, Request::use_ability(a).at(t), false)?;
                 }
             }
-            let t = self.square_target(Some(place))?;
-            self.take_order(u, Request::go(t), false, false, None)?;
+            let t = square_target(Some(place))?;
+            self.give(u, Request::go(t), false)?;
         }
         Ok(())
     }
 
     /// `_builders_place`: where most workers are; on a tie, the square with
-    /// the greatest id, before a place inside something.
-    fn builders_place(&self, p: PlayerId) -> Res<Option<Place>> {
+    /// the greatest number, before a place inside something.
+    fn builders_place(&self) -> Res<Option<Place>> {
         let mut starts: Vec<(Option<Place>, i64)> = Vec::new();
-        for &u in &self.cs(p).workers {
-            let place = self.e(u).place;
+        for &u in &self.state().workers {
+            let place = self.unit(u).and_then(|e| e.place);
             match starts.iter_mut().find(|(pl, _)| *pl == place) {
                 Some(s) => s.1 += 1,
                 None => starts.push((place, 1)),
@@ -1110,7 +1042,7 @@ impl World {
             .into_iter()
             .max_by(|a, b| {
                 let id = |pl: &Option<Place>| match pl {
-                    Some(Place::Square(s)) => Some(self.square(*s).id),
+                    Some(Place::Square(s)) => Some(self.square_number(*s)),
                     _ => None,
                 };
                 id(a).cmp(&id(b))
@@ -1118,68 +1050,78 @@ impl World {
             .flatten())
     }
 
-    fn defensive_routine(&mut self, p: PlayerId) -> Res {
-        if let Some(b) = self.cs(p).sensible_building
-            && !self.pl(p).units.contains(&b)
+    fn defensive_routine(&mut self) -> Res {
+        if let Some(b) = self.state().sensible_building
+            && !self.units().contains(&b)
         {
-            self.csm(p).sensible_building = None;
+            self.state_mut().sensible_building = None;
         }
         // regroup at a valuable place (and get healed or repaired)
-        let fighters = self.idle_fighters(p);
-        let place = self.builders_place(p)?;
-        self.send_units(p, fighters, place)?;
+        let fighters = self.idle_fighters();
+        let place = self.builders_place()?;
+        self.send_units(fighters, place)?;
         // build static defenses
-        let gate = self.rules.roles.get(Role::Gate);
-        if let (Some(b), Some(gate)) = (self.cs(p).sensible_building, gate) {
-            let gate_cost = self.rules.ty(gate).cost.clone();
-            let e = self.e(b);
-            let s = Self::square_of(e.place)?;
+        let gate = self.rules().roles.get(Role::Gate);
+        if let (Some(b), Some(gate)) = (self.state().sensible_building, gate) {
+            let gate_cost = self.rules().ty(gate).cost.clone();
+            let Some(e) = self.unit(b) else {
+                return Ok(());
+            };
+            let s = square_of(e.place)?;
             let (bx, by) = (e.x, e.y);
-            let mut exits = self.square(s).exits.clone();
-            exits.sort_by_key(|&x| square_of_distance(bx, by, self.e(x).x, self.e(x).y));
+            let mut exits = self.exits(s).to_vec();
+            exits.sort_by_key(|&x| {
+                let (ex, ey) = self.exit_xy(x);
+                square_of_distance(bx, by, ex, ey)
+            });
             if let Some(&exit) = exits.first()
-                && !self.exit_is_blocked(exit, Viewer::Nobody, false, false)
-                && self.ai_gather(p, &gate_cost, 0, 0)?
+                && !self.exit_is_blocked(exit)
+                && self.gather(&gate_cost, 0, 0)?
             {
-                for w in self.cs(p).workers.clone() {
-                    let name = self.rules.ty(gate).name.clone();
+                for w in self.state().workers.clone() {
+                    let name = self.rules().ty(gate).name.clone();
                     let gate = Request::build(name, TargetRef::Entity(exit));
-                    self.take_order(w, gate, true, false, None)?;
+                    self.give(w, gate, true)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn idle_buildings_research(&mut self, p: PlayerId) -> Res {
-        for u in self.pl(p).units.clone() {
-            if !self.e(u).orders().is_empty() {
+    fn idle_buildings_research(&mut self) -> Res {
+        for u in self.units().to_vec() {
+            let Some(e) = self.unit(u) else { continue };
+            if !e.orders().is_empty() {
                 continue;
             }
-            for t in self.type_list(u, "can_research") {
+            let researchable = e
+                .type_id()
+                .map(|t| self.rules().ty(t).can_research.clone())
+                .unwrap_or_default();
+            for t in researchable {
                 let cost = self
-                    .rules
+                    .rules()
                     .unit_type(&t)
                     .map(|c| c.cost.clone())
                     .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))?;
-                if self.future_nb(p, &Sel::List(vec![t.clone()])) == 0
-                    && self.missing_resources(p, &cost)?.is_empty()
-                    && self.potential(p, &cost)? > 3
+                if self.future_nb(&Sel::List(vec![t.clone()])) == 0
+                    && self.missing_resources(&cost)?.is_empty()
+                    && self.potential(&cost)? > 3
                 {
-                    self.take_order(u, Request::research(t), true, false, None)?;
+                    self.give(u, Request::research(t), true)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn raise_dead(&mut self, p: PlayerId) -> Res {
-        for (u, a) in self.cs(p).raise_dead_users.clone() {
-            if let Some(Place::Square(s)) = self.e(u).place
-                && self.pl(p).places_with_corpses.contains(&s)
+    fn raise_dead(&mut self) -> Res {
+        for (u, a) in self.state().raise_dead_users.clone() {
+            if let Some(Place::Square(s)) = self.unit(u).and_then(|e| e.place)
+                && self.places_with_corpses().contains(&s)
             {
                 let raise = Request::use_ability(a).at(TargetRef::Square(s));
-                self.take_order(u, raise, true, false, None)?;
+                self.give(u, raise, true)?;
             }
         }
         Ok(())
@@ -1187,60 +1129,61 @@ impl World {
 
     // Computer: warehouses
 
-    fn best_warehouse(&self, p: PlayerId) -> Option<(String, Vec<i64>)> {
-        let name = self.rules.role_name(self.pl(p).faction, Role::TownHall);
-        self.rules
+    fn best_warehouse(&self) -> Option<(String, Vec<i64>)> {
+        let name = self.rules().role_name(self.faction(), Role::TownHall);
+        self.rules()
             .unit_type(&name)
             .map(|t| (t.name.clone(), t.cost.clone()))
     }
 
-    fn build_a_warehouse_if_useful(&mut self, p: PlayerId) -> Res {
-        let Some((_, cost)) = self.best_warehouse(p) else {
+    fn build_a_warehouse_if_useful(&mut self) -> Res {
+        let Some((_, cost)) = self.best_warehouse() else {
             return Ok(());
         };
-        if !self.missing_resources(p, &cost)?.is_empty() {
+        if !self.missing_resources(&cost)?.is_empty() {
             return Ok(());
         }
         let mut deposits = Vec::new();
-        for &u in &self.cs(p).workers {
-            for o in self.e(u).orders() {
+        for &u in &self.state().workers {
+            let Some(e) = self.unit(u) else { continue };
+            for o in e.orders() {
                 if let OrderKind::Gather { aim, .. } = &o.kind
                     && let Some(t) = &aim.target
-                    && self.t_place(t) != TPlace::Nowhere
+                    && self.target_place(t) != TPlace::Nowhere
                 {
                     deposits.push(t.clone());
                 }
             }
         }
         for d in deposits {
-            self.build_a_warehouse_for(p, &d)?;
+            self.build_a_warehouse_for(&d)?;
         }
         Ok(())
     }
 
     fn deposit_resource_type(&self, d: &Target) -> Res<i64> {
-        self.t_entity(d)
-            .and_then(|e| e.type_id())
-            .and_then(|t| self.rules.ty(t).resource_type)
+        self.target_type(d)
+            .and_then(|t| self.rules().ty(t).resource_type)
             .ok_or_else(|| Abort::new("object has no attribute 'resource_type'"))
     }
 
-    fn build_a_warehouse_for(&mut self, p: PlayerId, deposit: &Target) -> Res {
-        let dplace = self.t_place_of(deposit);
+    fn build_a_warehouse_for(&mut self, deposit: &Target) -> Res {
+        let dplace = self.target_place_of(deposit);
         let nearby: Vec<EntityId> = self
-            .cs(p)
+            .state()
             .workers
             .iter()
             .copied()
             .filter(|&v| {
-                let e = self.e(v);
-                e.place == dplace
-                    || e.orders().first().is_some_and(|o| {
-                        matches!(&o.kind, OrderKind::Gather { aim, .. } if aim
-                            .target
-                            .as_ref()
-                            .is_none_or(|t| self.t_place_of(t) == dplace && dplace.is_some()))
-                    })
+                self.unit(v).is_some_and(|e| {
+                    e.place == dplace
+                        || e.orders().first().is_some_and(|o| {
+                            matches!(&o.kind, OrderKind::Gather { aim, .. } if aim
+                                .target
+                                .as_ref()
+                                .is_none_or(|t| self.target_place_of(t) == dplace && dplace.is_some()))
+                        })
+                })
             })
             .collect();
         if nearby.is_empty() {
@@ -1252,33 +1195,36 @@ impl World {
                 "'NoneType' object has no attribute 'shortest_path_distance_to'",
             ));
         };
-        let wh = self.nearest_warehouse(p, dp, rt, true)?;
+        let wh = self.nearest_warehouse(dp, rt, true)?;
+        let wh = wh.and_then(|w| self.known(w));
         if let Some(wh) = wh
-            && self.e(wh).class() == EntityClass::BuildingSite
+            && wh.class() == EntityClass::BuildingSite
         {
+            let wh = wh.id();
             for v in nearby {
                 let repair = Request::repair(TargetRef::Entity(wh));
-                self.take_order(v, repair, true, false, None)?;
+                self.give(v, repair, true)?;
             }
             return Ok(());
         }
-        let far = match wh {
+        let far = match wh.map(Seen::place) {
             None => true,
-            Some(wh) => {
-                let start = Self::square_of(Some(dp))?;
-                let dest = Self::square_of(self.e(wh).place)?;
-                self.shortest_path_distance_to(start, dest, Some(p), AirGround::Ground, true)?
-                    > self.square_width()
+            Some(place) => {
+                let start = square_of(Some(dp))?;
+                let dest = square_of(place)?;
+                self.distance(start, dest, true)? > self.square_width()
             }
         };
-        if far && let Some(meadow) = self.choose(p, Kind::Meadow, None, Some(dp), false)? {
+        if far && let Some(meadow) = self.choose(Kind::Meadow, None, Some(dp), false)? {
             let (name, _) = self
-                .best_warehouse(p)
+                .best_warehouse()
                 .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'type_name'"))?;
-            let id = self.t_entity(&meadow).expect("an entity").id;
+            let Some(id) = target_id(&meadow) else {
+                return Ok(());
+            };
             for v in nearby {
                 let build = Request::build(name.clone(), TargetRef::Entity(id));
-                self.take_order(v, build, true, false, None)?;
+                self.give(v, build, true)?;
             }
         }
         Ok(())
@@ -1288,53 +1234,36 @@ impl World {
 
     /// `is_ok_for_warehouse`: as far as the player knows, no warehouse for
     /// the resource on the square, and a deposit of it.
-    pub(crate) fn is_ok_for_warehouse(&self, p: PlayerId, z: SquareId, resource_type: i64) -> bool {
-        let pl = self.pl(p);
-        let perceived = self
-            .square(z)
-            .objects
-            .iter()
-            .filter(|o| pl.perception.contains(o));
-        let remembered = pl
-            .memory
-            .values()
-            .map(|r| &*r.snapshot)
-            .filter(|e| e.place == Some(Place::Square(z)));
-        let known: Vec<&Entity> = perceived.map(|&o| self.e(o)).chain(remembered).collect();
-        let stores = |e: &Entity| {
-            e.type_id().is_some_and(|t| {
-                self.rules
-                    .ty(t)
-                    .storable_resource_types
-                    .contains(&resource_type)
-            })
+    fn is_ok_for_warehouse(&self, z: SquareId, resource_type: i64) -> bool {
+        let here = Some(Place::Square(z));
+        let known: Vec<Seen> = self
+            .perceived()
+            .chain(self.remembered().map(|(r, _)| r))
+            .filter(|e| e.place() == here)
+            .collect();
+        let rules = self.rules();
+        let stores = |e: &Seen| {
+            e.type_id()
+                .is_some_and(|t| rules.ty(t).storable_resource_types.contains(&resource_type))
         };
-        if known.iter().any(|e| stores(e)) {
+        if known.iter().any(stores) {
             return false;
         }
         known.iter().any(|e| {
-            e.deposit()
-                .is_some_and(|d| self.rules.ty(d.type_id).resource_type == Some(resource_type))
+            e.deposit_type()
+                .is_some_and(|t| rules.ty(t).resource_type == Some(resource_type))
         })
     }
 
-    fn choose_is_ok(&self, p: PlayerId, o: &Target, resource_type: Option<i64>) -> bool {
-        let Some(place) = self.t_place_of(o) else {
+    fn choose_is_ok(&self, o: &Target, resource_type: Option<i64>) -> bool {
+        let Some(place) = self.target_place_of(o) else {
             return false;
         };
         let Place::Square(s) = place else {
             return resource_type.is_none();
         };
-        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(p, s, rt))
-            && !self.square_is_dangerous(p, s)
-    }
-
-    fn is_known(&self, p: PlayerId, o: &Target) -> bool {
-        match o {
-            Target::Entity(id) => self.pl(p).perception.contains(id),
-            Target::Memory(m) => self.memory_is_current(m),
-            _ => false,
-        }
+        resource_type.is_none_or(|rt| self.is_ok_for_warehouse(s, rt))
+            && !self.square_is_dangerous(s)
     }
 
     /// `choose`: a known meadow or deposit, safe, near `starting_place`
@@ -1342,69 +1271,68 @@ impl World {
     /// the nearest place gathered by the fewest workers.
     fn choose(
         &mut self,
-        p: PlayerId,
         kind: Kind,
         resource_type: Option<i64>,
         starting_place: Option<Place>,
         random: bool,
     ) -> Res<Option<Target>> {
-        let Some(&first_unit) = self.pl(p).units.first() else {
+        let Some(first_place) = self
+            .units()
+            .first()
+            .map(|&u| self.unit(u).and_then(|e| e.place))
+        else {
             return Ok(None);
         };
         let key = (kind, resource_type, starting_place);
-        if !random && let Some(o) = self.cs(p).previous_choose.get(&key).cloned() {
-            if self.is_known(p, &o) && self.choose_is_ok(p, &o, resource_type) {
+        if !random && let Some(o) = self.state().previous_choose.get(&key).cloned() {
+            if self.is_known(&o) && self.choose_is_ok(&o, resource_type) {
                 return Ok(Some(o));
             }
-            self.csm(p).previous_choose.remove(&key);
+            self.state_mut().previous_choose.remove(&key);
         }
-        let start = starting_place.or(self.e(first_unit).place);
-        let mut candidates: Vec<(EntityId, Target)> = Vec::new();
-        for &o in &self.pl(p).perception {
-            if kind.matches(&self.rules, self.e(o)) {
-                candidates.push((o, Target::Entity(o)));
-            }
-        }
-        for r in self.pl(p).memory.values() {
-            if kind.matches(&self.rules, &r.snapshot) {
-                candidates.push((
-                    r.snapshot.id,
-                    Target::Memory(crate::entity::MemoryRef {
-                        owner: p,
-                        snapshot: r.snapshot.clone(),
-                    }),
-                ));
-            }
-        }
-        candidates.retain(|(_, o)| self.choose_is_ok(p, o, resource_type));
+        let start = starting_place.or(first_place);
+        let rules = self.rules();
+        let mut candidates: Vec<(EntityId, Target)> = self
+            .perceived()
+            .filter(|&e| kind.matches(rules, e))
+            .map(|e| (e.id(), Target::Entity(e.id())))
+            .collect();
+        candidates.extend(
+            self.remembered()
+                .filter(|&(e, _)| kind.matches(rules, e))
+                .map(|(e, t)| (e.id(), t)),
+        );
+        candidates.retain(|(_, o)| self.choose_is_ok(o, resource_type));
         candidates.sort_by_key(|c| c.0);
         let mut candidates: Vec<Target> = candidates.into_iter().map(|(_, o)| o).collect();
         if candidates.len() > 10 {
             candidates = self.remove_far_candidates(&candidates, start, 10)?;
         } else if !candidates.is_empty() {
-            let start = Self::square_of(start)?;
+            let start = square_of(start)?;
             let mut keyed = Vec::new();
             for o in candidates {
-                let dest = Self::square_of(self.t_place_of(&o))?;
-                let d =
-                    self.shortest_path_distance_to(start, dest, Some(p), AirGround::Ground, true)?;
+                let dest = square_of(self.target_place_of(&o))?;
+                let d = self.distance(start, dest, true)?;
                 keyed.push((d, o));
             }
             keyed.sort_by_key(|(d, _)| *d);
             candidates = keyed.into_iter().map(|(_, o)| o).collect();
         }
         if random && let Some(c0) = candidates.first() {
-            let p0 = self.t_place_of(c0);
+            let p0 = self.target_place_of(c0);
             let mut keyed = Vec::new();
-            for o in candidates.into_iter().filter(|o| self.t_place_of(o) == p0) {
-                keyed.push((self.deposit_priority(p, &Some(o.clone()))?, o));
+            for o in candidates
+                .into_iter()
+                .filter(|o| self.target_place_of(o) == p0)
+            {
+                keyed.push((self.deposit_priority(&Some(o.clone()))?, o));
             }
             keyed.sort_by_key(|k| std::cmp::Reverse(k.0));
             candidates = keyed.into_iter().map(|(_, o)| o).collect();
         }
         let result = candidates.into_iter().next();
         if !random && let Some(o) = &result {
-            self.csm(p).previous_choose.insert(key, o.clone());
+            self.state_mut().previous_choose.insert(key, o.clone());
         }
         Ok(result)
     }
@@ -1417,10 +1345,12 @@ impl World {
         start: Option<Place>,
         limit: usize,
     ) -> Res<Vec<Target>> {
-        let start = Self::square_of(start)?;
+        let start = square_of(start)?;
         let mut ids: BTreeMap<EntityId, Target> = BTreeMap::new();
         for o in candidates {
-            ids.insert(self.t_entity(o).expect("an entity").id, o.clone());
+            if let Some(id) = target_id(o) {
+                ids.insert(id, o.clone());
+            }
         }
         let mut c = Vec::new();
         let mut queue = std::collections::VecDeque::from([start]);
@@ -1431,7 +1361,7 @@ impl World {
             if done.contains(&room) {
                 continue;
             }
-            for o in &self.square(room).objects {
+            for o in self.objects_on(room) {
                 if let Some(t) = ids.get(o) {
                     c.push(t.clone());
                     if c.len() >= limit {
@@ -1439,11 +1369,11 @@ impl World {
                     }
                 }
             }
-            for &e in &self.square(room).exits {
-                let os = self
-                    .exit_other_side(e)
+            for &e in self.exits(room) {
+                let beyond = self
+                    .beyond_exit(e)
                     .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'place'"))?;
-                let next = Self::square_of(self.e(os).place)?;
+                let next = square_of(beyond)?;
                 if !done.contains(&next) {
                     queue.push_back(next);
                 }
@@ -1453,59 +1383,57 @@ impl World {
         Ok(c)
     }
 
-    fn deposit_priority(&self, p: PlayerId, d: &Option<Target>) -> Res<DepositPriority> {
+    fn deposit_priority(&self, d: &Option<Target>) -> Res<DepositPriority> {
         let Some(t) = d else {
             return Ok((-100, 0, None));
         };
         let workers = self
-            .cs(p)
+            .state()
             .gathered_deposits
             .iter()
             .find(|(k, _)| same_opt(k, d))
             .map_or(0, |(_, n)| *n);
         let rt = self.deposit_resource_type(t)?;
-        let r = self
-            .pl(p)
-            .resources
-            .get(rt as usize)
+        let r = usize::try_from(rt)
+            .ok()
+            .and_then(|i| self.resources().get(i))
             .copied()
             .ok_or_else(|| Abort::new("list index out of range"))?;
-        let id = self.t_entity(t).expect("an entity").id;
-        Ok((floordiv(-r, 10), -workers, Some(id)))
+        Ok((floordiv(-r, 10), -workers, target_id(t)))
     }
 
     // Computer: counting and getting units
 
-    fn entity_matches(&self, e: &Entity, sel: &Sel) -> bool {
+    fn entity_matches(e: &Entity, sel: &Sel) -> bool {
         match sel {
             Sel::Workers => e.class() == EntityClass::Worker,
             _ => sel.matches_type(&e.type_name),
         }
     }
 
-    fn nb(&self, p: PlayerId, sel: &Sel) -> i64 {
+    fn nb(&self, sel: &Sel) -> i64 {
         if let Sel::List(l) = sel
             && let Some(first) = l.first()
             && self
-                .rules
+                .rules()
                 .type_id(first)
-                .is_some_and(|t| self.pl(p).upgrades.has(t))
+                .is_some_and(|t| self.has_upgrade(t))
         {
             return 1;
         }
-        self.pl(p)
-            .units
+        self.units()
             .iter()
-            .filter(|&&u| self.entity_matches(self.e(u), sel))
+            .filter_map(|&u| self.unit(u))
+            .filter(|e| Self::entity_matches(e, sel))
             .count() as i64
     }
 
-    fn nb_in_production(&self, p: PlayerId, sel: &Sel) -> i64 {
+    fn nb_in_production(&self, sel: &Sel) -> i64 {
+        let rules = self.rules();
         let mut n = 0;
-        for &u in &self.pl(p).units {
-            let e = self.e(u);
+        for e in self.units().iter().filter_map(|&u| self.unit(u)) {
             if let Some(site) = e.site()
-                && sel.matches_type(&self.rules.ty(site.building_type).name)
+                && sel.matches_type(&rules.ty(site.building_type).name)
             {
                 n += 1;
                 continue;
@@ -1529,7 +1457,7 @@ impl World {
                     | OrderKind::LoadAll { .. }
                     | OrderKind::UnloadAll { .. } => None,
                 };
-                if made.is_some_and(|t| sel.matches_type(&self.rules.ty(t).name)) {
+                if made.is_some_and(|t| sel.matches_type(&rules.ty(t).name)) {
                     n += 1;
                 }
             }
@@ -1537,12 +1465,12 @@ impl World {
         n
     }
 
-    fn future_nb(&self, p: PlayerId, sel: &Sel) -> i64 {
-        self.nb(p, sel) + self.nb_in_production(p, sel)
+    fn future_nb(&self, sel: &Sel) -> i64 {
+        self.nb(sel) + self.nb_in_production(sel)
     }
 
-    fn missing_resources(&self, p: PlayerId, cost: &[i64]) -> Res<Vec<usize>> {
-        let r = &self.pl(p).resources;
+    fn missing_resources(&self, cost: &[i64]) -> Res<Vec<usize>> {
+        let r = self.resources();
         let mut result = Vec::new();
         for (i, &c) in cost.iter().enumerate() {
             let have = r
@@ -1556,9 +1484,9 @@ impl World {
         Ok(result)
     }
 
-    fn potential(&self, p: PlayerId, cost: &[i64]) -> Res<i64> {
+    fn potential(&self, cost: &[i64]) -> Res<i64> {
         let mut result = 9999;
-        for (i, &res) in self.pl(p).resources.iter().enumerate() {
+        for (i, &res) in self.resources().iter().enumerate() {
             let c = cost
                 .get(i)
                 .copied()
@@ -1570,44 +1498,38 @@ impl World {
         Ok(result)
     }
 
-    /// `nb`: the number of units of the type.
-    #[cfg(test)]
-    pub(crate) fn computer_nb(&self, p: PlayerId, type_name: &str) -> i64 {
-        self.nb(p, &Sel::One(type_name.to_owned()))
-    }
-
     /// `get`: works toward having `nb` units of the type; true if they are
     /// there.
-    pub(crate) fn ai_get(&mut self, p: PlayerId, nb: i64, type_name: &str) -> Res<bool> {
-        self.csm(p).safe_cnt = 0;
-        self.get_types(p, nb, vec![type_name.to_owned()], 0)
+    fn get(&mut self, nb: i64, type_name: &str) -> Res<bool> {
+        self.state_mut().safe_cnt = 0;
+        self.get_types(nb, vec![type_name.to_owned()], 0)
     }
 
     /// `_get`. `depth` counts the planning calls this one is inside.
-    fn get_types(&mut self, p: PlayerId, nb: i64, types: Vec<String>, depth: usize) -> Res<bool> {
+    fn get_types(&mut self, nb: i64, types: Vec<String>, depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
         let sel = Sel::List(types.clone());
-        if self.nb(p, &sel) >= nb {
+        if self.nb(&sel) >= nb {
             return Ok(true);
         }
-        if self.future_nb(p, &sel) >= nb {
+        if self.future_nb(&sel) >= nb {
             return Ok(false);
         }
-        self.csm(p).safe_cnt += 1;
-        if self.cs(p).safe_cnt > 10 {
+        self.state_mut().safe_cnt += 1;
+        if self.state().safe_cnt > 10 {
             return Ok(false);
         }
         for t in &types {
-            if self.rules.unit_type(t).is_none() {
+            if self.rules().unit_type(t).is_none() {
                 continue;
             }
-            let makers = self.rules.get_makers(t);
-            if self.nb(p, &Sel::List(makers.clone())) > 0 {
-                let n = nb - self.future_nb(p, &sel);
-                self.build_or_train_or_upgradeto_or_summon(p, t, n, depth)?;
+            let makers = self.rules().get_makers(t);
+            if self.nb(&Sel::List(makers.clone())) > 0 {
+                let n = nb - self.future_nb(&sel);
+                self.build_or_train_or_upgradeto_or_summon(t, n, depth)?;
                 break;
             } else if let Some(m) = makers.first() {
-                self.get_types(p, 1, vec![m.clone()], depth)?;
+                self.get_types(1, vec![m.clone()], depth)?;
                 return Ok(false);
             }
         }
@@ -1616,20 +1538,22 @@ impl World {
 
     /// `gather`: true if the resources and the food are there; asks for a
     /// farm when food is missing.
-    fn ai_gather(&mut self, p: PlayerId, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
+    fn gather(&mut self, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
-        if !self.missing_resources(p, cost)?.is_empty() {
-            self.csm(p).lacking.get_or_insert_with(|| cost.to_vec());
+        if !self.missing_resources(cost)?.is_empty() {
+            self.state_mut()
+                .lacking
+                .get_or_insert_with(|| cost.to_vec());
             return Ok(false);
         }
         let limit = self.food_limit();
-        let pl = self.pl(p);
-        if food != 0 && food > pl.available_food(limit) - pl.used_food {
-            if pl.available_food(limit) < limit {
-                let t = Sel::One(self.rules.role_name(self.pl(p).faction, Role::Farm));
-                if self.future_nb(p, &t) == self.nb(p, &t) {
-                    let Sel::One(name) = t else { unreachable!() };
-                    self.build_or_train_or_upgradeto_or_summon(p, &name, 1, depth)?;
+        let available = self.available_food();
+        if food != 0 && food > available - self.used_food() {
+            if available < limit {
+                let name = self.rules().role_name(self.faction(), Role::Farm);
+                let t = Sel::One(name.clone());
+                if self.future_nb(&t) == self.nb(&t) {
+                    self.build_or_train_or_upgradeto_or_summon(&name, 1, depth)?;
                 }
             }
             Ok(false)
@@ -1638,16 +1562,11 @@ impl World {
         }
     }
 
-    fn get_requirements(
-        &mut self,
-        p: PlayerId,
-        requirements: &[String],
-        depth: usize,
-    ) -> Res<bool> {
+    fn get_requirements(&mut self, requirements: &[String], depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
         for r in requirements {
-            if !self.has(p, r) {
-                return self.get_types(p, 1, vec![r.clone()], depth);
+            if !self.has(r) {
+                return self.get_types(1, vec![r.clone()], depth);
             }
         }
         Ok(true)
@@ -1655,112 +1574,113 @@ impl World {
 
     fn build_or_train_or_upgradeto_or_summon(
         &mut self,
-        p: PlayerId,
         type_name: &str,
         nb: i64,
         depth: usize,
     ) -> Res {
         let depth = deeper(depth)?;
         let t = self
-            .rules
+            .rules()
             .unit_type(type_name)
             .cloned()
             .ok_or_else(|| Abort::new("'NoneType' object has no attribute '__name__'"))?;
-        let makers = self.rules.get_makers(type_name);
-        if !self.get_types(p, 1, makers.clone(), depth)?
-            || !self.get_requirements(p, &t.requirements, depth)?
+        let makers = self.rules().get_makers(type_name);
+        if !self.get_types(1, makers.clone(), depth)?
+            || !self.get_requirements(&t.requirements, depth)?
         {
             return Ok(());
         }
-        let mut maker = makers.last().cloned().expect("a maker exists");
+        let Some(mut maker) = makers.last().cloned() else {
+            return Ok(());
+        };
         for m in &makers {
-            if self.nb(p, &Sel::One(m.clone())) != 0 {
+            if self.nb(&Sel::One(m.clone())) != 0 {
                 maker = m.clone();
                 break;
             }
         }
-        let mc = self
-            .rules
-            .unit_type(&maker)
-            .cloned()
-            .expect("a maker is a class");
+        let Some(mc) = self.rules().unit_type(&maker).cloned() else {
+            return Ok(());
+        };
         let maker_sel = Sel::One(maker.clone());
         let name = type_name.to_owned();
         if mc.can_upgrade_to.contains(&name) {
-            if self.nb(p, &maker_sel) >= nb {
-                let cost: Vec<i64> = (0..t.cost.len())
-                    .map(|i| t.cost[i] - mc.cost.get(i).copied().unwrap_or(0))
+            if self.nb(&maker_sel) >= nb {
+                let cost: Vec<i64> = t
+                    .cost
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| c - mc.cost.get(i).copied().unwrap_or(0))
                     .collect();
-                if self.ai_gather(p, &cost, t.stats.food_cost - mc.stats.food_cost, depth)? {
-                    self.order(p, nb, maker_sel, Request::upgrade_to(name), false)?;
+                if self.gather(&cost, t.stats.food_cost - mc.stats.food_cost, depth)? {
+                    self.order(nb, maker_sel, Request::upgrade_to(name), false)?;
                 }
             } else {
-                self.get_types(p, nb, vec![maker], depth)?;
+                self.get_types(nb, vec![maker], depth)?;
             }
         } else if mc.can_build.contains(&name) {
-            if !self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
+            if !self.gather(&t.cost, t.stats.food_cost, depth)? {
                 return Ok(());
             }
             let meadow = if let Some(&rt) = t.storable_resource_types.first() {
-                let meadow = self.choose(p, Kind::Meadow, Some(rt), None, false)?;
+                let meadow = self.choose(Kind::Meadow, Some(rt), None, false)?;
                 let far = match &meadow {
                     None => true,
                     Some(m) => {
-                        let start = Self::square_of(self.t_place_of(m))?;
-                        let bp = self.builders_place(p)?;
-                        let dest = Self::square_of(bp)?;
-                        self.shortest_path_distance_to(start, dest, None, AirGround::Ground, false)?
-                            > self.square_width() * 3
+                        let start = square_of(self.target_place_of(m))?;
+                        let bp = self.builders_place()?;
+                        let dest = square_of(bp)?;
+                        self.distance_through_walls(start, dest)? > self.square_width() * 3
                     }
                 };
                 if far {
-                    if self.nb(p, &Sel::One(name.clone())) != 0 {
+                    if self.nb(&Sel::One(name.clone())) != 0 {
                         return Ok(());
                     }
-                    let bp = self.builders_place(p)?;
-                    self.choose(p, Kind::Meadow, None, bp, false)?
+                    let bp = self.builders_place()?;
+                    self.choose(Kind::Meadow, None, bp, false)?
                 } else {
                     meadow
                 }
             } else {
-                let bp = self.builders_place(p)?;
-                self.choose(p, Kind::Meadow, None, bp, false)?
+                let bp = self.builders_place()?;
+                self.choose(Kind::Meadow, None, bp, false)?
             };
-            if let Some(m) = meadow {
-                let id = self.t_entity(&m).expect("an entity").id;
+            if let Some(id) = meadow.as_ref().and_then(target_id) {
                 let build = Request::build(name, TargetRef::Entity(id));
-                self.order(p, 4, maker_sel, build, true)?;
+                self.order(4, maker_sel, build, true)?;
             }
         } else if mc.can_train.contains(&name) {
-            let nb_maker = self.nb(p, &maker_sel);
-            if self.nb(p, &Sel::Workers) != 0
+            let nb_maker = self.nb(&maker_sel);
+            if self.nb(&Sel::Workers) != 0
                 && nb > nb_maker * 3
-                && self.potential(p, &t.cost)? > nb_maker * 100
+                && self.potential(&t.cost)? > nb_maker * 100
             {
                 // additional production sites
-                self.build_or_train_or_upgradeto_or_summon(p, &maker, 1, depth)?;
+                self.build_or_train_or_upgradeto_or_summon(&maker, 1, depth)?;
             }
-            if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
-                self.order(p, nb, maker_sel, Request::train(name), false)?;
+            if self.gather(&t.cost, t.stats.food_cost, depth)? {
+                self.order(nb, maker_sel, Request::train(name), false)?;
             }
         } else if mc.can_research.contains(&name) {
-            if self.ai_gather(p, &t.cost, t.stats.food_cost, depth)? {
-                self.order(p, 1, maker_sel, Request::research(name), false)?;
+            if self.gather(&t.cost, t.stats.food_cost, depth)? {
+                self.order(1, maker_sel, Request::research(name), false)?;
             }
         } else {
             for ability in &mc.can_use {
-                let Some(effect) = self.rules.get_words(ability, "effect") else {
+                let Some(effect) = self.rules().get_words(ability, "effect") else {
                     continue;
                 };
                 if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
                     let mut order = Request::use_ability(ability.clone());
-                    if self.rules.get_words(ability, "effect_target").as_deref()
+                    if self.rules().get_words(ability, "effect_target").as_deref()
                         == Some(&["ask".to_owned()][..])
                     {
-                        let first = self.pl(p).units[0];
+                        let first = self.units().first().copied();
+                        let first = first.ok_or_else(|| Abort::new("list index out of range"))?;
                         order = order.at(TargetRef::Entity(first));
                     }
-                    self.order(p, 1, maker_sel, order, false)?;
+                    self.order(1, maker_sel, order, false)?;
                     break;
                 }
             }
@@ -1768,24 +1688,22 @@ impl World {
         Ok(())
     }
 
-    fn worker_orders_priority(
-        &self,
-        p: PlayerId,
-        u: EntityId,
-    ) -> Res<(u8, Option<DepositPriority>)> {
-        Ok(match self.e(u).orders().first() {
+    fn worker_orders_priority(&self, u: EntityId) -> Res<(u8, Option<DepositPriority>)> {
+        Ok(match self.unit(u).and_then(|e| e.orders().first()) {
             None => (0, None),
             Some(Order {
                 kind: OrderKind::Gather { aim, .. },
                 ..
-            }) => (1, Some(self.deposit_priority(p, &aim.target)?)),
+            }) => (1, Some(self.deposit_priority(&aim.target)?)),
             Some(_) => (2, None),
         })
     }
 
     /// Whether a followed order is still in progress.
-    fn tracked_is_alive(&mut self, t: &mut Tracked) -> bool {
-        let unit = self.e(t.unit);
+    fn tracked_is_alive(&self, t: &mut Tracked) -> bool {
+        let Some(unit) = self.unit(t.unit) else {
+            return false;
+        };
         if let Some(live) = unit.orders().iter().find(|o| o.uid == t.order.uid) {
             t.order = live.clone();
             return !live.is_complete() && unit.place.is_some();
@@ -1798,64 +1716,60 @@ impl World {
     /// `order`: gives the order to units of a type until `nb` of them
     /// follow it. With `requisition`, busy workers may be taken, the least
     /// useful first.
-    fn order(&mut self, p: PlayerId, nb: i64, sel: Sel, order: Request, requisition: bool) -> Res {
-        let key = (sel.clone(), order.words(self));
-        let mut tracked = self.csm(p).orders.remove(&key).unwrap_or_default();
+    fn order(&mut self, nb: i64, sel: Sel, order: Request, requisition: bool) -> Res {
+        let key = (sel.clone(), self.words(&order));
+        let mut tracked = self.state_mut().orders.remove(&key).unwrap_or_default();
         tracked.retain_mut(|t| self.tracked_is_alive(t));
         let enough = tracked.len() as i64 >= nb;
-        self.csm(p).orders.insert(key.clone(), tracked);
+        self.state_mut().orders.insert(key.clone(), tracked);
         if enough {
             return Ok(());
         }
         let mut units: Vec<EntityId> = self
-            .pl(p)
-            .units
+            .units()
             .iter()
             .copied()
-            .filter(|&u| self.entity_matches(self.e(u), &sel))
+            .filter(|&u| self.unit(u).is_some_and(|e| Self::entity_matches(e, &sel)))
             .collect();
         while !units.is_empty() {
             if requisition {
                 let mut keyed = Vec::new();
                 for u in units {
-                    keyed.push((self.worker_orders_priority(p, u)?, u));
+                    keyed.push((self.worker_orders_priority(u)?, u));
                 }
                 keyed.sort_by_key(|k| k.0);
                 units = keyed.into_iter().map(|(_, u)| u).collect();
             }
             let u = units.remove(0);
-            if order.keyword() == Keyword::UpgradeTo
-                && self.e(u).orders().first().map(Order::keyword) == Some(Keyword::AutoExplore)
-            {
-                self.take_order(u, Request::stop(), true, false, None)?;
+            if order.keyword() == Keyword::UpgradeTo && self.is_exploring(u) {
+                self.give(u, Request::stop(), true)?;
             }
-            if requisition || self.e(u).orders().is_empty() {
-                let first = self
-                    .e(u)
-                    .orders()
-                    .first()
-                    .map(|o| (o.keyword(), o.target().cloned()));
+            let first = self
+                .unit(u)
+                .and_then(|e| e.orders().first())
+                .map(|o| (o.keyword(), o.target().cloned()));
+            if requisition || first.is_none() {
                 if let Some((kw, target)) = &first {
                     if matches!(kw, Keyword::Build | Keyword::Repair) {
                         continue;
                     }
                     if requisition && *kw == Keyword::Gather {
-                        let gd = &mut self.csm(p).gathered_deposits;
+                        let gd = &mut self.state_mut().gathered_deposits;
                         match gd.iter_mut().find(|(k, _)| same_opt(k, target)) {
                             Some(e) => e.1 -= 1,
                             None => return Err(Abort::new("KeyError: the deposit")),
                         }
                     }
                 }
-                self.take_order(u, order.clone(), true, false, None)?;
-                if let Some(o) = self.e(u).orders().first()
+                self.give(u, order.clone(), true)?;
+                if let Some(o) = self.unit(u).and_then(|e| e.orders().first())
                     && o.keyword() == order.keyword()
                 {
                     let t = Tracked {
                         unit: u,
                         order: o.clone(),
                     };
-                    let list = self.csm(p).orders.get_mut(&key).expect("inserted above");
+                    let list = self.state_mut().orders.entry(key.clone()).or_default();
                     list.push(t);
                     if list.len() as i64 >= nb {
                         return Ok(());
@@ -1865,6 +1779,11 @@ impl World {
         }
         Ok(())
     }
+}
+
+/// The id of the entity a target of the plan names.
+fn target_id(t: &Target) -> Option<EntityId> {
+    t.entity_id()
 }
 
 fn add_count(counts: &mut Vec<(Option<Target>, i64)>, key: &Option<Target>, n: i64) {
@@ -1890,6 +1809,8 @@ mod order_sites;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::PlayerId;
+    use crate::world::World;
 
     /// A world with the original's rules and this map.
     fn world(map: &str) -> World {
@@ -1934,23 +1855,24 @@ starting_squares a1
         let inside = create(&mut w, "peasant");
         let transport = create(&mut w, "new_flyingmachine");
         w.load(transport, inside);
-        w.csm(p).workers = vec![inside, outside];
-        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
-        w.csm(p).workers = vec![outside, inside];
-        assert_eq!(w.builders_place(p).unwrap(), Some(Place::Square(a1)));
+        w.computer_state(p).workers = vec![inside, outside];
+        assert_eq!(w.door(p).builders_place().unwrap(), Some(Place::Square(a1)));
+        w.computer_state(p).workers = vec![outside, inside];
+        assert_eq!(w.door(p).builders_place().unwrap(), Some(Place::Square(a1)));
     }
 
     /// The workers of `p` gathering each resource: gold, then wood.
-    fn gatherers(w: &World, p: PlayerId) -> Vec<usize> {
+    fn gatherers(w: &mut World, p: PlayerId) -> Vec<usize> {
         let mut n = vec![0; w.pl(p).resources.len()];
-        for &u in &w.pl(p).units {
+        let door = w.door(p);
+        for &u in door.units() {
             if let Some(Order {
                 kind: OrderKind::Gather { aim, .. },
                 ..
-            }) = w.e(u).orders().first()
+            }) = door.unit(u).unwrap().orders().first()
                 && let Some(t) = &aim.target
             {
-                n[w.deposit_resource_type(t).unwrap() as usize] += 1;
+                n[door.deposit_resource_type(t).unwrap() as usize] += 1;
             }
         }
         n
@@ -1982,7 +1904,7 @@ starting_resources 0 50
         let a1 = w.square_by_name("a1").unwrap();
         let wood = w.square(a1).objects.clone().into_iter().find(|&o| {
             w.e(o).class() == EntityClass::Deposit
-                && w.deposit_resource_type(&Target::Entity(o)) == Ok(1)
+                && w.e(o).type_id().and_then(|t| w.rules.ty(t).resource_type) == Some(1)
         });
         let wood = wood.unwrap();
         w.update();
@@ -1995,7 +1917,7 @@ starting_resources 0 50
         let limit = w.food_limit();
         assert_eq!((w.pl(p).used_food, w.pl(p).available_food(limit)), (9, 9));
         w.update();
-        assert_eq!(gatherers(&w, p), [0, 9]);
+        assert_eq!(gatherers(&mut w, p), [0, 9]);
         // The computer plays one turn in 10. One of its peasants explores.
         // Each turn, one peasant goes from wood to gold, until one is left
         // on wood; with the gold, the farm is ordered.
@@ -2004,7 +1926,7 @@ starting_resources 0 50
             for _ in 0..10 {
                 w.update();
             }
-            seen.push(gatherers(&w, p));
+            seen.push(gatherers(&mut w, p));
         }
         assert_eq!(
             seen,
@@ -2023,7 +1945,8 @@ starting_resources 0 50
             w.update();
         }
         let farm = Sel::One("farm".to_owned());
-        assert_eq!((w.nb(p, &farm), w.future_nb(p, &farm)), (1, 2));
+        let door = w.door(p);
+        assert_eq!((door.nb(&farm), door.future_nb(&farm)), (1, 2));
     }
 
     #[test]
@@ -2050,7 +1973,7 @@ starting_squares a1
             .unwrap();
         let mut uses = BTreeMap::new();
         for _ in 0..500 {
-            if let Some(o) = w.random_order(u, &[u]).unwrap()
+            if let Some(o) = w.door(p).random_order(u, &[u]).unwrap()
                 && o.keyword() == Keyword::Use
             {
                 let ability = o.type_name().unwrap().to_owned();
@@ -2064,7 +1987,7 @@ starting_squares a1
     #[test]
     fn a_square_reached_by_two_ways_gives_its_candidates_once() {
         // a1 leads to b1 and a2, which both lead to b2.
-        let w = world(
+        let mut w = world(
             "
 square_width 12
 nb_columns 2
@@ -2077,6 +2000,9 @@ nb_players_max 1
 starting_squares a1
 ",
         );
+        let p = w
+            .populate_map(&[crate::Controller::computer("easy")], false, false)
+            .unwrap()[0];
         let b2 = w.square_by_name("b2").unwrap();
         let meadows: Vec<Target> = w
             .square(b2)
@@ -2088,6 +2014,7 @@ starting_squares a1
         assert_eq!(meadows.len(), 3);
         let a1 = w.square_by_name("a1").unwrap();
         let near = w
+            .door(p)
             .remove_far_candidates(&meadows, Some(Place::Square(a1)), 10)
             .unwrap();
         let ids: Vec<EntityId> = near.iter().filter_map(Target::entity_id).collect();
@@ -2097,7 +2024,7 @@ starting_squares a1
 
     #[test]
     fn computer2_chooses_from_the_original_list_of_orders() {
-        let names: Vec<&str> = World::computer2_orders()
+        let names: Vec<&str> = Door::computer2_orders()
             .iter()
             .map(|k| k.as_str())
             .collect();
