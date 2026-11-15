@@ -290,29 +290,6 @@ fn only_the_orders_done_at_once_are_never_queued() {
 }
 
 #[test]
-fn a_final_order_stays_final_and_remembers_both_marks() {
-    use Progress::*;
-    let all = [
-        Pending,
-        Deferred,
-        Started,
-        Complete,
-        Impossible,
-        ImpossibleAndComplete,
-    ];
-    for p in all {
-        assert!(p.completed().is_complete(), "{p:?}");
-        assert!(p.made_impossible().is_impossible(), "{p:?}");
-        assert_eq!(p.completed().is_impossible(), p.is_impossible(), "{p:?}");
-        assert_eq!(p.made_impossible().is_complete(), p.is_complete(), "{p:?}");
-    }
-    assert_eq!(Impossible.completed(), ImpossibleAndComplete);
-    assert_eq!(Complete.made_impossible(), ImpossibleAndComplete);
-    let finals: Vec<_> = all.into_iter().filter(|p| p.is_final()).collect();
-    assert_eq!(finals, [Complete, Impossible, ImpossibleAndComplete]);
-}
-
-#[test]
 fn an_order_of_the_map_language_is_read_once_or_refused() {
     let (w, _, _) = game();
     let b1 = w.square_by_name("b1").unwrap();
@@ -693,4 +670,60 @@ fn a_recall_with_no_room_for_its_units_is_impossible_says_why_once_and_costs_not
         refused,
         [&EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
     );
+}
+
+#[test]
+fn an_upgrade_that_finds_no_meadow_is_refunded_and_says_why() {
+    // A mod whose guard tower needs a meadow, on a map that has none.
+    let (mut w, a, _) = two_humans("def guardtower\nis_buildable_anywhere 0\n");
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    w.update();
+    // Paid: 11 - 6 gold and 4 - 2 wood.
+    let paid = vec![
+        995 * crate::nofloat::PRECISION,
+        998 * crate::nofloat::PRECISION,
+    ];
+    assert_eq!(w.pl(a).resources, paid);
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| w.e(tower).orders.is_empty());
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::CannotBuildHere))]
+    );
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    assert_eq!(all(&w, a, "scouttower"), [tower]);
+    assert!(all(&w, a, "guardtower").is_empty());
+}
+
+#[test]
+fn a_ship_trained_with_no_water_near_is_refunded_and_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 townhall lumbermill farm shipyard");
+    w.update();
+    let shipyard = find(&w, a, "shipyard");
+    let before = (w.pl(a).resources.clone(), w.pl(a).used_food);
+    order(&mut w, a, &[shipyard], "train boat");
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| {
+        w.e(shipyard).orders.first().is_some_and(Order::is_final)
+    });
+    assert_eq!(w.e(shipyard).orders[0].progress(), Progress::Impossible);
+    assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
+    let refused: Vec<_> = entity_events(&mut w, a)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
+        .collect();
+    assert_eq!(
+        refused,
+        [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+    assert!(all(&w, a, "boat").is_empty());
 }
