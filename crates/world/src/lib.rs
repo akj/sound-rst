@@ -142,7 +142,7 @@ pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use received::MAX_OBJECTIVES;
 #[cfg(feature = "serde")]
 pub use record::{Completeness, ReadError};
-pub use record::{Record, RecordedTurn, ReplayError};
+pub use record::{Record, RecordedTurn, ReplayError, Replayer};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;
