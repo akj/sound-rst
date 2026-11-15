@@ -13,6 +13,8 @@ computes what `expected/` records:
   `World::digest_u64`, the hash of the whole state.
 - `trace_ai_*`: games with computer players (`easy`, `aggressive`, `ai2`),
   against each other or a scripted human (`scenarios/human.txt`).
+- `trace_orders` and `trace_spells`: short games that do what no other
+  case does: the orders and effects their scenario lists at its top.
 
 The dump has the positions, hit points, mana, resources, owners, the names
 of queued orders, the kind of each action and the random generator's state.
@@ -31,6 +33,19 @@ the digest files also needs a new `SIM_VERSION` (see Record again).
 The cases are listed in `cases.txt`. A player is a login or `ai_<type>`,
 then optionally `:<alliance>`. Computers are allied with each other by
 default.
+
+A scenario line is `<turn> <player> <command>`. A line `expect <player>
+<event>` says that the player must hear, at some turn, an event whose
+entity's type name and event text, as `<type> <text>`, start with
+`<event>`: `expect 0 priest use_complete,a_conversion`. The test fails if
+none comes, so a case that stops doing what it was written for is noticed,
+not re-recorded. Hearing events changes neither the dump nor the digest.
+
+When a change of the simulation makes a scenario stop doing what its top
+lines say it covers, rewrite the scenario so that it does again, rather
+than deleting the case. When something no recorded game does matters to a
+change, add it to `scenarios/orders.txt` or `scenarios/spells.txt`, or a new
+short case, with an `expect` line when an event shows it.
 
 The files in `expected/` were recorded from the original Python game. Up
 to the Git tag `last-python-parity`, the port matched them byte for byte.

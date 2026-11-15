@@ -36,3 +36,5 @@ name=trace_ai_cw1 kind=trace map=res/multi/cw1.txt seed=15 triggers=multiplayer 
 name=trace_ai_js1 kind=trace map=res/multi/js1.txt seed=16 triggers=multiplayer players=a,ai_ai2:2 scenario=scenarios/human.txt ticks=1500
 name=trace_ai_kel6 kind=trace map=res/multi/kel6.txt seed=17 triggers=multiplayer players=ai_aggressive:1,ai_aggressive:2 scenario=scenarios/none.txt ticks=1500
 name=trace_ai_campaign5 kind=trace map=single/campaign/5.txt seed=18 players=a scenario=scenarios/campaign5.txt ticks=1500
+name=trace_orders kind=trace map=res/multi/jl1.txt rules=res/rules.txt,mods/teleportation/rules.txt seed=31 triggers=multiplayer players=a,b scenario=scenarios/orders.txt ticks=100
+name=trace_spells kind=trace map=res/multi/ce1.txt seed=32 triggers=multiplayer players=a,b scenario=scenarios/spells.txt ticks=300
