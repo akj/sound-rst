@@ -120,6 +120,11 @@ impl GameInterface {
             C::ReviewPrevious => cx.voice.review_previous(),
             C::ReviewNext => cx.voice.review_next(),
             C::ReviewCategory => cx.voice.review_category(),
+            C::CopyMessage => {
+                if let Some(words) = cx.voice.copy() {
+                    cx.desktop.set_clipboard(&words);
+                }
+            }
             C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
             C::Objectives => self.cmd_objectives(cx),
             C::GameMenu => self.cmd_gamemenu(cx),

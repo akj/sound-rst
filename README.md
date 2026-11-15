@@ -90,6 +90,7 @@ Nothing said stops the game. Important messages, such as a player defeated, a ne
 | Comma | Says the previous message of the category you review. |
 | Period | Says the next message of the category you review. |
 | Slash | Changes the category you review, and says which. It starts at alerts. |
+| Control Shift C | Copies the message you review to the clipboard, and says "copied". If you are not reviewing, it copies the last message said. Another key's answer, or an important message, ends a review. |
 | Delete | Moves to the square of the last alert and says it. Press again to go to the alert before. |
 | F5, F6 | Walk back and forth through every message, as before. |
 
