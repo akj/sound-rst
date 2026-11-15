@@ -35,8 +35,8 @@ use std::time::Duration;
 
 use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
-    ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, SeatToken,
-    ServerMsg, Speed, Step, StopReason, Whereabouts,
+    ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, RoomState,
+    SeatToken, ServerMsg, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
@@ -44,7 +44,7 @@ use super::GameInterface;
 use crate::client::Client;
 use crate::message::{Category, News, Subject};
 use crate::net::conn::{Connection, NetEvent, Opening};
-use crate::net::lobby::{LobbyModel, player_name};
+use crate::net::lobby::{LobbyModel, check_watchers, player_name};
 use crate::net::words::{self, text};
 use crate::net::{Incoming, PUMP_LIMIT, Seated};
 
@@ -153,6 +153,9 @@ struct Presented {
     conn: Connection,
     /// The lobby as the new connection is told of it.
     lobby: LobbyModel,
+    /// The room of the game as the new connection is told of it: who
+    /// watches may have changed while the connection was lost.
+    room: Option<RoomState>,
     since: f64,
     expect: Expect,
 }
@@ -200,6 +203,7 @@ enum Outcome {
 struct Back {
     conn: Connection,
     lobby: LobbyModel,
+    room: Option<RoomState>,
     clock: Clock,
     message: TurnMessage,
 }
@@ -324,10 +328,15 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
                 start
                     .check(&m)
                     .map_err(|e| Some(format!("the first message: {e}")))?;
-                let seat = SeatView::new(Arc::clone(start), m);
+                let m = Arc::new(m);
+                let seat = SeatView::new(Arc::clone(start), Arc::clone(&m));
                 let server = ServerGame::new(seated, Arc::clone(start), cx.clock.now());
                 let mut game = GameInterface::on_server(cx, seat, server);
                 if seated.you == Role::Watcher {
+                    // A watcher may join a game that is paused: the
+                    // entities and squares of the first message are taken
+                    // at once, as at a return.
+                    game.take_turn(Arc::clone(&m), Some(m), Vec::new());
                     game.now_following(cx);
                 }
                 return Ok(game);
@@ -407,6 +416,7 @@ impl Returning {
         let presented = Presented {
             conn,
             lobby: LobbyModel::new(snapshot),
+            room: None,
             since: now,
             expect: Expect::Seat,
         };
@@ -450,10 +460,13 @@ impl Presented {
                 Answer::Lost => return (retry, Outcome::Waiting),
                 Answer::Over(outcome) => return (retry, outcome),
                 Answer::Whole(clock, message) => {
-                    let Presented { conn, lobby, .. } = *self;
+                    let Presented {
+                        conn, lobby, room, ..
+                    } = *self;
                     let back = Back {
                         conn,
                         lobby,
+                        room,
                         clock,
                         message: *message,
                     };
@@ -492,6 +505,13 @@ impl Presented {
                     Ok(_) => Answer::GoOn,
                     Err(too_many) => wrong(too_many.to_string()),
                 };
+            }
+            NetEvent::Msg(ServerMsg::Room { room, .. }) => {
+                if let Err(too_many) = check_watchers(room.watchers.len()) {
+                    return wrong(too_many.to_string());
+                }
+                self.room = Some(room);
+                return Answer::GoOn;
             }
             // Of the lobby, while the seat is not back yet.
             NetEvent::Msg(_) => return Answer::GoOn,
@@ -683,6 +703,18 @@ impl GameInterface {
         }
     }
 
+    /// Leaves the game at once while the player watches: a watcher has
+    /// no orders to quit with. Whether it watches.
+    pub(crate) fn leave_while_watching(&mut self, cx: &mut Client) -> bool {
+        if !self.server().is_some_and(|s| s.watching()) {
+            return false;
+        }
+        cx.log.info("stopped watching the game");
+        self.srv_quit(cx);
+        self.forced_quit = true;
+        true
+    }
+
     /// Leaves the game at once while the client returns to the seat.
     /// Whether it was returning.
     pub(crate) fn leave_while_returning(&mut self, cx: &mut Client) -> bool {
@@ -728,6 +760,7 @@ impl GameInterface {
         let Back {
             conn,
             lobby,
+            room,
             clock,
             mut message,
         } = back;
@@ -762,6 +795,11 @@ impl GameInterface {
         self.previous_update_time = None;
         if let Some(net) = &mut cx.net {
             net.returned(conn, lobby, you);
+            if let (Some(state), Some(r)) = (room, &mut net.room)
+                && state.id == r.state.id
+            {
+                r.state = state;
+            }
         }
         cx.log.info("back in the game");
         cx.news(News::new(Category::System, text(words::BACK_IN_THE_GAME)));

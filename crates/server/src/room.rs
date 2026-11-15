@@ -155,11 +155,13 @@ impl Room {
         Some(self.watchers.remove(i))
     }
 
-    /// The seat of this connection: a player's slot or a watcher's.
+    /// The seat of this connection: a watcher's, or a player's slot. A
+    /// player whose game is over keeps the slot in a room that plays, and
+    /// may come back to watch: then the watcher's seat is theirs.
     pub fn seat_of(&self, conn: ConnId) -> Option<SeatId> {
-        self.slot_of(conn)
-            .map(SeatId::Player)
-            .or_else(|| self.watcher_of(conn).map(SeatId::Watcher))
+        self.watcher_of(conn)
+            .map(SeatId::Watcher)
+            .or_else(|| self.slot_of(conn).map(SeatId::Player))
     }
 
     /// Everyone in the room, players and watchers, but `but`.

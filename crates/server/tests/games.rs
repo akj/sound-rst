@@ -1625,3 +1625,94 @@ async fn hostile_watchers_change_nothing_and_hold_up_nobody() {
     // The game is the one played with no watcher at all, turn for turn.
     check_against_host(&texts, &[&a, &b], &[]);
 }
+
+#[tokio::test]
+async fn a_player_whose_game_is_over_comes_back_to_watch_it_as_a_watcher() {
+    let server = hosting_server(|_| {});
+    let mut clients = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let room = room(&mut clients, 1).await;
+    let texts = texts();
+    let mut seats = start(clients, &texts).await;
+    let mut b = seats.pop().unwrap();
+    let mut a = seats.pop().unwrap();
+    tokio::join!(a.play_to(3), b.play_to(3));
+    // Bob leaves the game, then comes back to watch it: his old slot is
+    // no seat of his any more.
+    b.c.send(ClientMsg::LeaveGame).await;
+    while !b.left {
+        assert!(b.step(TIMEOUT).await);
+    }
+    b.c.send(ClientMsg::Watch { room }).await;
+    let mut w = Seat::join(b.c, texts.rules.as_str()).await;
+    assert_eq!(w.role, Role::Watcher);
+    assert_eq!(w.player(), a.player());
+    // A line to the allies is a player's: refused.
+    w.c.send(ClientMsg::Chat {
+        channel: Channel::Allies,
+        text: chat("psst"),
+    })
+    .await;
+    w.hear(refused(Refusal::NotNow)).await;
+    // He follows, as a watcher does: Andrew is the only player left.
+    let wholes_before = wholes(&w);
+    w.c.send(ClientMsg::Follow { step: Step::Next }).await;
+    while wholes(&w) == wholes_before {
+        assert!(w.step(TIMEOUT).await);
+    }
+    assert_eq!(w.player(), a.player());
+    // He leaves as a watcher: Andrew hears that he stopped watching.
+    w.c.send(ClientMsg::LeaveGame).await;
+    while !w.left {
+        assert!(w.step(TIMEOUT).await);
+    }
+    let bob = w.c.login.clone();
+    while told_watching(&a, &bob, false) == 0 {
+        assert!(a.step(TIMEOUT).await);
+    }
+}
+
+#[tokio::test]
+async fn watchers_of_a_game_not_built_after_its_players_left_are_back_in_the_lobby() {
+    use soundrts_server::fault;
+    let server = hosting_server(|c| c.load_budget = fault::SLOW * 4);
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "carol"]).await;
+    let mut carol = clients.pop().unwrap();
+    let room = open_room(&mut clients, 0, &jl2(), true).await;
+    add_computer(&mut clients, room).await;
+    watch(&mut carol, room).await;
+    // A game slow to build that cannot be built; its host is gone before
+    // it fails.
+    let mut bad = texts();
+    bad.rules = text(&format!("{}{}", fault::SLOW_TO_BUILD, bad.rules.as_str()));
+    bad.map = text("nb_columns x\n");
+    clients[0].send(ClientMsg::Start { texts: bad }).await;
+    carol
+        .skip_until(|m| matches!(m, ServerMsg::Lobby { change: LobbyChange::PlayerMoved { player } } if player.whereabouts == Whereabouts::Playing(room)))
+        .await;
+    clients.pop().unwrap().close().await;
+    carol
+        .skip_to(&ServerMsg::RoomExited {
+            reason: RoomExit::Closed,
+        })
+        .await;
+    let me = carol.login.clone();
+    carol.skip_to(&moved(&me, Whereabouts::Lobby)).await;
+    // The lobby goes on: Carol is told what she cannot do, and chats.
+    carol
+        .send(ClientMsg::Chat {
+            channel: Channel::Room,
+            text: chat("anyone?"),
+        })
+        .await;
+    carol.skip_to(&refused(Refusal::NotNow)).await;
+    carol
+        .send(ClientMsg::Chat {
+            channel: Channel::Lobby,
+            text: chat("anyone?"),
+        })
+        .await;
+    carol
+        .skip_until(|m| matches!(m, ServerMsg::Chat { .. }))
+        .await;
+}

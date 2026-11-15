@@ -1067,9 +1067,12 @@ impl Game {
             else {
                 continue;
             };
-            let over = matches!(d.seat, SeatId::Player(_))
-                && !d.turn.message.state.players.contains(&d.side);
-            let sent = d.frames.or_else(|| {
+            let side_left = !d.turn.message.state.players.contains(&d.side);
+            let over = matches!(d.seat, SeatId::Player(_)) && side_left;
+            // A watcher's new side left the game in the turn: it is not
+            // sent that side, and follows the next below.
+            let planned = d.frames.filter(|sent| !(sent.whole && side_left));
+            let sent = planned.or_else(|| {
                 over.then(|| {
                     let missed = match pace {
                         Pace::Behind { missed } => std::mem::take(missed),

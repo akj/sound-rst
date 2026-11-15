@@ -1764,3 +1764,60 @@ fn the_host_says_whether_a_room_takes_watchers_when_creating_it() {
         .collect();
     assert_eq!(created, [false], "{:?}", server.sent());
 }
+
+/// Carol watches Andrew's game against a computer on jl1, on a fake
+/// server, in its room: nothing of it is handled yet.
+fn watching_fake_game(h: &mut Harness) -> (FakeServer, FakeStream, TestGame) {
+    let server = h.join_fake_server("carol", &["andrew"]);
+    let stream = FakeStream::new(h, "jl1", &two_slots(), 0, 1).watching();
+    let mut room = soundrts::testkit::fake_room(jl1(h), two_slots());
+    room.watchers.push(login("carol"));
+    h.enter_fake_room(&room);
+    let g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+    (server, stream, g)
+}
+
+#[test]
+fn a_watcher_starts_on_the_first_unit_of_the_player_it_follows_and_leaves_at_once() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("carol"));
+    let (server, _stream, mut g) = watching_fake_game(&mut h);
+    // The game may be paused: what the first message shows is known at
+    // once, with no turn played.
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(!g.game.dobjets.is_empty(), "the units are known");
+    assert!(g.game.place.is_some(), "the cursor is on a square");
+    h.run_until_voice_idle(&mut g);
+    assert!(
+        said(&h).contains(&"watching andrew".to_owned()),
+        "{:#?}",
+        said(&h)
+    );
+    // Cancel game, once, leaves.
+    h.key(&mut g, Key::F10, Mods::NONE);
+    h.key(&mut g, Key::Down, Mods::NONE);
+    h.press(Key::Return, Mods::NONE);
+    h.step(&mut g);
+    assert!(g.game.end_loop, "still watching: {:#?}", said(&h));
+    assert!(server.commands().is_empty());
+}
+
+#[test]
+fn a_returning_player_learns_who_came_to_watch_meanwhile() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g, room) = game_in_room(&mut h);
+    let t0 = h.clock.now();
+    server.close_at(t0 + 0.5);
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    let mut watched = room.clone();
+    watched.watchers.push(login("dave"));
+    back.at(t0 + 1.0, self::room(RoomChange::Entered, &watched));
+    stream.turn(Vec::new());
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(t0 + 1.5, frame);
+    }
+    h.run_for(&mut g, 4.0);
+    assert!(!g.game.returning(), "back");
+    let net = h.client.net.as_ref().unwrap();
+    assert_eq!(net.room.as_ref().unwrap().state.watchers, [login("dave")]);
+}

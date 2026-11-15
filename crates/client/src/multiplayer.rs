@@ -465,10 +465,9 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
     // player is invited to before it starts.
     for r in &net.lobby.rooms {
         let invited = net.invitations.iter().any(|i| i.room == r.id);
-        let can_watch = r.takes_watchers
-            && r.content == net.content
-            && r.host != net.lobby.you
-            && (r.open || (invited && !r.started));
+        // A player whose game is over may watch it, its host too.
+        let can_watch =
+            r.takes_watchers && r.content == net.content && (r.open || (invited && !r.started));
         if can_watch {
             let label = [
                 text(words::WATCH),

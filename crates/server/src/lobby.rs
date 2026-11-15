@@ -453,13 +453,16 @@ impl Lobby {
                     .collect()
             }
             (Channel::Allies, Place::Playing(id)) => {
+                // Only players: a watcher, a former player's too, has no
+                // allies and hears none.
                 let room = &self.rooms[id];
-                let Some(slot) = room.slot_of(conn) else {
+                let Some(SeatId::Player(slot)) = room.seat_of(conn) else {
                     return Err(Refusal::NotNow);
                 };
                 let alliance = room.slots[slot].alliance;
                 room.members()
                     .filter(|(i, m)| here(*id, m.conn) && room.slots[*i].alliance == alliance)
+                    .filter(|(_, m)| room.watcher_of(m.conn).is_none())
                     .map(|(_, m)| &m.outbox)
                     .collect()
             }
@@ -591,7 +594,7 @@ impl Lobby {
         let joined = RoomChange::Joined {
             player: soundrts_protocol::SlotPlayer::Human(player.login.clone()),
         };
-        notify_others(room, conn, joined);
+        room.notify_but(Some(conn), joined);
         self.room_changed(id);
         self.move_player(conn, Place::InRoom(id));
         Ok(())
@@ -1046,6 +1049,11 @@ impl Lobby {
                 w.outbox = player.outbox.clone();
             }
         }
+        // Who watches may have changed while the connection was lost.
+        player.outbox.send(&ServerMsg::Room {
+            change: RoomChange::Entered,
+            room: room.state(),
+        });
         self.move_player(conn, Place::Playing(id));
     }
 
@@ -1114,12 +1122,18 @@ impl Lobby {
         if let Some((_, host)) = room.members().find(|(_, m)| m.conn == room.host) {
             game::tell(&host.outbox, &SeatFrame::NotStarted(reason));
         }
+        // The watchers first: the room closes once its last player is out,
+        // and sends its watchers back to the lobby then.
         let members: Vec<ConnId> = room
-            .members()
-            .map(|(_, m)| m.conn)
-            .chain(room.watchers.iter().map(|w| w.conn))
+            .watchers
+            .iter()
+            .map(|w| w.conn)
+            .chain(room.members().map(|(_, m)| m.conn))
             .collect();
         for conn in members {
+            if !self.rooms.contains_key(&id) {
+                break;
+            }
             let here = self
                 .players
                 .get(&conn)
@@ -1235,17 +1249,5 @@ fn lobby_player(player: &Player) -> LobbyPlayer {
     LobbyPlayer {
         login: player.login.clone(),
         whereabouts: player.place.whereabouts(),
-    }
-}
-
-fn notify_others(room: &Room, conn: ConnId, change: RoomChange) {
-    let text = encode(&ServerMsg::Room {
-        change,
-        room: room.state(),
-    });
-    for (_, m) in room.members() {
-        if m.conn != conn {
-            m.outbox.send_text(text.clone());
-        }
     }
 }
