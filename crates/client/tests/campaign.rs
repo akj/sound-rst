@@ -74,15 +74,15 @@ fn the_prologue_then_chapter_one_won_with_cheats_moves_the_bookmark() {
     );
     assert_eq!(
         p.said_at("objectives"),
-        ["objective: , build 1 farm , build 1 barracks ,"]
+        ["build 1 farm , not done , 1 of 2"]
     );
-    // A cheat adds a farm: the first objective is complete, said after the
-    // news of the farm, which it does not cut off.
+    // A cheat adds a farm: the first objective is complete, said before
+    // the news of the farm still waiting.
     let farm = p.said_at("farm");
     assert_eq!(farm[..3], ["Enter a command.", "a . a", "  . a "]);
     assert_eq!(
         farm[7..],
-        ["a farm", "farm 2 at a 1", "objective complete build 1 farm",]
+        ["a farm", "objective complete build 1 farm", "farm 2 at a 1"]
     );
     // A barracks: the cut scene, the second objective, the mission, the
     // score, then the victory menu (Escape: quit) and the menus. The world
@@ -98,7 +98,7 @@ fn the_prologue_then_chapter_one_won_with_cheats_moves_the_bookmark() {
             "barracks 1 at a 1",
             "objective complete build 1 barracks",
             "mission complete",
-            "Victory! at 0 minutes 30 seconds",
+            "Victory! at 0 minutes 29 seconds",
             "2 units produced , 0 lost , 0 neutralized",
             "4 building produced , 0 lost , 0 neutralized",
             "5 gold gathered , 0 consumed",

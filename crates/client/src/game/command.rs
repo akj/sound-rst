@@ -156,7 +156,8 @@ pub enum GameCommand {
     /// Moves the cursor to the square of the last alert, then the one
     /// before.
     JumpToAlert,
-    Objectives,
+    /// The next (1) or previous (-1) objective, with whether it is done.
+    Objectives(i64),
     GameMenu,
     SayPlayers,
     /// The other players: ally or enemy, and defeated.
@@ -393,7 +394,13 @@ impl GameCommand {
             "review_category" => none(C::ReviewCategory)?,
             "copy_message" => none(C::CopyMessage)?,
             "jump_to_alert" => none(C::JumpToAlert)?,
-            "objectives" => none(C::Objectives)?,
+            "objectives" => {
+                arity(args, 0, 1)?;
+                C::Objectives(match args.first() {
+                    Some(a) => int(a)?,
+                    None => 1,
+                })
+            }
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
             "players_status" => none(C::PlayersStatus)?,
@@ -545,7 +552,7 @@ impl GameCommand {
             C::Examine => "describe the target or the square".into(),
             C::UnitStatus => "say the controlled units and follow them".into(),
             C::SayTime => "say the time".into(),
-            C::Objectives => "say the objectives".into(),
+            C::Objectives(i) => format!("{} objective", direction(*i)),
             C::SayPlayers => "say the names of the players".into(),
             C::PlayersStatus => "say who is an ally or an enemy".into(),
             C::SelectSquare {
@@ -748,6 +755,8 @@ mod tests {
             "control half the units of the same types on this square"
         );
         assert_eq!(describe("volume -1"), "lower the volume");
+        assert_eq!(describe("objectives"), "next objective");
+        assert_eq!(describe("objectives -1"), "previous objective");
     }
 
     #[test]
@@ -768,6 +777,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 159);
+        assert_eq!(seen.len(), 160);
     }
 }

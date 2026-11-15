@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
+use soundrts_world::player::Objective;
 use soundrts_world::{Cheat, Command};
 
 use crate::client::Client;
@@ -54,6 +55,11 @@ impl Chat {
     fn closed(self) -> Mode {
         self.over.map_or(Mode::Playing, Mode::GameMenu)
     }
+}
+
+/// Sound numbers as a message.
+fn nums(numbers: &[i64]) -> Msg {
+    numbers.iter().map(|&n| MsgPart::Num(n as u64)).collect()
 }
 
 /// The characters the console accepts.
@@ -126,7 +132,7 @@ impl GameInterface {
                 }
             }
             C::JumpToAlert => self.cmd_jump_to_alert(cx)?,
-            C::Objectives => self.cmd_objectives(cx),
+            C::Objectives(inc) => self.cmd_objectives(cx, *inc),
             C::GameMenu => self.cmd_gamemenu(cx),
             C::SayPlayers => {
                 let mut m = Vec::new();
@@ -243,24 +249,56 @@ impl GameInterface {
         }
     }
 
-    fn cmd_objectives(&self, cx: &mut Client) {
-        let mut m = Vec::new();
-        let view = self.view();
-        let objective = view.map_objective();
-        if !objective.is_empty() {
-            m.extend(msg(mp::OBJECTIVE));
-            m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
-            m.extend(msg(mp::PERIOD));
-        }
-        let objectives = view.objectives();
-        if !objectives.is_empty() {
-            m.extend(msg(mp::OBJECTIVE));
-            m.extend(msg(mp::COMMA));
-            for o in objectives {
-                m.extend(o.description.iter().map(|&n| MsgPart::Num(n as u64)));
-                m.extend(msg(mp::COMMA));
+    /// Notes the player's objectives at the end of a turn.
+    pub(crate) fn note_objectives(&mut self, objectives: &[Objective]) {
+        for o in objectives {
+            if !self.objectives_seen.contains(o) {
+                self.objectives_seen.push(o.clone());
             }
         }
+    }
+
+    /// Says the next (`inc` 1) or previous (-1) objective, after the last
+    /// the first: "build 1 farm , not done , 2 of 3". The map's objective
+    /// comes first, without whether it is done. Every objective the player
+    /// has had is a step, those done too.
+    fn cmd_objectives(&mut self, cx: &mut Client, inc: i64) {
+        let view = self.view();
+        let now = view.objectives();
+        let mut steps: Vec<Msg> = Vec::new();
+        let map_objective = view.map_objective();
+        if !map_objective.is_empty() {
+            steps.push(nums(map_objective));
+        }
+        let seen = self.objectives_seen.iter();
+        let new = now.iter().filter(|o| !self.objectives_seen.contains(o));
+        for o in seen.chain(new) {
+            let done = if now.contains(o) {
+                words::NOT_DONE
+            } else {
+                words::DONE
+            };
+            steps.push([nums(&o.description), msg(mp::COMMA), text(done)].concat());
+        }
+        let n = steps.len();
+        if n == 0 {
+            cx.voice.item(&msg(mp::NOTHING));
+            return;
+        }
+        let i = match self.objective_at {
+            Some(i) if i < n => (i as i64 + inc).rem_euclid(n as i64) as usize,
+            _ if inc < 0 => n - 1,
+            _ => 0,
+        };
+        self.objective_at = Some(i);
+        let m = [
+            steps.swap_remove(i),
+            msg(mp::COMMA),
+            nb2msg(i as i64 + 1),
+            text(words::OF),
+            nb2msg(n as i64),
+        ]
+        .concat();
         cx.voice.item(&m);
     }
 
@@ -634,6 +672,34 @@ impl GameInterface {
 #[cfg(test)]
 mod tests {
     use super::console_char;
+    use crate::game::testing::{cheat, training};
+    use crate::input::{Key, Mods};
+
+    #[test]
+    fn the_objectives_are_said_one_at_a_time_with_whether_each_is_done() {
+        let (mut h, mut g) = training();
+        let me = g.game.me;
+        cheat(&mut g, me, "add_objective 1 101 151 83");
+        cheat(&mut g, me, "add_objective 2 101 151 99");
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        cheat(&mut g, me, "objective_complete 1");
+        h.run_until_turn(&mut g, turn + 2);
+        h.run_until_voice_idle(&mut g);
+        let mut ask = |key, mods| h.key(&mut g, key, mods).remove(0);
+        // jl1's own objective comes first.
+        assert_eq!(ask(Key::F9, Mods::NONE), "neutralized enemy , 1 of 3");
+        assert_eq!(ask(Key::F9, Mods::NONE), "build 1 farm , done , 2 of 3");
+        assert_eq!(
+            ask(Key::F9, Mods::NONE),
+            "build 1 barracks , not done , 3 of 3"
+        );
+        assert_eq!(ask(Key::F9, Mods::NONE), "neutralized enemy , 1 of 3");
+        assert_eq!(
+            ask(Key::F9, Mods::SHIFT),
+            "build 1 barracks , not done , 3 of 3"
+        );
+    }
 
     #[test]
     fn the_console_accepts_upstreams_characters() {

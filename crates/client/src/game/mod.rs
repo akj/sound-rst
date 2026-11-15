@@ -52,6 +52,7 @@ use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
+use soundrts_world::player::Objective;
 use soundrts_world::{
     Command, EntityId, Host, KnownEntity, Place, PlayerId, SeatView, SquareId, TurnMessage,
 };
@@ -340,6 +341,11 @@ pub struct GameInterface {
     pub(crate) log_start: EntryId,
     /// The alert the cursor last jumped to, and its square.
     pub(crate) alert_jump: Option<(EntryId, SquareId)>,
+    /// Every objective of the player's seen at the end of a turn, in the
+    /// order they came: one no longer among them is done.
+    pub(crate) objectives_seen: Vec<Objective>,
+    /// The step of the objectives said last.
+    pub(crate) objective_at: Option<usize>,
     pub(crate) previous_resources: Option<Vec<i64>>,
     pub(crate) previous_available_food: i64,
     pub(crate) previous_used_food: i64,
@@ -409,6 +415,8 @@ impl GameInterface {
             told_units: HashMap::new(),
             log_start: cx.voice.start_game(),
             alert_jump: None,
+            objectives_seen: Vec::new(),
+            objective_at: None,
             previous_resources: None,
             previous_available_food: 0,
             previous_used_food: 0,
@@ -456,6 +464,8 @@ impl GameInterface {
         } else {
             self.me = told.seat;
             self.seat = SeatView::new(self.host.game_start(), told);
+            self.objectives_seen.clear();
+            self.objective_at = None;
         }
     }
 
@@ -814,6 +824,7 @@ impl GameInterface {
         self.scouted_squares = m.squares.observed.clone();
         self.scouted_before_squares = m.squares.observed_before.clone();
         self.seat.remember();
+        self.note_objectives(&m.state.objectives);
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);

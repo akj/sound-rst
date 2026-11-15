@@ -115,6 +115,7 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 | M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
 | Shift+X | Every resource, also those that a map adds. |
 | F12 | The other players: each an ally or an enemy, and whether defeated. F11 still says the names only. |
+| F9, Shift+F9 | The next or the previous objective, one at a time: its description, whether it is done, and its place, such as "build 1 farm , done , 1 of 2". The map's own objective comes first, without whether it is done. After the last objective, F9 goes back to the first. |
 
 The score is said only at the end of the game: during the game it would tell you about enemy units you have not seen, for example how many units a transport that you destroyed carried.
 

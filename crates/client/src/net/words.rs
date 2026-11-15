@@ -63,6 +63,10 @@ pub const BADLY_HURT: &str = "badly hurt";
 pub const STRONGER: &str = "stronger";
 pub const EVEN: &str = "evenly matched";
 pub const WEAKER: &str = "weaker";
+pub const DONE: &str = "done";
+pub const NOT_DONE: &str = "not done";
+/// As in "2 of 3".
+pub const OF: &str = "of";
 
 // The sound and speech settings of the options menu.
 
