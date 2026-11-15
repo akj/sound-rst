@@ -420,13 +420,15 @@ impl World {
             }
             queue.remove(&v);
         }
-        if !pred.contains_key(&end_n) {
+        // The destination is reached when it has a distance. A node to avoid
+        // or blocked is never given one, nor a predecessor.
+        let Some(&d) = final_d.get(&end_n) else {
             return Ok(if places {
                 PathResult::Places(Vec::new())
             } else {
                 PathResult::Next(None, INF)
             });
-        }
+        };
         let mut path = vec![end_n];
         let mut cur = end_n;
         while cur != start_n {
@@ -444,10 +446,6 @@ impl World {
                 .collect();
             return Ok(PathResult::Places(squares));
         }
-        // A destination to avoid is reached by no path that avoids danger.
-        Ok(match final_d.get(&end_n) {
-            Some(&d) => PathResult::Next(Some(path[1]), d),
-            None => PathResult::Next(None, INF),
-        })
+        Ok(PathResult::Next(Some(path[1]), d))
     }
 }
