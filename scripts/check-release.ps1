@@ -9,7 +9,8 @@
 #    program and its Start menu entry.
 #
 # The data goes to a folder that stands for %APPDATA%, not to yours. The
-# installer check does install for the current user, then uninstalls.
+# installer check does install for the current user, then uninstalls, and
+# refuses to start where the game is already installed.
 
 param(
     # The folder scripts/stage-release.ps1 made.
@@ -107,6 +108,10 @@ $Installer = (Resolve-Path $Installer).Path
 $installed = Join-Path $Work 'installed'
 $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'sound-rst.lnk'
 $log = Join-Path $Work 'install.log'
+# An installer run over an installed game updates that game where it is.
+if (Test-Path $shortcut) {
+    throw "The game is installed on this machine ($shortcut). The installer check would replace it: run it where the game is not installed."
+}
 $process = Start-Process -FilePath $Installer -Wait -PassThru `
     -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installed`"", "/LOG=`"$log`""
 if ($process.ExitCode -ne 0) {
