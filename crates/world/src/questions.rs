@@ -12,7 +12,7 @@
 use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
-    BuildStep, GatherStep, Keyword, Order, OrderInfo, OrderKind, Request, TargetRef,
+    BuildStep, GatherStep, Keyword, MenuEntry, Order, OrderInfo, OrderKind, TargetRef,
 };
 use crate::player::Upgrades;
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
@@ -32,8 +32,8 @@ const EFFECTS: &[&str] = &[
 /// An order as the rules read it.
 pub(crate) trait OrderFacts {
     fn keyword(&self) -> Keyword;
-    /// The type of a complex order, by its name in `rules`.
-    fn type_name<'s>(&'s self, rules: &'s Rules) -> Option<&'s str>;
+    /// The type of a complex order.
+    fn type_id(&self) -> Option<TypeId>;
     fn is_imperative(&self) -> bool;
 }
 
@@ -46,7 +46,10 @@ pub(crate) trait EntityFacts {
     fn place(&self) -> Option<Place>;
     fn type_name(&self) -> &str;
     /// Its type in the rules. A building site has none.
-    fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType>;
+    fn type_id(&self, rules: &Rules) -> Option<TypeId>;
+    fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType> {
+        self.type_id(rules).map(|t| rules.ty(t))
+    }
     /// For a building site, the type of the building it becomes.
     fn site_type(&self) -> Option<TypeId>;
     fn hp(&self) -> i64;
@@ -129,8 +132,8 @@ impl OrderFacts for Order {
         self.keyword()
     }
 
-    fn type_name<'s>(&'s self, rules: &'s Rules) -> Option<&'s str> {
-        Order::type_name(self, rules)
+    fn type_id(&self) -> Option<TypeId> {
+        self.kind.type_id()
     }
 
     fn is_imperative(&self) -> bool {
@@ -159,8 +162,8 @@ impl EntityFacts for &Entity {
         &self.type_name
     }
 
-    fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType> {
-        self.type_id.map(|t| rules.ty(t))
+    fn type_id(&self, _: &Rules) -> Option<TypeId> {
+        self.type_id
     }
 
     fn site_type(&self) -> Option<TypeId> {
@@ -305,8 +308,8 @@ impl OrderFacts for KnownOrder {
         self.keyword
     }
 
-    fn type_name<'s>(&'s self, _: &'s Rules) -> Option<&'s str> {
-        self.type_name.as_deref()
+    fn type_id(&self) -> Option<TypeId> {
+        self.type_id
     }
 
     fn is_imperative(&self) -> bool {
@@ -335,11 +338,11 @@ impl EntityFacts for &KnownEntity {
         &self.type_name
     }
 
-    fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType> {
+    fn type_id(&self, rules: &Rules) -> Option<TypeId> {
         if self.is_building_site() {
             return None;
         }
-        rules.unit_type(&self.type_name)
+        rules.type_id(&self.type_name)
     }
 
     fn site_type(&self) -> Option<TypeId> {
@@ -413,8 +416,8 @@ impl EntityFacts for Controlled<'_> {
         &self.known.type_name
     }
 
-    fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType> {
-        self.known.unit_type(rules)
+    fn type_id(&self, rules: &Rules) -> Option<TypeId> {
+        self.known.type_id(rules)
     }
 
     fn site_type(&self) -> Option<TypeId> {
@@ -522,7 +525,8 @@ pub(crate) fn type_list<'t>(t: Option<&'t UnitType>, attr: &str) -> &'t [String]
 
 // requirements
 
-/// `has`: an upgrade, or a unit of the type or derived from it.
+/// `has`: an upgrade, or a unit of the type or derived from it. A
+/// requirement is a class name of the rules, which may name no type.
 pub(crate) fn has<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_name: &str) -> bool {
     if p.has_everything
         || k.rules()
@@ -548,17 +552,15 @@ pub(crate) fn has_all<'a>(
 
 /// `future_count`: units of a type, building sites for it, and units
 /// being trained or upgraded to it.
-pub(crate) fn future_count<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_name: &str) -> i64 {
+pub(crate) fn future_count<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, t: TypeId) -> i64 {
     let rules = k.rules();
     let mut result = 0;
     for e in p.units.iter().filter_map(|&u| k.unit(u)) {
-        let site_of = e.site_type().map(|s| rules.ty(s).name.as_str());
-        if e.type_name() == type_name || site_of == Some(type_name) {
+        if e.type_id(rules) == Some(t) || e.site_type() == Some(t) {
             result += 1;
         }
         for o in e.orders() {
-            if matches!(o.keyword(), Keyword::Train | Keyword::UpgradeTo)
-                && o.type_name(rules) == Some(type_name)
+            if matches!(o.keyword(), Keyword::Train | Keyword::UpgradeTo) && o.type_id() == Some(t)
             {
                 result += 1;
             }
@@ -568,18 +570,9 @@ pub(crate) fn future_count<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_n
 }
 
 /// `check_count_limit`: whether the player may have one more of the type.
-pub(crate) fn check_count_limit<'a>(
-    k: impl Knowledge<'a>,
-    p: PlayerFacts<'a>,
-    type_name: &str,
-) -> bool {
-    let Some(t) = k.rules().unit_type(type_name) else {
-        return false;
-    };
-    if t.stats.count_limit == 0 {
-        return true;
-    }
-    future_count(k, p, &t.name) < t.stats.count_limit
+pub(crate) fn check_count_limit<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, t: TypeId) -> bool {
+    let limit = k.rules().ty(t).stats.count_limit;
+    limit == 0 || future_count(k, p, t) < limit
 }
 
 // permissions and menus
@@ -589,79 +582,63 @@ fn additional_condition<'a, K: Knowledge<'a>>(
     unit: K::Unit,
     p: PlayerFacts<'a>,
     kw: Keyword,
-    type_name: &str,
+    t: TypeId,
 ) -> bool {
     match kw {
         Keyword::Research => {
-            if k.rules()
-                .type_id(type_name)
-                .is_some_and(|t| p.upgrades.has(t))
-            {
+            if p.upgrades.has(t) {
                 return false;
             }
             let researching = p.units.iter().filter_map(|&u| k.unit(u)).any(|e| {
-                e.orders().iter().any(|o| {
-                    o.keyword() == Keyword::Research && o.type_name(k.rules()) == Some(type_name)
-                })
+                e.orders()
+                    .iter()
+                    .any(|o| o.keyword() == Keyword::Research && o.type_id() == Some(t))
             });
             !researching
         }
         Keyword::UpgradeTo => unit.orders().is_empty(),
         Keyword::Use => k
             .rules()
-            .get_words(type_name, "effect")
-            .and_then(|e| e.first().cloned())
+            .ty(t)
+            .effect
+            .as_ref()
+            .and_then(|e| e.first())
             .is_some_and(|e| EFFECTS.contains(&e.as_str())),
         _ => true,
     }
 }
 
-fn is_almost_allowed<'a, K: Knowledge<'a>>(
-    k: K,
-    unit: K::Unit,
-    kw: Keyword,
-    type_name: &str,
-) -> bool {
+fn is_almost_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t: TypeId) -> bool {
     let Some(attr) = kw.menu_attribute() else {
         return false;
     };
-    if !type_list(unit.unit_type(k.rules()), attr)
+    let rules = k.rules();
+    if !type_list(unit.unit_type(rules), attr)
         .iter()
-        .any(|t| t == type_name)
+        .any(|n| *n == rules.ty(t).name)
     {
         return false;
     }
     let Some(p) = unit.owner().and_then(|p| k.player_facts(p)) else {
         return false;
     };
-    !k.rules()
-        .type_id(type_name)
-        .is_some_and(|t| p.forbidden_techs.contains(&t))
+    !p.forbidden_techs.contains(&t)
         && unit
             .orders()
             .last()
             .is_none_or(|o| o.keyword().can_be_followed())
-        && additional_condition(k, unit, p, kw, type_name)
-        && check_count_limit(k, p, type_name)
+        && additional_condition(k, unit, p, kw, t)
+        && check_count_limit(k, p, t)
 }
 
-fn complex_is_allowed<'a, K: Knowledge<'a>>(
-    k: K,
-    unit: K::Unit,
-    kw: Keyword,
-    type_name: &str,
-) -> bool {
-    if !is_almost_allowed(k, unit, kw, type_name) {
+fn complex_is_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t: TypeId) -> bool {
+    if !is_almost_allowed(k, unit, kw, t) {
         return false;
     }
     let Some(p) = unit.owner().and_then(|p| k.player_facts(p)) else {
         return false;
     };
-    let req = k
-        .rules()
-        .unit_type(type_name)
-        .map_or(&[][..], |t| &t.requirements);
-    has_all(k, p, req)
+    has_all(k, p, &k.rules().ty(t).requirements)
 }
 
 /// Whether a unit may receive an order now (`cls.is_allowed(unit,
@@ -671,10 +648,10 @@ pub(crate) fn is_order_allowed<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     kw: Keyword,
-    type_name: Option<&str>,
+    t: Option<TypeId>,
 ) -> Res<bool> {
     if kw.is_complex() {
-        let t = type_name.ok_or_else(|| {
+        let t = t.ok_or_else(|| {
             Abort::new("is_allowed() missing 1 required positional argument: 'type_name'")
         })?;
         return Ok(complex_is_allowed(k, unit, kw, t));
@@ -697,7 +674,7 @@ pub(crate) fn order_is_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Ke
         Keyword::DisableAutoRepair => unit.auto_repair() == Some(true),
         Keyword::ModeOffensive => switchable && unit.stance() == Some(AiMode::Defensive),
         Keyword::ModeDefensive => switchable && unit.stance() == Some(AiMode::Offensive),
-        Keyword::RallyingPoint => !menu_requests(k, unit, Keyword::Train, false).is_empty(),
+        Keyword::RallyingPoint => !order_menu(k, unit, Keyword::Train, false).is_empty(),
         Keyword::AutoAttack | Keyword::AutoExplore | Keyword::Wait => unit
             .owner()
             .and_then(|p| k.player_facts(p))
@@ -711,52 +688,39 @@ pub(crate) fn order_is_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Ke
 
 /// The orders of one kind a unit may receive, without their target: `go`,
 /// or `train footman`, `train archer`... With `strict`, the requirements
-/// must be met too.
-pub(crate) fn menu_requests<'a, K: Knowledge<'a>>(
+/// must be met too. A type list's name of no type is never allowed.
+pub(crate) fn order_menu<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     kw: Keyword,
     strict: bool,
-) -> Vec<Request> {
+) -> Vec<MenuEntry> {
     let Some(attr) = kw.menu_attribute() else {
-        return Request::plain(kw)
+        return MenuEntry::plain(kw)
             .filter(|_| order_is_allowed(k, unit, kw))
             .into_iter()
             .collect();
     };
-    type_list(unit.unit_type(k.rules()), attr)
+    let rules = k.rules();
+    type_list(unit.unit_type(rules), attr)
         .iter()
-        .filter(|t| {
+        .filter_map(|n| rules.type_id(n))
+        .filter(|&t| {
             if strict {
                 complex_is_allowed(k, unit, kw, t)
             } else {
                 is_almost_allowed(k, unit, kw, t)
             }
         })
-        .filter_map(|t| Request::typed(kw, t.clone()))
-        .collect()
-}
-
-/// The menu entries of one kind of order for a unit: see
-/// [`menu_requests`].
-pub(crate) fn order_menu<'a, K: Knowledge<'a>>(
-    k: K,
-    unit: K::Unit,
-    kw: Keyword,
-    strict: bool,
-) -> Vec<String> {
-    menu_requests(k, unit, kw, strict)
-        .iter()
-        .map(Request::menu_entry)
+        .filter_map(|t| MenuEntry::typed(rules, kw, t))
         .collect()
 }
 
 // costs
 
 /// The type of a complex order: `footman` in `train footman`.
-pub(crate) fn complex_type<'r>(rules: &'r Rules, type_name: Option<&str>) -> Res<&'r UnitType> {
-    type_name
-        .and_then(|n| rules.unit_type(n))
+pub(crate) fn complex_type(rules: &Rules, t: Option<TypeId>) -> Res<&UnitType> {
+    t.map(|t| rules.ty(t))
         .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
 }
 
@@ -774,12 +738,12 @@ pub(crate) fn order_cost(
     rules: &Rules,
     unit: &impl UnitFacts,
     kw: Keyword,
-    type_name: Option<&str>,
+    type_id: Option<TypeId>,
 ) -> Res<Vec<i64>> {
     if !kw.is_complex() {
         return Ok(priced_cost(rules, unit, None));
     }
-    let t = complex_type(rules, type_name)?;
+    let t = complex_type(rules, type_id)?;
     Ok(priced_cost(
         rules,
         unit,
@@ -814,12 +778,12 @@ pub(crate) fn order_food_cost(
     rules: &Rules,
     unit: &impl UnitFacts,
     kw: Keyword,
-    type_name: Option<&str>,
+    type_id: Option<TypeId>,
 ) -> Res<i64> {
     if !kw.is_complex() {
         return Ok(priced_food_cost(unit, None));
     }
-    let t = complex_type(rules, type_name)?;
+    let t = complex_type(rules, type_id)?;
     Ok(priced_food_cost(unit, Some((t, kw == Keyword::UpgradeTo))))
 }
 
@@ -839,17 +803,17 @@ pub(crate) fn order_info(
     rules: &Rules,
     unit: &impl UnitFacts,
     kw: Keyword,
-    type_name: Option<&str>,
+    type_id: Option<TypeId>,
 ) -> Option<OrderInfo> {
     let nb_args = if kw == Keyword::Use {
-        let t = complex_type(rules, type_name).ok()?;
+        let t = complex_type(rules, type_id).ok()?;
         usize::from(t.effect_target == ["ask"])
     } else {
         kw.nb_args()
     };
     Some(OrderInfo {
-        cost: order_cost(rules, unit, kw, type_name).ok()?,
-        food_cost: order_food_cost(rules, unit, kw, type_name).ok()?,
+        cost: order_cost(rules, unit, kw, type_id).ok()?,
+        food_cost: order_food_cost(rules, unit, kw, type_id).ok()?,
         nb_args,
     })
 }

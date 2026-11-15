@@ -407,9 +407,9 @@ impl World {
                         self.send_voice_important(p, msg(mp::BEEP));
                         self.warn("cannot add an ability");
                     }
-                    Some(_) => {
+                    Some((t, _, _)) => {
                         for _ in 0..nb {
-                            if !self.check_count_limit(p, i) {
+                            if !self.check_count_limit(p, t) {
                                 break;
                             }
                             match self.add_unit_for_lang(

@@ -91,7 +91,7 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
         go_farm,
         &KnownOrder {
             keyword: Keyword::Go,
-            type_name: None,
+            type_id: None,
             is_deferred: false,
             is_imperative: false,
             time_left: None,

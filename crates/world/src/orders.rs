@@ -290,6 +290,7 @@ impl Request {
     }
 
     /// An order of a keyword with a type. `None` if the keyword takes none.
+    #[cfg(test)]
     pub(crate) fn typed(keyword: Keyword, type_name: impl Into<String>) -> Option<Request> {
         keyword.is_complex().then(|| Request {
             keyword,
@@ -417,6 +418,12 @@ impl Request {
         }
     }
 
+    /// The order a menu entry lists, without its target.
+    pub(crate) fn listed(rules: &Rules, entry: &MenuEntry) -> Request {
+        let type_name = entry.type_id.map(|t| rules.ty(t).name.clone());
+        Request::of(entry.keyword, type_name, None)
+    }
+
     /// The order in words, as a computer player keeps track of it:
     /// `["build", "farm", "25"]`.
     pub(crate) fn words(&self, w: &World) -> Vec<String> {
@@ -424,14 +431,6 @@ impl Request {
         words.extend(self.type_name.iter().cloned());
         words.extend(self.args(w));
         words
-    }
-
-    /// The order as a menu lists it: `go`, `train footman`.
-    pub(crate) fn menu_entry(&self) -> String {
-        match &self.type_name {
-            Some(t) => format!("{} {t}", self.keyword.as_str()),
-            None => self.keyword.as_str().to_owned(),
-        }
     }
 
     /// The first argument as text: a target as [`TargetRef::text`] writes
@@ -988,6 +987,51 @@ pub struct OrderInfo {
     pub nb_args: usize,
 }
 
+/// An order a unit may receive, as its order menu lists it: the kind of
+/// order and, for a kind that takes one, the type it makes or uses
+/// (`footman` in `train footman`) and what that type requires.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuEntry {
+    pub keyword: Keyword,
+    pub type_id: Option<TypeId>,
+    /// The requirements of the type that are types of the rules. A
+    /// requirement that names another class is not said.
+    pub requirements: Vec<TypeId>,
+}
+
+impl MenuEntry {
+    /// An order without a type: `None` for a kind that takes one.
+    pub fn plain(keyword: Keyword) -> Option<MenuEntry> {
+        (!keyword.is_complex()).then(|| MenuEntry {
+            keyword,
+            type_id: None,
+            requirements: Vec::new(),
+        })
+    }
+
+    /// An order of a kind that takes a type: `None` for another kind.
+    pub fn typed(rules: &Rules, keyword: Keyword, t: TypeId) -> Option<MenuEntry> {
+        keyword.is_complex().then(|| MenuEntry {
+            keyword,
+            type_id: Some(t),
+            requirements: rules
+                .ty(t)
+                .requirements
+                .iter()
+                .filter_map(|r| rules.type_id(r))
+                .collect(),
+        })
+    }
+
+    /// The entry as the original's menus wrote it: `go`, `train footman`.
+    pub fn text(&self, rules: &Rules) -> String {
+        match self.type_id {
+            Some(t) => format!("{} {}", self.keyword.as_str(), rules.ty(t).name),
+            None => self.keyword.as_str().to_owned(),
+        }
+    }
+}
+
 impl World {
     fn find_order(&self, unit: EntityId, uid: u64) -> Option<usize> {
         self.entity(unit)?.orders.iter().position(|o| o.uid == uid)
@@ -1076,40 +1120,39 @@ impl World {
         &self,
         unit: EntityId,
         keyword: Keyword,
-        type_name: Option<&str>,
+        type_id: Option<TypeId>,
     ) -> Option<OrderInfo> {
-        questions::order_info(&self.rules, &self.entity(unit)?, keyword, type_name)
+        questions::order_info(&self.rules, &self.entity(unit)?, keyword, type_id)
     }
 
     // permissions and menus
 
     /// Whether a unit may receive an order now (`cls.is_allowed(unit,
-    /// *args)`), with its type for `train`, `build`... A complex order
-    /// without its type raises in the original.
+    /// *args)`), with the name of its type for `train`, `build`... A
+    /// complex order without its type raises in the original; one whose
+    /// type the rules lack is not allowed.
     pub(crate) fn is_order_allowed(
         &self,
         unit: EntityId,
         kw: Keyword,
         type_name: Option<&str>,
     ) -> Res<bool> {
-        questions::is_order_allowed(self, self.e(unit), kw, type_name)
+        let t = match type_name.map(|n| self.rules.type_id(n)) {
+            Some(None) if kw.is_complex() => return Ok(false),
+            t => t.flatten(),
+        };
+        questions::is_order_allowed(self, self.e(unit), kw, t)
     }
 
     /// The menu entries of one kind of order for a unit: `go`, or
     /// `train footman`, `train archer`... With `strict`, the requirements
     /// must be met too.
-    pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<String> {
+    pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<MenuEntry> {
         questions::order_menu(self, self.e(unit), kw, strict)
     }
 
-    /// The orders of one kind that [`World::order_menu`] lists, without
-    /// their target.
-    pub(crate) fn menu_requests(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<Request> {
-        questions::menu_requests(self, self.e(unit), kw, strict)
-    }
-
     /// Every menu entry of a unit, in the original's order of order kinds.
-    pub fn full_order_menu(&self, unit: EntityId, strict: bool) -> Vec<String> {
+    pub fn full_order_menu(&self, unit: EntityId, strict: bool) -> Vec<MenuEntry> {
         Keyword::ALL
             .iter()
             .flat_map(|&k| self.order_menu(unit, k, strict))
@@ -2541,8 +2584,7 @@ impl World {
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                 return Ok(());
             }
-            let name = self.rules.ty(building).name.clone();
-            if self.check_count_limit(p, &name) {
+            if self.check_count_limit(p, building) {
                 self.put_building_site(unit, uid, building, t)?;
             } else {
                 self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
@@ -2872,7 +2914,7 @@ impl World {
                     let Some(dead) = self.e(c).corpse_unit.clone() else {
                         continue;
                     };
-                    if !self.check_count_limit(p, &dead.type_name) {
+                    if !dead.type_id.is_some_and(|t| self.check_count_limit(p, t)) {
                         continue;
                     }
                     self.resurrect(c, *dead, p)?;

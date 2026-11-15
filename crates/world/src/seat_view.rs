@@ -40,7 +40,7 @@ use crate::known::{KnownEntity, KnownOrder, KnownTarget};
 use crate::message::SquareInfo;
 use crate::message::{ControlledPlayer, GameEnd, GameStart, TurnMessage};
 use crate::msg::Msg;
-use crate::orders::{Keyword, OrderInfo, TargetRef};
+use crate::orders::{Keyword, MenuEntry, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
 use crate::rules::{Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
@@ -367,7 +367,7 @@ impl SeatView {
     /// The entries of a unit's order menu for one keyword. With `strict`,
     /// only the orders the unit may receive now. Nothing for a unit the
     /// player does not control.
-    pub fn order_menu(&self, unit: EntityId, keyword: Keyword, strict: bool) -> Vec<String> {
+    pub fn order_menu(&self, unit: EntityId, keyword: Keyword, strict: bool) -> Vec<MenuEntry> {
         match self.unit(unit) {
             Some(u) => questions::order_menu(self, u, keyword, strict),
             None => Vec::new(),
@@ -380,16 +380,17 @@ impl SeatView {
         &self,
         unit: EntityId,
         keyword: Keyword,
-        type_name: Option<&str>,
+        type_id: Option<TypeId>,
     ) -> Option<OrderInfo> {
-        questions::order_info(&self.start.rules, &self.unit(unit)?, keyword, type_name)
+        questions::order_info(&self.start.rules, &self.unit(unit)?, keyword, type_id)
     }
 
     /// Whether the owner of a unit has a type, built or researched. `None`
     /// unless the player controls the owner's units.
-    pub fn owner_has(&self, unit: EntityId, type_name: &str) -> Option<bool> {
+    pub fn owner_has(&self, unit: EntityId, t: TypeId) -> Option<bool> {
         let owner = self.unit(unit)?.known.player?;
-        Some(questions::has(self, self.player_facts(owner)?, type_name))
+        let name = &self.start.rules.ty(t).name;
+        Some(questions::has(self, self.player_facts(owner)?, name))
     }
 
     /// What a unit the player perceives is busy with, for its noise.

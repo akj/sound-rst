@@ -198,7 +198,7 @@ pub struct OwnPart {
 pub struct KnownOrder {
     pub keyword: Keyword,
     /// The type of an order that takes one: `footman` in `train footman`.
-    pub type_name: Option<String>,
+    pub type_id: Option<TypeId>,
     /// Production waiting for food.
     pub is_deferred: bool,
     /// Given as imperative: the unit carries it out whatever it meets.
@@ -369,7 +369,7 @@ impl KnownOrder {
         };
         KnownOrder {
             keyword: o.keyword(),
-            type_name: o.kind.type_id().map(|t| w.rules.ty(t).name.clone()),
+            type_id: o.kind.type_id(),
             is_deferred: o.is_deferred(),
             is_imperative: o.is_imperative,
             time_left,

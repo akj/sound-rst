@@ -330,15 +330,16 @@ impl World {
             .choice_index(orders.len())
             .expect("the order list is not empty");
         let kw = orders[i];
-        let mut menu = self.menu_requests(unit, kw, true);
+        let mut menu = self.order_menu(unit, kw, true);
         if menu.is_empty() {
             return Ok(None);
         }
         let i = self.random.choice_index(menu.len()).expect("not empty");
-        let mut order = menu.swap_remove(i);
+        let entry = menu.swap_remove(i);
+        let mut order = Request::listed(&self.rules, &entry);
         // Of the abilities, only those that ask for a target take one.
         let args = if kw == Keyword::Use {
-            self.order_info(unit, kw, order.type_name())
+            self.order_info(unit, kw, entry.type_id)
                 .is_some_and(|info| info.nb_args > 0)
         } else {
             kw.nb_args() > 0

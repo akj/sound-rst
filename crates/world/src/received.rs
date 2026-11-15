@@ -226,6 +226,9 @@ impl GameStart {
             return malformed(format!("entity {} is a site of an unknown type", e.id));
         }
         for o in e.own.iter().flat_map(|own| &own.orders) {
+            if let Some(t) = o.type_id {
+                self.unit_type(t)?;
+            }
             for &p in o.patrol.iter().flatten() {
                 self.place(p)?;
             }

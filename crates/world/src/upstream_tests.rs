@@ -80,6 +80,14 @@ fn nb(w: &World, p: PlayerId, t: &str) -> usize {
         .count()
 }
 
+/// Whether a unit's menu of one kind of order (not strict) lists
+/// `entry` as the original wrote it: `train peasant`.
+fn in_menu(w: &World, u: EntityId, kw: Keyword, entry: &str) -> bool {
+    w.order_menu(u, kw, false)
+        .iter()
+        .any(|e| e.text(&w.rules) == entry)
+}
+
 /// An order written in the map language: `go b1`, `build barracks a1`.
 fn request(w: &World, order: &str) -> Request {
     Request::parse(w, &words(order)).unwrap()
@@ -483,18 +491,12 @@ starting_resources 10 10
         set_rule(&mut w, "peasant", |s| s.count_limit = 1);
         w.update();
         let th = find(&w, cp, "townhall", 0).unwrap();
-        assert!(
-            !w.order_menu(th, Keyword::Train, false)
-                .contains(&"train peasant".to_owned())
-        );
+        assert!(!in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
         assert!(w.e(th).orders.is_empty());
         set_rule(&mut w, "peasant", |s| s.count_limit = 2);
         w.update();
-        assert!(
-            w.order_menu(th, Keyword::Train, false)
-                .contains(&"train peasant".to_owned())
-        );
+        assert!(in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
         assert!(!w.e(th).orders.is_empty());
     }
@@ -514,10 +516,7 @@ starting_resources 10 10
         for p in [p1, p2] {
             assert!(w.e(p).orders.is_empty());
         }
-        assert!(
-            w.order_menu(p1, Keyword::Build, false)
-                .contains(&"build barracks".to_owned())
-        );
+        assert!(in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert!(!w.e(p).orders.is_empty());
@@ -527,10 +526,7 @@ starting_resources 10 10
             assert!(w.e(p).orders.is_empty());
         }
         assert_eq!(nb(&w, cp, "barracks"), 1);
-        assert!(
-            !w.order_menu(p1, Keyword::Build, false)
-                .contains(&"build barracks".to_owned())
-        );
+        assert!(!in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert!(w.e(p).orders.is_empty());
@@ -538,18 +534,18 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "barracks"), 1);
         set_rule(&mut w, "barracks", |s| s.count_limit = 2);
         w.update();
-        assert_eq!(w.future_count(cp, "barracks"), 1);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
             assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("barracks"));
         }
-        assert_eq!(w.future_count(cp, "barracks"), 1);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         run_until_idle(&mut w, &[p1, p2], 50);
         for p in [p1, p2] {
             assert!(w.e(p).orders.is_empty());
         }
-        assert_eq!(w.future_count(cp, "barracks"), 2);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 2);
         assert_eq!(nb(&w, cp, "barracks"), 2);
         assert_eq!(nb(&w, cp, "farm"), 1);
         take(&mut w, p1, "build farm a1");

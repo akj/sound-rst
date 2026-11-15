@@ -276,7 +276,7 @@ fn aiming_at(id: u32, inner: KnownEntity) -> KnownEntity {
     e.own = Some(OwnPart {
         orders: vec![KnownOrder {
             keyword: Keyword::Attack,
-            type_name: None,
+            type_id: None,
             is_deferred: false,
             is_imperative: false,
             time_left: None,

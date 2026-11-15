@@ -203,7 +203,7 @@ impl<'a> Truth<'a> {
         )
     }
 
-    fn order_menu(&self, unit: EntityId, keyword: Keyword, strict: bool) -> Vec<String> {
+    fn order_menu(&self, unit: EntityId, keyword: Keyword, strict: bool) -> Vec<MenuEntry> {
         if self.w.entity(unit).is_none() {
             return Vec::new();
         }
@@ -214,14 +214,15 @@ impl<'a> Truth<'a> {
         &self,
         unit: EntityId,
         keyword: Keyword,
-        type_name: Option<&str>,
+        type_id: Option<TypeId>,
     ) -> Option<OrderInfo> {
-        self.w.order_info(unit, keyword, type_name)
+        self.w.order_info(unit, keyword, type_id)
     }
 
-    fn owner_has(&self, unit: EntityId, type_name: &str) -> Option<bool> {
+    fn owner_has(&self, unit: EntityId, t: TypeId) -> Option<bool> {
         let owner = self.w.entity(unit)?.player?;
-        self.controls(owner).then(|| self.w.has(owner, type_name))
+        let name = &self.w.rules.ty(t).name;
+        self.controls(owner).then(|| self.w.has(owner, name))
     }
 
     fn activity(&self, unit: EntityId) -> Option<String> {
@@ -513,13 +514,16 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
                     s.order_menu(u.id, k, strict),
                 );
             }
-            let mut types: Vec<Option<&str>> = vec![None];
+            let mut types: Vec<Option<TypeId>> = vec![None];
             if let (Some(attr), Some(ty)) = (k.menu_attribute(), ty) {
                 let list = questions::type_list(Some(ty), attr);
-                types.extend(list.iter().map(|t| Some(t.as_str())));
+                types.extend(list.iter().map(|t| rules.type_id(t)));
                 for name in list {
                     let requirements = rules.unit_type(name).map_or(&[][..], |t| &t.requirements);
                     for r in requirements.iter().chain([name]) {
+                        let Some(r) = rules.type_id(r) else {
+                            continue;
+                        };
                         t.same(
                             "owner_has",
                             (u.id, r),
@@ -529,7 +533,6 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
                     }
                 }
             }
-            types.push(Some("no_such_type"));
             for ty in types {
                 t.same(
                     "order_info",
@@ -561,11 +564,12 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
     // A requirement is not known for a unit of a player not controlled.
     for e in pl.perception.iter().filter_map(|&id| v.perceived(id)) {
         if e.player.is_some_and(|p| !v.controls(p)) {
+            let farm = rules.type_id("farm").expect("the rules have farms");
             t.same(
                 "owner_has",
-                (e.id, "farm"),
-                v.owner_has(e.id, "farm"),
-                s.owner_has(e.id, "farm"),
+                (e.id, farm),
+                v.owner_has(e.id, farm),
+                s.owner_has(e.id, farm),
             );
         }
     }

@@ -122,7 +122,8 @@ fn ask(start: &Arc<GameStart>, m: TurnMessage) {
         for &k in Keyword::ALL {
             let _ = (v.order_menu(u.id, k, false), v.order_info(u.id, k, None));
         }
-        let _ = v.order_info(u.id, Keyword::UpgradeTo, Some("keep"));
+        let keep = v.game_start().rules.type_id("keep");
+        let _ = v.order_info(u.id, Keyword::UpgradeTo, keep);
         let _ = v.default_order(u.id, OrderTarget::Entity(u.id));
     }
 }

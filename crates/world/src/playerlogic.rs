@@ -12,7 +12,7 @@ use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
 use crate::orders::{Order, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES};
+use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
 use crate::world::{Abort, INF, Res, World};
 
 /// The side of the buckets used to find units near a point.
@@ -815,14 +815,14 @@ impl World {
 
     /// `future_count`: units of a type, building sites for it, and units
     /// being trained or upgraded to it.
-    pub fn future_count(&self, p: PlayerId, type_name: &str) -> i64 {
-        questions::future_count(self, self.facts(p), type_name)
+    pub fn future_count(&self, p: PlayerId, t: TypeId) -> i64 {
+        questions::future_count(self, self.facts(p), t)
     }
 
     /// `check_count_limit`: whether the player may have one more of the
     /// type.
-    pub fn check_count_limit(&self, p: PlayerId, type_name: &str) -> bool {
-        questions::check_count_limit(self, self.facts(p), type_name)
+    pub fn check_count_limit(&self, p: PlayerId, t: TypeId) -> bool {
+        questions::check_count_limit(self, self.facts(p), t)
     }
 
     /// `nearest_warehouse`: the allied unit storing the resource with the
