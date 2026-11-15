@@ -3,7 +3,10 @@
 //! recorded, in English, kept here together so they can be translated
 //! later.
 
-use soundrts_world::msg::{Msg, MsgPart};
+use soundrts_protocol::{ClockChange, Login, SeatChange, Speed, StartRefusal, StopReason};
+use soundrts_world::msg::{Msg, MsgPart, nb2msg};
+
+use crate::sound_cache::literal;
 
 // Phrases of the original's `tts.txt` that `msgparts` does not name.
 
@@ -37,11 +40,6 @@ pub const I_AM_NOT_READY: &str = "I am not ready";
 pub const REMOVE: &str = "remove";
 pub const IS_NOW_THE_ORGANIZER: &str = "is now the organizer";
 pub const YOU_HAVE_BEEN_REMOVED: &str = "you have been removed from the game";
-pub const WAITING_FOR: &str = "waiting for";
-pub const GAME_RESUMES: &str = "the game resumes";
-pub const OUT_OF_SYNC: &str =
-    "the game is out of sync: you no longer play the same game as the others";
-pub const OTHERS_OUT_OF_SYNC: &str = "other players are out of sync: they leave the game";
 pub const SHARE_ADDRESS: &str = "the address to give to the other players is";
 pub const ADDRESS_COPIED: &str = "it is copied to the clipboard";
 pub const RECENT: &str = "recent";
@@ -120,6 +118,85 @@ pub const SCOUTING: &str = "scouting";
 pub const CHAT: &str = "chat";
 pub const SYSTEM: &str = "system";
 pub const STORY: &str = "story";
+
+// A game on a server: what happens to the players and the clock, and why
+// a game stops or does not start. The most important word comes first.
+
+pub const LOST_THE_CONNECTION: &str = "lost the connection";
+pub const IS_BACK: &str = "is back";
+pub const GIVEN_UP: &str = "did not come back, and is out of the game";
+pub const LEFT_THE_GAME: &str = "left the game";
+pub const REMOVED_BY: &str = "removed from the game by";
+pub const PAUSED_BY: &str = "paused by";
+pub const RESUMED_BY: &str = "resumed by";
+pub const SPEED: &str = "speed";
+pub const SLOW: &str = "slow";
+pub const NORMAL: &str = "normal";
+pub const FAST: &str = "fast";
+pub const SET_BY: &str = "set by";
+pub const STOPPED: &str = "game stopped by the server:";
+pub const IT_FAILED: &str = "it failed";
+pub const A_TURN_TOOK_TOO_LONG: &str = "a turn took too long";
+pub const NOT_STARTED: &str = "game not started:";
+pub const CANNOT_BUILD: &str = "the server cannot build it:";
+pub const TOOK_TOO_LONG_TO_BUILD: &str = "it took too long to build";
+pub const SERVER_BUSY: &str = "the server is busy, try again later";
+pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
+pub const ONLY_THE_HOST_SETS_THE_SPEED: &str = "only the host can change the speed";
+
+/// What happened to a player of the game, `who`.
+pub fn seat_news(who: Msg, change: &SeatChange) -> Msg {
+    let what = match change {
+        SeatChange::Dropped => text(LOST_THE_CONNECTION),
+        SeatChange::Returned => text(IS_BACK),
+        SeatChange::GivenUp => text(GIVEN_UP),
+        SeatChange::Left => text(LEFT_THE_GAME),
+        SeatChange::Removed { by } => [text(REMOVED_BY), vec![literal(by.as_str())]].concat(),
+    };
+    [who, what].concat()
+}
+
+/// A speed of the game, as said.
+pub fn speed(speed: Speed) -> Msg {
+    match speed {
+        Speed::Slow => text(SLOW),
+        Speed::Normal => text(NORMAL),
+        Speed::Fast2 => [text(FAST), nb2msg(2)].concat(),
+        Speed::Fast4 => [text(FAST), nb2msg(4)].concat(),
+    }
+}
+
+/// What the room's host, `by`, did to the clock.
+pub fn clock_news(by: &Login, change: ClockChange) -> Msg {
+    let what = match change {
+        ClockChange::Paused => text(PAUSED_BY),
+        ClockChange::Resumed => text(RESUMED_BY),
+        ClockChange::Speed { speed: s } => [text(SPEED), speed(s), text(SET_BY)].concat(),
+    };
+    [what, vec![literal(by.as_str())]].concat()
+}
+
+/// Why the server stopped the game.
+pub fn stopped(reason: StopReason) -> Msg {
+    let why = match reason {
+        StopReason::Crashed => IT_FAILED,
+        StopReason::TooSlow => A_TURN_TOOK_TOO_LONG,
+    };
+    [text(STOPPED), text(why)].concat()
+}
+
+/// Why the game did not start.
+pub fn not_started(refusal: &StartRefusal) -> Msg {
+    let why = match refusal {
+        StartRefusal::CannotBuild { error } => {
+            [text(CANNOT_BUILD), vec![literal(error.as_str())]].concat()
+        }
+        StartRefusal::TooSlow => text(TOOK_TOO_LONG_TO_BUILD),
+        StartRefusal::Crashed => text(IT_FAILED),
+        StartRefusal::Busy => text(SERVER_BUSY),
+    };
+    [text(NOT_STARTED), why].concat()
+}
 
 /// A phrase as a message.
 pub fn text(s: &str) -> Msg {

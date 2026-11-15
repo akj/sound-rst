@@ -3,6 +3,7 @@
 mod common;
 
 use common::*;
+use soundrts_protocol::game::{SeatFrame, decode_frame};
 use soundrts_protocol::*;
 
 fn slot(player: SlotPlayer, alliance: u8, ready: bool) -> Slot {
@@ -755,25 +756,24 @@ async fn starting_needs_the_host_everyone_ready_and_enough_players() {
     let room = open_room(&mut all, 0, &map(3, 4), true).await;
 
     // Too few players.
-    all[0].send(ClientMsg::Start).await;
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
     all[0].expect(refused(Refusal::CannotStart)).await;
     join_room(&mut all, 1, room).await;
     add_computer(&mut all, room).await;
     // Bob is not ready.
-    all[0].send(ClientMsg::Start).await;
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
     all[0].expect(refused(Refusal::CannotStart)).await;
     // Only the host starts.
-    all[1].send(ClientMsg::Start).await;
+    all[1].send(ClientMsg::Start { texts: texts() }).await;
     all[1].expect(refused(Refusal::NotNow)).await;
     // Nor can someone in the lobby.
-    all[2].send(ClientMsg::Start).await;
+    all[2].send(ClientMsg::Start { texts: texts() }).await;
     all[2].expect(refused(Refusal::NotNow)).await;
 }
 
 #[tokio::test]
 async fn a_good_start() {
-    // Nobody reports turns; the game must not wait meanwhile.
-    let server = server(|c| c.max_lead = 1_000_000);
+    let server = server(|_| {});
     let mut all = clients(server.local_addr(), &["andrew", "bob", "carol"]).await;
     let (info, data) = map(2, 4);
     let room = open_room(&mut all, 0, &(info.clone(), data), true).await;
@@ -782,37 +782,16 @@ async fn a_good_start() {
     ready(&mut all, 1, &[0, 1]).await;
     let (andrew, bob) = (all[0].login.clone(), all[1].login.clone());
 
-    all[0].send(ClientMsg::Start).await;
-    let slots = vec![
+    all[0].send(ClientMsg::Start { texts: texts() }).await;
+    let slots = [
         slot(human(&andrew), 1, true),
         slot(human(&bob), 2, true),
         slot(SlotPlayer::Computer(AiLevel::Easy), 3, true),
     ];
-    let mut seeds = Vec::new();
-    for (you, c) in all[..2].iter_mut().enumerate() {
-        match c.recv().await {
-            ServerMsg::GameStarted {
-                seed,
-                slots: s,
-                you: y,
-                map: m,
-                speed,
-            } => {
-                assert_eq!(
-                    (s, y, m, speed),
-                    (slots.clone(), you, info.clone(), Speed::Fast4)
-                );
-                seeds.push(seed);
-            }
-            other => panic!("expected the game to start, got {other:?}"),
-        }
-    }
-    assert_eq!(seeds[0], seeds[1], "everyone plays from the same seed");
-
     let summary = RoomSummary {
         id: room,
         host: andrew.clone(),
-        map: info,
+        map: info.clone(),
         speed: Speed::Fast4,
         open: true,
         content: content(),
@@ -820,17 +799,32 @@ async fn a_good_start() {
         started: true,
     };
     for c in &mut all {
-        c.expect_event(
-            false,
-            lobby(LobbyChange::RoomChanged {
-                room: summary.clone(),
-            }),
-        )
+        c.expect(lobby(LobbyChange::RoomChanged {
+            room: summary.clone(),
+        }))
         .await;
-        c.expect_event(false, moved(&andrew, Whereabouts::Playing(room)))
-            .await;
-        c.expect_event(false, moved(&bob, Whereabouts::Playing(room)))
-            .await;
+        c.expect(moved(&andrew, Whereabouts::Playing(room))).await;
+        c.expect(moved(&bob, Whereabouts::Playing(room))).await;
+    }
+    // Each human has a seat in the game.
+    for (you, c) in all[..2].iter_mut().enumerate() {
+        let Frame::Binary(bytes) = c.frame().await else {
+            panic!("{}: expected a seat", c.login);
+        };
+        let SeatFrame::Seated {
+            you: y,
+            map: m,
+            speed,
+            paused,
+            ..
+        } = decode_frame(&bytes).unwrap()
+        else {
+            panic!("{}: expected a seat", c.login);
+        };
+        assert_eq!(
+            (y, m, speed, paused),
+            (you, info.clone(), Speed::Fast4, false)
+        );
     }
     // A started room takes nobody, and the room's settings are fixed.
     all[2].send(ClientMsg::JoinRoom { room }).await;
@@ -840,7 +834,7 @@ async fn a_good_start() {
             level: AiLevel::Easy,
         })
         .await;
-    all[0].expect_event(false, refused(Refusal::NotNow)).await;
+    all[0].expect(refused(Refusal::NotNow)).await;
     all[1].send(ClientMsg::LeaveRoom).await;
-    all[1].expect_event(false, refused(Refusal::NotNow)).await;
+    all[1].expect(refused(Refusal::NotNow)).await;
 }

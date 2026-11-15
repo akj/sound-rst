@@ -1,444 +1,1019 @@
-//! One task per running game: the wait for every player to load, the turn
-//! clock, the orders for the next turn, the wait for slow players, and the
-//! comparison of digests.
+//! One task per game: the server runs the game itself and sends
+//! each seat only what its player knows.
+//!
+//! The task builds the game from the set-up the lobby made, owns the
+//! [`Host`], steps it on a clock that waits for nobody, and sends each
+//! human seat its stream: the start and the whole message when the seat
+//! joins or returns, then the change since the last message it was sent,
+//! each turn. The world's work (building, and each turn with every seat's
+//! message) runs on a blocking thread with a time budget; a panic there
+//! ends this game and nothing else.
+//!
+//! Where watchers would attach: a watcher is a [`Seat`] with no player of
+//! its own and a message that follows one; [`Link`], [`Pace`] and
+//! [`Game::deliver`] would serve it as they serve a player, and returning
+//! is how a watcher would join late. Where the record would attach: the
+//! clock's branch of `run` takes every command of a turn, in the order the
+//! host runs them, with the turn's number.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use soundrts_protocol::game::{SeatFrame, encode_frame};
 use soundrts_protocol::{
-    Digest, Login, MAX_ORDERS_PER_MESSAGE, MAX_TURN_ORDER_BYTES, Order, Orders, Refusal, RoomId,
-    ServerMsg, SlotIndex, SlotOrders, Turn,
+    ChatText, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapInfo, Refusal, RoomId, SeatChange,
+    SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, StopReason,
+};
+use soundrts_world::{
+    Command, Event, GameSetup, Host, Order, OrderTarget, PlayerId, SeatTurn, TurnMessage,
 };
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
-use tracing::{info, warn};
+use tokio_tungstenite::tungstenite::Bytes;
+use tracing::{debug, info, warn};
 
-use crate::connection::{ConnId, Outbox, Queued, encode};
+use crate::connection::{ConnId, Outbox, Queued};
 use crate::lobby::{LobbyInput, LobbyTx};
 
-/// What the lobby passes to a game, for the slot of the player who sent it.
-pub(crate) enum GameInput {
-    Loaded {
-        slot: SlotIndex,
-    },
-    Orders {
-        slot: SlotIndex,
-        orders: Orders,
-    },
-    TurnDone {
-        slot: SlotIndex,
-        turn: Turn,
-        digest: Digest,
-    },
-    Leave {
-        slot: SlotIndex,
-    },
-}
+/// A seat whose connection has more messages than this waiting to be
+/// written is not keeping up: it is sent nothing more until it has fewer,
+/// then one change that catches it up. A seat in step has none waiting
+/// when a turn is played: a turn is one message, written in microseconds.
+const SEAT_BACKLOG: usize = 4;
 
-/// Where the lobby passes inputs to a game. An input from a client comes
-/// with its bytes, counted against the client's allowance until the game
-/// has handled it.
-pub(crate) type GameTx = mpsc::UnboundedSender<(GameInput, Option<Queued>)>;
+/// The most events not about an entity kept for a seat that is behind,
+/// oldest dropped first. A seat that stops reading stops answering the
+/// heartbeat too, so it is dropped long before this many pile up.
+const MAX_MISSED_EVENTS: usize = 1000;
 
+/// How a game runs: from the server's settings and the room.
+#[derive(Clone, Debug)]
 pub(crate) struct Settings {
-    pub turn_interval: Duration,
-    pub max_lead: u32,
-    pub lag_timeout: Duration,
+    pub speed: Speed,
+    /// How long a dropped seat is held for its player.
+    pub grace: Duration,
+    /// The longest the game may take to build.
+    pub load_budget: Duration,
+    /// The longest one turn may take: the world's step and every seat's
+    /// message.
+    pub turn_budget: Duration,
+    /// The server's count of work past its budget.
+    pub overruns: Overruns,
 }
 
-/// A human in a game, as the lobby hands them over.
-pub(crate) struct Player {
+/// While this many builds or turns of games run on past their
+/// budget, the server starts no game.
+pub(crate) const MAX_OVERRUNNING: usize = 2;
+
+/// The world's work, of any game on the server, that ran past its
+/// budget and still runs. Nothing can stop it, so it is counted until it
+/// ends, and while there is too much of it no game starts: a
+/// player who makes games slow on purpose cannot pile it up.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Overruns(Arc<AtomicUsize>);
+
+impl Overruns {
+    pub(crate) fn too_many(&self) -> bool {
+        self.0.load(Ordering::Relaxed) >= MAX_OVERRUNNING
+    }
+}
+
+/// Why the world's work gave nothing back.
+enum Late {
+    /// It panicked.
+    Failed(String),
+    /// It ran past its budget, and runs on.
+    Overran,
+}
+
+/// Where a piece of the world's work is: running, past its budget and
+/// counted, or done.
+const RUNNING: u8 = 0;
+const COUNTED: u8 = 1;
+const DONE: u8 = 2;
+
+/// Held by the work: when it ends, it is no longer counted.
+struct Watch {
+    state: Arc<AtomicU8>,
+    overruns: Overruns,
+}
+
+impl Drop for Watch {
+    fn drop(&mut self) {
+        if self.state.swap(DONE, Ordering::AcqRel) == COUNTED {
+            self.overruns.0.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Runs the world's `work` on a blocking thread, within `budget`.
+async fn within<T: Send + 'static>(
+    budget: Duration,
+    overruns: &Overruns,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, Late> {
+    let state = Arc::new(AtomicU8::new(RUNNING));
+    let watch = Watch {
+        state: Arc::clone(&state),
+        overruns: overruns.clone(),
+    };
+    let job = tokio::task::spawn_blocking(move || {
+        let _watch = watch;
+        work()
+    });
+    match tokio::time::timeout(budget, job).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(e)) => Err(Late::Failed(e.to_string())),
+        Err(_) => {
+            // Counted first, so that the work ending meanwhile never
+            // takes away more than was counted.
+            overruns.0.fetch_add(1, Ordering::Relaxed);
+            if state
+                .compare_exchange(RUNNING, COUNTED, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                overruns.0.fetch_sub(1, Ordering::Relaxed);
+            }
+            Err(Late::Overran)
+        }
+    }
+}
+
+/// A human seat as the lobby hands it over when the game starts.
+pub(crate) struct Joining {
     pub slot: SlotIndex,
     pub conn: ConnId,
     pub login: Login,
     pub outbox: Outbox,
 }
 
-/// Starts a game's task. The game reports to the lobby each human who
-/// leaves it ([`LobbyInput::LeftGame`]), then [`LobbyInput::GameOver`] when
-/// none is left.
+/// What the lobby passes to a game. The lobby has checked who may
+/// send it: a seat's own player for a command, and the room's host for
+/// the clock and removals.
+pub(crate) enum GameInput {
+    Command {
+        slot: SlotIndex,
+        command: Command,
+        bytes: usize,
+    },
+    /// The player asked to leave.
+    Leave {
+        slot: SlotIndex,
+    },
+    /// The player's connection is gone.
+    Dropped {
+        slot: SlotIndex,
+    },
+    /// A player in the lobby asks for a dropped seat back.
+    Return {
+        conn: ConnId,
+        token: SeatToken,
+        outbox: Outbox,
+    },
+    Pause {
+        by: SlotIndex,
+    },
+    Resume {
+        by: SlotIndex,
+    },
+    Speed {
+        by: SlotIndex,
+        speed: Speed,
+    },
+    Remove {
+        by: SlotIndex,
+        slot: SlotIndex,
+    },
+}
+
+/// Where the lobby passes inputs to a game. An input from a client
+/// comes with its bytes, counted against the client's allowance until the
+/// game has handled it.
+pub(crate) type GameTx = mpsc::UnboundedSender<(GameInput, Option<Queued>)>;
+
+/// How a game's task ended, for the lobby.
+#[derive(Debug)]
+pub(crate) enum Ending {
+    /// The game could not be built: the room goes back to gathering.
+    NotBuilt(StartRefusal),
+    /// No seat is left: each was told its end and reported to the lobby.
+    Over,
+    /// The server stopped the game for everyone in it.
+    Stopped(StopReason),
+}
+
+/// Starts a game's task. The game reports to the lobby each seat
+/// whose game is over ([`LobbyInput::LeftGame`]), returns accepted or
+/// refused, and how it ended ([`LobbyInput::GameEnded`]), even if it
+/// panics.
 pub(crate) fn spawn(
     room: RoomId,
-    players: Vec<Player>,
+    setup: GameSetup,
+    slots: Vec<Slot>,
+    map: MapInfo,
+    seats: Vec<Joining>,
     settings: Settings,
     lobby: LobbyTx,
 ) -> GameTx {
     let (tx, rx) = mpsc::unbounded_channel();
-    let humans = players
-        .into_iter()
-        .map(|p| {
-            let human = Human {
-                conn: p.conn,
-                login: p.login,
-                outbox: p.outbox,
-                last_done: None,
-                holding_since: None,
-            };
-            (p.slot, human)
-        })
-        .collect();
-    let game = Game {
-        room,
-        humans,
-        next_turn: 0,
-        pending: BTreeMap::new(),
-        phase: Phase::Loading {
-            deadline: Instant::now() + settings.lag_timeout,
-            loaded: BTreeSet::new(),
-        },
-        digests: BTreeMap::new(),
-        settings,
-        lobby,
-    };
-    tokio::spawn(game.run(rx));
+    let reporter = lobby.clone();
+    let task = tokio::spawn(run(room, setup, slots, map, seats, settings, lobby, rx));
+    tokio::spawn(async move {
+        let ending = task.await.unwrap_or_else(|e| {
+            warn!(room = room.0, error = %e, "game failed");
+            Ending::Stopped(StopReason::Crashed)
+        });
+        info!(room = room.0, ?ending, "game ended");
+        let _ = reporter.send(LobbyInput::GameEnded { room, ending });
+    });
     tx
 }
 
-struct Human {
-    conn: ConnId,
+/// A human seat still in the game.
+struct Seat {
+    player: PlayerId,
     login: Login,
-    outbox: Outbox,
-    last_done: Option<Turn>,
-    /// Since when this player has kept the game waiting.
-    holding_since: Option<Instant>,
+    token: SeatToken,
+    link: Link,
 }
 
-enum Phase {
-    /// The clock has not started: the game waits for every human to build
-    /// the world. A human who has not loaded by `deadline` is taken out.
-    Loading {
-        deadline: Instant,
-        loaded: BTreeSet<SlotIndex>,
+/// A seat's connection. A seat that is gone is no longer in the game's
+/// seats.
+enum Link {
+    Connected {
+        conn: ConnId,
+        outbox: Outbox,
+        /// The last message the seat was sent: the next change is from it.
+        last: Arc<TurnMessage>,
+        pace: Pace,
     },
-    /// The clock runs. `waiting` while it is stopped for slow players.
-    Running { clock: Interval, waiting: bool },
+    /// The connection is lost; the seat is held for its player until
+    /// `deadline`.
+    Dropped { deadline: Instant },
 }
 
-impl Phase {
-    /// When the game next has something to do on its own.
-    async fn wake(&mut self) {
+enum Pace {
+    /// The seat was sent the last turn played.
+    InStep,
+    /// The seat was not sent the turns since its last message: these are
+    /// their events not about an entity, oldest first.
+    Behind { missed: VecDeque<Event> },
+}
+
+enum Clock {
+    Running(Interval),
+    Paused,
+}
+
+impl Clock {
+    fn running(speed: Speed) -> Clock {
+        let period = speed.turn_interval();
+        let mut clock = tokio::time::interval_at(after(period), period);
+        clock.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        Clock::Running(clock)
+    }
+
+    async fn tick(&mut self) {
         match self {
-            Phase::Loading { deadline, .. } => tokio::time::sleep_until(*deadline).await,
-            Phase::Running { clock, .. } => {
+            Clock::Running(clock) => {
                 clock.tick().await;
             }
+            Clock::Paused => std::future::pending().await,
         }
     }
 }
 
 struct Game {
     room: RoomId,
-    /// The humans still in the game.
-    humans: BTreeMap<SlotIndex, Human>,
-    next_turn: Turn,
-    /// The orders for `next_turn`, in arrival order for each slot.
-    pending: BTreeMap<SlotIndex, Vec<Order>>,
-    phase: Phase,
-    /// The digests of the turns some human still in the game has not
-    /// reported.
-    digests: BTreeMap<Turn, BTreeMap<SlotIndex, Digest>>,
     settings: Settings,
     lobby: LobbyTx,
+    slots: Vec<Slot>,
+    map: MapInfo,
+    /// The start, encoded once for every seat.
+    start: Bytes,
+    /// The player of each slot.
+    players: Vec<PlayerId>,
+    seats: BTreeMap<SlotIndex, Seat>,
+    /// The commands for the next turn, in the order they came.
+    commands: Vec<(PlayerId, Command)>,
+    /// The bytes of commands each seat has given for the next turn.
+    command_bytes: BTreeMap<SlotIndex, usize>,
+    clock: Clock,
+    turn: u64,
+    /// The players still in the game, as of the last turn a seat was sent.
+    in_game: Vec<PlayerId>,
+    /// How many squares the map has.
+    squares: usize,
+}
+
+/// A connected seat's share of a turn: whether it is sent the turn, and
+/// from which message.
+struct Plan {
+    slot: SlotIndex,
+    player: PlayerId,
+    send: Option<(Arc<TurnMessage>, VecDeque<Event>)>,
+}
+
+/// What a turn gave a connected seat, and the frames that send it, if it
+/// is sent the turn.
+struct Delivery {
+    slot: SlotIndex,
+    turn: SeatTurn,
+    frames: Option<Vec<Bytes>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run(
+    room: RoomId,
+    setup: GameSetup,
+    slots: Vec<Slot>,
+    map: MapInfo,
+    joining: Vec<Joining>,
+    settings: Settings,
+    lobby: LobbyTx,
+    mut inputs: mpsc::UnboundedReceiver<(GameInput, Option<Queued>)>,
+) -> Ending {
+    info!(room = room.0, "game building");
+    #[cfg(feature = "fault-injection")]
+    let setup_rules: String = setup.rules.chars().take(64).collect();
+    let mut host = match build(setup, settings.load_budget, &settings.overruns).await {
+        Ok(host) => host,
+        Err(refusal) => return Ending::NotBuilt(refusal),
+    };
+    for w in host.drain_warnings() {
+        debug!(room = room.0, warning = %w, "while building");
+    }
+    #[cfg(feature = "fault-injection")]
+    let fault = fault::of(&setup_rules);
+    let start = match encode_frame(&SeatFrame::Start(host.game_start().message())) {
+        Ok(bytes) => Bytes::from(bytes),
+        Err(e) => {
+            warn!(room = room.0, error = %e, "cannot encode the start");
+            return Ending::NotBuilt(StartRefusal::Crashed);
+        }
+    };
+    let players = host.seats().to_vec();
+    let mut game = Game {
+        room,
+        clock: Clock::running(settings.speed),
+        settings,
+        lobby,
+        slots,
+        map,
+        start,
+        seats: BTreeMap::new(),
+        players,
+        commands: Vec::new(),
+        command_bytes: BTreeMap::new(),
+        turn: 0,
+        in_game: host.seats().to_vec(),
+        squares: host.game_start().map.squares.len(),
+    };
+    for j in joining {
+        let Some(&player) = game.players.get(j.slot) else {
+            continue;
+        };
+        let seat = Seat {
+            player,
+            login: j.login,
+            token: SeatToken::from_bits(rand::random()),
+            link: Link::Dropped {
+                deadline: Instant::now(),
+            },
+        };
+        game.seats.insert(j.slot, seat);
+        game.connect(&host, j.slot, j.conn, j.outbox);
+    }
+    info!(room = room.0, seats = game.seats.len(), "game started");
+
+    while !game.seats.is_empty() {
+        let deadline = game.next_deadline();
+        tokio::select! {
+            _ = game.clock.tick() => {
+                let budget = game.settings.turn_budget;
+                let commands = std::mem::take(&mut game.commands);
+                game.command_bytes.clear();
+                let plans = game.plans();
+                #[cfg(feature = "fault-injection")]
+                fault::before_turn(fault);
+                let work = move || {
+                    #[cfg(feature = "fault-injection")]
+                    fault::in_turn(fault);
+                    let deliveries = play_turn(&mut host, commands, plans);
+                    (host, deliveries)
+                };
+                match within(budget, &game.settings.overruns, work).await {
+                    Ok((h, deliveries)) => {
+                        host = h;
+                        game.turn = game.turn.saturating_add(1);
+                        for w in host.drain_warnings() {
+                            debug!(room = room.0, warning = %w, "in a turn");
+                        }
+                        game.deliver(&host, deliveries);
+                    }
+                    Err(Late::Failed(e)) => {
+                        warn!(room = room.0, turn = game.turn, error = %e, "the game failed in a turn");
+                        return Ending::Stopped(StopReason::Crashed);
+                    }
+                    Err(Late::Overran) => {
+                        warn!(room = room.0, turn = game.turn, ?budget, "a turn took too long");
+                        return Ending::Stopped(StopReason::TooSlow);
+                    }
+                }
+            }
+            _ = sleep_until(deadline) => game.give_up_expired(Instant::now()),
+            input = inputs.recv() => match input {
+                Some((input, _queued)) => game.on_input(&host, input),
+                None => break,
+            },
+        }
+    }
+    info!(room = room.0, turns = game.turn, "game over");
+    Ending::Over
+}
+
+/// A frame encoded, or `None`, said in the log, if it cannot be.
+fn encoded(frame: &SeatFrame) -> Option<Bytes> {
+    match encode_frame(frame) {
+        Ok(bytes) => Some(Bytes::from(bytes)),
+        Err(e) => {
+            warn!(error = %e, "cannot encode a frame");
+            None
+        }
+    }
+}
+
+/// Sends one seat a frame.
+pub(crate) fn tell(outbox: &Outbox, frame: &SeatFrame) {
+    if let Some(bytes) = encoded(frame) {
+        outbox.send_binary(bytes);
+    }
+}
+
+/// The instant `d` from now, or a year from now if that is beyond what an
+/// instant holds.
+pub(crate) fn after(d: Duration) -> Instant {
+    let now = Instant::now();
+    now.checked_add(d)
+        .or_else(|| now.checked_add(Duration::from_secs(365 * 24 * 3600)))
+        .unwrap_or(now)
+}
+
+async fn sleep_until(deadline: Option<Instant>) {
+    match deadline {
+        Some(d) => tokio::time::sleep_until(d).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Builds the game on a blocking thread, within `budget`.
+async fn build(
+    setup: GameSetup,
+    budget: Duration,
+    overruns: &Overruns,
+) -> Result<Host, StartRefusal> {
+    let work = move || {
+        #[cfg(feature = "fault-injection")]
+        fault::while_building(fault::of(&setup.rules));
+        Host::new(&setup)
+    };
+    match within(budget, overruns, work).await {
+        Ok(Ok(host)) => Ok(host),
+        Ok(Err(error)) => match ChatText::clean(&error).or_else(|| ChatText::clean("?")) {
+            Some(error) => Err(StartRefusal::CannotBuild { error }),
+            None => Err(StartRefusal::Crashed),
+        },
+        Err(Late::Failed(e)) => {
+            warn!(error = %e, "building a game failed");
+            Err(StartRefusal::Crashed)
+        }
+        Err(Late::Overran) => Err(StartRefusal::TooSlow),
+    }
+}
+
+/// The world's part of a turn, on a blocking thread: the commands, the
+/// step, and the frames of each connected seat that is sent the turn.
+fn play_turn(
+    host: &mut Host,
+    commands: Vec<(PlayerId, Command)>,
+    plans: Vec<Plan>,
+) -> Vec<Delivery> {
+    for (player, command) in commands {
+        // A game with others refuses the cheats that act at once, so
+        // nothing is told now.
+        let _ = host.queue(player, command);
+    }
+    let players: Vec<PlayerId> = plans.iter().map(|p| p.player).collect();
+    let turns = host.step_seats(&players);
+    plans
+        .into_iter()
+        .zip(turns)
+        .map(|(plan, turn)| Delivery {
+            slot: plan.slot,
+            frames: plan
+                .send
+                .and_then(|(last, missed)| frames(plan.slot, &last, &missed, &turn)),
+            turn,
+        })
+        .collect()
+}
+
+/// The changes of [`SeatTurn::changes`], encoded; `None` if one cannot
+/// be.
+fn frames(
+    slot: SlotIndex,
+    last: &TurnMessage,
+    missed: &VecDeque<Event>,
+    turn: &SeatTurn,
+) -> Option<Vec<Bytes>> {
+    turn.changes(last, missed)
+        .into_iter()
+        .map(|c| match encode_frame(&SeatFrame::Change(c)) {
+            Ok(bytes) => Some(Bytes::from(bytes)),
+            Err(e) => {
+                warn!(slot, error = %e, "cannot encode a change");
+                None
+            }
+        })
+        .collect()
+}
+
+/// Whether the square a command's order names, if any, is one of the
+/// map's `squares`: the world takes it as one of its own.
+fn on_the_map(command: &Command, squares: usize) -> bool {
+    let target = match command {
+        Command::Order {
+            order: Order::Keyword(order),
+            ..
+        } => order.target(),
+        Command::Order {
+            order: Order::Default(target),
+            ..
+        } => Some(target),
+        _ => None,
+    };
+    match target {
+        Some(OrderTarget::Square(q) | OrderTarget::Point { square: q, .. }) => {
+            usize::try_from(q.0).is_ok_and(|q| q < squares)
+        }
+        Some(OrderTarget::Entity(_)) | None => true,
+    }
+}
+
+/// The events of a turn that a seat not sent it is told when it catches
+/// up: those not about an entity.
+fn told_later(turn: &SeatTurn) -> impl Iterator<Item = &Event> {
+    turn.end_of_turn
+        .iter()
+        .flat_map(|end| &end.events)
+        .chain(&turn.then)
+        .filter(|e| !matches!(e, Event::Entity { .. }))
 }
 
 impl Game {
-    async fn run(mut self, mut inputs: mpsc::UnboundedReceiver<(GameInput, Option<Queued>)>) {
-        info!(room = self.room.0, "game loading");
-        while !self.humans.is_empty() {
-            tokio::select! {
-                _ = self.phase.wake() => self.wake(Instant::now()),
-                input = inputs.recv() => match input {
-                    Some((input, _queued)) => self.on_input(input),
-                    None => return,
-                },
-            }
+    // -- Seats ---------------------------------------------------------------
+
+    /// Connects a seat that is in `seats` to `conn`, and sends it the game
+    /// and its whole message as it is now.
+    fn connect(&mut self, host: &Host, slot: SlotIndex, conn: ConnId, outbox: Outbox) {
+        let paused = matches!(self.clock, Clock::Paused);
+        let Some(seat) = self.seats.get_mut(&slot) else {
+            return;
+        };
+        let message = Arc::new(host.message(seat.player));
+        tell(
+            &outbox,
+            &SeatFrame::Seated {
+                you: slot,
+                map: self.map.clone(),
+                speed: self.settings.speed,
+                paused,
+                token: seat.token.clone(),
+            },
+        );
+        outbox.send_binary(self.start.clone());
+        match encode_frame(&SeatFrame::Whole((*message).clone())) {
+            Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
+            Err(e) => warn!(room = self.room.0, slot, error = %e, "cannot encode a whole message"),
         }
-        info!(room = self.room.0, turns = self.next_turn, "game over");
-        let _ = self.lobby.send(LobbyInput::GameOver { room: self.room });
-    }
-
-    fn on_input(&mut self, input: GameInput) {
-        match input {
-            GameInput::Orders { slot, orders } => {
-                let Some(human) = self.humans.get(&slot) else {
-                    return;
-                };
-                let pending = self.pending.entry(slot).or_default();
-                let bytes = |list: &[Order]| list.iter().map(|o| o.as_str().len()).sum::<usize>();
-                if bytes(pending) + bytes(orders.as_slice()) > MAX_TURN_ORDER_BYTES {
-                    human.outbox.send(&ServerMsg::Refused {
-                        reason: Refusal::SlowDown,
-                    });
-                    return;
-                }
-                pending.extend(Vec::from(orders));
-            }
-            GameInput::Loaded { slot } => self.loaded(slot),
-            GameInput::TurnDone { slot, turn, digest } => self.turn_done(slot, turn, digest),
-            GameInput::Leave { slot } => self.leave(slot),
+        let over = !message.state.players.contains(&seat.player);
+        seat.link = Link::Connected {
+            conn,
+            outbox,
+            last: message,
+            pace: Pace::InStep,
+        };
+        if over {
+            self.end_seat(host, slot);
         }
     }
 
-    /// How many turns `human` is behind the last turn sent.
-    fn lag(&self, human: &Human) -> i64 {
-        i64::from(self.next_turn) - 1 - human.last_done.map_or(-1, i64::from)
+    /// Ends the game for a seat: if connected, it is sent its end, and its
+    /// player goes back to the lobby. The seat is gone.
+    fn end_seat(&mut self, host: &Host, slot: SlotIndex) {
+        let Some(seat) = self.seats.remove(&slot) else {
+            return;
+        };
+        if let Link::Connected { conn, outbox, .. } = seat.link {
+            match encode_frame(&SeatFrame::End(host.game_end(seat.player))) {
+                Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
+                Err(e) => warn!(room = self.room.0, slot, error = %e, "cannot encode an end"),
+            }
+            let _ = self.lobby.send(LobbyInput::LeftGame {
+                room: self.room,
+                conn,
+            });
+        }
+        info!(room = self.room.0, slot, login = %seat.login, "seat left the game");
     }
 
-    fn laggards(&self) -> Vec<SlotIndex> {
-        self.humans
+    /// Takes a seat's player out of the game, as a player who leaves.
+    fn quit(&mut self, player: PlayerId) {
+        self.commands.push((player, Command::Quit));
+    }
+
+    fn next_deadline(&self) -> Option<Instant> {
+        self.seats
+            .values()
+            .filter_map(|s| match s.link {
+                Link::Dropped { deadline } => Some(deadline),
+                Link::Connected { .. } => None,
+            })
+            .min()
+    }
+
+    fn give_up_expired(&mut self, now: Instant) {
+        let expired: Vec<SlotIndex> = self
+            .seats
             .iter()
-            .filter(|(_, h)| self.lag(h) > i64::from(self.settings.max_lead))
+            .filter(|(_, s)| matches!(s.link, Link::Dropped { deadline } if deadline <= now))
             .map(|(&slot, _)| slot)
+            .collect();
+        for slot in expired {
+            if let Some(seat) = self.seats.remove(&slot) {
+                info!(room = self.room.0, slot, login = %seat.login, "seat given up");
+                self.quit(seat.player);
+                self.tell_all(&SeatFrame::Seat {
+                    slot,
+                    change: SeatChange::GivenUp,
+                });
+            }
+        }
+    }
+
+    // -- Turns ---------------------------------------------------------------
+
+    /// What each connected seat is sent of the coming turn: nothing if its
+    /// connection is not keeping up.
+    fn plans(&mut self) -> Vec<Plan> {
+        self.seats
+            .iter_mut()
+            .filter_map(|(&slot, seat)| match &mut seat.link {
+                Link::Connected {
+                    outbox, last, pace, ..
+                } => {
+                    let send = (outbox.queued() < SEAT_BACKLOG).then(|| {
+                        let missed = match pace {
+                            Pace::InStep => VecDeque::new(),
+                            Pace::Behind { missed } => std::mem::take(missed),
+                        };
+                        (Arc::clone(last), missed)
+                    });
+                    Some(Plan {
+                        slot,
+                        player: seat.player,
+                        send,
+                    })
+                }
+                Link::Dropped { .. } => None,
+            })
             .collect()
     }
 
-    fn loaded(&mut self, slot: SlotIndex) {
-        let Some(human) = self.humans.get(&slot) else {
-            return;
-        };
-        let newly = match &mut self.phase {
-            Phase::Loading { loaded, .. } => loaded.insert(slot),
-            Phase::Running { .. } => false,
-        };
-        if newly {
-            self.start_if_all_loaded();
-        } else {
-            human.outbox.send(&ServerMsg::Refused {
-                reason: Refusal::NotNow,
+    /// Sends each seat its frames of the turn, keeps the events of a seat
+    /// that was not sent the turn, and ends the game of seats whose player
+    /// is no longer in it. A seat whose game is over is sent the turn, and
+    /// any it missed, whatever its connection: its end comes after.
+    fn deliver(&mut self, host: &Host, deliveries: Vec<Delivery>) {
+        let in_game = deliveries
+            .first()
+            .map(|d| d.turn.message.state.players.clone());
+        for d in deliveries {
+            let Some(Seat {
+                player,
+                link: Link::Connected {
+                    outbox, last, pace, ..
+                },
+                ..
+            }) = self.seats.get_mut(&d.slot)
+            else {
+                continue;
+            };
+            let over = !d.turn.message.state.players.contains(player);
+            let frames = d.frames.or_else(|| {
+                over.then(|| {
+                    let missed = match pace {
+                        Pace::Behind { missed } => std::mem::take(missed),
+                        Pace::InStep => VecDeque::new(),
+                    };
+                    frames(d.slot, last, &missed, &d.turn)
+                })
+                .flatten()
             });
-        }
-    }
-
-    /// Starts the clock once every human still in the game has loaded. The
-    /// first tick is immediate, so turn 0 goes out at once.
-    fn start_if_all_loaded(&mut self) {
-        let Phase::Loading { loaded, .. } = &self.phase else {
-            return;
-        };
-        if self.humans.is_empty() || !self.humans.keys().all(|s| loaded.contains(s)) {
-            return;
-        }
-        info!(room = self.room.0, "game clock started");
-        let mut clock = tokio::time::interval(self.settings.turn_interval);
-        clock.set_missed_tick_behavior(MissedTickBehavior::Delay);
-        self.phase = Phase::Running {
-            clock,
-            waiting: false,
-        };
-    }
-
-    fn wake(&mut self, now: Instant) {
-        match &self.phase {
-            Phase::Loading { loaded, .. } => {
-                let late: Vec<SlotIndex> = self
-                    .humans
-                    .keys()
-                    .filter(|s| !loaded.contains(s))
-                    .copied()
-                    .collect();
-                for slot in late {
-                    info!(room = self.room.0, login = %self.humans[&slot].login, "did not load in time; taken out of the game");
-                    self.leave(slot);
+            match frames {
+                Some(frames) => {
+                    for frame in frames {
+                        outbox.send_binary(frame);
+                    }
+                    *last = d.turn.message;
+                    *pace = Pace::InStep;
+                }
+                None => {
+                    if let Pace::InStep = pace {
+                        *pace = Pace::Behind {
+                            missed: VecDeque::new(),
+                        };
+                    }
+                    if let Pace::Behind { missed } = pace {
+                        missed.extend(told_later(&d.turn).cloned());
+                        while missed.len() > MAX_MISSED_EVENTS {
+                            missed.pop_front();
+                        }
+                    }
                 }
             }
-            Phase::Running { .. } => self.tick(now),
         }
-    }
-
-    fn tick(&mut self, now: Instant) {
-        let laggards = self.laggards();
-        if laggards.is_empty() {
-            self.send_turn();
-            return;
-        }
-        if let Phase::Running { waiting, .. } = &mut self.phase
-            && !*waiting
-        {
-            *waiting = true;
-            let players = laggards
+        if let Some(in_game) = in_game {
+            self.in_game = in_game;
+            let over: Vec<SlotIndex> = self
+                .seats
                 .iter()
-                .map(|s| self.humans[s].login.clone())
-                .collect::<Vec<_>>();
-            info!(room = self.room.0, ?players, "game waiting");
-            self.broadcast(&ServerMsg::Waiting { players });
-        }
-        for slot in laggards {
-            let human = self.humans.get_mut(&slot).expect("a laggard is a human");
-            let since = *human.holding_since.get_or_insert(now);
-            if now.duration_since(since) >= self.settings.lag_timeout {
-                info!(room = self.room.0, login = %human.login, "too slow; taken out of the game");
-                self.leave(slot);
+                .filter(|(_, s)| !self.in_game.contains(&s.player))
+                .map(|(&slot, _)| slot)
+                .collect();
+            for slot in over {
+                self.end_seat(host, slot);
             }
         }
     }
 
-    fn send_turn(&mut self) {
-        let mut orders = Vec::new();
-        for (slot, list) in std::mem::take(&mut self.pending) {
-            for chunk in list.chunks(MAX_ORDERS_PER_MESSAGE) {
-                orders.push(SlotOrders {
-                    slot,
-                    orders: Orders::new(chunk.to_vec()).expect("a chunk fits in a message"),
-                });
+    // -- Inputs --------------------------------------------------------------
+
+    fn on_input(&mut self, host: &Host, input: GameInput) {
+        match input {
+            GameInput::Command {
+                slot,
+                command,
+                bytes,
+            } => self.command(slot, command, bytes),
+            GameInput::Leave { slot } => {
+                if let Some(seat) = self.seats.get(&slot) {
+                    self.quit(seat.player);
+                    self.end_seat(host, slot);
+                    self.tell_all(&SeatFrame::Seat {
+                        slot,
+                        change: SeatChange::Left,
+                    });
+                }
             }
+            GameInput::Dropped { slot } => self.dropped(slot),
+            GameInput::Return {
+                conn,
+                token,
+                outbox,
+            } => self.take_back(host, conn, &token, outbox),
+            GameInput::Pause { by } => self.clock_change(by, ClockChange::Paused),
+            GameInput::Resume { by } => self.clock_change(by, ClockChange::Resumed),
+            GameInput::Speed { by, speed } => {
+                self.clock_change(by, ClockChange::Speed { speed });
+            }
+            GameInput::Remove { by, slot } => self.remove(host, by, slot),
         }
-        self.broadcast(&ServerMsg::Turn {
-            turn: self.next_turn,
-            orders,
-        });
-        self.next_turn += 1;
     }
 
-    fn turn_done(&mut self, slot: SlotIndex, turn: Turn, digest: Digest) {
-        let next_turn = self.next_turn;
-        let max_lead = i64::from(self.settings.max_lead);
-        let Some(human) = self.humans.get_mut(&slot) else {
+    fn command(&mut self, slot: SlotIndex, command: Command, bytes: usize) {
+        let Some(seat) = self.seats.get(&slot) else {
             return;
         };
-        let expected = human.last_done.map_or(0, |t| t + 1);
-        if turn != expected || turn >= next_turn {
-            human.outbox.send(&ServerMsg::Refused {
+        let Link::Connected { outbox, .. } = &seat.link else {
+            return;
+        };
+        // No cheat in a game with others, and the speed is the room
+        // host's to set, for everyone.
+        if matches!(command, Command::Cheat(_) | Command::Speed(_)) {
+            outbox.send(&ServerMsg::Refused {
                 reason: Refusal::NotNow,
             });
             return;
         }
-        human.last_done = Some(turn);
-        if i64::from(next_turn) - 1 - i64::from(turn) <= max_lead {
-            human.holding_since = None;
+        if !on_the_map(&command, self.squares) {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::Invalid,
+            });
+            return;
         }
-        self.digests.entry(turn).or_default().insert(slot, digest);
-        self.compare_digests();
-        self.resume_if_nobody_behind();
+        let given = self.command_bytes.entry(slot).or_default();
+        let total = given.saturating_add(bytes);
+        if total > MAX_TURN_ORDER_BYTES {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::SlowDown,
+            });
+            return;
+        }
+        *given = total;
+        self.commands.push((seat.player, command));
     }
 
-    /// Takes a human out of the game, then does what the game was waiting
-    /// on them for.
-    fn leave(&mut self, slot: SlotIndex) {
-        if self.take_out(slot) {
-            self.compare_digests();
-            self.resume_if_nobody_behind();
-            self.start_if_all_loaded();
-        }
-    }
-
-    /// Takes a human out of the game: their `quit` goes into the next turn.
-    /// False if they were not in it.
-    fn take_out(&mut self, slot: SlotIndex) -> bool {
-        let Some(human) = self.humans.remove(&slot) else {
-            return false;
+    fn dropped(&mut self, slot: SlotIndex) {
+        let Some(seat) = self.seats.get_mut(&slot) else {
+            return;
         };
-        info!(room = self.room.0, login = %human.login, "left the game");
-        self.pending.entry(slot).or_default().push(Order::quit());
-        self.broadcast(&ServerMsg::PlayerLeftGame { slot });
-        let _ = self.lobby.send(LobbyInput::LeftGame {
-            room: self.room,
-            conn: human.conn,
+        if let Link::Dropped { .. } = seat.link {
+            return;
+        }
+        info!(room = self.room.0, slot, login = %seat.login, "seat dropped");
+        seat.link = Link::Dropped {
+            deadline: after(self.settings.grace),
+        };
+        self.tell_all(&SeatFrame::Seat {
+            slot,
+            change: SeatChange::Dropped,
         });
-        true
     }
 
-    fn resume_if_nobody_behind(&mut self) {
-        let waiting = matches!(self.phase, Phase::Running { waiting: true, .. });
-        if waiting && !self.humans.is_empty() && self.laggards().is_empty() {
-            if let Phase::Running { waiting, .. } = &mut self.phase {
-                *waiting = false;
-            }
-            for human in self.humans.values_mut() {
-                human.holding_since = None;
-            }
-            info!(room = self.room.0, "game resumed");
-            self.broadcast(&ServerMsg::Resumed);
+    /// Gives a dropped seat back to the player who holds its token, or
+    /// refuses. The lobby hears of it before the player is sent anything,
+    /// so that whatever the player sends after it finds them in the game.
+    fn take_back(&mut self, host: &Host, conn: ConnId, token: &SeatToken, outbox: Outbox) {
+        let found = self.seats.iter().find_map(|(&slot, s)| {
+            (matches!(s.link, Link::Dropped { .. }) && s.token.matches(token)).then_some(slot)
+        });
+        let Some(slot) = found else {
+            let _ = self.lobby.send(LobbyInput::ReturnRefused {
+                room: self.room,
+                conn,
+            });
+            return;
+        };
+        let _ = self.lobby.send(LobbyInput::Returned {
+            room: self.room,
+            conn,
+            slot,
+        });
+        self.tell_all(&SeatFrame::Seat {
+            slot,
+            change: SeatChange::Returned,
+        });
+        if let Some(seat) = self.seats.get(&slot) {
+            info!(room = self.room.0, slot, login = %seat.login, "seat returned");
         }
+        self.connect(host, slot, conn, outbox);
     }
 
-    /// Compares the digests of each turn every human still in the game has
-    /// reported, oldest first. The humans whose digest differs are told,
-    /// with the others, and taken out of the game; the others play on.
-    fn compare_digests(&mut self) {
-        while let Some(entry) = self.digests.first_entry() {
-            if !self.humans.keys().all(|s| entry.get().contains_key(s)) {
-                return;
+    fn clock_change(&mut self, by: SlotIndex, change: ClockChange) {
+        let Some((login, outbox)) = self.connected(by) else {
+            return;
+        };
+        let changed = match (change, &self.clock) {
+            (ClockChange::Paused, Clock::Running(_)) => {
+                self.clock = Clock::Paused;
+                true
             }
-            let turn = *entry.key();
-            let digests: BTreeMap<SlotIndex, Digest> = entry
-                .remove()
-                .into_iter()
-                .filter(|(s, _)| self.humans.contains_key(s))
-                .collect();
-            if let Some(slots) = odd_slots(&digests) {
-                warn!(room = self.room.0, turn, ?slots, "out of sync");
-                self.broadcast(&ServerMsg::OutOfSync {
-                    turn,
-                    slots: slots.clone(),
-                });
-                // All of them before the next turn is compared: with only
-                // some of them out, the others could look like a majority.
-                for slot in slots {
-                    self.take_out(slot);
+            (ClockChange::Resumed, Clock::Paused) => {
+                self.clock = Clock::running(self.settings.speed);
+                true
+            }
+            (ClockChange::Speed { speed }, _) => {
+                self.settings.speed = speed;
+                if let Clock::Running(_) = self.clock {
+                    self.clock = Clock::running(speed);
                 }
+                true
+            }
+            (ClockChange::Paused | ClockChange::Resumed, _) => false,
+        };
+        if !changed {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NotNow,
+            });
+            return;
+        }
+        info!(room = self.room.0, by = %login, ?change, "clock changed");
+        self.tell_all(&SeatFrame::Clock { by: login, change });
+    }
+
+    /// The room's host removes a player: a human seat, or a computer.
+    fn remove(&mut self, host: &Host, by: SlotIndex, slot: SlotIndex) {
+        let Some((login, outbox)) = self.connected(by) else {
+            return;
+        };
+        let Some(&player) = self.players.get(slot) else {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NoSuchPlayer,
+            });
+            return;
+        };
+        let is_seat = self.seats.contains_key(&slot);
+        let is_computer = self
+            .slots
+            .get(slot)
+            .is_some_and(|s| matches!(s.player, soundrts_protocol::SlotPlayer::Computer(_)));
+        let playing = self.in_game.contains(&player);
+        if slot == by || !playing || !(is_seat || is_computer) {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NoSuchPlayer,
+            });
+            return;
+        }
+        info!(room = self.room.0, by = %login, slot, "player removed");
+        self.tell_all(&SeatFrame::Seat {
+            slot,
+            change: SeatChange::Removed { by: login },
+        });
+        self.quit(player);
+        self.end_seat(host, slot);
+    }
+
+    // -- Helpers -------------------------------------------------------------
+
+    /// The login and outbox of a connected seat.
+    fn connected(&self, slot: SlotIndex) -> Option<(Login, Outbox)> {
+        let seat = self.seats.get(&slot)?;
+        match &seat.link {
+            Link::Connected { outbox, .. } => Some((seat.login.clone(), outbox.clone())),
+            Link::Dropped { .. } => None,
+        }
+    }
+
+    /// Tells every connected seat.
+    fn tell_all(&self, frame: &SeatFrame) {
+        let Some(bytes) = encoded(frame) else {
+            return;
+        };
+        for seat in self.seats.values() {
+            if let Link::Connected { outbox, .. } = &seat.link {
+                outbox.send_binary(bytes.clone());
             }
         }
     }
+}
 
-    fn broadcast(&self, msg: &ServerMsg) {
-        let text = encode(msg);
-        for human in self.humans.values() {
-            human.outbox.send_text(text.clone());
+/// Faults the tests cause on purpose, to prove that a failing or slow game
+/// ends only itself. Only the `fault-injection` feature has them; a game
+/// whose rules start with a fault's line has it, while it is built or at
+/// every turn.
+#[cfg(feature = "fault-injection")]
+pub mod fault {
+    use std::time::Duration;
+
+    /// The world's turn panics.
+    pub const PANIC_IN_TURN: &str = "; fault: panic in the turn\n";
+    /// The game's own task panics.
+    pub const PANIC_IN_TASK: &str = "; fault: panic in the task\n";
+    /// Building the game takes [`SLOW`].
+    pub const SLOW_TO_BUILD: &str = "; fault: slow to build\n";
+    /// Each turn takes [`SLOW`].
+    pub const SLOW_TURN: &str = "; fault: slow turn\n";
+    /// How long a slow fault takes.
+    pub const SLOW: Duration = Duration::from_millis(500);
+
+    const FAULTS: [&str; 4] = [PANIC_IN_TURN, PANIC_IN_TASK, SLOW_TO_BUILD, SLOW_TURN];
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub(super) struct Fault(&'static str);
+
+    pub(super) fn of(rules: &str) -> Option<Fault> {
+        FAULTS.into_iter().find(|f| rules.starts_with(f)).map(Fault)
+    }
+
+    /// On the blocking thread that builds the game.
+    pub(super) fn while_building(fault: Option<Fault>) {
+        if fault == Some(Fault(SLOW_TO_BUILD)) {
+            std::thread::sleep(SLOW);
         }
     }
-}
 
-/// The slots whose digest differs from the most common one, or every slot
-/// when two digests tie for most common. `None` when all agree.
-fn odd_slots(digests: &BTreeMap<SlotIndex, Digest>) -> Option<Vec<SlotIndex>> {
-    let mut counts: HashMap<Digest, usize> = HashMap::new();
-    for d in digests.values() {
-        *counts.entry(*d).or_default() += 1;
-    }
-    if counts.len() <= 1 {
-        return None;
-    }
-    let most = counts.values().copied().max().expect("not empty");
-    let mut leaders = counts.iter().filter(|(_, n)| **n == most);
-    let leader = leaders.next().map(|(d, _)| *d);
-    let common = if leaders.next().is_some() {
-        None
-    } else {
-        leader
-    };
-    Some(
-        digests
-            .iter()
-            .filter(|(_, d)| Some(**d) != common)
-            .map(|(s, _)| *s)
-            .collect(),
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn digests(list: &[Digest]) -> BTreeMap<SlotIndex, Digest> {
-        list.iter().copied().enumerate().collect()
+    /// In the game's task, before a turn.
+    pub(super) fn before_turn(fault: Option<Fault>) {
+        if fault == Some(Fault(PANIC_IN_TASK)) {
+            panic!("fault injected in the game's task");
+        }
     }
 
-    #[test]
-    fn agreeing_digests_are_in_sync() {
-        assert_eq!(odd_slots(&digests(&[7, 7, 7])), None);
-        assert_eq!(odd_slots(&digests(&[7])), None);
-        assert_eq!(odd_slots(&BTreeMap::new()), None);
-    }
-
-    #[test]
-    fn the_odd_one_out_is_named() {
-        assert_eq!(odd_slots(&digests(&[7, 7, 8])), Some(vec![2]));
-        assert_eq!(odd_slots(&digests(&[1, 7, 7, 8])), Some(vec![0, 3]));
-    }
-
-    #[test]
-    fn on_a_tie_every_slot_is_named() {
-        assert_eq!(odd_slots(&digests(&[7, 8])), Some(vec![0, 1]));
-        assert_eq!(odd_slots(&digests(&[7, 7, 8, 8])), Some(vec![0, 1, 2, 3]));
+    /// On the blocking thread that plays a turn.
+    pub(super) fn in_turn(fault: Option<Fault>) {
+        match fault {
+            Some(Fault(PANIC_IN_TURN)) => panic!("fault injected in the turn"),
+            Some(Fault(SLOW_TURN)) => std::thread::sleep(SLOW),
+            _ => {}
+        }
     }
 }

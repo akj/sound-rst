@@ -1,21 +1,16 @@
 //! The messages between a SoundRTS client and a SoundRTS server.
 //!
-//! A server is a lobby, a chat and a turn clock. In a lockstep game every
-//! client runs the same simulation from the same seed, and the server
-//! tells them which orders to apply at each turn. The server knows nothing
-//! about rules or maps beyond what a host tells it, so it needs no game
-//! data.
+//! A server is a lobby and a chat, and it runs the games played on it: it
+//! sends each seat only what that player knows. The server knows nothing
+//! about rules or maps beyond what a room's host sends it, so it needs no
+//! game data: the host starts a game with [`ClientMsg::Start`] and
+//! the texts it is built from.
 //!
-//! Each message is one WebSocket text frame holding one JSON object. Every
-//! type that crosses the wire checks its own limits when it is read, so a
-//! value of these types is always valid.
-//!
-//! A server can also run a game itself (a hosted game) and send each
-//! seat only what that player knows, in place of lockstep: the room's host
-//! starts it with [`ClientMsg::StartHosted`]. What a player asks of it is
-//! JSON like the rest; everything a seat is told of it, and a player's
-//! commands, are binary frames encoded by the [`game`] module, so that a
-//! client that plays lockstep games never sees them.
+//! Each message of the lobby is one WebSocket text frame holding one JSON
+//! object. Everything a seat is told of a game, and a player's commands,
+//! are binary frames encoded by the [`game`] module. Every type that
+//! crosses the wire checks its own limits when it is read, so a value of
+//! these types is always valid.
 
 use std::fmt;
 use std::time::Duration;
@@ -25,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -52,20 +47,12 @@ pub const MAX_ALLIANCE: u8 = 8;
 /// The most chat lines a server keeps for the lobby and sends on arrival.
 pub const CHAT_HISTORY_LINES: usize = 50;
 
-/// The longest order, in bytes.
-pub const MAX_ORDER_BYTES: usize = 4096;
-
-/// The most orders in one [`ClientMsg::Orders`].
-pub const MAX_ORDERS_PER_MESSAGE: usize = 64;
-
-/// The most bytes of orders one player can have waiting for one turn. The
-/// server refuses orders beyond it with [`Refusal::SlowDown`], which keeps
-/// every [`ServerMsg::Turn`] far below [`MAX_MESSAGE_BYTES`].
+/// The most bytes of commands one player can have waiting for one turn.
+/// The server refuses commands beyond it with [`Refusal::SlowDown`].
 pub const MAX_TURN_ORDER_BYTES: usize = 32 * 1024;
 
-/// The largest command a player sends in a hosted game, encoded: as
-/// large as the longest order.
-pub const MAX_COMMAND_BYTES: usize = MAX_ORDER_BYTES;
+/// The largest command a player sends in a game, encoded.
+pub const MAX_COMMAND_BYTES: usize = 4096;
 
 /// The length of a [`SeatToken`], in hex digits: 128 random bits.
 pub const SEAT_TOKEN_CHARS: usize = 32;
@@ -324,82 +311,6 @@ impl fmt::Display for ServerName {
     }
 }
 
-/// A command for the simulation, as `World::queue_command` takes it: one
-/// line, at most [`MAX_ORDER_BYTES`] bytes.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct Order(String);
-
-impl Order {
-    pub fn new(s: impl Into<String>) -> Result<Order, Invalid> {
-        let s = s.into();
-        let ok = !s.is_empty() && s.len() <= MAX_ORDER_BYTES && !s.chars().any(char::is_control);
-        if ok {
-            Ok(Order(s))
-        } else {
-            Err(Invalid("bad order".into()))
-        }
-    }
-
-    /// The order a server gives in place of a player who left the game.
-    pub fn quit() -> Order {
-        Order("quit".into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for Order {
-    type Error = Invalid;
-    fn try_from(s: String) -> Result<Order, Invalid> {
-        Order::new(s)
-    }
-}
-
-impl From<Order> for String {
-    fn from(o: Order) -> String {
-        o.0
-    }
-}
-
-/// At most [`MAX_ORDERS_PER_MESSAGE`] orders.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<Order>", into = "Vec<Order>")]
-pub struct Orders(Vec<Order>);
-
-impl Orders {
-    pub fn new(orders: Vec<Order>) -> Result<Orders, Invalid> {
-        if orders.len() <= MAX_ORDERS_PER_MESSAGE {
-            Ok(Orders(orders))
-        } else {
-            Err(Invalid("too many orders".into()))
-        }
-    }
-
-    pub fn as_slice(&self) -> &[Order] {
-        &self.0
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl TryFrom<Vec<Order>> for Orders {
-    type Error = Invalid;
-    fn try_from(v: Vec<Order>) -> Result<Orders, Invalid> {
-        Orders::new(v)
-    }
-}
-
-impl From<Orders> for Vec<Order> {
-    fn from(o: Orders) -> Vec<Order> {
-        o.0
-    }
-}
-
 /// The bytes of a map file. Base64 on the wire; at most [`MAX_MAP_BYTES`].
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -447,7 +358,7 @@ impl From<MapBytes> for String {
     }
 }
 
-/// One of the texts a hosted game is built from: at most
+/// One of the texts a game is built from: at most
 /// [`MAX_TEXT_BYTES`](soundrts_world::defs::MAX_TEXT_BYTES), the limit the
 /// world's loaders hold every text to.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -489,7 +400,7 @@ impl From<GameText> for String {
     }
 }
 
-/// What the server lacks to build a hosted game, as the hosting client
+/// What the server lacks to build a game, as the hosting client
 /// loaded it: the layers' rules and computer-player scripts, each joined
 /// in layer order, and the map's definition. The server has the rest.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -499,7 +410,7 @@ pub struct GameTexts {
     pub map: GameText,
 }
 
-/// What proves a returning player held a seat of a hosted game: given to
+/// What proves a returning player held a seat of a game: given to
 /// that player alone when the game starts. [`SEAT_TOKEN_CHARS`] lower
 /// case hex digits.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -797,20 +708,7 @@ pub struct ChatLine {
 // Games
 // ---------------------------------------------------------------------------
 
-/// A turn number. The first turn is 0.
-pub type Turn = u32;
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SlotOrders {
-    pub slot: SlotIndex,
-    pub orders: Orders,
-}
-
-/// A digest of the simulation's state after a turn (`World::get_digest`).
-/// Clients in step have the same digest after the same turn.
-pub type Digest = u64;
-
-/// What happened to a seat of a hosted game, told to every player in it.
+/// What happened to a seat of a game, told to every player in it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SeatChange {
     /// The player's connection was lost. Their units keep their last
@@ -826,7 +724,7 @@ pub enum SeatChange {
     Removed { by: Login },
 }
 
-/// What the room's host did to the clock of a hosted game.
+/// What the room's host did to the clock of a game.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClockChange {
     Paused,
@@ -834,7 +732,7 @@ pub enum ClockChange {
     Speed { speed: Speed },
 }
 
-/// Why a hosted game could not start. The room stays as it was.
+/// Why a game could not start. The room stays as it was.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartRefusal {
     /// The rules, scripts or map cannot make a game: the world's error.
@@ -847,7 +745,7 @@ pub enum StartRefusal {
     Busy,
 }
 
-/// Why the server stopped a hosted game for everyone in it.
+/// Why the server stopped a game for everyone in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StopReason {
     /// The game failed inside the server.
@@ -913,9 +811,6 @@ pub enum ClientMsg {
         slot: SlotIndex,
         alliance: u8,
     },
-    /// Starts the game. Every human must be ready, and the number of
-    /// players must suit the map.
-    Start,
 
     /// Your own slot, or a computer's if you are the host.
     SetFaction {
@@ -926,47 +821,33 @@ pub enum ClientMsg {
         ready: bool,
     },
 
-    /// You have built the world and can run turn 0. The server starts the
-    /// game's clock once every human has sent it.
-    Loaded,
-    /// Your orders, for the next turn the server sends.
-    Orders {
-        orders: Orders,
-    },
-    /// You have run `turn`, and this is your state after it.
-    TurnDone {
-        turn: Turn,
-        digest: Digest,
-    },
-    /// You leave the game: the others get a `quit` order for you, and you
-    /// return to the lobby. In a hosted game as well.
-    LeaveGame,
-
-    // Hosted games.
-    /// Starts a game the server runs, built from `texts` and the room. As
-    /// [`ClientMsg::Start`]: the host only, every human ready. Answered,
-    /// as binary frames, by [`game::SeatFrame::Seated`] and the stream to
-    /// every human, or [`game::SeatFrame::NotStarted`] to the host. Once it
-    /// runs, a player sends their commands as binary frames
+    // Games.
+    /// Starts the game, built from `texts` and the room: the host only.
+    /// Every human must be ready, and the number of players must suit the
+    /// map. Answered, as binary frames, by [`game::SeatFrame::Seated`] and
+    /// the stream to every human, or [`game::SeatFrame::NotStarted`] to the
+    /// host. Once it runs, a player sends their commands as binary frames
     /// ([`game::encode_command`]).
-    StartHosted {
+    Start {
         texts: GameTexts,
     },
-    /// Takes back your seat of a hosted game after your connection was
+    /// You leave the game: you quit it, and return to the lobby.
+    LeaveGame,
+    /// Takes back your seat of a game after your connection was
     /// lost: from the lobby, with the token the game gave you.
     ReturnToGame {
         room: RoomId,
         token: SeatToken,
     },
-    /// The room's host stops the clock of a hosted game.
+    /// The room's host stops the clock of a game.
     PauseGame,
     /// The room's host starts the clock again.
     ResumeGame,
-    /// The room's host changes the speed of a hosted game.
+    /// The room's host changes the speed of a game.
     SetGameSpeed {
         speed: Speed,
     },
-    /// The room's host takes a player out of a hosted game.
+    /// The room's host takes a player out of a game.
     RemovePlayer {
         slot: SlotIndex,
     },
@@ -1013,38 +894,6 @@ pub enum ServerMsg {
         map: MapData,
     },
 
-    /// The game starts. Run it from `seed`, with the room's slots as
-    /// players; `you` is your slot.
-    GameStarted {
-        seed: i64,
-        slots: Vec<Slot>,
-        you: SlotIndex,
-        map: MapInfo,
-        speed: Speed,
-    },
-    /// The orders to queue before running `turn`, by slot order. Turns come
-    /// in order, one per turn interval, and slots with no orders are left
-    /// out.
-    Turn {
-        turn: Turn,
-        orders: Vec<SlotOrders>,
-    },
-    /// The game waits for these players to catch up.
-    Waiting {
-        players: Vec<Login>,
-    },
-    Resumed,
-    /// A human left the game; their `quit` order is in a coming turn.
-    PlayerLeftGame {
-        slot: SlotIndex,
-    },
-    /// Clients disagree about the state after `turn`. `slots` are the
-    /// players whose digest differs from the most common one, or every
-    /// player on a tie; they are taken out of the game.
-    OutOfSync {
-        turn: Turn,
-        slots: Vec<SlotIndex>,
-    },
     /// The game is over for you: you are back in the lobby.
     GameEnded,
 
@@ -1172,32 +1021,6 @@ mod tests {
     }
 
     #[test]
-    fn orders_have_limits() {
-        assert!(Order::new("order 0 0 go 12").is_ok());
-        assert!(Order::new("a\nb").is_err());
-        assert!(Order::new("").is_err());
-        let many = vec![Order::quit(); MAX_ORDERS_PER_MESSAGE + 1];
-        assert!(Orders::new(many).is_err());
-    }
-
-    #[test]
-    fn a_turn_reads_back_the_same() {
-        let m = ServerMsg::Turn {
-            turn: 7,
-            orders: vec![SlotOrders {
-                slot: 1,
-                orders: Orders::new(vec![Order::new("order 0 0 go 12").unwrap()]).unwrap(),
-            }],
-        };
-        let json = m.to_json();
-        assert_eq!(
-            json,
-            r#"{"type":"turn","turn":7,"orders":[{"slot":1,"orders":["order 0 0 go 12"]}]}"#
-        );
-        assert_eq!(ServerMsg::from_json(&json).unwrap(), m);
-    }
-
-    #[test]
     fn map_bytes_travel_in_base64() {
         let data = MapData {
             file_name: MapFileName::new("jl1.txt").unwrap(),
@@ -1225,7 +1048,7 @@ mod tests {
         assert!(GameText::new("x".repeat(most)).is_ok());
         assert!(GameText::new("x".repeat(most + 1)).is_err());
         let json = format!(
-            r#"{{"type":"start_hosted","texts":{{"rules":"{}","ai":"","map":""}}}}"#,
+            r#"{{"type":"start","texts":{{"rules":"{}","ai":"","map":""}}}}"#,
             "x".repeat(most + 1)
         );
         assert!(ClientMsg::from_json(&json).is_err());

@@ -453,7 +453,7 @@ mod tests {
         let farm = unit(g, g.game.me, "farm");
         let entity = Box::new(g.game.view().perceived(farm).unwrap());
         let (from, sounds) = (h.utterances().len(), h.audio.played().len());
-        g.game.next_update = h.clock.now() - late;
+        g.game.set_turn_due(h.clock.now() - late);
         let event = SrvEvent::Entity {
             entity,
             event: EntityEvent::Complete,
@@ -636,7 +636,7 @@ mod tests {
     fn an_attack_is_one_alert_tied_to_its_square_while_it_lasts() {
         let (mut h, mut g) = training();
         let (me, them) = (g.game.me, enemy(&g));
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let square = w
             .entity(unit(&g, me, "townhall"))
             .unwrap()

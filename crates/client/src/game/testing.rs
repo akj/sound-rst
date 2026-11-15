@@ -45,29 +45,37 @@ pub(crate) fn training_allied(
     let mut session = Session::training(&h.client, m, &players, &factions, &alliances);
     let mut game = session.start(&mut h.client).expect("a valid map");
     h.client.input.clear();
-    game.next_update = h.client.clock.now();
-    let mut g = TestGame { session, game };
+    game.set_turn_due(h.client.clock.now());
+    let mut g = TestGame {
+        session: Some(session),
+        game,
+    };
     h.run_until_turn(&mut g, 3);
     (h, g)
 }
 
 /// Gives `p` a command in the map language, as the console does.
 pub(crate) fn cheat(g: &mut TestGame, p: PlayerId, line: &str) {
-    g.game.host.queue_line(p, &format!("cmd {line}"));
+    g.game.host_mut().queue_line(p, &format!("cmd {line}"));
 }
 
 /// Runs a turn of the game and tells the seat, without the interface
 /// handling what happened.
 pub(crate) fn step(g: &mut TestGame) {
-    let report = g.game.host.step(g.game.me);
+    let me = g.game.me;
+    let report = g.game.host_mut().step(me);
     g.game.seat.install(report.message);
 }
 
 /// Orders `unit` of `p` to go to the center of `square`.
 pub(crate) fn go(g: &mut TestGame, p: PlayerId, unit: EntityId, square: SquareId) {
     let to = g.game.view().square(square).protocol_id();
-    g.game.host.queue_line(p, &format!("control {}", unit.0));
-    g.game.host.queue_line(p, &format!("order 0 0 go {to}"));
+    g.game
+        .host_mut()
+        .queue_line(p, &format!("control {}", unit.0));
+    g.game
+        .host_mut()
+        .queue_line(p, &format!("order 0 0 go {to}"));
 }
 
 /// Runs the game a turn at a time until `done`, at most 400 turns.
@@ -102,7 +110,7 @@ pub(crate) fn enemy(g: &TestGame) -> PlayerId {
 
 /// The first unit of `p` of this type, in the whole world.
 pub(crate) fn unit(g: &TestGame, p: PlayerId, type_name: &str) -> EntityId {
-    let w = g.game.host.world();
+    let w = g.game.host().world();
     w.player(p)
         .units
         .iter()

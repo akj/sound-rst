@@ -1,17 +1,20 @@
 //! The game interface (`clientgame.py`): what the player hears of a game
 //! and what the keys do.
 //!
-//! The interface owns the game's [`Host`] and gives it the player's
-//! commands. It reads the game only through what its seat is told
+//! The game runs in one of two places ([`Source`]): in this process, on a
+//! [`Host`] the interface owns (single player, a campaign, training), or
+//! on a server, which sends the seat's stream ([`server`]). Either way the
+//! interface reads the game only through what its seat is told
 //! ([`GameInterface::view`]): the game's start, then a [`TurnMessage`]
-//! for each turn, installed when the turn is taken. Its loop steps the
-//! host when a turn is due (every 300 ms divided by the speed), then
-//! handles what happened as the original's server events: the turn's
-//! events, then the end of the turn, which brings the interface's own
-//! copies of the entities and squares up to date. One server event is
-//! handled per pass of the loop, after the key presses, as in the
-//! original, so the questions answer for the end of the turn from the
-//! moment it is taken, while those copies catch up a few passes later.
+//! for each turn, installed when the turn is taken. Its loop steps a local
+//! host when a turn is due (every 300 ms divided by the speed), or takes
+//! the turns a server sent as they come, then handles what happened as
+//! the original's server events: the turn's events, then the end of the
+//! turn, which brings the interface's own copies of the entities and
+//! squares up to date. One server event is handled per pass of the loop,
+//! after the key presses, as in the original, so the questions answer for
+//! the end of the turn from the moment it is taken, while those copies
+//! catch up a few passes later.
 //!
 //! Nothing said stops the loop. What the keys do depends on one [`Mode`].
 //! In single-player the world waits, on purpose, while a story is told
@@ -31,12 +34,12 @@ pub mod animation;
 pub mod command;
 pub mod entity;
 pub mod focus;
-pub mod lockstep;
 pub mod misc;
 pub mod news;
 pub mod order;
 pub mod questions;
 pub mod selection;
+pub mod server;
 pub mod squares;
 pub mod stats;
 #[cfg(test)]
@@ -287,10 +290,27 @@ pub fn compute_title(style: &Style, type_name: &str) -> Msg {
         .collect()
 }
 
+/// Where the game runs.
+pub(crate) enum Source {
+    /// In this process: single player, a campaign, training.
+    Local(Local),
+    /// On a server, which sends what the seat is told.
+    Server(server::ServerGame),
+}
+
+/// A game this process runs.
+pub(crate) struct Local {
+    host: Box<Host>,
+    /// When the next turn is due.
+    next_update: f64,
+    /// A turn has run and its end is not handled yet.
+    waiting_for_world_update: bool,
+}
+
 /// The interface of a running game.
 pub struct GameInterface {
-    /// The game.
-    pub host: Host,
+    /// Where the game runs.
+    pub(crate) source: Source,
     /// The player this interface plays.
     pub me: PlayerId,
     /// What the player knows of the game: everything the interface reads
@@ -357,9 +377,6 @@ pub struct GameInterface {
     pub(crate) must_play_tick: bool,
     pub(crate) average_turn_duration: f64,
     pub(crate) previous_update_time: Option<f64>,
-    /// When the next turn is due.
-    pub next_update: f64,
-    pub(crate) waiting_for_world_update: bool,
     /// The loop ends at its next pass.
     pub end_loop: bool,
     pub(crate) already_asked_to_quit: bool,
@@ -373,22 +390,38 @@ pub struct GameInterface {
     pub(crate) pending_commands: Vec<Command>,
     /// The order kinds of the menus, in menu order.
     pub(crate) orders_list: Vec<Keyword>,
-    /// In a game on a server: what runs the turns the server sends.
-    pub net: Option<lockstep::NetDriver>,
 }
 
 impl GameInterface {
-    /// The interface of `me` in the game of `host`, from the start of the
-    /// game and what `me` is told before the first turn. Says nothing:
-    /// queued messages are dropped.
-    pub fn new(cx: &mut Client, host: Host, me: PlayerId) -> Self {
-        cx.voice.silent_flush();
+    /// The interface of `me` in the game of `host`, run here, from the
+    /// start of the game and what `me` is told before the first turn. Says
+    /// nothing: queued messages are dropped.
+    pub fn local(cx: &mut Client, host: Host, me: PlayerId) -> Self {
         let seat = SeatView::new(host.game_start(), host.message(me));
+        let local = Local {
+            host: Box::new(host),
+            next_update: 0.0,
+            waiting_for_world_update: false,
+        };
+        let speed = cx.config.speed;
+        Self::with(cx, Source::Local(local), seat, speed)
+    }
+
+    /// The interface of a seat of a game a server runs, from what the
+    /// seat was sent when it joined. Says nothing: queued messages are
+    /// dropped.
+    pub(crate) fn on_server(cx: &mut Client, seat: SeatView, server: server::ServerGame) -> Self {
+        let speed = server.speed_factor();
+        Self::with(cx, Source::Server(server), seat, speed)
+    }
+
+    fn with(cx: &mut Client, source: Source, seat: SeatView, speed: f64) -> Self {
+        cx.voice.silent_flush();
         GameInterface {
-            host,
-            me,
+            source,
+            me: seat.player(),
             seat,
-            speed: cx.config.speed,
+            speed,
             dobjets: IndexMap::new(),
             scouted_squares: BTreeSet::new(),
             scouted_before_squares: BTreeSet::new(),
@@ -428,8 +461,6 @@ impl GameInterface {
             must_play_tick: false,
             average_turn_duration: 0.0,
             previous_update_time: None,
-            next_update: 0.0,
-            waiting_for_world_update: false,
             end_loop: false,
             already_asked_to_quit: false,
             forced_quit: false,
@@ -439,7 +470,6 @@ impl GameInterface {
             srv_queue: VecDeque::new(),
             pending_commands: Vec::new(),
             orders_list: Vec::new(),
-            net: None,
         }
     }
 
@@ -448,10 +478,22 @@ impl GameInterface {
         &self.seat
     }
 
-    /// Takes what the host tells the seat when the game is over for it:
-    /// the statistics of the score.
+    /// Whether the game runs on a server.
+    pub fn on_a_server(&self) -> bool {
+        matches!(self.source, Source::Server(_))
+    }
+
+    /// Takes what the seat is told when the game is over for it: the
+    /// statistics of the score. On a server, nothing if the server did
+    /// not send them.
     pub fn end_game(&mut self) {
-        self.seat.install_end(self.host.game_end(self.me));
+        let end = match &mut self.source {
+            Source::Local(l) => Some(l.host.game_end(self.me)),
+            Source::Server(s) => s.take_end(),
+        };
+        if let Some(end) = end {
+            self.seat.install_end(end);
+        }
     }
 
     /// Takes what the host tells the seat between turns, after a cheat
@@ -461,14 +503,48 @@ impl GameInterface {
     /// turn of the previous seat still waiting in the queue brings the
     /// interface's copies up to date with that seat's entities and squares;
     /// the new seat notes only what it sees itself.
-    pub(crate) fn install_at_once(&mut self, told: TurnMessage) {
+    fn install_at_once(&mut self, told: TurnMessage) {
+        let Source::Local(l) = &self.source else {
+            return;
+        };
         if told.seat == self.me {
             self.seat.install(told);
         } else {
             self.me = told.seat;
-            self.seat = SeatView::new(self.host.game_start(), told);
+            self.seat = SeatView::new(l.host.game_start(), told);
             self.objectives_seen.clear();
             self.objective_at = None;
+        }
+    }
+
+    /// Gives a command to the host of a game run here, which carries out
+    /// at once a cheat that changes the game between turns: what the
+    /// player hears next is told by the host at once. A game on a server
+    /// takes no cheat.
+    pub(crate) fn queue_at_once(&mut self, command: Command) {
+        let Source::Local(l) = &mut self.source else {
+            return;
+        };
+        if let Some(told) = l.host.queue(self.me, command) {
+            self.install_at_once(told);
+        }
+    }
+
+    /// Makes the next turn of a game run here due at `now`. A server keeps
+    /// the time of its own games.
+    pub(crate) fn turn_due_at(&mut self, now: f64) {
+        if let Source::Local(l) = &mut self.source {
+            l.next_update = now;
+        }
+    }
+
+    /// When the turn after the last one taken is due: a local game's next
+    /// step, or the next turn of the server's clock as of the last turn it
+    /// sent.
+    fn turn_due(&self) -> f64 {
+        match &self.source {
+            Source::Local(l) => l.next_update,
+            Source::Server(s) => s.next_turn(),
         }
     }
 
@@ -492,18 +568,18 @@ impl GameInterface {
 
     /// Gives a command of the player to the game at the next turn
     /// (`server.write_line`); in a game on a server, it goes to the server
-    /// with the next orders sent. A player out of the game sends nothing,
-    /// and a game on a server takes no command without a text line (a
-    /// cheat the host carries out itself).
+    /// as soon as the server takes it. A player out of the game sends
+    /// nothing. A server takes no cheat, and sets its speed only when the
+    /// room's host asks (see [`GameInterface::server_update`]).
     pub fn send_command(&mut self, cx: &Client, command: Command) {
         if !self.view().players().contains(&self.me) {
             cx.log.info(format!(
                 "didn't send the order for player {}: {command:?}",
                 self.me.0
             ));
-        } else if self.net.is_some() && self.host.line(&command).is_none() {
+        } else if self.on_a_server() && matches!(command, Command::Cheat(_)) {
             cx.log
-                .warning(format!("a game on a server cannot send {command:?}"));
+                .warning(format!("a game on a server takes no cheat: {command:?}"));
         } else {
             self.pending_commands.push(command);
         }
@@ -514,7 +590,7 @@ impl GameInterface {
     /// Runs the game until it ends.
     pub fn run_loop(&mut self, cx: &mut Client) -> Result<(), Exit> {
         cx.input.clear();
-        self.next_update = cx.clock.now();
+        self.turn_due_at(cx.clock.now());
         self.end_loop = false;
         while !self.end_loop {
             self.step(cx)?;
@@ -546,8 +622,8 @@ impl GameInterface {
         crate::net::pump(cx);
         self.end_story_if_told(cx);
         let waits = self.world_waits();
-        if self.net.is_some() {
-            self.net_update(cx);
+        if self.on_a_server() {
+            self.server_update(cx);
         } else if !waits && self.time_to_ask_for_next_update(cx) {
             self.ask_for_update(cx);
         }
@@ -577,7 +653,7 @@ impl GameInterface {
     /// Whether the world waits for the player: in single-player, while a
     /// story is told or the game menu or the console is open.
     pub fn world_waits(&self) -> bool {
-        self.net.is_none()
+        !self.on_a_server()
             && match self.mode {
                 Mode::Playing | Mode::OrderShortcut | Mode::Chat(_) | Mode::KeyHelp => false,
                 Mode::Story(_) | Mode::GameMenu(_) | Mode::Console(_) => true,
@@ -596,7 +672,7 @@ impl GameInterface {
                 .filter_map(|m| cx.voice.news(News::new(Category::Story, m), policy))
                 .collect(),
         );
-        if self.net.is_some() || matches!(self.mode, Mode::KeyHelp) || story.is_told(cx) {
+        if self.on_a_server() || matches!(self.mode, Mode::KeyHelp) || story.is_told(cx) {
             return;
         }
         cx.stop_sound(false);
@@ -610,38 +686,53 @@ impl GameInterface {
     }
 
     fn time_to_ask_for_next_update(&self, cx: &Client) -> bool {
-        !self.waiting_for_world_update && cx.clock.now() >= self.next_update
+        match &self.source {
+            Source::Local(l) => !l.waiting_for_world_update && cx.clock.now() >= l.next_update,
+            Source::Server(_) => false,
+        }
     }
 
     /// Gives the pending commands to the host as the player's, runs a
     /// turn, and queues what happened.
     fn ask_for_update(&mut self, cx: &mut Client) {
         for c in std::mem::take(&mut self.pending_commands) {
-            if let Some(told) = self.host.queue(self.me, c) {
-                self.install_at_once(told);
-            }
+            self.queue_at_once(c);
         }
-        self.next_update = cx.clock.now() + TURN / self.speed;
+        self.turn_due_at(cx.clock.now() + TURN / self.speed);
         self.run_turn(cx);
     }
 
-    /// Runs a turn of the game with the commands queued, takes the turn's
-    /// message, and queues what happened: the turn's events, its end, and
-    /// what followed when the turn ended the game.
+    /// Runs a turn of the game here with the commands queued, takes the
+    /// turn's message, and queues what happened.
     pub(crate) fn run_turn(&mut self, cx: &mut Client) {
-        self.waiting_for_world_update = true;
-        let report = self.host.step(self.me);
+        let Source::Local(l) = &mut self.source else {
+            return;
+        };
+        l.waiting_for_world_update = true;
+        let report = l.host.step(self.me);
         for w in report.warnings {
             cx.log.warning(format!("world: {w}"));
         }
-        self.seat.install(report.message);
-        if let Some(end) = report.end_of_turn {
+        self.take_turn(report.message, report.end_of_turn, report.then);
+    }
+
+    /// Takes a turn, here or from a server: its message is current from
+    /// now on, and what happened waits in the queue: the turn's events,
+    /// its end, then what followed when the turn ended the game.
+    fn take_turn(
+        &mut self,
+        message: Arc<TurnMessage>,
+        end_of_turn: Option<Arc<TurnMessage>>,
+        then: Vec<Event>,
+    ) {
+        self.seat.install(message);
+        if let Some(end) = end_of_turn {
             let events = end.events.iter().cloned().filter_map(SrvEvent::of);
             self.srv_queue.extend(events);
             self.srv_queue.push_back(SrvEvent::EndOfTurn(end));
         }
         self.srv_queue
-            .extend(report.then.into_iter().filter_map(SrvEvent::of));
+            .extend(then.into_iter().filter_map(SrvEvent::of));
     }
 
     /// How far the game has got.
@@ -787,18 +878,18 @@ impl GameInterface {
             }
             // In a game on a server, the server keeps the time.
             SrvEvent::Speed(s) => {
-                if self.net.is_none() {
+                if !self.on_a_server() {
                     self.speed = s;
                 }
             }
-            SrvEvent::Quit => self.srv_quit(cx),
+            SrvEvent::Quit => self.quit_heard(cx),
             SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m)?,
         }
         Ok(())
     }
 
     fn srv_event(&mut self, cx: &mut Client, entity: KnownEntity, event: &EntityEvent) {
-        let timing = if cx.clock.now() > self.next_update + EVENT_LIMIT {
+        let timing = if cx.clock.now() > self.turn_due() + EVENT_LIMIT {
             Timing::Late
         } else {
             Timing::OnTime
@@ -822,7 +913,9 @@ impl GameInterface {
     fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) -> R {
         self.turns_handled += 1;
         self.last_virtual_time = m.time as f64 / 1000.0;
-        self.waiting_for_world_update = false;
+        if let Source::Local(l) = &mut self.source {
+            l.waiting_for_world_update = false;
+        }
         self.scouted_squares = m.squares.observed.clone();
         self.scouted_before_squares = m.squares.observed_before.clone();
         self.seat.remember();
@@ -937,6 +1030,31 @@ impl GameInterface {
     /// not yet sent to the server.
     pub fn pending_commands(&self) -> &[Command] {
         &self.pending_commands
+    }
+
+    /// The host of a game run here, for tests that check its results.
+    /// Panics in a game on a server, which has no host here.
+    #[cfg(any(test, feature = "testkit"))]
+    pub fn host(&self) -> &Host {
+        match &self.source {
+            Source::Local(l) => &l.host,
+            Source::Server(_) => panic!("a game on a server has no host here"),
+        }
+    }
+
+    /// As [`GameInterface::host`], to change the game.
+    #[cfg(any(test, feature = "testkit"))]
+    pub fn host_mut(&mut self) -> &mut Host {
+        match &mut self.source {
+            Source::Local(l) => &mut l.host,
+            Source::Server(_) => panic!("a game on a server has no host here"),
+        }
+    }
+
+    /// Makes the next turn of a game run here due at `at`.
+    #[cfg(any(test, feature = "testkit"))]
+    pub fn set_turn_due(&mut self, at: f64) {
+        self.turn_due_at(at);
     }
 
     /// Stops every noise of the game.

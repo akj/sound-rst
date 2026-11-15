@@ -1,5 +1,5 @@
 //! Playing on a server: the connection, what the client knows of the
-//! lobby and its room, the chat, and the turns of a game.
+//! lobby and its room, the chat, and the frames of a game the server runs.
 //!
 //! Server messages are read by one hook, [`pump`], that every waiting loop
 //! of the client calls: menus, text entry and the game loop. It updates
@@ -20,17 +20,17 @@ use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::{
-    Channel, ChatText, ClientMsg, ContentHash, LobbySnapshot, Login, MAX_ORDER_BYTES,
-    MAX_ORDERS_PER_MESSAGE, MAX_TURN_ORDER_BYTES, MapData, MapHash, MapInfo, Order, Orders,
-    Refusal, RoomExit, RoomId, ServerMsg, Slot, SlotIndex, SlotOrders, Speed, Turn,
+    Channel, ChatText, ClientMsg, ContentHash, Invalid, LobbySnapshot, Login, MapData, MapHash,
+    MapInfo, Refusal, RoomExit, RoomId, SeatToken, ServerMsg, SlotIndex, Speed,
 };
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
 use self::chat::{ChatLog, line_msg, line_news};
 use self::conn::{Connection, NetEvent};
-use self::lobby::{LobbyModel, MAX_ROOM_SLOTS, MapState, RoomModel, TooMany, check_room};
+use self::lobby::{LobbyModel, MapState, RoomModel, TooMany, check_room};
 use self::words::text;
 use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
@@ -74,61 +74,38 @@ pub struct Invitation {
     pub by: Login,
 }
 
-/// A game the server started, waiting to be played.
+/// The seat a server gave the player in a game it runs: the game starts
+/// for the player.
 #[derive(Clone, Debug)]
-pub struct GameStart {
-    pub seed: i64,
-    pub slots: Vec<Slot>,
+pub struct Seated {
+    /// The player's slot in the room.
     pub you: SlotIndex,
     pub map: MapInfo,
     pub speed: Speed,
+    pub paused: bool,
+    /// What takes the seat back after a lost connection.
+    pub token: SeatToken,
 }
 
-/// The most turns received and not run yet. A server stops its clock when
-/// a player is 10 turns behind.
-pub const MAX_QUEUED_TURNS: usize = 32;
+/// The most frames of a game received and not yet taken by the game. The
+/// game takes every frame waiting at each pass of its loop, and a server
+/// sends one a turn: a server that sends more is not playing a game.
+pub const MAX_QUEUED_FRAMES: usize = 1024;
 
-/// The most memory the orders of one turn may take ([`turn_bytes`]). A
-/// server passes on at most [`MAX_TURN_ORDER_BYTES`] of orders a player in
-/// a turn: with orders of 20 characters, about 70 KB in memory, and 1.1 MB
-/// for 16 players, the most of any map shipped with the game. A human
-/// gives a few hundred bytes of orders a turn.
-pub const MAX_TURN_BYTES: usize = 2 * 1024 * 1024;
+/// A frame of the game's stream as it came: decoded, or why it could not
+/// be.
+pub type Incoming = Result<Box<SeatFrame>, Invalid>;
 
-/// The memory the orders of a turn take: each list of orders and each
-/// order, with its text.
-fn turn_bytes(orders: &[SlotOrders]) -> usize {
-    let order = |o: &Order| size_of::<Order>() + o.as_str().len();
-    orders
-        .iter()
-        .map(|o| size_of::<SlotOrders>() + o.orders.as_slice().iter().map(order).sum::<usize>())
-        .sum()
-}
-
-/// What the server says to a game being played.
+/// What the server sends a game being played.
 pub struct GameLink {
     /// The player's slot.
     pub you: SlotIndex,
-    /// The turns received and not run yet, in order. At most
-    /// [`MAX_QUEUED_TURNS`].
-    pub turns: VecDeque<(Turn, Vec<SlotOrders>)>,
-    /// The game is over for this player (the server said so).
+    /// The frames received and not taken by the game yet, in order. At
+    /// most [`MAX_QUEUED_FRAMES`].
+    pub frames: VecDeque<Incoming>,
+    /// The game is over for this player: the server said so, and they are
+    /// back in the lobby.
     pub ended: bool,
-    /// The game's record, written once if the server says the game is out
-    /// of sync.
-    record: SyncRecord,
-    /// Bytes of orders sent since the last turn received.
-    sent_since_turn: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SyncRecord {
-    /// The server has not said the game is out of sync.
-    NotNeeded,
-    /// The server said the game went out of sync after this turn.
-    Due(Turn),
-    /// The game has taken the turn to write its record.
-    Taken,
 }
 
 impl GameLink {
@@ -136,22 +113,9 @@ impl GameLink {
     pub fn new(you: SlotIndex) -> GameLink {
         GameLink {
             you,
-            turns: VecDeque::new(),
+            frames: VecDeque::new(),
             ended: false,
-            record: SyncRecord::NotNeeded,
-            sent_since_turn: 0,
         }
-    }
-
-    /// The turn the server first said the game went out of sync after,
-    /// once: the game writes its record then. A server that says it again
-    /// gets no other record written.
-    pub fn take_out_of_sync(&mut self) -> Option<Turn> {
-        let SyncRecord::Due(turn) = self.record else {
-            return None;
-        };
-        self.record = SyncRecord::Taken;
-        Some(turn)
     }
 }
 
@@ -162,7 +126,8 @@ pub struct Net {
     pub room: Option<RoomModel>,
     pub chat: ChatLog,
     pub invitations: Vec<Invitation>,
-    pub started: Option<GameStart>,
+    /// A game the server started for the player, waiting to be played.
+    pub started: Option<Seated>,
     /// While a game runs.
     pub game: Option<GameLink>,
     /// Changes whenever the multiplayer menus must be built again.
@@ -212,6 +177,7 @@ impl Net {
     fn handle(&mut self, cx: &mut Client, event: NetEvent) {
         match event {
             NetEvent::Msg(m) => self.handle_msg(cx, m),
+            NetEvent::Frame(f) => self.handle_frame(cx, f),
             NetEvent::Closed(reason) => {
                 cx.log.info(format!("connection closed: {reason}"));
                 if self.closed.is_none() {
@@ -320,66 +286,6 @@ impl Net {
                 self.map_received(cx, map);
                 self.changed();
             }
-            ServerMsg::GameStarted {
-                seed,
-                slots,
-                you,
-                map,
-                speed,
-            } => {
-                self.started = Some(GameStart {
-                    seed,
-                    slots,
-                    you,
-                    map,
-                    speed,
-                });
-                self.interrupts += 1;
-                self.changed();
-            }
-            ServerMsg::Turn { turn, orders } => {
-                if let Some(g) = &mut self.game {
-                    g.turns.push_back((turn, orders));
-                    g.sent_since_turn = 0;
-                }
-            }
-            ServerMsg::Waiting { players } => {
-                if self.game.is_some() {
-                    let mut m = text(words::WAITING_FOR);
-                    for (i, p) in players.iter().enumerate() {
-                        if i > 0 {
-                            m.extend(msg(mp::COMMA));
-                        }
-                        m.push(literal(p.as_str()));
-                    }
-                    cx.news(News::new(Category::System, m).about(Subject::Waiting));
-                }
-            }
-            ServerMsg::Resumed => {
-                if self.game.is_some() {
-                    let m = text(words::GAME_RESUMES);
-                    cx.news(News::new(Category::System, m).about(Subject::Waiting));
-                }
-            }
-            ServerMsg::PlayerLeftGame { slot } => {
-                // The world says it when the player's `quit` order runs.
-                cx.log.info(format!("slot {slot} left the game"));
-            }
-            ServerMsg::OutOfSync { turn, slots } => {
-                if let Some(g) = &mut self.game {
-                    cx.log
-                        .warning(format!("out of sync after turn {turn}: slots {slots:?}"));
-                    if g.record == SyncRecord::NotNeeded {
-                        g.record = SyncRecord::Due(turn);
-                    }
-                    let m = if slots.contains(&g.you) {
-                        words::OUT_OF_SYNC
-                    } else {
-                        words::OTHERS_OUT_OF_SYNC
-                    };
-                    cx.news(News::new(Category::System, text(m)));
-                }
-            }
             ServerMsg::GameEnded => {
                 if let Some(g) = &mut self.game {
                     g.ended = true;
@@ -424,22 +330,63 @@ impl Net {
     fn check(&self, m: &ServerMsg) -> Result<(), TooMany> {
         match m {
             ServerMsg::Room { room, .. } => check_room(&room.map, room.slots.len()),
-            ServerMsg::GameStarted { slots, map, .. } => check_room(map, slots.len()),
-            ServerMsg::Waiting { players } if players.len() > MAX_ROOM_SLOTS => {
-                Err(TooMany("players waited for"))
-            }
-            ServerMsg::Turn { orders, .. } if self.game.is_some() => {
-                let queued = self.game.as_ref().map_or(0, |g| g.turns.len());
-                if turn_bytes(orders) > MAX_TURN_BYTES {
-                    Err(TooMany("orders in a turn"))
-                } else if queued >= MAX_QUEUED_TURNS {
-                    Err(TooMany("turns ahead"))
-                } else {
-                    Ok(())
-                }
-            }
             _ => Ok(()),
         }
+    }
+
+    /// A frame of a game's stream. The seat starts the game; the start of
+    /// a game that did not start is said; any other frame waits for the
+    /// game, which checks it.
+    fn handle_frame(&mut self, cx: &mut Client, frame: Incoming) {
+        let frame = match frame {
+            Ok(f) => f,
+            Err(e) => {
+                cx.log
+                    .warning(format!("a frame of the game cannot be read: {e}"));
+                return self.for_the_game(cx, Err(e));
+            }
+        };
+        match *frame {
+            SeatFrame::Seated {
+                you,
+                map,
+                speed,
+                paused,
+                token,
+            } if self.game.is_none() => {
+                if let Err(too_many) = check_room(&map, 0) {
+                    return self.give_up(cx, too_many);
+                }
+                self.started = Some(Seated {
+                    you,
+                    map,
+                    speed,
+                    paused,
+                    token,
+                });
+                self.game = Some(GameLink::new(you));
+                self.interrupts += 1;
+                self.changed();
+            }
+            SeatFrame::NotStarted(refusal) if self.game.is_none() => {
+                cx.log
+                    .warning(format!("the game did not start: {refusal:?}"));
+                cx.news(News::new(Category::System, words::not_started(&refusal)));
+            }
+            other => self.for_the_game(cx, Ok(Box::new(other))),
+        }
+    }
+
+    /// Keeps a frame for the game being played.
+    fn for_the_game(&mut self, cx: &mut Client, frame: Incoming) {
+        let Some(game) = &mut self.game else {
+            cx.log.warning("a frame of a game while no game is played");
+            return;
+        };
+        if game.frames.len() >= MAX_QUEUED_FRAMES {
+            return self.give_up(cx, TooMany("frames ahead of the game"));
+        }
+        game.frames.push_back(frame);
     }
 
     /// A map asked for: checked, saved with the downloaded maps as the
@@ -592,44 +539,9 @@ pub fn game_link(cx: &mut Client) -> Option<&mut GameLink> {
     cx.net.as_mut().and_then(|n| n.game.as_mut())
 }
 
-/// Sends the commands written since the last call as orders, as many as
-/// fit in what the server takes for one turn; the others wait for the
-/// next turn. A command too long to be an order is dropped.
-pub fn send_orders(cx: &mut Client, pending: &mut Vec<String>) {
-    let Some(net) = &mut cx.net else {
-        return;
-    };
-    let Some(game) = &mut net.game else {
-        return;
-    };
-    // Orders sent just before a turn arrived may still wait at the server
-    // for the next one: half of what it takes leaves room for them.
-    let budget = MAX_TURN_ORDER_BYTES / 2;
-    let mut batch = Vec::new();
-    let mut taken = 0;
-    for command in pending.iter() {
-        let len = command.len();
-        if len > MAX_ORDER_BYTES {
-            cx.log
-                .warning(format!("command too long to send: {len} bytes"));
-            taken += 1;
-            continue;
-        }
-        if game.sent_since_turn + len > budget {
-            break;
-        }
-        match Order::new(command.clone()) {
-            Ok(o) => {
-                game.sent_since_turn += len;
-                batch.push(o);
-            }
-            Err(_) => cx.log.warning(format!("not an order: {command:?}")),
-        }
-        taken += 1;
-    }
-    pending.drain(..taken);
-    for chunk in batch.chunks(MAX_ORDERS_PER_MESSAGE) {
-        let orders = Orders::new(chunk.to_vec()).expect("a chunk fits in a message");
-        net.send(ClientMsg::Orders { orders });
+/// Sends an encoded command of the player, if connected.
+pub fn send_command(cx: &mut Client, bytes: Vec<u8>) {
+    if let Some(net) = &mut cx.net {
+        net.conn.send_command(bytes);
     }
 }

@@ -176,6 +176,11 @@ pub struct PlayerStats {
 }
 
 impl PlayerStats {
+    /// Every number of the statistics: the counts, and the duration.
+    pub(crate) fn numbers(&self) -> impl Iterator<Item = i64> + '_ {
+        self.counts.values().copied().chain(self.game_duration)
+    }
+
     pub fn add(&mut self, event: StatEvent, target: StatTarget, inc: i64) {
         *self.counts.entry((event, target)).or_insert(0) += inc;
     }

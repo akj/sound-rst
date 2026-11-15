@@ -82,8 +82,7 @@ async fn room_chat_reaches_only_the_room() {
 
 #[tokio::test]
 async fn game_chat_reaches_the_game_and_allies_chat_the_alliance() {
-    // Nobody reports turns; the game must not wait meanwhile.
-    let server = server(|c| c.max_lead = 1_000_000);
+    let server = server(|_| {});
     let mut all = clients(server.local_addr(), &["andrew", "bob", "carol", "dave"]).await;
     let room = open_room(&mut all, 0, &map(2, 4), true).await;
     join_room(&mut all, 1, room).await;
@@ -114,29 +113,26 @@ async fn game_chat_reaches_the_game_and_allies_chat_the_alliance() {
     let (bob, carol) = (all[1].login.clone(), all[2].login.clone());
     all[1].send(say(Channel::Game, "gl hf")).await;
     for c in &mut all[..3] {
-        c.expect_event(false, line(Channel::Game, &bob, "gl hf"))
-            .await;
+        c.expect(line(Channel::Game, &bob, "gl hf")).await;
     }
     all[2].send(say(Channel::Allies, "rush him")).await;
     all[0]
-        .expect_event(false, line(Channel::Allies, &carol, "rush him"))
+        .expect(line(Channel::Allies, &carol, "rush him"))
         .await;
     all[2]
-        .expect_event(false, line(Channel::Allies, &carol, "rush him"))
+        .expect(line(Channel::Allies, &carol, "rush him"))
         .await;
     // Players in a game cannot use the lobby or room channels.
     all[0].send(say(Channel::Lobby, "anyone?")).await;
-    all[0].expect_event(false, refused(Refusal::NotNow)).await;
+    all[0].expect(refused(Refusal::NotNow)).await;
     all[0].send(say(Channel::Room, "anyone?")).await;
-    all[0].expect_event(false, refused(Refusal::NotNow)).await;
+    all[0].expect(refused(Refusal::NotNow)).await;
     // Dave, in the lobby, heard none of it; Bob did not hear the allies.
     let dave = all[3].login.clone();
     all[3].send(say(Channel::Lobby, "lonely")).await;
     all[3].expect(line(Channel::Lobby, &dave, "lonely")).await;
     all[1].send(say(Channel::Game, "?")).await;
-    all[1]
-        .expect_event(false, line(Channel::Game, &bob, "?"))
-        .await;
+    all[1].expect(line(Channel::Game, &bob, "?")).await;
 }
 
 #[tokio::test]

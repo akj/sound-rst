@@ -22,10 +22,10 @@ fn map_index(map: &str) -> usize {
 }
 
 fn peasant_orders(g: &soundrts::game::GameInterface) -> String {
-    let p = g.host.world().player(g.me);
+    let p = g.host().world().player(g.me);
     p.units
         .iter()
-        .filter_map(|&u| g.host.world().entity(u))
+        .filter_map(|&u| g.host().world().entity(u))
         .filter(|e| &*e.type_name == "peasant")
         .map(|e| {
             e.orders
@@ -97,13 +97,13 @@ fn a_training_game_on_jl1_through_the_menus() {
         Step::Key("build", Key::Return, N),
         Step::Probe("building", peasant_orders),
         Step::Probe("peasants", |g| {
-            g.host
+            g.host()
                 .world()
                 .player(g.me)
                 .units
                 .iter()
                 .filter(|&&u| {
-                    g.host
+                    g.host()
                         .world()
                         .entity(u)
                         .is_some_and(|e| &*e.type_name == "peasant")
@@ -270,7 +270,7 @@ fn a_command_given_before_changing_player_is_the_new_players() {
     // Paused, so that no turn runs until the end.
     g.game.execute_command(&mut h.client, "p").unwrap();
     h.run_for(&mut g, 1.0);
-    let turn = g.game.host.world().turn();
+    let turn = g.game.host().world().turn();
     let me = g.game.me;
     g.game.execute_command(&mut h.client, "v").unwrap();
     let ctrl_shift = Mods {
@@ -281,10 +281,10 @@ fn a_command_given_before_changing_player_is_the_new_players() {
     h.key(&mut g, Key::F4, ctrl_shift);
     let other = g.game.me;
     assert_ne!(other, me);
-    assert_eq!(g.game.host.world().turn(), turn);
+    assert_eq!(g.game.host().world().turn(), turn);
     g.game.execute_command(&mut h.client, "p").unwrap();
     h.run_until_turn(&mut g, turn + 1);
-    let world = g.game.host.world();
+    let world = g.game.host().world();
     assert!(world.player(other).has_victory);
     assert!(!world.player(me).has_victory);
 }

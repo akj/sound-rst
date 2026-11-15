@@ -9,17 +9,36 @@
     clippy::arithmetic_side_effects
 )]
 
+use std::collections::BTreeMap;
+
 use crate::change::Malformed;
 use crate::entity::{EntityId, Place, SquareId};
 use crate::events::Event;
 use crate::known::{KnownEntity, KnownTarget};
-use crate::message::{GameStart, StartMessage, TurnMessage};
+use crate::message::{GameEnd, GameStart, StartMessage, TurnMessage};
 
 /// The largest food cost, transport capacity or volume, either side of 0,
 /// in thousandths. The rules give far smaller ones; within it, a cost less
 /// another, or a capacity less the volumes of every unit a message could
 /// name, cannot overflow.
 const MAX_OWN_NUMBER: u64 = 1 << 32;
+
+/// The largest amount a seat is told, either side of 0: a resource, food,
+/// a statistic, a time. Far beyond any game's, and small enough that the
+/// interface's sums and differences of them cannot overflow.
+const MAX_AMOUNT: u64 = 1 << 48;
+
+/// The most objectives a seat has at once, and the longest number and
+/// description of one. A campaign's chapter has a few short ones.
+pub const MAX_OBJECTIVES: usize = 64;
+const MAX_OBJECTIVE_LENGTH: usize = 64;
+
+fn amount(n: i64, what: &str) -> Result<(), Malformed> {
+    if n.unsigned_abs() > MAX_AMOUNT {
+        return malformed(format!("{what} out of range"));
+    }
+    Ok(())
+}
 
 fn malformed(why: impl Into<String>) -> Result<(), Malformed> {
     Err(Malformed(why.into()))
@@ -54,6 +73,56 @@ impl StartMessage {
             .any(|w| matches!(w, [a, b] if a.id >= b.id))
         {
             return malformed("exits out of order");
+        }
+        Ok(())
+    }
+}
+
+/// Fails if an entity is inside itself, or inside one that is, however
+/// far: the interface finds the square of an entity through its
+/// containers.
+fn inside_nothing_it_contains(m: &TurnMessage) -> Result<(), Malformed> {
+    let mut container: BTreeMap<EntityId, Option<EntityId>> = BTreeMap::new();
+    for e in m
+        .unperceived_units
+        .iter()
+        .chain(&m.remembered)
+        .chain(&m.perceived)
+    {
+        let inside = match e.place {
+            Some(Place::Inside(c)) => Some(c),
+            _ => None,
+        };
+        container.insert(e.id, inside);
+    }
+    // Each chain is walked once: `true` for an entity on the chain being
+    // walked, `false` for one whose chain ends.
+    let mut walked: BTreeMap<EntityId, bool> = BTreeMap::new();
+    for &start in container.keys() {
+        let mut chain = Vec::new();
+        let mut at = Some(start);
+        while let Some(e) = at {
+            match walked.get(&e) {
+                Some(true) => return malformed(format!("entity {e} is inside itself")),
+                Some(false) => break,
+                None => {}
+            }
+            walked.insert(e, true);
+            chain.push(e);
+            at = container.get(&e).copied().flatten();
+        }
+        for e in chain {
+            walked.insert(e, false);
+        }
+    }
+    Ok(())
+}
+
+impl GameEnd {
+    /// Fails unless every statistic is within what a game counts.
+    pub fn check(&self) -> Result<(), Malformed> {
+        for n in self.stats.numbers() {
+            amount(n, "a statistic")?;
         }
         Ok(())
     }
@@ -97,7 +166,19 @@ impl GameStart {
         for e in lists.into_iter().flatten() {
             self.entity(e)?;
         }
-        Ok(())
+        amount(m.time, "the time")?;
+        let s = &m.state;
+        for &n in s.resources.iter().chain([&s.available_food, &s.used_food]) {
+            amount(n, "an amount")?;
+        }
+        if s.objectives.len() > MAX_OBJECTIVES
+            || s.objectives.iter().any(|o| {
+                o.number.len() > MAX_OBJECTIVE_LENGTH || o.description.len() > MAX_OBJECTIVE_LENGTH
+            })
+        {
+            return malformed("too many objectives, or too long");
+        }
+        inside_nothing_it_contains(m)
     }
 
     fn square(&self, s: SquareId) -> Result<(), Malformed> {

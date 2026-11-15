@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use crate::connection::{ConnId, Outbox, encode};
 use crate::game::GameTx;
-use crate::hosted::HostedTx;
 use soundrts_protocol::{
     AiLevel, ContentHash, Faction, Login, MapInfo, RoomChange, RoomId, RoomState, RoomSummary,
     ServerMsg, Slot, SlotIndex, SlotPlayer, Speed,
@@ -27,11 +26,9 @@ pub(crate) enum Phase {
         /// Who may join a closed room.
         invited: BTreeSet<ConnId>,
     },
-    /// The lockstep game runs; the slots no longer change.
-    Playing { game: GameTx },
     /// The server runs the game; the slots no longer change, but who holds
     /// a human slot does when a player returns.
-    Hosted { game: HostedTx },
+    Playing { game: GameTx },
 }
 
 pub(crate) struct RoomSlot {
@@ -97,7 +94,7 @@ impl Room {
     }
 
     pub fn is_started(&self) -> bool {
-        matches!(self.phase, Phase::Playing { .. } | Phase::Hosted { .. })
+        matches!(self.phase, Phase::Playing { .. })
     }
 
     pub fn members(&self) -> impl Iterator<Item = (SlotIndex, &Member)> {
