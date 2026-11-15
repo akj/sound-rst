@@ -39,7 +39,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("orders.rs",             [  0,  0, 20,  4,  0, 14,  3]),
     ("pathfinding.rs",        [  0,  0,  1,  0,  0,  0,  3]),
     ("player.rs",             [  0,  0,  0,  0,  0,  0,  1]),
-    ("playerlogic.rs",        [  0,  0,  2,  4,  0,  2,  4]),
+    ("playerlogic.rs",        [  0,  0,  3,  3,  0,  2,  4]),
     ("pyrandom.rs",           [  0,  0,  0,  0,  0,  0, 25]),
     ("questions.rs",          [  0,  0,  0,  0,  0,  0,  2]),
     ("rules.rs",              [  0,  0,  0,  0,  0,  0,  2]),

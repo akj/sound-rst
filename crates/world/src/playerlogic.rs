@@ -832,10 +832,10 @@ impl World {
         resource_type: i64,
         include_building_sites: bool,
     ) -> Res<Option<EntityId>> {
+        // The place is a gatherer's, which takes no order inside, or a
+        // deposit's.
         let Place::Square(start) = place else {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'shortest_path_distance_to'",
-            ));
+            return Err(Invariant::ActingInside.into());
         };
         let mut warehouses: Vec<(i64, EntityId)> = Vec::new();
         for a in self.pl(p).allied.clone() {
