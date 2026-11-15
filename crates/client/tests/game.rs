@@ -30,7 +30,7 @@ fn peasant_orders(g: &soundrts::game::GameInterface) -> String {
         .map(|e| {
             e.orders
                 .iter()
-                .map(|o| o.keyword.as_str())
+                .map(|o| o.keyword().as_str())
                 .collect::<Vec<_>>()
                 .join(",")
         })

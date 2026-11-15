@@ -91,7 +91,7 @@ fn take(w: &mut World, u: EntityId, order: &str) {
 }
 
 fn keywords(w: &World, u: EntityId) -> Vec<&'static str> {
-    w.e(u).orders.iter().map(|o| o.keyword.as_str()).collect()
+    w.e(u).orders.iter().map(|o| o.keyword().as_str()).collect()
 }
 
 /// `is_perceiving_method` of the original tests.
@@ -163,9 +163,12 @@ mod test_worldunit {
         w.counterattack(unit, place).unwrap();
         let e = w.e(unit);
         assert_eq!(keywords(&w, unit), ["go", "go"]);
-        assert_eq!(e.orders[0].args, [w.square(place).id.to_string()]);
+        assert_eq!(e.orders[0].args(&w), [w.square(place).id.to_string()]);
         let here = w.square(place_of(&w, unit)).id;
-        assert_eq!(e.orders[1].args, [format!("zoom-{here}-{}-{}", e.x, e.y)]);
+        assert_eq!(
+            e.orders[1].args(&w),
+            [format!("zoom-{here}-{}-{}", e.x, e.y)]
+        );
     }
 
     #[test]
@@ -538,8 +541,8 @@ starting_resources 10 10
         assert_eq!(w.future_count(cp, "barracks"), 1);
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
-            assert_eq!(w.e(p).orders[0].keyword, Keyword::Build);
-            assert_eq!(w.e(p).orders[0].type_name.as_deref(), Some("barracks"));
+            assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
+            assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("barracks"));
         }
         assert_eq!(w.future_count(cp, "barracks"), 1);
         run_until_idle(&mut w, &[p1, p2], 50);
@@ -591,7 +594,7 @@ starting_resources 10 10
         let a2 = find(&w, cp, "archer", 1).unwrap();
         take(&mut w, a1, "upgrade_to darkarcher");
         take(&mut w, a2, "upgrade_to darkarcher");
-        assert_eq!(w.e(a1).orders[0].keyword, Keyword::UpgradeTo);
+        assert_eq!(w.e(a1).orders[0].keyword(), Keyword::UpgradeTo);
         assert!(w.e(a2).orders.is_empty());
     }
 
@@ -847,8 +850,8 @@ starting_resources 10 10
         w.update_buckets();
         w.update_perception(s.cp).unwrap();
         assert!(!w.ai_get(s.cp, 1, "blacksmith").unwrap()); // requires a townhall
-        assert_eq!(w.e(p).orders[0].keyword, Keyword::Build);
-        assert_eq!(w.e(p).orders[0].type_name.as_deref(), Some("blacksmith"));
+        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
+        assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("blacksmith"));
     }
 
     #[test]
@@ -1150,7 +1153,7 @@ starting_resources 10 10
         let name = s.w.square(place_of(&s.w, p)).name.clone();
         add(&mut s.w, s.cp2, &format!("{name} footman"));
         s.w.update();
-        assert_eq!(s.w.e(p).orders[0].keyword, Keyword::Go);
+        assert_eq!(s.w.e(p).orders[0].keyword(), Keyword::Go);
     }
 
     #[test]
@@ -1165,7 +1168,7 @@ starting_resources 10 10
     fn computer_test_offensive_smart_unit_must_sometimes_flee() {
         let (mut s, f) = footman_beside_peasant("jl1_extended", "easy");
         s.w.update();
-        assert_eq!(s.w.e(f).orders[0].keyword, Keyword::Go);
+        assert_eq!(s.w.e(f).orders[0].keyword(), Keyword::Go);
     }
 
     #[test]
@@ -1228,7 +1231,7 @@ starting_resources 10 10
         w.plm(cp).resources = vec![100_000, 100_000];
         take(w, th, "upgrade_to keep");
         assert!(!w.e(th).orders.is_empty());
-        assert!(!w.e(th).orders[0].is_impossible);
+        assert!(!w.e(th).orders[0].is_impossible());
         for _ in 0..10000 {
             w.creature_update(th).unwrap();
             if w.e(th).orders.is_empty() {
@@ -1501,7 +1504,7 @@ mod test_autorepair {
     fn test_decide_repair() {
         let (mut w, p, _) = setup("a2", [1000, 1000], "townhall", true);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword, Keyword::Repair);
+        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
     }
 
     #[test]
@@ -1515,18 +1518,18 @@ mod test_autorepair {
     fn test_decide_gather_if_no_repair() {
         let (mut w, p, th) = setup("a1", [1000, 1000], "townhall", false);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword, Keyword::Gather);
+        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Gather);
         w.em(th).hp /= 2;
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword, Keyword::Repair);
+        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
     }
 
     #[test]
     fn test_repair_unit() {
         let (mut w, p, c) = setup("a2", [10000, 10000], "catapult", true);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword, Keyword::Repair);
-        assert!(w.e(p).orders[0].target.is_some());
+        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
+        assert!(w.e(p).orders[0].target().is_some());
         for _ in 0..75 {
             w.creature_update(p).unwrap();
         }
@@ -1675,8 +1678,8 @@ player 10 10 a1 guardtower b1 peasant
         assert!(!w.e(unit).orders.is_empty());
         assert!(!w.e(tower).orders.is_empty());
         w.update();
-        assert!(!w.e(unit).orders[0].is_complete);
-        assert!(w.e(tower).orders[0].is_complete);
+        assert!(!w.e(unit).orders[0].is_complete());
+        assert!(w.e(tower).orders[0].is_complete());
         for _ in 0..100 {
             w.update();
             if w.e(unit).is_inside() {

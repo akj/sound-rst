@@ -10,7 +10,7 @@ use crate::nofloat::{
     PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, py_int,
     square_of_distance,
 };
-use crate::orders::{Keyword, Request, TargetRef};
+use crate::orders::{Keyword, OrderKind, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
@@ -1044,7 +1044,7 @@ impl World {
 
     fn execute_orders(&mut self, id: EntityId) -> Res {
         let first = &self.e(id).orders[0];
-        if first.is_complete || first.is_impossible {
+        if first.is_final() {
             self.em(id).orders.remove(0);
             Ok(())
         } else {
@@ -1425,7 +1425,7 @@ impl World {
             .e(id)
             .orders
             .first()
-            .is_some_and(|o| o.keyword != Keyword::Gather)
+            .is_some_and(|o| !matches!(o.kind, OrderKind::Gather { .. }))
         {
             return Ok(());
         }
@@ -1785,7 +1785,7 @@ impl World {
                 Some(reason) => {
                     self.notify(actor, EntityEvent::OrderImpossible(Some(reason)), false);
                     if let Some(o) = self.em(actor).orders.first_mut() {
-                        o.is_complete = true;
+                        o.complete();
                     }
                     self.em(actor).distance_to_goal = 0;
                 }

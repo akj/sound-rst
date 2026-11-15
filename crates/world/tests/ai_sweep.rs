@@ -158,7 +158,7 @@ fn attacks(w: &World, p: PlayerId) -> bool {
             return false;
         };
         e.class == EntityClass::Soldier
-            && e.orders.first().map(|o| o.keyword) != Some(Keyword::AutoExplore)
+            && e.orders.first().map(|o| o.keyword()) != Some(Keyword::AutoExplore)
             && w.entity(*t).is_some_and(|t| {
                 is_true_enemy(w, p, t) && t.square().is_some_and(|s| !home.contains(&s))
             })
@@ -171,9 +171,9 @@ fn builds_a_farm(w: &World, p: PlayerId, farm: &Farm) -> bool {
         e.site
             .as_ref()
             .is_some_and(|s| Some(s.building_type) == farm.type_id)
-            || e.orders
-                .iter()
-                .any(|o| o.keyword == Keyword::Build && o.type_name.as_deref() == Some(&farm.name))
+            || e.orders.iter().any(|o| {
+                o.keyword() == Keyword::Build && o.type_name(&w.rules) == Some(farm.name.as_str())
+            })
     })
 }
 

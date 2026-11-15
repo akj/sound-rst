@@ -727,14 +727,6 @@ impl World {
         }
     }
 
-    /// `get_object_by_id`: what the text of a target means to a player now
-    /// (see [`TargetRef::parse`] and [`World::resolve_target`]). Stored
-    /// orders keep their targets as text.
-    pub fn get_object_by_id(&self, p: PlayerId, i: &str) -> Result<Option<Target>, Abort> {
-        let t = TargetRef::parse(self, i)?;
-        self.resolve_target(p, &t)
-    }
-
     /// `updated_target`: the target if still perceived or remembered, else
     /// what its id means now.
     pub(crate) fn updated_target(&self, p: PlayerId, t: &Target) -> Res<Option<Target>> {
@@ -792,10 +784,10 @@ impl World {
             .iter()
             .position(|b| b.uid == project.uid || self.order_eq(b, project));
         if let Some(i) = i {
-            let unit_cost = self
-                .rules
-                .unit_type(project.type_name.as_deref().unwrap_or(""))
-                .map(|t| t.cost.clone());
+            let unit_cost = project
+                .kind
+                .type_id()
+                .map(|t| self.rules.ty(t).cost.clone());
             let cost =
                 unit_cost.ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))?;
             self.unpay(p, &cost);

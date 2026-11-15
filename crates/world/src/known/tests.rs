@@ -46,7 +46,7 @@ fn an_allys_entity_has_its_own_part_once_the_player_controls_the_allys_units() {
             format!("order 0 0 go {}", townhall.0),
         ],
     );
-    let target = &w.entity(peasant).unwrap().orders[0].target;
+    let target = w.entity(peasant).unwrap().orders[0].target();
     assert!(matches!(target, Some(Target::Memory(m)) if m.owner == them));
     w.player_mut(me).perception.insert(peasant);
     assert_eq!(seat(&w, me).perceived(peasant).unwrap().own, None);

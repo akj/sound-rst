@@ -49,16 +49,7 @@ fn find(w: &World, p: PlayerId, type_name: &str) -> EntityId {
 
 /// The orders of a unit as the words they store: keyword, type, target.
 fn orders(w: &World, u: EntityId) -> Vec<Vec<String>> {
-    w.e(u)
-        .orders
-        .iter()
-        .map(|o| {
-            let mut words = vec![o.keyword.as_str().to_owned()];
-            words.extend(o.type_name.iter().cloned());
-            words.extend(o.args.iter().cloned());
-            words
-        })
-        .collect()
+    w.e(u).orders.iter().map(|o| o.words(w)).collect()
 }
 
 fn words(w: &[&str]) -> Vec<String> {
@@ -199,10 +190,12 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
         },
     ];
     for t in all {
-        let by_text = format!("{:?}", w.get_object_by_id(me, &t.text(&w)));
+        let read_back = TargetRef::parse(&w, &t.text(&w)).unwrap();
+        let by_text = format!("{:?}", w.resolve_target(me, &read_back));
         assert_eq!(by_text, resolve(&w, t), "{t:?}");
     }
-    let by_text = w.get_object_by_id(me, &seen.to_string()).unwrap().unwrap();
+    let read_back = TargetRef::parse(&w, &seen.to_string()).unwrap();
+    let by_text = w.resolve_target(me, &read_back).unwrap().unwrap();
     let typed = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
     assert!(by_text.same(&typed.unwrap()));
 }
@@ -233,7 +226,7 @@ fn every_request_has_the_words_the_original_wrote() {
         (Request::repair(e), words(&["repair", "7"])),
         (Request::load(e), words(&["load", "7"])),
         (
-            Request::build_phase_two(e),
+            Request::plain(Keyword::BuildPhaseTwo).unwrap().at(e),
             words(&["build_phase_two", "7"]),
         ),
         (Request::train("peasant"), words(&["train", "peasant"])),
@@ -262,17 +255,61 @@ fn every_request_has_the_words_the_original_wrote() {
     ];
     for (r, expected) in cases {
         assert_eq!(r.words(&w), expected);
-        let stored = r.stored(1, &w);
-        assert_eq!(stored.keyword.as_str(), expected[0]);
-        let type_name = r.keyword().is_complex().then(|| expected[1].clone());
-        assert_eq!(stored.type_name, type_name);
-        let args = &expected[1 + usize::from(type_name.is_some())..];
-        assert_eq!(stored.args, args);
+        // An order done at once is never stored; a queued one keeps the
+        // words it was given.
+        match r.taken(&w).unwrap() {
+            Taken::Now(_) => assert!(r.keyword().is_immediate(), "{expected:?}"),
+            Taken::Queued(kind) => {
+                assert!(!r.keyword().is_immediate(), "{expected:?}");
+                assert_eq!(Order::new(1, kind).words(&w), expected);
+            }
+        }
     }
     for &k in Keyword::ALL {
         assert_eq!(Request::plain(k).is_some(), !k.is_complex(), "{k:?}");
         assert_eq!(Request::typed(k, "x").is_some(), k.is_complex(), "{k:?}");
     }
+}
+
+#[test]
+fn only_the_orders_done_at_once_are_never_queued() {
+    let (w, _, _) = game();
+    let a1 = w.square_by_name("a1").unwrap();
+    for &k in Keyword::ALL {
+        let r = match k.menu_attribute() {
+            Some(_) => Request::typed(k, "footman").unwrap(),
+            None => Request::plain(k).unwrap(),
+        }
+        .at(TargetRef::Square(a1));
+        let taken = r.taken(&w).unwrap();
+        assert_eq!(matches!(taken, Taken::Now(_)), k.is_immediate(), "{k:?}");
+        if let Taken::Queued(kind) = taken {
+            assert_eq!(kind.keyword(), k);
+        }
+    }
+}
+
+#[test]
+fn a_final_order_stays_final_and_remembers_both_marks() {
+    use Progress::*;
+    let all = [
+        Pending,
+        Deferred,
+        Started,
+        Complete,
+        Impossible,
+        ImpossibleAndComplete,
+    ];
+    for p in all {
+        assert!(p.completed().is_complete(), "{p:?}");
+        assert!(p.made_impossible().is_impossible(), "{p:?}");
+        assert_eq!(p.completed().is_impossible(), p.is_impossible(), "{p:?}");
+        assert_eq!(p.made_impossible().is_complete(), p.is_complete(), "{p:?}");
+    }
+    assert_eq!(Impossible.completed(), ImpossibleAndComplete);
+    assert_eq!(Complete.made_impossible(), ImpossibleAndComplete);
+    let finals: Vec<_> = all.into_iter().filter(|p| p.is_final()).collect();
+    assert_eq!(finals, [Complete, Impossible, ImpossibleAndComplete]);
 }
 
 #[test]

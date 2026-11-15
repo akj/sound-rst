@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
-use crate::orders::{Keyword, Order, Request, TargetRef};
+use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::pathfinding::Viewer;
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass};
@@ -223,7 +223,7 @@ impl World {
             return;
         }
         let u = self.e(unit);
-        if u.orders.first().map(|o| o.keyword) == Some(Keyword::AutoExplore) {
+        if u.orders.first().map(Order::keyword) == Some(Keyword::AutoExplore) {
             return;
         }
         if u.stats.is_a_building != 0 {
@@ -538,10 +538,12 @@ impl World {
             match e.class {
                 EntityClass::Worker => {
                     workers.push(u);
-                    if let Some(o) = e.orders.first()
-                        && o.keyword == Keyword::Gather
+                    if let Some(Order {
+                        kind: OrderKind::Gather { aim, .. },
+                        ..
+                    }) = e.orders.first()
                     {
-                        add_count(&mut gathered, &o.target, 1);
+                        add_count(&mut gathered, &aim.target, 1);
                     }
                 }
                 EntityClass::BuildingSite => sites.push(u),
@@ -592,15 +594,20 @@ impl World {
         let mut waiting: Vec<(Option<Target>, i64, Vec<EntityId>)> = Vec::new();
         for &u in &self.pl(p).units {
             let e = self.e(u);
-            if let Some(o) = e.orders.first()
-                && o.keyword == Keyword::Wait
+            if let Some(Order {
+                kind: OrderKind::Wait { aim, .. },
+                ..
+            }) = e.orders.first()
             {
-                match waiting.iter_mut().find(|(t, _, _)| same_opt(t, &o.target)) {
+                match waiting
+                    .iter_mut()
+                    .find(|(t, _, _)| same_opt(t, &aim.target))
+                {
                     Some(w) => {
                         w.1 += e.menace();
                         w.2.push(u);
                     }
-                    None => waiting.push((o.target.clone(), e.menace(), vec![u])),
+                    None => waiting.push((aim.target.clone(), e.menace(), vec![u])),
                 }
             }
         }
@@ -622,7 +629,7 @@ impl World {
                         .e(u)
                         .orders
                         .iter()
-                        .any(|o| o.keyword == Keyword::Wait && same_opt(&o.target, place));
+                        .any(|o| matches!(&o.kind, OrderKind::Wait { aim, .. } if same_opt(&aim.target, place)));
                     if hit {
                         cancel.insert(u);
                     }
@@ -672,7 +679,7 @@ impl World {
                 self.e(u)
                     .orders
                     .first()
-                    .is_some_and(|o| matches!(o.target, Some(Target::Entity(t)) if t == site))
+                    .is_some_and(|o| matches!(o.target(), Some(Target::Entity(t)) if *t == site))
             });
             if !served {
                 let repair = Request::repair(TargetRef::Entity(site));
@@ -718,7 +725,8 @@ impl World {
             .copied()
             .filter(|&u| {
                 let e = self.e(u);
-                e.stats.speed > 0 && e.orders.first().map(|o| o.keyword) != Some(Keyword::UpgradeTo)
+                e.stats.speed > 0
+                    && e.orders.first().map(Order::keyword) != Some(Keyword::UpgradeTo)
             })
             .collect();
         v.sort_by(|&a, &b| {
@@ -734,7 +742,7 @@ impl World {
             return Ok(());
         };
         let first_is = |w: &World, u: EntityId| {
-            w.e(u).orders.first().map(|o| o.keyword) == Some(Keyword::AutoExplore)
+            w.e(u).orders.first().map(Order::keyword) == Some(Keyword::AutoExplore)
         };
         if first_is(self, best) {
             return Ok(());
@@ -768,9 +776,9 @@ impl World {
                 e.class == EntityClass::Soldier
                     && (e.orders.is_empty()
                         || e.orders.len() == 1
-                            && e.orders[0].keyword == Keyword::Go
-                            && !matches!(&e.orders[0].target,
-                                Some(Target::Square(s)) if self.pl(p).enemy_presence.contains(s)))
+                            && matches!(&e.orders[0].kind, OrderKind::Go { aim, .. }
+                                if !matches!(&aim.target,
+                                    Some(Target::Square(s)) if self.pl(p).enemy_presence.contains(s))))
             })
             .collect()
     }
@@ -848,7 +856,7 @@ impl World {
             let t = self.square_target(last)?;
             let cataclysm = Request::use_ability(a.clone()).at(t);
             self.take_order(u, cataclysm, false, false, None)?;
-            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible) {
+            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible()) {
                 let t = self.square_target(self.e(u).place)?;
                 self.take_order(u, Request::go(t), false, false, None)?;
             }
@@ -938,7 +946,7 @@ impl World {
         for (u, a) in self.cs(p).teleportation_users.clone() {
             let t = self.square_target(Some(place))?;
             self.take_order(u, Request::use_ability(a).at(t), true, false, None)?;
-            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible) {
+            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible()) {
                 used_teleportation = true;
             }
         }
@@ -1097,8 +1105,8 @@ impl World {
         let mut deposits = Vec::new();
         for &u in &self.cs(p).workers {
             for o in &self.e(u).orders {
-                if o.keyword == Keyword::Gather
-                    && let Some(t) = &o.target
+                if let OrderKind::Gather { aim, .. } = &o.kind
+                    && let Some(t) = &aim.target
                     && self.t_place(t) != TPlace::Nowhere
                 {
                     deposits.push(t.clone());
@@ -1129,10 +1137,10 @@ impl World {
                 let e = self.e(v);
                 e.place == dplace
                     || e.orders.first().is_some_and(|o| {
-                        o.keyword == Keyword::Gather
-                            && o.target
-                                .as_ref()
-                                .is_none_or(|t| self.t_place_of(t) == dplace && dplace.is_some())
+                        matches!(&o.kind, OrderKind::Gather { aim, .. } if aim
+                            .target
+                            .as_ref()
+                            .is_none_or(|t| self.t_place_of(t) == dplace && dplace.is_some()))
                     })
             })
             .collect();
@@ -1402,14 +1410,25 @@ impl World {
                 continue;
             }
             for o in &e.orders {
-                if matches!(
-                    o.keyword,
-                    Keyword::Build | Keyword::Train | Keyword::UpgradeTo | Keyword::Research
-                ) && o
-                    .type_name
-                    .as_deref()
-                    .is_some_and(|t| self.rules.unit_type(t).is_some() && sel.matches_type(t))
-                {
+                let made = match &o.kind {
+                    OrderKind::Production(p) => Some(p.product.type_id()),
+                    OrderKind::Build { building, .. } => Some(*building),
+                    OrderKind::Go { .. }
+                    | OrderKind::Attack { .. }
+                    | OrderKind::Patrol { .. }
+                    | OrderKind::Gather { .. }
+                    | OrderKind::AutoAttack
+                    | OrderKind::AutoExplore
+                    | OrderKind::Wait { .. }
+                    | OrderKind::Block { .. }
+                    | OrderKind::Repair { .. }
+                    | OrderKind::BuildPhaseTwo { .. }
+                    | OrderKind::Use { .. }
+                    | OrderKind::Load { .. }
+                    | OrderKind::LoadAll { .. }
+                    | OrderKind::UnloadAll { .. } => None,
+                };
+                if made.is_some_and(|t| sel.matches_type(&self.rules.ty(t).name)) {
                     n += 1;
                 }
             }
@@ -1654,9 +1673,10 @@ impl World {
     ) -> Res<(u8, Option<DepositPriority>)> {
         Ok(match self.e(u).orders.first() {
             None => (0, None),
-            Some(o) if o.keyword == Keyword::Gather => {
-                (1, Some(self.deposit_priority(p, &o.target)?))
-            }
+            Some(Order {
+                kind: OrderKind::Gather { aim, .. },
+                ..
+            }) => (1, Some(self.deposit_priority(p, &aim.target)?)),
             Some(_) => (2, None),
         })
     }
@@ -1666,9 +1686,9 @@ impl World {
         let unit = self.e(t.unit);
         if let Some(live) = unit.orders.iter().find(|o| o.uid == t.order.uid) {
             t.order = live.clone();
-            return !live.is_complete && unit.place.is_some();
+            return !live.is_complete() && unit.place.is_some();
         }
-        !t.order.is_complete
+        !t.order.is_complete()
             && unit.place.is_some()
             && unit.orders.iter().any(|o| self.order_eq(o, &t.order))
     }
@@ -1703,7 +1723,7 @@ impl World {
             }
             let u = units.remove(0);
             if order.keyword() == Keyword::UpgradeTo
-                && self.e(u).orders.first().map(|o| o.keyword) == Some(Keyword::AutoExplore)
+                && self.e(u).orders.first().map(Order::keyword) == Some(Keyword::AutoExplore)
             {
                 self.take_order(u, Request::stop(), true, false, None)?;
             }
@@ -1712,7 +1732,7 @@ impl World {
                     .e(u)
                     .orders
                     .first()
-                    .map(|o| (o.keyword, o.target.clone()));
+                    .map(|o| (o.keyword(), o.target().cloned()));
                 if let Some((kw, target)) = &first {
                     if matches!(kw, Keyword::Build | Keyword::Repair) {
                         continue;
@@ -1727,7 +1747,7 @@ impl World {
                 }
                 self.take_order(u, order.clone(), true, false, None)?;
                 if let Some(o) = self.e(u).orders.first()
-                    && o.keyword == order.keyword()
+                    && o.keyword() == order.keyword()
                 {
                     let t = Tracked {
                         unit: u,

@@ -59,16 +59,7 @@ fn add(w: &mut World, type_name: &str, p: PlayerId, s: SquareId) -> EntityId {
 
 /// The orders of a unit as the words they store: keyword, type, target.
 fn orders(w: &World, u: EntityId) -> Vec<Vec<String>> {
-    w.e(u)
-        .orders
-        .iter()
-        .map(|o| {
-            let mut words = vec![o.keyword.as_str().to_owned()];
-            words.extend(o.type_name.iter().cloned());
-            words.extend(o.args.iter().cloned());
-            words
-        })
-        .collect()
+    w.e(u).orders.iter().map(|o| o.words(w)).collect()
 }
 
 fn words(w: &[&str]) -> Vec<String> {
