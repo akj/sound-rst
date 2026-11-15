@@ -168,6 +168,7 @@ impl GameInterface {
             C::PlayersStatus => self.cmd_players_status(cx),
             C::Say => self.cmd_say(cx, Channel::Game),
             C::SayAllies => self.cmd_say(cx, Channel::Allies),
+            C::Flare => self.flare(cx),
             C::ChatPrevious => crate::net::chat_previous(cx),
             C::ChatNext => crate::net::chat_next(cx),
             C::Volume(incr) => cx.modify_volume(*incr as i32),
@@ -244,7 +245,7 @@ impl GameInterface {
             Typed::Done(line) => {
                 let channel = chat.channel;
                 self.mode = chat.closed();
-                crate::net::send_chat(cx, channel, &line);
+                self.send_chat(cx, channel, &line);
             }
             Typed::Cancelled => self.mode = chat.closed(),
             Typed::Typing | Typed::Ignored => self.mode = Mode::Chat(chat),
@@ -542,10 +543,13 @@ impl GameInterface {
         }
     }
 
-    /// Asks the world to quit; asked again, or while the connection is
-    /// lost, quits at once.
+    /// Asks the world to quit; asked again, while the connection is lost,
+    /// or while a game on a server is paused, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
-        if self.leave_while_returning(cx) || self.leave_while_watching(cx) {
+        if self.leave_while_returning(cx)
+            || self.leave_while_watching(cx)
+            || self.leave_while_paused(cx)
+        {
             return;
         }
         if !self.already_asked_to_quit {

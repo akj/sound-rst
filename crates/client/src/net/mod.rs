@@ -354,6 +354,7 @@ impl Net {
                     }
                     Refusal::NoWatchers => [msg(mp::BEEP), text(words::NO_WATCHERS)].concat(),
                     Refusal::WatchersFull => [msg(mp::BEEP), text(words::WATCHERS_FULL)].concat(),
+                    Refusal::SlowDown => [msg(mp::BEEP), text(words::TOO_FAST)].concat(),
                     _ => msg(mp::BEEP),
                 };
                 cx.news(News::new(Category::System, m));

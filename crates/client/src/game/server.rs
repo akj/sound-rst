@@ -21,7 +21,8 @@
 //!
 //! When the connection is lost during the game, the game goes on without
 //! it ([`Link::Returning`]): the player hears it, asks the questions of
-//! the last view and reviews the log, and the orders given are not taken.
+//! the last view and reviews the log, and the orders given, the chat lines
+//! and the flares are not taken.
 //! Meanwhile the client opens a new connection to the same server, says
 //! hello, and presents the seat's token, again after a pause, for as long as
 //! the server holds the seat. The server sends the seat, the start and
@@ -35,14 +36,16 @@ use std::time::Duration;
 
 use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
-    ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, RoomState,
-    SeatToken, ServerMsg, Speed, Step, StopReason, Whereabouts,
+    Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId,
+    RoomState, SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
+use soundrts_world::msg::msg;
+use soundrts_world::msgparts as mp;
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
 use super::GameInterface;
 use crate::client::Client;
-use crate::message::{Category, News, Subject};
+use crate::message::{Category, News, RoomTopic, Subject};
 use crate::net::conn::{Connection, NetEvent, Opening};
 use crate::net::lobby::{LobbyModel, check_watchers, player_name};
 use crate::net::words::{self, text};
@@ -136,6 +139,9 @@ struct Returning {
     until: f64,
     attempt: Attempt,
     orders: Orders,
+    /// Whether the player wrote a chat line or sent a flare while away,
+    /// and heard that it was not sent.
+    unsent: Orders,
 }
 
 /// One attempt to return, in the order it goes.
@@ -175,8 +181,8 @@ struct Clock {
     token: SeatToken,
 }
 
-/// Whether the player gave orders while away, and heard that they are not
-/// taken.
+/// Whether the player gave orders (or sent something) while away, and
+/// heard that they are not taken.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Orders {
     NoneGiven,
@@ -288,11 +294,23 @@ fn server_speed(factor: f64) -> Option<Speed> {
         .find(|s| s.factor() == factor)
 }
 
-/// Whether the player is the host of the room whose game is played.
+/// Whether the player is the host of the room whose game is played: the
+/// host is the player of their slot, whatever the login of the connection
+/// that took the seat back. A watcher is not.
 fn is_room_host(cx: &Client) -> bool {
-    cx.net
-        .as_ref()
-        .is_some_and(|n| n.room.as_ref().is_some_and(|r| r.is_host(&n.lobby.you)))
+    let Some(net) = &cx.net else {
+        return false;
+    };
+    let (Some(room), Some(link)) = (&net.room, &net.game) else {
+        return false;
+    };
+    let Role::Player(slot) = link.you else {
+        return false;
+    };
+    room.state
+        .slots
+        .get(slot)
+        .is_some_and(|s| s.player == SlotPlayer::Human(room.state.host.clone()))
 }
 
 /// Builds the interface of the seat a server gave the player, from the
@@ -579,6 +597,8 @@ fn kind(frame: &SeatFrame) -> &'static str {
         SeatFrame::Seated { .. } => "a seat",
         SeatFrame::Seat { .. } => "news of a seat",
         SeatFrame::Clock { .. } => "news of the clock",
+        SeatFrame::Host { .. } => "news of the host",
+        SeatFrame::Flare { .. } => "a flare",
         SeatFrame::Stopped(_) => "a stop",
         SeatFrame::NotStarted(_) => "a refused start",
     }
@@ -685,6 +705,7 @@ impl GameInterface {
                 until: now + server.seat.hold,
                 attempt: Attempt::Pause { at: now },
                 orders: Orders::NoneGiven,
+                unsent: Orders::NoneGiven,
             }));
         }
     }
@@ -703,6 +724,28 @@ impl GameInterface {
         }
     }
 
+    /// A chat line or a flare while the client returns to the seat: not
+    /// sent. Whether it was given then.
+    fn refuse_unsent_while_returning(&mut self) -> bool {
+        match self.server().map(|s| &mut s.link) {
+            Some(Link::Returning(r)) => {
+                if r.unsent == Orders::NoneGiven {
+                    r.unsent = Orders::Given;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Sends a chat line typed in the game, unless the connection is lost:
+    /// then the player hears once that it was not sent.
+    pub(crate) fn send_chat(&mut self, cx: &mut Client, channel: Channel, line: &str) {
+        if !self.refuse_unsent_while_returning() {
+            crate::net::send_chat(cx, channel, line);
+        }
+    }
+
     /// Leaves the game at once while the player watches: a watcher has
     /// no orders to quit with. Whether it watches.
     pub(crate) fn leave_while_watching(&mut self, cx: &mut Client) -> bool {
@@ -713,6 +756,23 @@ impl GameInterface {
         self.srv_quit(cx);
         self.forced_quit = true;
         true
+    }
+
+    /// Leaves the game at once while it is paused on a server: the world
+    /// takes a quit only at a turn, and none comes. Whether it is paused.
+    pub(crate) fn leave_while_paused(&mut self, cx: &mut Client) -> bool {
+        if !self.server().is_some_and(|s| s.paused) {
+            return false;
+        }
+        cx.log.info("left the game while it was paused");
+        self.srv_quit(cx);
+        self.forced_quit = true;
+        true
+    }
+
+    /// Whether the player watches a game on a server.
+    pub(crate) fn is_watching(&self) -> bool {
+        matches!(&self.source, super::Source::Server(s) if s.watching())
     }
 
     /// Leaves the game at once while the client returns to the seat.
@@ -727,8 +787,9 @@ impl GameInterface {
         true
     }
 
-    /// One step of the return: says once that orders are not taken, then
-    /// moves the attempt on.
+    /// One step of the return: says once that orders are not taken, and
+    /// once that a chat line or a flare was not sent, then moves the
+    /// attempt on.
     fn return_update(&mut self, cx: &mut Client) {
         let super::Source::Server(server) = &mut self.source else {
             return;
@@ -739,6 +800,10 @@ impl GameInterface {
         if r.orders == Orders::Given {
             r.orders = Orders::Told;
             cx.voice.item(&text(words::ORDERS_NOT_TAKEN));
+        }
+        if r.unsent == Orders::Given {
+            r.unsent = Orders::Told;
+            cx.voice.item(&text(words::NOT_SENT));
         }
         match r.attempt(&server.seat, &self.seat, cx) {
             Outcome::Waiting => {}
@@ -939,6 +1004,26 @@ impl GameInterface {
                     .map(|s| player_name(&s.player))
                     .ok_or_else(|| format!("news of slot {slot}, not in the room"))?;
                 cx.news(News::new(Category::System, words::seat_news(who, &change)));
+                Ok(())
+            }
+            SeatFrame::Host { slot } => {
+                let room = cx
+                    .net
+                    .as_mut()
+                    .and_then(|n| n.room.as_mut())
+                    .ok_or("news of the host, not in a room")?;
+                let Some(SlotPlayer::Human(host)) = room.state.slots.get(slot).map(|s| &s.player)
+                else {
+                    return Err(format!("the host's powers to slot {slot}, no player's"));
+                };
+                room.state.host = host.clone();
+                let m = words::new_host(host);
+                let topic = Subject::Room(RoomTopic::Host);
+                cx.news(News::new(Category::System, m).about(topic));
+                Ok(())
+            }
+            SeatFrame::Flare { from, square } => {
+                self.flare_alert(cx, from, square);
                 Ok(())
             }
             SeatFrame::Clock { by, change } => {
@@ -1199,6 +1284,29 @@ impl GameInterface {
             Category::System,
             [text(words::WATCHING), name].concat(),
         ));
+    }
+
+    /// Points the allies at the square under the cursor: the server tells
+    /// them, and tells the player once it has. Off a server, or with no ally
+    /// still in the game, says why and sends nothing.
+    pub(crate) fn flare(&mut self, cx: &mut Client) {
+        if !self.on_a_server() {
+            cx.voice.item(&text(words::NOBODY_TO_TELL));
+            return;
+        }
+        if self.refuse_while_watching() || self.refuse_unsent_while_returning() {
+            return;
+        }
+        let Some(square) = self.place else {
+            cx.voice.item(&msg(mp::BEEP));
+            return;
+        };
+        let (me, view) = (self.me, self.view());
+        if !view.players().iter().any(|&p| p != me && view.is_ally(p)) {
+            cx.voice.item(&text(words::NO_ALLY));
+            return;
+        }
+        crate::net::send(cx, ClientMsg::Flare { square });
     }
 
     /// Whether the game menu offers the speeds: in a game run here, to its

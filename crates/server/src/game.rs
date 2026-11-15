@@ -14,7 +14,11 @@
 //! the very stream that player's seat is sent, and the world never hears
 //! of it. [`Link`], [`Pace`] and [`Game::deliver`] serve both alike. A
 //! watcher joins a game that runs as a player returns to it: it is sent
-//! the start and the whole message of the player it follows. Where the
+//! the start and the whole message of the player it follows.
+//!
+//! The room's host's powers (the clock and removals) are the game's to
+//! check: they stay with one player still in the game, and pass on when
+//! that player's seat is gone ([`Game::hand_on_host`]). Where the
 //! record would attach: the clock's branch of `run` takes every command of
 //! a turn, in the order the host runs them, with the turn's number.
 #![deny(
@@ -31,16 +35,17 @@ use std::time::Duration;
 
 use soundrts_protocol::game::{Role, SeatFrame, encode_frame};
 use soundrts_protocol::{
-    ChatText, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapInfo, Refusal, RoomId, SeatChange,
-    SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step, StopReason,
+    ChatText, ClockChange, FLARE_WINDOW, Login, MAX_FLARES, MAX_TURN_ORDER_BYTES, MapInfo, Refusal,
+    RoomId, SeatChange, SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step,
+    StopReason,
 };
-use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, TurnMessage};
+use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, SquareId, TurnMessage};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::Bytes;
 use tracing::{debug, info, warn};
 
-use crate::connection::{ConnId, Outbox, Queued};
+use crate::connection::{ConnId, Outbox, Queued, Window};
 use crate::lobby::{LobbyInput, LobbyTx};
 
 /// A seat whose connection has more messages than this waiting to be
@@ -65,6 +70,8 @@ pub(crate) struct Settings {
     /// The longest one turn may take: the world's step and every seat's
     /// message.
     pub turn_budget: Duration,
+    /// The slot of the room's host when the game starts.
+    pub host: SlotIndex,
     /// The server's count of work past its budget.
     pub overruns: Overruns,
 }
@@ -170,9 +177,10 @@ pub(crate) struct Joining {
     pub outbox: Outbox,
 }
 
-/// What the lobby passes to a game. The lobby has checked who may
-/// send it: a seat's own player for a command, the room's host for the
-/// clock and removals, a watcher to follow another player.
+/// What the lobby passes to a game. The lobby has checked whose seat
+/// sends it: a player's for a command, the clock and removals, a watcher's
+/// to follow another player. The game checks that the clock and removals
+/// come from the player who holds the host's powers.
 pub(crate) enum GameInput {
     Command {
         slot: SlotIndex,
@@ -213,6 +221,11 @@ pub(crate) enum GameInput {
     Remove {
         by: SlotIndex,
         slot: SlotIndex,
+    },
+    /// A player points their allies at a square.
+    Flare {
+        slot: SlotIndex,
+        square: SquareId,
     },
 }
 
@@ -345,6 +358,15 @@ struct Game {
     turn: u64,
     /// The players still in the game, as of the last turn a seat was sent.
     in_game: Vec<PlayerId>,
+    /// Each player's allies, the player among them, by player id, as of the
+    /// last turn a seat was sent.
+    allies: Vec<Vec<PlayerId>>,
+    /// The flares each player sent lately.
+    flares: BTreeMap<SlotIndex, Window>,
+    /// The slot of the player who holds the room's host's powers: a player
+    /// with a seat in the game, connected or held. `None` once no player
+    /// is left to hold them.
+    host: Option<SlotIndex>,
 }
 
 /// What a connected seat is sent of the coming turn.
@@ -416,6 +438,7 @@ async fn run(
     let players = host.seats().to_vec();
     let mut game = Game {
         room,
+        host: Some(settings.host),
         clock: Clock::running(settings.speed),
         settings,
         lobby,
@@ -430,6 +453,12 @@ async fn run(
         command_bytes: BTreeMap::new(),
         turn: 0,
         in_game: host.seats().to_vec(),
+        allies: host
+            .seats()
+            .first()
+            .map(|&p| host.message(p).state.allies)
+            .unwrap_or_default(),
+        flares: BTreeMap::new(),
     };
     for j in joining {
         game.seat(&host, j);
@@ -481,6 +510,7 @@ async fn run(
                 None => break,
             },
         }
+        game.hand_on_host();
     }
     info!(room = room.0, turns = game.turn, "game over");
     Ending::Over
@@ -1030,6 +1060,9 @@ impl Game {
         let in_game = deliveries
             .first()
             .map(|d| d.turn.message.state.players.clone());
+        if let Some(d) = deliveries.first() {
+            self.allies.clone_from(&d.turn.message.state.allies);
+        }
         for d in deliveries {
             let Some(Seat {
                 link: Link::Connected {
@@ -1139,6 +1172,7 @@ impl Game {
                 self.clock_change(by, ClockChange::Speed { speed });
             }
             GameInput::Remove { by, slot } => self.remove(host, by, slot),
+            GameInput::Flare { slot, square } => self.flare(host, slot, square),
         }
     }
 
@@ -1205,7 +1239,8 @@ impl Game {
     /// anything, so that whatever is sent after it finds it in the game.
     fn take_back(&mut self, host: &Host, conn: ConnId, token: &SeatToken, outbox: Outbox) {
         let found = self.seats.iter().find_map(|(&id, s)| {
-            (matches!(s.link, Link::Dropped { .. }) && s.token.matches(token)).then_some(id)
+            let held = matches!(s.link, Link::Dropped { deadline } if deadline > Instant::now());
+            (held && s.token.matches(token)).then_some(id)
         });
         let Some(id) = found else {
             let _ = self.lobby.send(LobbyInput::ReturnRefused {
@@ -1232,7 +1267,7 @@ impl Game {
     }
 
     fn clock_change(&mut self, by: SlotIndex, change: ClockChange) {
-        let Some((login, outbox)) = self.connected(by) else {
+        let Some((login, outbox)) = self.hosting(by) else {
             return;
         };
         let changed = match (change, &self.clock) {
@@ -1265,7 +1300,7 @@ impl Game {
 
     /// The room's host removes a player: a human seat, or a computer.
     fn remove(&mut self, host: &Host, by: SlotIndex, slot: SlotIndex) {
-        let Some((login, outbox)) = self.connected(by) else {
+        let Some((login, outbox)) = self.hosting(by) else {
             return;
         };
         let Some(&player) = self.players.get(slot) else {
@@ -1293,6 +1328,106 @@ impl Game {
         });
         self.quit(player);
         self.end_seat(host, SeatId::Player(slot));
+    }
+
+    /// A player still in the game points their allies at a square of the
+    /// map: each seat whose side is one of them, the player's own seat
+    /// included, is told, and so are those who watch them. Refused for a
+    /// square the game's map does not have, and beyond [`MAX_FLARES`] in
+    /// [`FLARE_WINDOW`].
+    fn flare(&mut self, host: &Host, slot: SlotIndex, square: SquareId) {
+        let Some((_, outbox)) = self.connected(slot) else {
+            return;
+        };
+        let Some(from) = self.players.get(slot).copied() else {
+            return;
+        };
+        let refusal = if !self.in_game.contains(&from) {
+            Some(Refusal::NotNow)
+        } else if host.game_start().map.square(square).is_none() {
+            Some(Refusal::Invalid)
+        } else if !self
+            .flares
+            .entry(slot)
+            .or_insert_with(|| Window::new(MAX_FLARES, FLARE_WINDOW))
+            .allow(Instant::now())
+        {
+            Some(Refusal::SlowDown)
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
+            outbox.send(&ServerMsg::Refused { reason });
+            return;
+        }
+        let allies = usize::try_from(from.0)
+            .ok()
+            .and_then(|i| self.allies.get(i))
+            .map_or(&[][..], Vec::as_slice);
+        let Some(bytes) = encoded(&SeatFrame::Flare { from, square }) else {
+            return;
+        };
+        for seat in self.seats.values() {
+            if let Link::Connected { outbox, .. } = &seat.link
+                && allies.contains(&seat.side)
+            {
+                outbox.send_binary(bytes.clone());
+            }
+        }
+    }
+
+    // -- The host's powers ---------------------------------------------------
+
+    /// The login and outbox of the player of `slot` if they hold the
+    /// host's powers and are connected. Anyone else who asks is refused.
+    fn hosting(&self, slot: SlotIndex) -> Option<(Login, Outbox)> {
+        let (login, outbox) = self.connected(slot)?;
+        if self.host != Some(slot) {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NotNow,
+            });
+            return None;
+        }
+        Some((login, outbox))
+    }
+
+    /// Keeps the host's powers with a player still in the game. When the
+    /// seat of the player who holds them is gone (they left, lost, were
+    /// given up), the powers pass to the first player still in the game in
+    /// the room's order, as a room passes its host on, never to a watcher.
+    /// Everyone in the game hears who, after what happened to the seat; the
+    /// lobby makes that player the room's host.
+    /// A player away whose seat is held keeps them, and a paused game stays
+    /// paused for the next holder. When no player is left to take them, a
+    /// paused game runs again: its watchers then have their end at the next
+    /// turn, as when the last player leaves a running game.
+    fn hand_on_host(&mut self) {
+        let Some(slot) = self.host else {
+            return;
+        };
+        if self.seats.contains_key(&SeatId::Player(slot)) {
+            return;
+        }
+        self.host = self.seats.keys().find_map(|seat| match seat {
+            SeatId::Player(slot) => Some(*slot),
+            SeatId::Watcher(_) => None,
+        });
+        match self.host {
+            Some(slot) => {
+                info!(room = self.room.0, slot, "host's powers handed on");
+                self.tell_all(&SeatFrame::Host { slot });
+                let _ = self.lobby.send(LobbyInput::HostChanged {
+                    room: self.room,
+                    slot,
+                });
+            }
+            None => {
+                info!(room = self.room.0, "no player left to host");
+                if let Clock::Paused = self.clock {
+                    self.clock = Clock::running(self.settings.speed);
+                }
+            }
+        }
     }
 
     // -- Helpers -------------------------------------------------------------

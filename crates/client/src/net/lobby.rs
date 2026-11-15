@@ -133,6 +133,15 @@ impl LobbyModel {
                 }
                 None
             }
+            LobbyChange::PlayerRenamed { from, to } => {
+                if let Some(p) = self.players.iter_mut().find(|p| p.login == from) {
+                    p.login = to.clone();
+                }
+                if self.you == from {
+                    self.you = to;
+                }
+                None
+            }
             LobbyChange::RoomOpened { room } | LobbyChange::RoomChanged { room } => {
                 check_room(&room.map, room.players.len())?;
                 match self.rooms.iter().position(|r| r.id == room.id) {
@@ -354,14 +363,7 @@ impl RoomModel {
                     RoomTopic::Ready(*slot),
                 )
             }
-            RoomChange::Host { host } => (
-                [
-                    vec![literal(host.as_str())],
-                    text(words::IS_NOW_THE_ORGANIZER),
-                ]
-                .concat(),
-                RoomTopic::Host,
-            ),
+            RoomChange::Host { host } => (words::new_host(host), RoomTopic::Host),
             RoomChange::Watching { login } => (
                 [vec![literal(login.as_str())], text(words::IS_WATCHING)].concat(),
                 RoomTopic::Watcher(login.clone()),

@@ -173,6 +173,8 @@ pub enum GameCommand {
     PlayersStatus,
     Say,
     SayAllies,
+    /// Points the allies at the square under the cursor, on a server.
+    Flare,
     ChatPrevious,
     ChatNext,
     Volume(i64),
@@ -244,6 +246,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "players_status",
     "say",
     "say_allies",
+    "flare",
     "chat_previous",
     "chat_next",
     "volume",
@@ -421,6 +424,7 @@ impl GameCommand {
             "players_status" => none(C::PlayersStatus)?,
             "say" => none(C::Say)?,
             "say_allies" => none(C::SayAllies)?,
+            "flare" => none(C::Flare)?,
             "chat_previous" => none(C::ChatPrevious)?,
             "chat_next" => none(C::ChatNext)?,
             "volume" => {
@@ -659,6 +663,7 @@ impl GameCommand {
             C::CopyMessage => "copy the message you review, or the last one said".into(),
             C::Say => "write to every player".into(),
             C::SayAllies => "write to your allies".into(),
+            C::Flare => "point your allies at this square".into(),
             C::ChatPrevious => "previous chat message".into(),
             C::ChatNext => "next chat message".into(),
             C::KeyHelp => "turn key help on or off".into(),
@@ -789,6 +794,7 @@ mod tests {
             describe("follow_player -1"),
             "watching, follow the previous player"
         );
+        assert_eq!(describe("flare"), "point your allies at this square");
     }
 
     #[test]
@@ -809,6 +815,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 178);
+        assert_eq!(seen.len(), 179);
     }
 }

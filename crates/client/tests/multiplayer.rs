@@ -11,7 +11,7 @@ use soundrts::multiplayer::play_on;
 use soundrts::testkit::{FakeServer, FakeStream, Harness, LiveKeys, Script, TestGame, snapshot};
 use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::*;
-use soundrts_world::{Command, Order, OrderTarget, Queue};
+use soundrts_world::{Command, Order, OrderTarget, PlayerId, Queue, SquareId};
 
 fn login(s: &str) -> Login {
     Login::new(s).unwrap()
@@ -1483,6 +1483,84 @@ fn orders_given_while_away_are_not_taken_and_the_player_hears_it_once() {
 }
 
 #[test]
+fn chat_lines_and_flares_given_while_away_are_not_sent_and_the_player_hears_it_once() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, _, mut g, _) = game_in_room(&mut h);
+    server.close_at(h.clock.now());
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    assert!(g.game.returning());
+    let from = h.utterances().len();
+    for mods in [Mods::NONE, Mods::SHIFT] {
+        h.key(&mut g, Key::F7, mods);
+        h.key(&mut g, Key::H, Mods::NONE);
+        h.key(&mut g, Key::I, Mods::NONE);
+        h.key(&mut g, Key::Return, Mods::NONE);
+    }
+    h.key(&mut g, Key::F7, Mods::CTRL);
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(
+        said,
+        [
+            "enter your message",
+            "h . h",
+            "i . hi",
+            "hi",
+            "not sent: not connected",
+            "enter your message to your allies",
+            "h . h",
+            "i . hi",
+            "hi",
+        ]
+    );
+    assert!(
+        !server
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Chat { .. } | ClientMsg::Flare { .. })),
+        "{:?}",
+        server.sent()
+    );
+}
+
+#[test]
+fn a_host_back_under_a_numbered_login_hosts_and_has_the_login_again() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, stream, mut g, room) = game_in_room(&mut h);
+    let has_pause = |h: &mut Harness, g: &mut TestGame| {
+        let from = h.utterances().len();
+        h.key(g, Key::F10, Mods::NONE);
+        for _ in 0..6 {
+            h.key(g, Key::Down, Mods::NONE);
+        }
+        let said = h.said_since(from);
+        h.key(g, Key::Escape, Mods::NONE);
+        said.contains(&"pause ,".to_owned())
+    };
+    assert!(has_pause(&mut h, &mut g));
+    server.close_at(h.clock.now());
+    // Another connection held "andrew" when this one said hello.
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew2", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(0.0, frame);
+    }
+    h.run_for(&mut g, 3.0);
+    assert!(!g.game.returning(), "the seat is back");
+    assert!(has_pause(&mut h, &mut g), "the host's item is there");
+    let renamed = ServerMsg::Lobby {
+        change: LobbyChange::PlayerRenamed {
+            from: login("andrew2"),
+            to: login("andrew"),
+        },
+    };
+    back.at(h.clock.now(), renamed);
+    h.run_for(&mut g, 1.0);
+    assert_eq!(h.client.net.as_ref().unwrap().lobby.you, login("andrew"));
+}
+
+#[test]
 fn escape_leaves_the_game_at_once_while_returning() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let (server, _, mut g, _) = game_in_room(&mut h);
@@ -1641,6 +1719,254 @@ fn the_rooms_host_pauses_and_resumes_a_game_on_a_server() {
     let said = h.said_since(from);
     assert!(said.contains(&"pause ,".to_owned()), "{said:#?}");
     assert!(said.contains(&"resume ,".to_owned()), "{said:#?}");
+}
+
+/// A player on a real server, on real time, whose speech lasts a tenth of
+/// its usual time.
+fn real_player(login: &str) -> Harness {
+    let h = Harness::with_config(
+        "en",
+        Script::new().keep_open(),
+        Config {
+            wait_delay_per_character: 0.01,
+            ..config(login)
+        },
+    );
+    h.clock.follow_real_time();
+    h
+}
+
+/// Opens the game menu and goes down its items: what was heard.
+fn menu_items(h: &mut Harness, g: &mut TestGame) -> Vec<String> {
+    let from = h.utterances().len();
+    h.key(g, Key::F10, Mods::NONE);
+    for _ in 0..7 {
+        h.key(g, Key::Down, Mods::NONE);
+    }
+    let said = h.said_since(from);
+    h.key(g, Key::Escape, Mods::NONE);
+    said
+}
+
+#[test]
+fn when_the_host_leaves_a_game_on_a_server_the_next_player_hosts_it() {
+    let server = soundrts::testkit::test_server(1, |_| {});
+    let addr = server.local_addr().to_string();
+    let (mut andrew, mut bob) = (real_player("andrew"), real_player("bob"));
+    andrew.connect_to(&addr, |c| c);
+    bob.connect_to(&addr, |c| c);
+    let room = andrew.open_room("jl2", &[AiLevel::Easy], Speed::Fast4);
+    andrew.invite("bob");
+    bob.join_room(room);
+    andrew.wait_for_ready(3);
+    let mut a = andrew.start_room_game("jl2");
+    let mut b = bob.join_room_game("jl2");
+    bob.run_until_turn(&mut b, 3);
+    assert!(!menu_items(&mut bob, &mut b).contains(&"pause ,".to_owned()));
+    // Andrew pauses, then chooses "cancel game" once.
+    soundrts::net::send(&mut andrew.client, ClientMsg::PauseGame);
+    let (a_from, from) = (andrew.utterances().len(), bob.utterances().len());
+    let start = std::time::Instant::now();
+    let paused = "paused by andrew".to_owned();
+    while !(andrew.said_since(a_from).contains(&paused) && bob.said_since(from).contains(&paused)) {
+        assert!(start.elapsed() < soundrts::testkit::WAIT_LIMIT);
+        andrew.step(&mut a);
+        bob.step(&mut b);
+    }
+    andrew.key(&mut a, Key::F10, Mods::NONE);
+    andrew.key(&mut a, Key::Down, Mods::NONE);
+    andrew.key(&mut a, Key::Return, Mods::NONE);
+    assert!(a.game.end_loop, "Andrew left the paused game");
+    soundrts::session::leave_server_game(&mut andrew.client);
+    let start = std::time::Instant::now();
+    while !bob
+        .said_since(from)
+        .contains(&"bob is now the organizer".to_owned())
+    {
+        assert!(
+            start.elapsed() < soundrts::testkit::WAIT_LIMIT,
+            "{:#?}",
+            bob.said_since(from)
+        );
+        bob.step(&mut b);
+    }
+    bob.run_until_voice_idle(&mut b);
+    let said = bob.said_since(from);
+    assert_eq!(
+        said,
+        [
+            "paused by andrew",
+            "andrew left the game",
+            "bob is now the organizer"
+        ],
+        "{said:#?}"
+    );
+    // The game waits for Bob, who can resume it.
+    assert!(menu_items(&mut bob, &mut b).contains(&"resume ,".to_owned()));
+    server.shutdown();
+}
+
+// A flare that points the allies at a square.
+
+/// Andrew, with Bob in `bob_alliance`, on a fake server: what Andrew
+/// hears of the frames `frames(bob, andrew)` gives, one by one.
+fn flares_heard(
+    bob_alliance: u8,
+    frames: impl FnOnce(PlayerId, PlayerId) -> Vec<SeatFrame>,
+) -> (Harness, TestGame, Vec<String>) {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let slots = vec![
+        slot(human("andrew"), 1, true),
+        slot(human("bob"), bob_alliance, true),
+    ];
+    let (server, _, mut g) = fake_game(&mut h, &slots);
+    h.run_until_voice_idle(&mut g);
+    let andrew = g.game.view().player();
+    let bob = g.game.view().players()[1];
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    let frames = frames(bob, andrew);
+    let n = frames.len();
+    for (i, frame) in frames.into_iter().enumerate() {
+        server.frame_at(t0 + 5.0 * i as f64, frame);
+    }
+    h.run_for(&mut g, 5.0 * n as f64);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    (h, g, said)
+}
+
+#[test]
+fn an_allys_flare_is_an_alert_at_its_square_and_ones_own_is_confirmed() {
+    let square = SquareId(3);
+    let (mut h, mut g, said) = flares_heard(1, |bob, andrew| {
+        vec![
+            SeatFrame::Flare { from: bob, square },
+            SeatFrame::Flare {
+                from: andrew,
+                square,
+            },
+            SeatFrame::Flare {
+                from: bob,
+                square: SquareId(u32::MAX),
+            },
+        ]
+    });
+    assert_eq!(said, ["bob : flare at a 4", "flare sent"]);
+    assert!(
+        h.audio.played().iter().any(|(_, s)| s.contains("1339")),
+        "{:?}",
+        h.audio.played()
+    );
+    assert!(
+        h.log_text()
+            .contains(&format!("a flare at square {}, not on the map", u32::MAX)),
+        "{}",
+        h.log_text()
+    );
+    g.game.place = None;
+    h.key(&mut g, Key::Delete, Mods::NONE);
+    assert_eq!(g.game.place, Some(square));
+}
+
+#[test]
+fn a_flare_from_an_enemy_is_not_said() {
+    let (h, _, said) = flares_heard(2, |bob, _| {
+        vec![SeatFrame::Flare {
+            from: bob,
+            square: SquareId(3),
+        }]
+    });
+    assert_eq!(said, Vec::<String>::new());
+    let log = h.log_text();
+    assert!(
+        log.contains("a flare from player 1, no ally in the game"),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_flare_needs_a_server_and_an_ally() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let mut g = h.start_training("jl1", &["easy"], 1);
+    h.run_until_turn(&mut g, 2);
+    assert_eq!(h.key(&mut g, Key::F7, Mods::CTRL)[0], "nobody to tell");
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    h.run_until_turn(&mut g, 2);
+    assert_eq!(h.key(&mut g, Key::F7, Mods::CTRL)[0], "no ally in the game");
+    server.shutdown();
+}
+
+#[test]
+fn a_flare_on_a_server_takes_an_ally_to_its_square() {
+    let server = soundrts::testkit::test_server(1, |_| {});
+    let addr = server.local_addr().to_string();
+    let (mut andrew, mut bob) = (real_player("andrew"), real_player("bob"));
+    andrew.connect_to(&addr, |c| c);
+    bob.connect_to(&addr, |c| c);
+    let room = andrew.open_room("jl2", &[AiLevel::Easy], Speed::Fast4);
+    andrew.invite("bob");
+    bob.join_room(room);
+    andrew.wait_for_ready(3);
+    soundrts::net::send(
+        &mut andrew.client,
+        // Bob is in slot 2, after the computer.
+        ClientMsg::SetAlliance {
+            slot: 2,
+            alliance: 1,
+        },
+    );
+    let mut a = andrew.start_room_game("jl2");
+    let mut b = bob.join_room_game("jl2");
+    andrew.run_until_turn(&mut a, 3);
+    bob.run_until_turn(&mut b, 3);
+    let square = a.game.place.unwrap();
+    assert_ne!(b.game.place, Some(square));
+    // Four flares at once: three go, and the fourth, within ten seconds of
+    // the first, does not.
+    let (a_from, b_from) = (andrew.utterances().len(), bob.utterances().len());
+    for _ in 0..4 {
+        andrew.press(Key::F7, Mods::CTRL);
+        andrew.step(&mut a);
+    }
+    let flared = |h: &Harness| {
+        h.said_since(b_from)
+            .iter()
+            .filter(|s| s.starts_with("andrew : flare at "))
+            .count()
+    };
+    let too_fast = |h: &Harness| {
+        h.said_since(a_from)
+            .iter()
+            .filter(|s| s.ends_with("too fast: wait a moment"))
+            .count()
+    };
+    let start = std::time::Instant::now();
+    while !(times(&andrew.said_since(a_from), "flare sent") == 3
+        && too_fast(&andrew) == 1
+        && flared(&bob) == 3)
+    {
+        assert!(
+            start.elapsed() < soundrts::testkit::WAIT_LIMIT,
+            "{:#?} {:#?}",
+            andrew.said_since(a_from),
+            bob.said_since(b_from)
+        );
+        andrew.step(&mut a);
+        bob.step(&mut b);
+    }
+    andrew.run_until_voice_idle(&mut a);
+    bob.run_until_voice_idle(&mut b);
+    // Andrew hears that each went, and nothing of them else.
+    let said = andrew.said_since(a_from);
+    assert_eq!(times(&said, "flare sent"), 3, "{said:#?}");
+    assert_eq!(too_fast(&andrew), 1, "{said:#?}");
+    assert!(!said.iter().any(|s| s.contains("flare at")), "{said:#?}");
+    assert_eq!(flared(&bob), 3, "{:#?}", bob.said_since(b_from));
+    bob.key(&mut b, Key::Delete, Mods::NONE);
+    assert_eq!(b.game.place, Some(square));
+    server.shutdown();
 }
 
 #[test]
@@ -1820,4 +2146,40 @@ fn a_returning_player_learns_who_came_to_watch_meanwhile() {
     assert!(!g.game.returning(), "back");
     let net = h.client.net.as_ref().unwrap();
     assert_eq!(net.room.as_ref().unwrap().state.watchers, [login("dave")]);
+}
+
+#[test]
+fn a_watcher_hears_the_flare_of_the_player_it_follows_and_sends_none() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("carol"));
+    let (server, _stream, mut g) = watching_fake_game(&mut h);
+    h.run_until_voice_idle(&mut g);
+    let andrew = g.game.view().player();
+    let square = SquareId(3);
+    let from = h.utterances().len();
+    server.frame_at(
+        h.clock.now(),
+        SeatFrame::Flare {
+            from: andrew,
+            square,
+        },
+    );
+    h.run_for(&mut g, 1.0);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(h.said_since(from), ["andrew : flare at a 4"]);
+    g.game.place = None;
+    h.key(&mut g, Key::Delete, Mods::NONE);
+    assert_eq!(g.game.place, Some(square));
+    let from = h.utterances().len();
+    h.key(&mut g, Key::F7, Mods::CTRL);
+    h.run_for(&mut g, 0.5);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(h.said_since(from), ["watching: you give no orders"]);
+    assert!(
+        !server
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Flare { .. })),
+        "{:?}",
+        server.sent()
+    );
 }

@@ -63,6 +63,8 @@ pub(crate) enum LobbyInput {
     WatcherLeft { room: RoomId, watcher: WatcherId },
     /// A game had no seat for this player's token.
     ReturnRefused { room: RoomId, conn: ConnId },
+    /// The host's powers in a game passed to the player of this slot.
+    HostChanged { room: RoomId, slot: SlotIndex },
     /// A game's task ended.
     GameEnded { room: RoomId, ending: Ending },
 }
@@ -241,6 +243,7 @@ impl Lobby {
                 LobbyInput::Returned { room, conn, seat } => self.returned(room, conn, seat),
                 LobbyInput::WatcherLeft { room, watcher } => self.watcher_left(room, watcher),
                 LobbyInput::ReturnRefused { room, conn } => self.return_refused(room, conn),
+                LobbyInput::HostChanged { room, slot } => self.host_changed(room, slot),
                 LobbyInput::GameEnded { room, ending } => self.game_ended(room, ending),
             }
         }
@@ -400,13 +403,19 @@ impl Lobby {
             }
             ClientMsg::Start { texts } => self.start(conn, texts),
             ClientMsg::ReturnToGame { room, token } => self.return_to_game(conn, room, token),
-            ClientMsg::PauseGame => self.host_control(conn, queued, |by| GameInput::Pause { by }),
-            ClientMsg::ResumeGame => self.host_control(conn, queued, |by| GameInput::Resume { by }),
+            // The game checks that the player holds the host's powers.
+            ClientMsg::PauseGame => self.pass_to_player(conn, queued, |by| GameInput::Pause { by }),
+            ClientMsg::ResumeGame => {
+                self.pass_to_player(conn, queued, |by| GameInput::Resume { by })
+            }
             ClientMsg::SetGameSpeed { speed } => {
-                self.host_control(conn, queued, |by| GameInput::Speed { by, speed })
+                self.pass_to_player(conn, queued, |by| GameInput::Speed { by, speed })
             }
             ClientMsg::RemovePlayer { slot } => {
-                self.host_control(conn, queued, |by| GameInput::Remove { by, slot })
+                self.pass_to_player(conn, queued, |by| GameInput::Remove { by, slot })
+            }
+            ClientMsg::Flare { square } => {
+                self.pass_to_player(conn, queued, |slot| GameInput::Flare { slot, square })
             }
             ClientMsg::Follow { step } => {
                 self.pass_to_watcher(conn, queued, |watcher| GameInput::Follow { watcher, step })
@@ -889,6 +898,7 @@ impl Lobby {
         });
         let seats: Vec<Joining> = players.chain(watchers).collect();
         let settings = game::Settings {
+            host: room.slot_of(room.host).expect("the host is a member"),
             speed: room.speed,
             grace: self.games.grace,
             load_budget: self.games.load_budget,
@@ -967,22 +977,6 @@ impl Lobby {
         }
     }
 
-    /// Passes the room's host's input to the game they play.
-    fn host_control(
-        &mut self,
-        conn: ConnId,
-        queued: Queued,
-        input: impl FnOnce(SlotIndex) -> GameInput,
-    ) -> Answer {
-        let Place::Playing(id) = self.players[&conn].place else {
-            return Err(Refusal::NotNow);
-        };
-        if self.rooms[&id].host != conn {
-            return Err(Refusal::NotNow);
-        }
-        self.pass_to_player(conn, queued, input)
-    }
-
     /// Asks a game for the seat of `token`. The player waits in the
     /// lobby for the answer ([`Lobby::returned`]).
     fn return_to_game(&mut self, conn: ConnId, id: RoomId, token: SeatToken) -> Answer {
@@ -1008,7 +1002,8 @@ impl Lobby {
     }
 
     /// A game gave `seat` back to this player or watcher: it is theirs
-    /// from now on. If they are gone meanwhile, the seat is dropped again.
+    /// from now on, and so is its login ([`Lobby::give_login_back`]). If
+    /// they are gone meanwhile, the seat is dropped again.
     fn returned(&mut self, id: RoomId, conn: ConnId, seat: SeatId) {
         let waiting = self
             .players
@@ -1024,8 +1019,8 @@ impl Lobby {
             let _ = game.send((GameInput::Dropped { seat }, None));
             return;
         }
-        let player = &self.players[&conn];
-        match seat {
+        let outbox = self.players[&conn].outbox.clone();
+        let login = match seat {
             SeatId::Player(slot) => {
                 let Some(Occupant::Human(member)) =
                     room.slots.get_mut(slot).map(|s| &mut s.occupant)
@@ -1033,25 +1028,55 @@ impl Lobby {
                     return;
                 };
                 let old = std::mem::replace(&mut member.conn, conn);
-                member.outbox = player.outbox.clone();
+                member.outbox = outbox.clone();
                 if room.host == old {
                     room.host = conn;
                 }
+                member.login.clone()
             }
             SeatId::Watcher(watcher) => {
                 let Some(w) = room.watcher(watcher) else {
                     return;
                 };
                 w.conn = conn;
-                w.outbox = player.outbox.clone();
+                w.outbox = outbox.clone();
+                w.login.clone()
             }
-        }
+        };
         // Who watches may have changed while the connection was lost.
-        player.outbox.send(&ServerMsg::Room {
+        outbox.send(&ServerMsg::Room {
             change: RoomChange::Entered,
             room: room.state(),
         });
+        self.give_login_back(conn, login);
         self.move_player(conn, Place::Playing(id));
+    }
+
+    /// Gives back the login of the seat a player took back with its token.
+    /// Their new connection was given a numbered login if another
+    /// connection held the seat's login when it said hello: another window,
+    /// or someone who took it while they were away. If that connection is
+    /// gone by now, the login is theirs again, and everyone on the server
+    /// is told; if it is still here, they keep the numbered one, and are
+    /// still the seat's player.
+    fn give_login_back(&mut self, conn: ConnId, login: Login) {
+        let held = self
+            .players
+            .iter()
+            .any(|(&c, p)| c != conn && p.login.as_str().eq_ignore_ascii_case(login.as_str()));
+        let Some(player) = self.players.get_mut(&conn) else {
+            return;
+        };
+        if player.login == login {
+            return;
+        }
+        if held {
+            info!(seat = %login, login = %player.login, "the seat's login is held by another");
+            return;
+        }
+        let from = std::mem::replace(&mut player.login, login.clone());
+        info!(%from, to = %login, "the seat's login given back");
+        self.broadcast(LobbyChange::PlayerRenamed { from, to: login });
     }
 
     /// A watcher's seat is gone from the game of room `id`: it is no
@@ -1069,6 +1094,20 @@ impl Lobby {
             login: w.login.clone(),
         });
         self.left_game(id, w.conn);
+    }
+
+    /// The game of room `id` passed the host's powers to the player of
+    /// `slot`, and told everyone in it: they are the room's host.
+    fn host_changed(&mut self, id: RoomId, slot: SlotIndex) {
+        let Some(room) = self.rooms.get_mut(&id) else {
+            return;
+        };
+        let Some(Occupant::Human(member)) = room.slots.get(slot).map(|s| &s.occupant) else {
+            return;
+        };
+        room.host = member.conn;
+        info!(room = id.0, host = %member.login, "host handed on in the game");
+        self.room_changed(id);
     }
 
     fn return_refused(&mut self, id: RoomId, conn: ConnId) {

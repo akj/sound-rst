@@ -755,6 +755,81 @@ async fn a_dropped_player_returns_with_their_token() {
 }
 
 #[tokio::test]
+async fn a_player_back_under_a_numbered_login_has_the_seats_login_again() {
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob"]).await;
+    let room = room(&mut clients, 1).await;
+    let mut seats = start(clients, &texts()).await;
+    let mut b = seats.pop().unwrap();
+    let mut a = seats.pop().unwrap();
+    let andrew = a.c.login.clone();
+    let token = a.token.clone();
+    let old = std::mem::replace(&mut a.c, Client::connect(addr).await);
+    old.close().await;
+    b.hear(news(0, SeatChange::Dropped)).await;
+
+    // While Andrew is away, another connection says hello as "andrew": a
+    // second window, or someone else. Andrew's new connection is then
+    // numbered, and the server no longer has "andrew" playing, so his
+    // client presents the token on it.
+    let (other, _) = Client::hello(addr, "andrew").await;
+    let (mut back, lobby) = Client::hello(addr, "andrew").await;
+    assert_eq!(lobby.you, login("andrew2"));
+    assert!(
+        !lobby
+            .players
+            .iter()
+            .any(|p| p.whereabouts == Whereabouts::Playing(room) && p.login == andrew)
+    );
+    // The other connection goes before the seat is back.
+    other.close().await;
+    back.skip_to(&ServerMsg::Lobby {
+        change: LobbyChange::PlayerLeft {
+            login: andrew.clone(),
+        },
+    })
+    .await;
+    back.send(ClientMsg::ReturnToGame { room, token }).await;
+    a.c = back;
+    a.until_seated().await;
+
+    // The seat's login is his again: everyone is told, and he writes and
+    // hosts as "andrew".
+    let renamed = ServerMsg::Lobby {
+        change: LobbyChange::PlayerRenamed {
+            from: login("andrew2"),
+            to: andrew.clone(),
+        },
+    };
+    // Andrew may be told before his seat, which the seat's reading skips.
+    b.hear(renamed).await;
+    a.c.send(ClientMsg::Chat {
+        channel: Channel::Game,
+        text: chat("back"),
+    })
+    .await;
+    b.hear(ServerMsg::Chat {
+        line: ChatLine {
+            channel: Channel::Game,
+            from: andrew.clone(),
+            watcher: false,
+            text: chat("back"),
+        },
+    })
+    .await;
+    a.c.send(ClientMsg::PauseGame).await;
+    b.hear(SeatFrame::Clock {
+        by: andrew.clone(),
+        change: ClockChange::Paused,
+    })
+    .await;
+    // A newcomer who asks for "andrew" is numbered.
+    let (_, lobby) = Client::hello(addr, "andrew").await;
+    assert_eq!(lobby.you, login("andrew2"));
+}
+
+#[tokio::test]
 async fn a_player_not_back_in_time_has_quit() {
     let server = hosting_server(|c| c.grace_period = Duration::from_millis(500));
     let addr = server.local_addr();
@@ -870,6 +945,232 @@ async fn the_host_pauses_resumes_sets_the_speed_and_removes_a_player() {
     assert!(!a.view().players().contains(&computer_player));
     assert!(!a.view().players().contains(&c.player()));
     assert!(a.view().players().contains(&b.player()));
+}
+
+/// How many times a seat was told that the player of `slot` is now the
+/// room's host.
+fn told_host(s: &Seat, slot: SlotIndex) -> usize {
+    let host = Heard::Game(SeatFrame::Host { slot });
+    s.told.iter().filter(|h| **h == host).count()
+}
+
+#[tokio::test]
+async fn the_hosts_powers_pass_to_the_next_player_and_a_paused_game_is_never_stuck() {
+    let server = hosting_server(|c| c.grace_period = Duration::from_secs(1));
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "carol", "dave"]).await;
+    let dave = clients.pop().unwrap();
+    let room = room(&mut clients, 1).await;
+    let mut dave = dave;
+    watch(&mut dave, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![dave], &texts).await;
+    let mut d = watchers.pop().unwrap();
+    let mut c = players.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    let (bob, carol) = (login("bob"), login("carol"));
+    let host = |slot| SeatFrame::Host { slot };
+    let clock = |by: &Login, change| SeatFrame::Clock {
+        by: by.clone(),
+        change,
+    };
+
+    // The host pauses and leaves: Bob, next in the room, holds the powers,
+    // and the game waits for him.
+    a.c.send(ClientMsg::PauseGame).await;
+    let paused = clock(&a.c.login, ClockChange::Paused);
+    for s in [&mut a, &mut b, &mut c, &mut d] {
+        s.hear(paused.clone()).await;
+    }
+    a.c.send(ClientMsg::LeaveGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(news(0, SeatChange::Left)).await;
+        s.hear(host(1)).await;
+    }
+    assert_eq!(b.read_for(Duration::from_millis(500)).await, 0, "paused");
+    c.c.send(ClientMsg::ResumeGame).await;
+    c.hear(refused(Refusal::NotNow)).await;
+    d.c.send(ClientMsg::ResumeGame).await;
+    d.hear(refused(Refusal::NotNow)).await;
+    b.c.send(ClientMsg::ResumeGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(clock(&bob, ClockChange::Resumed)).await;
+    }
+
+    // Bob pauses and drops: he keeps the powers while his seat is held,
+    // then Carol has them, and the game waits for her.
+    b.c.send(ClientMsg::PauseGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(clock(&bob, ClockChange::Paused)).await;
+    }
+    b.c.close().await;
+    c.hear(news(1, SeatChange::Dropped)).await;
+    c.c.send(ClientMsg::ResumeGame).await;
+    c.hear(refused(Refusal::NotNow)).await;
+    assert_eq!(told_host(&c, 2), 0);
+    for s in [&mut c, &mut d] {
+        s.hear(news(1, SeatChange::GivenUp)).await;
+        s.hear(host(2)).await;
+    }
+    // The lobby names her the room's host.
+    let (_, lobby) = Client::hello(addr, "erin").await;
+    let summary = lobby.rooms.iter().find(|r| r.id == room).unwrap();
+    assert_eq!(summary.host, carol);
+    assert_eq!(c.read_for(Duration::from_millis(500)).await, 0, "paused");
+    c.c.send(ClientMsg::ResumeGame).await;
+    for s in [&mut c, &mut d] {
+        s.hear(clock(&carol, ClockChange::Resumed)).await;
+    }
+
+    // Carol, the last player, pauses and leaves: nobody can resume, so the
+    // game runs on, and her watcher has the end of her game.
+    c.c.send(ClientMsg::PauseGame).await;
+    for s in [&mut c, &mut d] {
+        s.hear(clock(&carol, ClockChange::Paused)).await;
+    }
+    c.c.send(ClientMsg::LeaveGame).await;
+    d.hear(news(2, SeatChange::Left)).await;
+    while d.end.is_none() {
+        assert!(d.step(TIMEOUT).await, "the watcher's end did not come");
+    }
+    // Each new host was told once, after the news of the seat, and the
+    // room names them.
+    for slot in [1, 2] {
+        assert_eq!(told_host(&d, slot), 1, "{:?}", d.told);
+    }
+    let after = |s: &Seat, first: &Heard, then: &Heard| {
+        let at = |h: &Heard| s.told.iter().position(|t| t == h);
+        assert!(at(first) < at(then), "{:?}", s.told);
+    };
+    after(&d, &news(0, SeatChange::Left).into(), &host(1).into());
+    after(&d, &news(1, SeatChange::GivenUp).into(), &host(2).into());
+}
+
+/// How many flares a seat was told of.
+fn flares(s: &Seat) -> Vec<(PlayerId, soundrts_world::SquareId)> {
+    s.told
+        .iter()
+        .filter_map(|h| match h {
+            Heard::Game(SeatFrame::Flare { from, square }) => Some((*from, *square)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_flare_reaches_the_allies_and_their_watchers_only_and_no_faster_than_the_limit() {
+    use soundrts_world::SquareId;
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "carol", "dave", "erin"]).await;
+    let erin = clients.pop().unwrap();
+    let dave = clients.pop().unwrap();
+    let room = room(&mut clients, 0).await;
+    // Andrew and Bob are allies; Carol is on her own.
+    clients[0]
+        .send(ClientMsg::SetAlliance {
+            slot: 1,
+            alliance: 1,
+        })
+        .await;
+    let (mut dave, mut erin) = (dave, erin);
+    watch(&mut dave, room).await;
+    watch(&mut erin, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![dave, erin], &texts).await;
+    let mut e = watchers.pop().unwrap();
+    let mut d = watchers.pop().unwrap();
+    let mut c = players.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    // Dave follows Andrew, the first player; Erin goes back to Carol.
+    e.c.send(ClientMsg::Follow {
+        step: Step::Previous,
+    })
+    .await;
+    while wholes(&e) < 2 {
+        assert!(e.step(TIMEOUT).await);
+    }
+    assert_eq!(e.view().player(), c.player());
+    let (andrew, carol) = (a.player(), c.player());
+
+    // Andrew's flare reaches him, Bob and Dave.
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    let flare = |from, square| SeatFrame::Flare {
+        from,
+        square: SquareId(square),
+    };
+    for s in [&mut a, &mut b, &mut d] {
+        s.hear(flare(andrew, 0)).await;
+    }
+    // Carol's reaches her and Erin, after Andrew's would have.
+    c.c.send(ClientMsg::Flare {
+        square: SquareId(1),
+    })
+    .await;
+    for s in [&mut c, &mut e] {
+        s.hear(flare(carol, 1)).await;
+    }
+    for s in [&c, &e] {
+        assert_eq!(flares(s), [(carol, SquareId(1))], "{}", s.c.login);
+    }
+
+    // A square off the map, and a watcher, are refused.
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(u32::MAX),
+    })
+    .await;
+    a.hear(refused(Refusal::Invalid)).await;
+    d.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    d.hear(refused(Refusal::NotNow)).await;
+
+    // Andrew's third flare goes; his fourth in the window does not.
+    for square in [2, 3] {
+        a.c.send(ClientMsg::Flare {
+            square: SquareId(square),
+        })
+        .await;
+        a.hear(flare(andrew, square)).await;
+    }
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(4),
+    })
+    .await;
+    a.hear(refused(Refusal::SlowDown)).await;
+    // Bob, who has his own allowance, is heard after it.
+    b.c.send(ClientMsg::Flare {
+        square: SquareId(5),
+    })
+    .await;
+    let bob = b.player();
+    let heard = [0, 2, 3]
+        .map(|i| (andrew, SquareId(i)))
+        .into_iter()
+        .chain([(bob, SquareId(5))])
+        .collect::<Vec<_>>();
+    for s in [&mut a, &mut b, &mut d] {
+        s.hear(flare(bob, 5)).await;
+        assert_eq!(flares(s), heard, "{}", s.c.login);
+    }
+
+    // Once out of the game, Carol sends none.
+    c.c.send(ClientMsg::LeaveGame).await;
+    while !c.left {
+        assert!(c.step(TIMEOUT).await);
+    }
+    c.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    c.c.skip_to(&refused(Refusal::NotNow)).await;
+    assert_eq!(flares(&e), [(carol, SquareId(1))]);
 }
 
 #[tokio::test]

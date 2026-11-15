@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -602,12 +602,30 @@ pub struct LobbySnapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "change")]
 pub enum LobbyChange {
-    PlayerArrived { player: LobbyPlayer },
-    PlayerLeft { login: Login },
-    PlayerMoved { player: LobbyPlayer },
-    RoomOpened { room: RoomSummary },
-    RoomChanged { room: RoomSummary },
-    RoomClosed { id: RoomId },
+    PlayerArrived {
+        player: LobbyPlayer,
+    },
+    PlayerLeft {
+        login: Login,
+    },
+    PlayerMoved {
+        player: LobbyPlayer,
+    },
+    /// A player who took their seat of a game back with its token, on a
+    /// connection given a numbered login, has the seat's login again.
+    PlayerRenamed {
+        from: Login,
+        to: Login,
+    },
+    RoomOpened {
+        room: RoomSummary,
+    },
+    RoomChanged {
+        room: RoomSummary,
+    },
+    RoomClosed {
+        id: RoomId,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +891,9 @@ pub enum ClientMsg {
         room: RoomId,
         token: SeatToken,
     },
-    /// The room's host stops the clock of a game.
+    /// The room's host stops the clock of a game. When the host leaves
+    /// the game, their powers pass to the first player still in it, in
+    /// the room's order: everyone hears [`game::SeatFrame::Host`].
     PauseGame,
     /// The room's host starts the clock again.
     ResumeGame,
@@ -891,7 +911,25 @@ pub enum ClientMsg {
     Follow {
         step: Step,
     },
+    /// A player of a game points their allies at a square of its map,
+    /// beside the allies' chat: the game sends [`game::SeatFrame::Flare`]
+    /// to the seats of the player's allies, the player's own included, and
+    /// to those who watch them. Refused from a watcher, for a square the
+    /// game's map does not have, and beyond [`MAX_FLARES`] in
+    /// [`FLARE_WINDOW`].
+    Flare {
+        square: soundrts_world::SquareId,
+    },
 }
+
+/// The most flares one player sends in [`FLARE_WINDOW`]. Each makes every
+/// ally hear an alert sound and about two seconds of speech: three in ten
+/// seconds point at three places at once, and still leave most of the time
+/// to the game's own news.
+pub const MAX_FLARES: usize = 3;
+
+/// See [`MAX_FLARES`].
+pub const FLARE_WINDOW: Duration = Duration::from_secs(10);
 
 /// Which way [`ClientMsg::Follow`] goes along the players, in the room's
 /// order.
@@ -1071,6 +1109,21 @@ mod tests {
         assert!(ServerAnnouncement::from_json(json).is_err());
         let json = r#"{"protocol":1,"name":"ab","port":2501,"players":0}"#;
         assert!(ServerAnnouncement::from_json(json).is_ok());
+    }
+
+    #[test]
+    fn a_flare_names_its_square_by_number() {
+        let json = r#"{"type":"flare","square":12}"#;
+        assert_eq!(
+            ClientMsg::from_json(json),
+            Ok(ClientMsg::Flare {
+                square: soundrts_world::SquareId(12)
+            })
+        );
+        for bad in [-1_i64, 1 << 40] {
+            let json = format!(r#"{{"type":"flare","square":{bad}}}"#);
+            assert!(ClientMsg::from_json(&json).is_err(), "{json}");
+        }
     }
 
     #[test]
