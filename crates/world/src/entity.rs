@@ -12,7 +12,6 @@
 //! state that only some creatures have is in [`CreatureKind`].
 
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::nofloat::PRECISION;
@@ -188,7 +187,7 @@ pub struct SiteData {
 /// Anything placed on the map: deposit, meadow, corpse, exit, unit,
 /// building or building site. `K` is its kind: [`Kind`] for any entity,
 /// [`Creature`] for the unit a corpse was.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Entity<K = Kind> {
     pub id: EntityId,
     pub type_name: Arc<str>,
@@ -209,7 +208,7 @@ pub struct Entity<K = Kind> {
 }
 
 /// What an entity is, with the state only that kind has.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 #[allow(
     clippy::large_enum_variant,
     reason = "a box would add an allocation to each copy of a creature that a memory takes"
@@ -238,7 +237,7 @@ pub struct Deposit {
 }
 
 /// What is left where a unit died.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Corpse {
     /// The unit as it was when it died.
     pub unit: Box<Entity<Creature>>,
@@ -247,7 +246,7 @@ pub struct Corpse {
 }
 
 /// What every unit, building and building site has.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Creature {
     pub player: Option<PlayerId>,
     pub hp: i64,
@@ -290,7 +289,7 @@ pub struct Creature {
 /// What a creature is, with the state only that kind has. Units and
 /// buildings have a rules type; a building site has the type of the
 /// building it will become.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum CreatureKind {
     /// A unit that gathers, builds and repairs.
     Worker {
@@ -784,142 +783,6 @@ impl Entity<Creature> {
             kind: Kind::Creature(kind),
         }
     }
-}
-
-/// An entity's kind seen through a reference, for the hash of an entity of
-/// any kind and of the unit a corpse was.
-#[derive(Clone, Copy)]
-enum KindRef<'a> {
-    Meadow,
-    Deposit(&'a Deposit),
-    Exit(&'a ExitData),
-    Corpse(&'a Corpse),
-    Creature(&'a Creature),
-}
-
-impl Hash for Entity {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let kind = match &self.kind {
-            Kind::Meadow => KindRef::Meadow,
-            Kind::Deposit(d) => KindRef::Deposit(d),
-            Kind::Exit(x) => KindRef::Exit(x),
-            Kind::Corpse(c) => KindRef::Corpse(c),
-            Kind::Creature(c) => KindRef::Creature(c),
-        };
-        hash_entity(self, kind, state);
-    }
-}
-
-impl Hash for Entity<Creature> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_entity(self, KindRef::Creature(&self.kind), state);
-    }
-}
-
-/// Feeds the hasher what the single structure of every kind fed it before
-/// the kinds were told apart: each of its fields in their order, a field a
-/// kind lacks as the value that structure held for it.
-fn hash_entity<K, H: Hasher>(e: &Entity<K>, kind: KindRef<'_>, state: &mut H) {
-    let creature = match kind {
-        KindRef::Creature(c) => Some(c),
-        KindRef::Meadow | KindRef::Deposit(_) | KindRef::Exit(_) | KindRef::Corpse(_) => None,
-    };
-    let deposit = match kind {
-        KindRef::Deposit(d) => Some(d),
-        KindRef::Meadow | KindRef::Exit(_) | KindRef::Corpse(_) | KindRef::Creature(_) => None,
-    };
-    let class = match kind {
-        KindRef::Meadow => EntityClass::Meadow,
-        KindRef::Deposit(_) => EntityClass::Deposit,
-        KindRef::Exit(_) => EntityClass::Exit,
-        KindRef::Corpse(_) => EntityClass::Corpse,
-        KindRef::Creature(c) => c.kind.class(),
-    };
-    let type_id = match kind {
-        KindRef::Deposit(d) => Some(d.type_id),
-        KindRef::Creature(c) => c.type_id(),
-        KindRef::Meadow | KindRef::Exit(_) | KindRef::Corpse(_) => None,
-    };
-    let building_land = match kind {
-        KindRef::Deposit(d) => d.building_land,
-        KindRef::Creature(c) => c.building_land,
-        KindRef::Meadow | KindRef::Exit(_) | KindRef::Corpse(_) => None,
-    };
-    let time_limit = match kind {
-        KindRef::Corpse(c) => Some(c.time_limit),
-        KindRef::Creature(c) => c.time_limit,
-        KindRef::Meadow | KindRef::Deposit(_) | KindRef::Exit(_) => None,
-    };
-    let exit = match kind {
-        KindRef::Exit(x) => Some(x),
-        KindRef::Meadow | KindRef::Deposit(_) | KindRef::Corpse(_) | KindRef::Creature(_) => None,
-    };
-    let corpse_unit = match kind {
-        KindRef::Corpse(c) => Some(&*c.unit),
-        KindRef::Meadow | KindRef::Deposit(_) | KindRef::Exit(_) | KindRef::Creature(_) => None,
-    };
-    let no_walk: &[(Option<Place>, i64, i64, i64)] = &[];
-    let no_rotation: &[(i64, i64)] = &[];
-    let no_smooth_rotation: &[i64] = &[];
-    let no_orders: &[Order] = &[];
-    let work = creature.and_then(Creature::work);
-
-    e.id.hash(state);
-    class.hash(state);
-    type_id.hash(state);
-    e.type_name.hash(state);
-    e.place.hash(state);
-    e.x.hash(state);
-    e.y.hash(state);
-    e.o.hash(state);
-    creature.and_then(|c| c.player).hash(state);
-    e.stats.hash(state);
-    e.airground_type.hash(state);
-    creature.and_then(|c| c.blocked_exit).hash(state);
-    building_land.hash(state);
-    time_limit.hash(state);
-    creature.is_some_and(|c| c.is_cloaked).hash(state);
-    e.is_moving.hash(state);
-    e.previous_place.hash(state);
-    creature.map_or(0, |c| c.hp).hash(state);
-    creature.map_or(0, |c| c.mana).hash(state);
-    creature
-        .map_or(no_orders, |c| c.orders.as_slice())
-        .hash(state);
-    creature.and_then(|c| c.action.as_ref()).hash(state);
-    creature
-        .map_or(no_walk, |c| c.walked.as_slice())
-        .hash(state);
-    creature
-        .map_or(no_rotation, |c| c.rotations.as_slice())
-        .hash(state);
-    creature
-        .map_or(no_smooth_rotation, |c| c.smooth_rotations.as_slice())
-        .hash(state);
-    creature.and_then(|c| c.number).hash(state);
-    creature.and_then(|c| c.inside.as_deref()).hash(state);
-    creature
-        .and_then(|c| c.position_to_hold.as_ref())
-        .hash(state);
-    creature.map_or(0, |c| c.minimal_damage).hash(state);
-    creature.map_or(0, |c| c.next_attack_time).hash(state);
-    creature.map_or(0, |c| c.damage_level).hash(state);
-    creature
-        .map_or(crate::INF, |c| c.distance_to_goal)
-        .hash(state);
-    creature.and_then(|c| c.rallying_point.as_ref()).hash(state);
-    creature.and_then(|c| c.group.as_ref()).hash(state);
-    creature.and_then(Creature::stance).hash(state);
-    work.map(|w| w.auto_gather).hash(state);
-    work.map(|w| w.auto_repair).hash(state);
-    work.and_then(|w| w.cargo).hash(state);
-    creature.and_then(|c| c.destination).hash(state);
-    creature.map_or(0, |c| c.actual_speed).hash(state);
-    deposit.map_or(0, |d| d.qty_max).hash(state);
-    deposit.map_or(0, |d| d.resource_regen).hash(state);
-    exit.hash(state);
-    corpse_unit.hash(state);
-    creature.and_then(Creature::site).hash(state);
 }
 
 /// What the statistics count a creature as.
