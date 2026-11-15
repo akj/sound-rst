@@ -149,6 +149,9 @@ pub enum Invariant {
     /// An ability whose effect the game does not know is used.
     /// `is_order_allowed` refuses such an ability.
     UnknownAbility,
+    /// An order that needs a target, or a group's name, was taken without
+    /// one. `take_order` refuses such an order before anything changes.
+    OrderWithoutItsTarget,
 }
 
 impl fmt::Display for Invariant {
@@ -181,6 +184,7 @@ impl fmt::Display for Invariant {
                 "a building is put on land that is not an entity (put_building_site)"
             }
             Invariant::UnknownAbility => "an ability without a known effect is used (use)",
+            Invariant::OrderWithoutItsTarget => "an order was taken without its target",
         })
     }
 }

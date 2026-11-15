@@ -2203,7 +2203,7 @@ impl World {
 
     /// The keyword of the default order of a unit on a target, resolved
     /// through what the unit's owner perceives or remembers now.
-    pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Res<Option<Keyword>> {
+    pub(crate) fn default_keyword(&self, id: EntityId, target: &TargetRef) -> Option<Keyword> {
         questions::default_keyword(self, self.e(id), target)
     }
 }

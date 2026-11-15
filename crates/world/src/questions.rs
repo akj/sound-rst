@@ -11,7 +11,6 @@
 
 use std::collections::BTreeSet;
 
-use crate::abort::Res;
 use crate::entity::{AiMode, Creature, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
@@ -117,13 +116,13 @@ pub(crate) trait Knowledge<'a>: Copy {
     fn unit(self, id: EntityId) -> Option<Self::Unit>;
     /// A player whose units the asker controls.
     fn player_facts(self, p: PlayerId) -> Option<PlayerFacts<'a>>;
-    /// What a target means to `owner`, and the entity it shows. The error
-    /// is a point outside its square.
+    /// What a target means to `owner`, and the entity it shows. A point
+    /// outside its square means nothing.
     fn resolve(
         self,
         owner: PlayerId,
         target: &TargetRef,
-    ) -> Res<Option<Resolved<Self::Target, Self::Entity>>>;
+    ) -> Option<Resolved<Self::Target, Self::Entity>>;
     /// Whether an order aims at a resolved target.
     fn aims_at(self, order: &Self::Order, target: &Self::Target) -> bool;
 }
@@ -277,14 +276,8 @@ impl<'a> Knowledge<'a> for &'a World {
         Some(self.facts(p))
     }
 
-    fn resolve(
-        self,
-        owner: PlayerId,
-        target: &TargetRef,
-    ) -> Res<Option<Resolved<Target, &'a Entity>>> {
-        let Some(t) = self.resolve_target(owner, target)? else {
-            return Ok(None);
-        };
+    fn resolve(self, owner: PlayerId, target: &TargetRef) -> Option<Resolved<Target, &'a Entity>> {
+        let t = self.resolve_target(owner, target)?;
         // The same entity as `World::t_entity`, borrowed from the world
         // rather than from the target: a remembered one is the owner's copy.
         let e = match &t {
@@ -296,10 +289,10 @@ impl<'a> Knowledge<'a> for &'a World {
                 .map(|r| &*r.snapshot),
             _ => None,
         };
-        Ok(Some(Resolved {
+        Some(Resolved {
             target: t,
             entity: e,
-        }))
+        })
     }
 
     fn aims_at(self, order: &Order, target: &Target) -> bool {
@@ -854,32 +847,28 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     target: &TargetRef,
-) -> Res<Option<Keyword>> {
+) -> Option<Keyword> {
     // A unit without an owner takes no order.
-    let Some(p) = unit.owner() else {
-        return Ok(None);
-    };
-    let Some(Resolved { target, entity: te }) = k.resolve(p, target)? else {
-        return Ok(None);
-    };
+    let p = unit.owner()?;
+    let Resolved { target, entity: te } = k.resolve(p, target)?;
     if te.is_some_and(|t| t.class() == EntityClass::Exit) {
-        return Ok(Some(Keyword::Block));
+        return Some(Keyword::Block);
     }
     if let Some(t) = te.filter(|t| t.owner() == Some(p)) {
         if have_enough_space(k, unit, &t) {
-            return Ok(Some(Keyword::Load));
+            return Some(Keyword::Load);
         }
         if let Some(transport) = k.unit(t.id())
             && transport.inside().is_some()
             && have_enough_space(k, transport, &unit)
         {
-            return Ok(Some(Keyword::Enter));
+            return Some(Keyword::Enter);
         }
     }
     if unit_basic_abilities(&unit).contains(&"gather")
         && te.is_some_and(|t| t.class() == EntityClass::Deposit)
     {
-        return Ok(Some(Keyword::Gather));
+        return Some(Keyword::Gather);
     }
     if let Some(t) = te {
         let rules = k.rules();
@@ -889,16 +878,16 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
             .is_some_and(|s| can_build.contains(&rules.ty(s).name));
         let repair_ok = t.is_repairable() && t.hp() < t.hp_max() && !can_build.is_empty();
         if (site_ok || repair_ok) && !is_an_enemy(k, unit, &target, te) {
-            return Ok(Some(Keyword::Repair));
+            return Some(Keyword::Repair);
         }
     }
     if order_is_allowed(k, unit, Keyword::RallyingPoint) {
-        return Ok(Some(Keyword::RallyingPoint));
+        return Some(Keyword::RallyingPoint);
     }
     if order_is_allowed(k, unit, Keyword::Go) {
-        return Ok(Some(Keyword::Go));
+        return Some(Keyword::Go);
     }
-    Ok(None)
+    None
 }
 
 // what a player sees

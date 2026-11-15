@@ -805,14 +805,7 @@ impl GameInterface {
             if !self.dobjets.contains_key(&u) {
                 continue;
             }
-            let keyword = match self.view().default_order(id, target) {
-                Ok(k) => k,
-                Err(e) => {
-                    cx.log
-                        .warning(format!("the default order of unit {}: {e}", id.0));
-                    None
-                }
-            };
+            let keyword = self.view().default_order(id, target);
             // Every keyword the default order gives is an order without a
             // type.
             if let Some(entry) = keyword.and_then(MenuEntry::plain) {

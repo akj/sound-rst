@@ -658,27 +658,12 @@ fn a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_not
         assert!(host.queue(me, c).is_none());
         warnings.extend(host.step(me).warnings);
     }
-    // A point off its square leaves the order without a target: it leaves
-    // the queue at the next turn.
+    // A point off its square aims at nothing: the order is impossible at
+    // once, as one aimed at a unit that died.
     warnings.extend(host.step(me).warnings);
     assert_eq!(host.world.player(me).group, Some(own.clone()));
     assert!(own.iter().all(|&u| host.world.e(u).orders().is_empty()));
     let names: Vec<&str> = host.world.groups.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, [long.as_str()]);
-    let zoom = |at: &str, unit: &str, turn: i64| {
-        format!(
-            "the order [\"go\", \"zoom-2-{at}\"] given to {unit} of player 86 stopped at turn \
-             {turn}: the zoom is outside its square"
-        )
-    };
-    // Once for each of the three units that can go.
-    let units = ["peasant 90", "priest 94", "priest 95"];
-    let expected: Vec<String> = [
-        ("9223372036854775807--9223372036854775808", 11),
-        ("-9223372036854775808-9223372036854775807", 12),
-    ]
-    .iter()
-    .flat_map(|&(at, turn)| units.map(|u| zoom(at, u, turn)))
-    .collect();
-    assert_eq!(warnings, expected);
+    assert_eq!(warnings, Vec::<String>::new());
 }

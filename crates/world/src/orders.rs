@@ -435,12 +435,19 @@ impl Request {
     }
 
     /// The first argument as text: a target as [`TargetRef::text`] writes
-    /// it, or a group's name. The error is an order without one.
+    /// it, or a group's name.
     fn first_arg(&self, w: &World) -> Res<String> {
-        self.args(w)
-            .into_iter()
-            .next()
-            .ok_or_else(|| Abort::new("list index out of range"))
+        let first = self.args(w).into_iter().next();
+        Ok(first.ok_or(Invariant::OrderWithoutItsTarget)?)
+    }
+
+    /// Whether the order lacks the target, or the group's name, that its
+    /// keyword needs (see [`Keyword::nb_args`]).
+    fn lacks_its_target(&self) -> bool {
+        match self.keyword {
+            Keyword::JoinGroup => self.arg.is_none(),
+            k => k.nb_args() > 0 && self.given().is_none(),
+        }
     }
 
     /// What the order was given to aim at. A group's name, which only
@@ -453,7 +460,8 @@ impl Request {
     }
 
     /// What the order becomes for a unit that takes it: an action done at
-    /// once, or an order to queue. The error is a missing argument or type.
+    /// once, or an order to queue. An order that lacks its target is refused
+    /// before (see [`Request::lacks_its_target`]).
     fn taken(&self, w: &World) -> Res<Taken> {
         let type_id = || {
             self.type_name
@@ -461,11 +469,9 @@ impl Request {
                 .and_then(|n| w.rules.type_id(n))
                 .ok_or(Invariant::OrderWithoutItsType)
         };
-        let aim = || Ok::<_, Abort>(Aim::new(self.given()));
-        let target = || -> Res<TargetRef> {
-            self.given()
-                .ok_or_else(|| Abort::new("list index out of range"))
-        };
+        let target =
+            || -> Res<TargetRef> { Ok(self.given().ok_or(Invariant::OrderWithoutItsTarget)?) };
+        let aim = || target().map(|t| Aim::new(Some(t)));
         let now = Taken::Now;
         let queued = Taken::Queued;
         Ok(match self.keyword {
@@ -527,7 +533,7 @@ impl Request {
             }),
             Keyword::Use => queued(OrderKind::Use {
                 ability: type_id()?,
-                aim: aim()?,
+                aim: Aim::new(self.given()),
             }),
             Keyword::Load => queued(OrderKind::Load { aim: aim()? }),
             Keyword::LoadAll => queued(OrderKind::LoadAll { aim: aim()? }),
@@ -1167,22 +1173,22 @@ impl World {
             ));
         };
         if imperative {
-            self.imperative_go(p, &mut request)?;
-        }
-        if self.e(unit).is_inside() {
-            self.notify(unit, EntityEvent::OrderImpossible(None), false);
-            return Ok(());
+            self.imperative_go(p, &mut request);
         }
         let kw = request.keyword;
-        if !self.is_order_allowed(unit, kw, request.type_name()) {
+        if self.e(unit).is_inside()
+            || !self.is_order_allowed(unit, kw, request.type_name())
+            || request.lacks_its_target()
+        {
             self.notify(unit, EntityEvent::OrderImpossible(None), false);
             return Ok(());
         }
+        let taken = request.taken(self)?;
         if forget_previous && !kw.never_forget_previous() {
             self.cancel_all_orders(unit, true);
         }
         let uid = self.next_order_uid();
-        match request.taken(self)? {
+        match taken {
             Taken::Now(immediate) => self.immediate_order(unit, immediate),
             Taken::Queued(kind) => {
                 let mut order = Order::new(uid, kind);
@@ -1197,22 +1203,21 @@ impl World {
 
     /// An imperative `go` toward a unit that has an owner becomes `attack`.
     /// The target is resolved through what `p` perceives or remembers now.
-    pub(crate) fn imperative_go(&self, p: PlayerId, request: &mut Request) -> Res {
+    pub(crate) fn imperative_go(&self, p: PlayerId, request: &mut Request) {
         if request.keyword != Keyword::Go {
-            return Ok(());
+            return;
         }
-        let t = request
-            .target()
-            .ok_or_else(|| Abort::new("list index out of range"))?;
+        let Some(t) = request.target() else {
+            return;
+        };
         if self
-            .resolve_target(p, t)?
+            .resolve_target(p, t)
             .as_ref()
             .and_then(|t| self.t_entity(t))
             .is_some_and(|e| e.player().is_some())
         {
             request.keyword = Keyword::Attack;
         }
-        Ok(())
     }
 
     /// `take_default_order`: the order a click on a target means.
@@ -1225,10 +1230,7 @@ impl World {
         order_id: Option<u64>,
     ) -> Res {
         // A default order is always one without a type.
-        if let Some(request) = self
-            .default_keyword(unit, &target)?
-            .and_then(Request::plain)
-        {
+        if let Some(request) = self.default_keyword(unit, &target).and_then(Request::plain) {
             self.take_order(
                 unit,
                 request.at(target),
@@ -1381,7 +1383,7 @@ impl World {
                 let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
-                let target = self.resolve_target(p, &transport)?;
+                let target = self.resolve_target(p, &transport);
                 let tid = match &target {
                     Some(Target::Entity(t)) => *t,
                     _ => return Err(Abort::new("the target cannot take orders")),
@@ -1461,15 +1463,12 @@ impl World {
     }
 
     /// What the target an order was given means to the unit's player now.
-    /// The error is an order given without a target.
     fn resolve_given(&self, unit: EntityId, aim: &Aim) -> Res<Option<Target>> {
         let Some(p) = self.e(unit).player() else {
             return Ok(None);
         };
-        let given = aim
-            .given
-            .ok_or_else(|| Abort::new("list index out of range"))?;
-        self.resolve_target(p, &given)
+        let given = aim.given.ok_or(Invariant::OrderWithoutItsTarget)?;
+        Ok(self.resolve_target(p, &given))
     }
 
     // queueing
@@ -1534,7 +1533,7 @@ impl World {
                     let p = self.e(unit).player().expect("checked by take_order");
                     t = match self.t_place(&tt) {
                         TPlace::At(Place::Square(s)) => {
-                            self.resolve_target(p, &TargetRef::Square(s))?
+                            self.resolve_target(p, &TargetRef::Square(s))
                         }
                         TPlace::At(Place::Inside(_)) => None,
                         _ => {
@@ -1790,7 +1789,7 @@ impl World {
         };
         if t.effect_target == ["ask"] {
             let target = match aim.given {
-                Some(given) => self.resolve_target(p, &given)?,
+                Some(given) => self.resolve_target(p, &given),
                 None => None,
             };
             let none = target.is_none();

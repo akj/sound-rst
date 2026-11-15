@@ -699,41 +699,39 @@ impl World {
     }
 
     /// What a target means to a player now: a subsquare, a square, a
-    /// perceived entity, or a remembered one. The error is a point outside
-    /// its square.
-    pub(crate) fn resolve_target(&self, p: PlayerId, t: &TargetRef) -> Res<Option<Target>> {
+    /// perceived entity, or a remembered one. A point outside its square
+    /// means nothing: the interface sends the center of a subsquare.
+    pub(crate) fn resolve_target(&self, p: PlayerId, t: &TargetRef) -> Option<Target> {
         match *t {
-            TargetRef::Square(s) | TargetRef::SquareNamed(s) => Ok(Some(Target::Square(s))),
+            TargetRef::Square(s) | TargetRef::SquareNamed(s) => Some(Target::Square(s)),
             TargetRef::Point { square, x, y } => {
-                // The interface sends the center of a subsquare of the square.
-                if !self.square(square).contains(x, y) {
-                    return Err(Abort::new("the zoom is outside its square"));
-                }
-                Ok(Some(Target::Zoom(ZoomTarget {
-                    place: square,
-                    x,
-                    y,
-                    given: true,
-                })))
+                self.square(square)
+                    .contains(x, y)
+                    .then_some(Target::Zoom(ZoomTarget {
+                        place: square,
+                        x,
+                        y,
+                        given: true,
+                    }))
             }
             TargetRef::Entity(id) => {
                 if let Some(s) = self.square_by_obj_id(id.0) {
-                    return Ok(Some(Target::Square(s)));
+                    return Some(Target::Square(s));
                 }
                 if let Some(e) = self.entity(id)
                     && e.place.is_some()
                     && self.pl(p).perception.contains(&id)
                 {
-                    return Ok(Some(Target::Entity(id)));
+                    return Some(Target::Entity(id));
                 }
-                Ok(self.pl(p).memory.get(&id).map(|r| {
+                self.pl(p).memory.get(&id).map(|r| {
                     Target::Memory(MemoryRef {
                         owner: p,
                         snapshot: r.snapshot.clone(),
                     })
-                }))
+                })
             }
-            TargetRef::Nothing => Ok(None),
+            TargetRef::Nothing => None,
         }
     }
 
@@ -755,7 +753,7 @@ impl World {
             Target::Xy(..) => return Err(Invariant::OrderAimsAtCoordinates.into()),
         }
         let id = t.entity_id().expect("an entity");
-        self.resolve_target(p, &TargetRef::Entity(id))
+        Ok(self.resolve_target(p, &TargetRef::Entity(id)))
     }
 
     // resources

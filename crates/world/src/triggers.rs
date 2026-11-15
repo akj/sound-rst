@@ -636,7 +636,7 @@ impl World {
         order_id: Option<u64>,
     ) -> Res {
         if imperative && let Some(up) = self.e(u).player() {
-            self.imperative_go(up, request)?;
+            self.imperative_go(up, request);
         }
         self.take_order(u, request.clone(), forget_previous, imperative, order_id)
     }

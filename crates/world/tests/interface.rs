@@ -264,13 +264,7 @@ fn a_zoom_outside_its_square_is_refused() {
         &format!("order 0 0 build farm zoom-{id}-9223372036854775807-{y}"),
     );
     w.update();
-    assert_eq!(
-        w.drain_warnings(),
-        [format!(
-            "the order [\"build\", \"farm\", \"zoom-{id}-9223372036854775807-{y}\"] given to \
-             peasant {peasant} of player 86 stopped at turn 0: the zoom is outside its square"
-        )]
-    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
     let keywords = |w: &World| {
         w.entity(peasant)
             .unwrap()
@@ -279,8 +273,8 @@ fn a_zoom_outside_its_square_is_refused() {
             .map(|o| o.keyword())
             .collect::<Vec<_>>()
     };
-    // The order was queued before its target was read. With no target, it
-    // is impossible at its first execution and leaves at the next turn.
+    // The point aims at nothing: the order is impossible when queued, and
+    // leaves at the next turn, unpaid.
     w.update();
     assert_eq!(keywords(&w), []);
     assert_eq!(w.player(me).resources, [10000, 10000]);

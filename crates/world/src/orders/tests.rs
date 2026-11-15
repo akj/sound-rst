@@ -154,7 +154,7 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     let outside = (h.xmax, h.y);
     // A target has no equality but identity: compare what it shows.
     let resolve = |w: &World, t| format!("{:?}", w.resolve_target(me, &t));
-    let ok = |t: Option<Target>| format!("{:?}", Ok::<_, Abort>(t));
+    let ok = |t: Option<Target>| format!("{t:?}");
     let zoom = |(x, y)| {
         Target::Zoom(ZoomTarget {
             place: s,
@@ -171,15 +171,13 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     assert_eq!(resolve(&w, point), ok(Some(zoom(inside))));
     let (x, y) = outside;
     let point = TargetRef::Point { square: s, x, y };
-    assert_eq!(
-        w.resolve_target(me, &point).unwrap_err(),
-        Abort::new("the zoom is outside its square")
-    );
+    // A point outside its square means nothing.
+    assert!(w.resolve_target(me, &point).is_none());
     assert_eq!(
         resolve(&w, TargetRef::Entity(peasant)),
         ok(Some(Target::Entity(peasant)))
     );
-    match w.resolve_target(me, &TargetRef::Entity(seen)).unwrap() {
+    match w.resolve_target(me, &TargetRef::Entity(seen)) {
         Some(Target::Memory(m)) => assert_eq!((m.owner, m.snapshot.id), (me, seen)),
         other => panic!("{other:?}"),
     }
@@ -188,7 +186,7 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     // Orders compare targets by identity: a remembered entity is the
     // entity, a point the player gave is its square and coordinates, and a
     // subsquare the simulation chose has none.
-    let remembered = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
+    let remembered = w.resolve_target(me, &TargetRef::Entity(seen));
     assert_eq!(
         remembered.and_then(|t| t.identity()),
         Some(TargetIdentity::Entity(seen))
@@ -227,8 +225,8 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
         assert_eq!(by_text, resolve(&w, t), "{t:?}");
     }
     let read_back = TargetRef::parse(&w, &seen.to_string()).unwrap();
-    let by_text = w.resolve_target(me, &read_back).unwrap().unwrap();
-    let typed = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
+    let by_text = w.resolve_target(me, &read_back).unwrap();
+    let typed = w.resolve_target(me, &TargetRef::Entity(seen));
     assert!(by_text.same(&typed.unwrap()));
 }
 
@@ -423,7 +421,7 @@ fn a_place_inside_a_unit_is_no_target() {
     let t = w.place_target(Place::Inside(transport));
     assert_eq!(t, TargetRef::Nothing);
     assert_eq!(Request::go(t).words(&w), words(&["go", "None"]));
-    assert!(w.resolve_target(me, &t).unwrap().is_none());
+    assert!(w.resolve_target(me, &t).is_none());
 }
 
 // Units that change hands or change type, given orders as a player does.
@@ -791,4 +789,50 @@ fn a_ship_trained_with_no_water_near_is_refunded_and_impossible() {
         [EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
     );
     assert!(all(&w, a, "boat").is_empty());
+}
+
+/// What a unit says in the turn after an order, and its orders then.
+fn after_order(
+    w: &mut World,
+    p: PlayerId,
+    u: EntityId,
+    words: &str,
+) -> (Vec<EntityEvent>, Vec<Keyword>) {
+    entity_events(w, p);
+    w.queue(p, crate::Command::Control(vec![u]));
+    w.queue_command(p, &format!("order 0 1 {words}"));
+    w.update();
+    let events = entity_events(w, p)
+        .into_iter()
+        .filter(|e| matches!(e, EntityEvent::OrderImpossible(_) | EntityEvent::OrderOk))
+        .collect();
+    (events, w.e(u).orders().iter().map(Order::keyword).collect())
+}
+
+#[test]
+fn an_order_without_its_target_is_impossible_at_once_and_one_aimed_off_its_square_aims_at_nothing()
+{
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square(w.square_by_name("a1").unwrap());
+    let (id, corner) = (a1.id, (a1.xmin + 500, a1.ymin + 500));
+    let near = format!("go zoom-{id}-{}-{}", corner.0, corner.1);
+    let (events, kept) = after_order(&mut w, a, footman, &near);
+    assert_eq!(
+        (events, kept.clone()),
+        (vec![EntityEvent::OrderOk], vec![Keyword::Go])
+    );
+    let impossible = vec![EntityEvent::OrderImpossible(None)];
+    // Refused before anything changes: the order in the queue stays.
+    for words in ["go", "attack", "patrol", "join_group"] {
+        let refused = after_order(&mut w, a, footman, words);
+        assert_eq!(refused, (impossible.clone(), kept.clone()), "{words}");
+    }
+    // A point off its square aims at nothing, as a target that died: the
+    // order replaces the queue and is impossible.
+    let far = format!("go zoom-{id}-{}-0", i64::MAX);
+    assert_eq!(after_order(&mut w, a, footman, &far), (impossible, vec![]));
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
