@@ -26,7 +26,7 @@ Preconditions:
 
 - **Walk the main menu and the options menu.** A scripted player presses Down, Up, Tab, letters, F1, Home, End, and Escape in the main menu, then types a login and visits each options submenu. Run `verify.ps1 test menus transcripts menus_main menus_options`. Two tests pass, and the client's output matches the recorded transcripts byte for byte. In `menus/transcripts/menus_main.txt`, `step 1 key DOWN` is followed by `voice item "single player, , play on your computer"`, and the last step, `key ESCAPE`, by `voice confirmation "quit,"`.
 - **Check the menu rules.** A scripted player covers the same menus in English and French, the first-letter search, a menu that remembers its last choice, the volume keys, and Control V in a text field. Run `verify.ps1 test menus menus`. Every test of `crates/client/tests/menus.rs` passes.
-- **Change the sound and speech settings.** A scripted player opens Sound and speech, changes the volume, each news category, and the NVDA item, and measures the speech rate. Run `verify.ps1 test menus sound_and_speech`. Every test passes. The tests read the values back from the `SoundRTS.ini` that the client wrote.
+- **Change the sound and speech settings.** A scripted player opens Sound and speech, changes the volume, each news category, and the NVDA item, and measures the speech rate. Run `verify.ps1 test menus sound_and_speech`. Every test passes. Tests such as `the_volume_is_saved_when_it_changes_and_survives_a_restart` and `the_nvda_item_switches_and_is_written_to_the_file` read the values back from the `SoundRTS.ini` that the client wrote.
 
 ### By ear
 

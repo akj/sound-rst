@@ -24,6 +24,8 @@ A sub-feature marked `ears` has no proof below that layer. For a sub-feature mar
 
 - Type every command as written. Test names and scenario names are exact.
 - A quoted phrase such as `"options menu"` is the text of a `voice` line in a transcript or of an assertion in a test. It is what the client sends to the speech device.
+- The `transcripts` test file compares what the client says and plays with `crates/client/tests/transcripts/expected/<scenario>.txt` and fails on any difference. So a pass means that the copy in the evidence folder equals the recorded transcript. In a transcript, `@<ms>` is the time on the manual clock, and `end` or `exit` is the normal last line. The README of `crates/client/tests/transcripts` explains every other line.
+- A `By ear` script quotes a message as a listener hears it, without the doubled commas and spaces of the text that the client sends.
 - Each harness test starts from a new, empty settings folder and ends by itself.
 - Hand a `By ear` script to Andrew as numbered steps, adjusted to the change you made. Wait for pass or fail on each step, and record the answer where the proof is reported.
 

@@ -25,7 +25,7 @@ The helper needs Windows, PowerShell 7, Git, and rustup. Run every command below
 pwsh -NoProfile -File .claude/skills/verify-soundrts/verify.ps1 launch
 ```
 
-`launch` fetches the original game's data into `vendor/soundrts-upstream` at the pinned commit, builds the game and the client's tests, and then runs `doctor`. On a new checkout the build takes several minutes, so allow 30 minutes or run it in the background. `launch` is safe to rerun.
+`launch` fetches the original game's data into `vendor/soundrts-upstream` at the pinned commit, builds the game and the client's tests, and then runs `doctor`. On a new checkout the build takes several minutes. Run `launch` in the foreground with the longest time limit your tool allows, and stay in your turn until it ends. If the time limit cuts `launch` off, run it again. `launch` is safe to rerun, and Cargo keeps what it has built.
 
 The checkout is ready when the last line is `doctor: ready`. Nothing keeps running after `launch`. Each drive starts its own test process or its own short run of the program, with a new, empty settings folder.
 
@@ -59,17 +59,17 @@ To prove a change, drive every sub-feature that the change touches, at the highe
 Evidence goes to `target/verify-soundrts/<run>/` in the checkout. `<run>` is the short commit hash, with `-dirty` added when the checkout has uncommitted changes.
 
 - `doctor.log`
-- `<feature>/<test-file>.log` for each `test` command. A rerun for the same feature and test file replaces the log.
+- `<feature>/<test-file>.log` for each `test` command
 - `<feature>/transcripts/<scenario>.txt` for the `transcripts` test file. Each `step` line is a key the scripted player pressed. Each `voice` line is a message the client sent to the speech device.
 - `first-start/first-start.log` and `first-start/release-check.log`
 
-Each log starts with the feature, the layer, the commit, and the changed files. Then it has each command with its output and exit code. Its last line starts with `passed`, `doctor: ready`, or `FAILED`.
+Each log starts with the feature or the word `doctor`, the layer, the commit, the changed files, and the start time. Then it has each program that the helper ran, with its output and exit code, and an `ok:` line for each check that passed. Its last line starts with `passed`, `doctor: ready`, or `FAILED`. A rerun of a command replaces its log.
 
 Hold every proof to these standards:
 
 - Quote the action and the result: the `step` and `voice` lines of a transcript, or the command and its output. A final `ok` alone is not a proof.
 - Prefer a test that presses scripted keys through the real menus to a test that calls an internal function.
-- Check side effects where the feature has them: the settings written to `SoundRTS.ini`, the data that `--fetch-data` wrote.
+- Check side effects where the feature has them: the settings written to `SoundRTS.ini`, the data that `--fetch-data` wrote. A harness log does not show a file that a test read back, so name the test that checks the file.
 - When a precondition is missing, report the failure and its reason. A missing network, a test that no longer exists, or game data at the wrong commit is a failed drive. Never replace the drive with an easier check and call the feature verified.
 - Report a feature as verified only for the entry points you drove. The feature file lists the others.
 
@@ -79,6 +79,12 @@ The harness is a stand-in for the game a player starts. In every report of a har
 - the settings folder is new and empty for each test, and the language is given by the test;
 - the random seed is fixed;
 - the network is 127.0.0.1 on a free port, with no router, no discovery of other machines, and no public server list.
+
+The helper's runs of the program are a stand-in for a player's start too. In every report of a program proof, list these differences:
+
+- `%APPDATA%` is an empty scratch folder, and `SOUNDRTS_ROOT` is cleared;
+- a script starts the program and gives it streams, so the program never asks a question in a message box;
+- `first-start` runs the debug build. Only `release-check` runs the release build.
 
 `--probe` and `--fetch-data` are the program's safe modes. Observed at commit `ad6a74d`, `--probe` creates no file in the settings folder, but it does ask Windows for the audio device and the screen reader. `--fetch-data` downloads about 10 megabytes from github.com.
 

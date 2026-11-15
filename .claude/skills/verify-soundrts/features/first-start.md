@@ -5,7 +5,7 @@ A downloaded build of the game does not hold the original game's data. The game 
 ## Sub-features
 
 - `first-start-missing` (program): with no data anywhere, a start from a terminal or a script stops, says where it looked, and says to run `soundrts --fetch-data`.
-- `first-start-fetch` (program): `soundrts --fetch-data` downloads the data of the pinned commit into `%APPDATA%\SoundRTS\data` and says where it is. A second run downloads nothing.
+- `first-start-fetch` (program): `soundrts --fetch-data` downloads the data of the pinned commit into a folder named after that commit in `%APPDATA%\SoundRTS\data`, and says where it is. A second run downloads nothing.
 - `first-start-probe` (program): `soundrts --probe` prints the data folder, the settings folder, the language, the audio device, and the screen reader, and exits.
 - `first-start-release` (program): the release folder that `scripts/stage-release.ps1` makes does the same, the fetched data has the same bytes as `vendor/soundrts-upstream`, and `soundrts-server.exe` answers `--help`.
 - `first-start-installer` (GitHub only): the installer installs, the installed game finds the data, and the uninstaller removes the program and leaves the data. The Release workflow checks this on a GitHub runner.
@@ -41,7 +41,7 @@ For Andrew, with NVDA running. The script needs a release folder, for example an
 
 ## Gotchas
 
-- The helper never touches the real `%APPDATA%`. It gives the program a scratch folder in the system's temporary folder and removes that folder when the command ends.
+- The helper never touches the real `%APPDATA%`. It gives the program a scratch folder in the system's temporary folder and empties that folder when the command ends. `verify.ps1 cleanup` removes the folder itself.
 - The game looks for its data in this order: `--root`, `SOUNDRTS_ROOT`, the folder of the program, the current folder, then the downloaded data. The helper clears `SOUNDRTS_ROOT` for the program and runs it in the scratch folder, so only the downloaded data can be found.
 - The question in a message box appears only when the game has no standard stream and no launching terminal. A game that a script starts never asks, so no script can prove `first-start-ask`.
 - Run the installer check only on GitHub. `scripts/check-release.ps1 -Installer` installs the game for the current user and refuses to run where the game is installed.
