@@ -3,9 +3,9 @@
 //!
 //! The task builds the game from the set-up the lobby made, owns the
 //! [`Host`], steps it on a clock that waits for nobody, and sends each
-//! seat its stream: the start and the whole message when the seat
-//! joins or returns, then the change since the last message it was sent,
-//! each turn. The world's work (building, and each turn with every seat's
+//! seat its stream: the start, with the hash of the rules text it was
+//! built from, and the whole message when the seat joins or returns,
+//! then the change since the last message it was sent, each turn. The world's work (building, and each turn with every seat's
 //! message) runs on a blocking thread with a time budget; a panic there
 //! ends this game and nothing else.
 //!
@@ -33,7 +33,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use soundrts_protocol::game::{Role, SeatFrame, encode_frame};
+use soundrts_protocol::game::{Role, RulesHash, SeatFrame, encode_frame};
 use soundrts_protocol::{
     ChatText, ClockChange, FLARE_WINDOW, Login, MAX_FLARES, MAX_TURN_ORDER_BYTES, MapInfo, Refusal,
     RoomId, SeatChange, SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step,
@@ -417,6 +417,7 @@ async fn run(
     mut inputs: mpsc::UnboundedReceiver<(GameInput, Option<Queued>)>,
 ) -> Ending {
     info!(room = room.0, "game building");
+    let rules = RulesHash::of(&setup.rules);
     #[cfg(feature = "fault-injection")]
     let setup_rules: String = setup.rules.chars().take(64).collect();
     let mut host = match build(setup, settings.load_budget, &settings.overruns).await {
@@ -428,7 +429,11 @@ async fn run(
     }
     #[cfg(feature = "fault-injection")]
     let fault = fault::of(&setup_rules);
-    let start = match encode_frame(&SeatFrame::Start(host.game_start().message())) {
+    let start = SeatFrame::Start {
+        start: host.game_start().message(),
+        rules,
+    };
+    let start = match encode_frame(&start) {
         Ok(bytes) => Bytes::from(bytes),
         Err(e) => {
             warn!(room = room.0, error = %e, "cannot encode the start");

@@ -11,7 +11,7 @@ use soundrts::multiplayer::play_on;
 use soundrts::testkit::{FakeServer, FakeStream, Harness, LiveKeys, Script, TestGame, snapshot};
 use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::*;
-use soundrts_world::{Command, Order, OrderTarget, PlayerId, Queue, SquareId};
+use soundrts_world::{Command, GameStart, Order, OrderTarget, PlayerId, Queue, Rules, SquareId};
 
 fn login(s: &str) -> Login {
     Login::new(s).unwrap()
@@ -598,6 +598,70 @@ fn a_game_on_a_map_the_player_does_not_have_is_left() {
     );
 }
 
+/// `rules` with the peasant's definition moved after the footman's: the
+/// same types, two of them in each other's place.
+fn peasant_after_footman(rules: String) -> String {
+    let block = |name: &str| {
+        let start = rules.find(&format!("\ndef {name}\n")).unwrap() + 1;
+        let end = rules[start..]
+            .find("\ndef ")
+            .map_or(rules.len(), |e| start + e + 1);
+        start..end
+    };
+    let (peasant, footman) = (block("peasant"), block("footman"));
+    assert_eq!(
+        peasant.end, footman.start,
+        "the footman follows the peasant"
+    );
+    [
+        &rules[..peasant.start],
+        &rules[footman.clone()],
+        &rules[peasant],
+        &rules[footman.end..],
+    ]
+    .concat()
+}
+
+#[test]
+fn a_game_whose_rules_differ_from_the_players_is_not_played() {
+    let script = Script::new().at(40.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = jl1(h);
+        s.at(
+            10.0,
+            room(RoomChange::Entered, &room_state(&map, two_slots())),
+        );
+        let stream = FakeStream::with_rules(h, "jl1", &two_slots(), 0, 1, peasant_after_footman);
+        // What the check prevents: read with the player's own rules, the
+        // stream passes every other check, and names peasants footmen.
+        let ours = Rules::load(&[h.client.res.rules_text()]);
+        let game = &stream.host().game_start().rules;
+        assert_eq!(ours.types().len(), game.types().len());
+        let peasant = game.type_id("peasant").unwrap();
+        assert_eq!(ours.ty(peasant).name, "footman");
+        let opening = stream.opening(map, Speed::Normal);
+        let (SeatFrame::Start { start, .. }, SeatFrame::Whole(whole)) = (&opening[1], &opening[2])
+        else {
+            panic!("the start, then the whole message");
+        };
+        let read_with_ours = GameStart::from_message(start.clone(), ours);
+        read_with_ours.check(whole).unwrap();
+        for frame in opening {
+            s.frame_at(20.0, frame);
+        }
+    });
+    assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
+    let said = said(&h);
+    assert!(
+        said.contains(&"cannot play: your game data differs from this game's".to_owned()),
+        "{said:#?}"
+    );
+    assert!(
+        !said.iter().any(|s| s.starts_with("objective")),
+        "the game was played: {said:#?}"
+    );
+}
+
 #[test]
 fn what_happens_to_the_players_and_the_clock_is_said() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
@@ -805,10 +869,7 @@ fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
     let t0 = h.clock.now();
     turn_at(&server, &mut stream, t0);
     // The start comes once, before the game.
-    server.frame_at(
-        t0 + 1.0,
-        SeatFrame::Start(stream.host().game_start().message()),
-    );
+    server.frame_at(t0 + 1.0, stream.start());
     h.run_for(&mut g, 10.0);
     assert!(g.game.end_loop, "the game went on");
     assert_eq!(g.game.view().turn(), 1);

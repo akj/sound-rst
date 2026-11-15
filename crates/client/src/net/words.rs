@@ -143,6 +143,9 @@ pub const CANNOT_BUILD: &str = "the server cannot build it:";
 pub const TOOK_TOO_LONG_TO_BUILD: &str = "it took too long to build";
 pub const SERVER_BUSY: &str = "the server is busy, try again later";
 pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
+/// The game's rules are not the ones this client has, so its unit names
+/// would be wrong: the game is not played.
+pub const RULES_DIFFER: &str = "cannot play: your game data differs from this game's";
 pub const ONLY_THE_ORGANIZER_SETS_THE_SPEED: &str = "only the organizer can change the speed";
 /// The game menu's item that stops the clock of a game on a server.
 pub const PAUSE: &str = "pause";
