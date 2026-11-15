@@ -385,12 +385,11 @@ impl SeatView {
         questions::order_info(&self.start.rules, &self.unit(unit)?, keyword, type_id)
     }
 
-    /// Whether the owner of a unit has a type, built or researched. `None`
-    /// unless the player controls the owner's units.
-    pub fn owner_has(&self, unit: EntityId, t: TypeId) -> Option<bool> {
+    /// Whether the owner of a unit has a requirement of a menu entry, built
+    /// or researched. `None` unless the player controls the owner's units.
+    pub fn owner_has(&self, unit: EntityId, requirement: &str) -> Option<bool> {
         let owner = self.unit(unit)?.known.player?;
-        let name = &self.start.rules.ty(t).name;
-        Some(questions::has(self, self.player_facts(owner)?, name))
+        Some(questions::has(self, self.player_facts(owner)?, requirement))
     }
 
     /// What a unit the player perceives is busy with, for its noise.

@@ -991,9 +991,9 @@ pub struct OrderInfo {
 pub struct MenuEntry {
     pub keyword: Keyword,
     pub type_id: Option<TypeId>,
-    /// The requirements of the type that are types of the rules. A
-    /// requirement that names another class is not said.
-    pub requirements: Vec<TypeId>,
+    /// The requirements of the type, by the class names the rules give
+    /// them: a type, or a class that types derive from.
+    pub requirements: Vec<String>,
 }
 
 impl MenuEntry {
@@ -1011,12 +1011,7 @@ impl MenuEntry {
         keyword.is_complex().then(|| MenuEntry {
             keyword,
             type_id: Some(t),
-            requirements: rules
-                .ty(t)
-                .requirements
-                .iter()
-                .filter_map(|r| rules.type_id(r))
-                .collect(),
+            requirements: rules.ty(t).requirements.clone(),
         })
     }
 

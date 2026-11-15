@@ -79,7 +79,7 @@ pub struct OrderTypeView {
     pub type_id: Option<TypeId>,
     /// The unit the order was listed for.
     pub unit: EntityId,
-    pub requirements: Vec<TypeId>,
+    pub requirements: Vec<String>,
     pub title: Msg,
     pub shortcut: Option<String>,
     pub index: f64,
@@ -171,17 +171,16 @@ impl OrderTypeView {
     /// requirement of a unit whose owner the player does not control
     /// counts as missing.
     fn requirements_msg(&self, view: &SeatView, style: &Style) -> Msg {
-        let missing: Vec<TypeId> = self
+        let missing: Vec<&String> = self
             .requirements
             .iter()
-            .copied()
-            .filter(|&r| !view.owner_has(self.unit, r).unwrap_or(false))
+            .filter(|r| !view.owner_has(self.unit, r).unwrap_or(false))
             .collect();
         let mut and_index = 0;
         let mut m: Msg = Vec::new();
-        for &t in &missing {
+        for t in &missing {
             and_index = m.len();
-            m.extend(style_msg(style, &view.unit_type_by_id(t).name, "title"));
+            m.extend(style_msg(style, t, "title"));
         }
         if missing.is_empty() {
             for (i, &c) in self.cost.iter().enumerate() {

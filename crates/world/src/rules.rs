@@ -1157,7 +1157,7 @@ impl Rules {
             by_name.insert(name.clone(), TypeId(types.len() as u32));
             types.push(t);
         }
-        check_references(&types, &by_name, &mut warnings);
+        check_references(&raw, &types, &by_name, &mut warnings);
         let factions = read_factions(&raw, &types, &by_name, &mut warnings);
         Rules {
             raw,
@@ -1342,16 +1342,25 @@ impl Rules {
     }
 }
 
-/// Warns of each type that a type's requirements or lists name and the
-/// rules do not have.
+/// Warns of each name in a type's lists that the rules do not have: a
+/// list of what it makes or uses names types, and a requirement a class
+/// (a type, or a class that types derive from).
 fn check_references(
+    raw: &Definitions,
     types: &[UnitType],
     by_name: &BTreeMap<String, TypeId>,
     warnings: &mut Vec<String>,
 ) {
     for t in types {
+        for name in &t.requirements {
+            if raw.index(name).is_none() {
+                warnings.push(format!(
+                    "error in {}.requirements: {name} doesn't exist",
+                    t.name
+                ));
+            }
+        }
         let lists = [
-            ("requirements", &t.requirements),
             ("can_build", &t.can_build),
             ("can_train", &t.can_train),
             ("can_use", &t.can_use),
@@ -1857,9 +1866,11 @@ mod tests {
 
     #[test]
     fn a_type_named_that_the_rules_lack_is_a_warning() {
-        let r = Rules::load(&["def a\nclass soldier\nrequirements b z\ncan_use y\n\
+        let r = Rules::load(&[
+            "def a\nclass soldier\nrequirements b z footsoldier\ncan_use y\ndef footsoldier\n\
              def b\nclass building\ncan_train a x\n\
-             def f\nclass faction\na b\nb w\neasy f_easy\n"]);
+             def f\nclass faction\na b\nb w\neasy f_easy\n",
+        ]);
         assert_eq!(
             r.warnings,
             [
