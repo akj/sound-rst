@@ -28,8 +28,8 @@ use std::sync::Arc;
 
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, MenuEntry, Order, OrderInfo, Request};
-use crate::pathfinding::Viewer;
 use crate::player::PlayerKind;
+use crate::questions;
 use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{Abort, Res, TPlace, World};
 
@@ -492,10 +492,17 @@ impl Door<'_> {
         &self.world.pl(self.me).places_with_corpses
     }
 
-    /// A leak: whether an exit is closed by forests or by a blocker of its
-    /// two sides, gates included, as they truly are.
+    /// Whether an exit is closed, gates included, by what it perceives or
+    /// remembers of the exit, its other side and their blockers: the rule
+    /// a human's seat follows.
     pub(super) fn exit_is_blocked(&self, e: EntityId) -> bool {
-        self.world.exit_is_blocked(e, Viewer::Nobody, false, false)
+        questions::exit_is_blocked(
+            |id| self.known(id).map(|s| s.e),
+            |p| self.allied().contains(&p),
+            e,
+            self.world.exit_other_side(e),
+            false,
+        )
     }
 
     // paths
