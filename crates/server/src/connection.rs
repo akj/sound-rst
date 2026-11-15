@@ -61,9 +61,9 @@ const MAX_HELLO_BYTES: usize = 16 * 1024;
 
 /// The most bytes of messages other than maps that one connection can
 /// have handed to the lobby or its game and they have not handled yet.
-/// The largest an honest client sends is a message of orders: a few
-/// hundred bytes, and at most 64 orders of 4 KB (about 260 KB). The lobby
-/// and games handle each message in far less than a millisecond.
+/// An honest client sends a few hundred bytes at a time: a chat line, a
+/// command of at most 4 KB. The lobby and games handle each message in far
+/// less than a millisecond.
 const MAX_QUEUED_BYTES: usize = 1024 * 1024;
 
 /// Maps have their own allowance: one map, the largest message there is.

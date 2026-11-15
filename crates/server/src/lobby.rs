@@ -19,7 +19,6 @@ use tracing::{info, warn};
 
 use crate::ServerConfig;
 use crate::connection::{ConnId, Outbox, Queued, encode};
-use crate::game::{self, GameInput};
 use crate::hosted::{self, Ending, HostedInput, Joining};
 use crate::room::{Member, Occupant, Phase, Room};
 
@@ -50,11 +49,8 @@ pub(crate) enum LobbyInput {
         bytes: usize,
         queued: Queued,
     },
-    /// A game took this human out (they asked, disconnected, or lagged),
-    /// or a hosted game is over for them.
+    /// A game is over for this human.
     LeftGame { room: RoomId, conn: ConnId },
-    /// No human is left in this lockstep game.
-    GameOver { room: RoomId },
     /// A hosted game gave this player back their seat. They are sent
     /// nothing of the game before the lobby hears of it.
     Returned {
@@ -80,7 +76,6 @@ pub(crate) fn spawn(config: &ServerConfig, player_count: Arc<AtomicU32>) -> Lobb
         name: config.name.clone(),
         max_clients: config.max_clients,
         max_rooms: config.max_rooms,
-        game_settings: (config.max_lead, config.lag_timeout),
         hosted: HostedConfig {
             grace: config.grace_period,
             load_budget: config.load_budget,
@@ -180,7 +175,6 @@ struct Lobby {
     name: ServerName,
     max_clients: usize,
     max_rooms: usize,
-    game_settings: (u32, std::time::Duration),
     hosted: HostedConfig,
     seed: Option<i64>,
     overruns: hosted::Overruns,
@@ -237,7 +231,6 @@ impl Lobby {
                 }
                 LobbyInput::Gone { conn } => self.gone(conn),
                 LobbyInput::LeftGame { room, conn } => self.left_game(room, conn),
-                LobbyInput::GameOver { room } => self.game_over(room),
                 LobbyInput::Returned { room, conn, slot } => self.returned(room, conn, slot),
                 LobbyInput::ReturnRefused { room, conn } => self.return_refused(room, conn),
                 LobbyInput::HostedEnded { room, ending } => self.hosted_ended(room, ending),
@@ -327,14 +320,8 @@ impl Lobby {
             Place::InRoom(id) => self.take_out_of_room(id, conn),
             Place::Playing(id) => {
                 let room = &self.rooms[&id];
-                match (&room.phase, room.slot_of(conn)) {
-                    (Phase::Playing { game }, Some(slot)) => {
-                        let _ = game.send((GameInput::Leave { slot }, None));
-                    }
-                    (Phase::Hosted { game }, Some(slot)) => {
-                        let _ = game.send((HostedInput::Dropped { slot }, None));
-                    }
-                    _ => {}
+                if let (Phase::Hosted { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) {
+                    let _ = game.send((HostedInput::Dropped { slot }, None));
                 }
             }
         }
@@ -386,22 +373,10 @@ impl Lobby {
             ClientMsg::AddComputer { level } => self.add_computer(conn, level),
             ClientMsg::RemoveSlot { slot } => self.remove_slot(conn, slot),
             ClientMsg::SetAlliance { slot, alliance } => self.set_alliance(conn, slot, alliance),
-            ClientMsg::Start => self.start(conn),
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
-            ClientMsg::Loaded => self.pass_to_game(conn, queued, |slot| GameInput::Loaded { slot }),
-            ClientMsg::Orders { orders } => {
-                self.pass_to_game(conn, queued, |slot| GameInput::Orders { slot, orders })
-            }
-            ClientMsg::TurnDone { turn, digest } => self.pass_to_game(conn, queued, |slot| {
-                GameInput::TurnDone { slot, turn, digest }
-            }),
             ClientMsg::LeaveGame => {
-                if self.is_hosted(conn) {
-                    self.pass_to_hosted(conn, queued, |slot| HostedInput::Leave { slot })
-                } else {
-                    self.pass_to_game(conn, queued, |slot| GameInput::Leave { slot })
-                }
+                self.pass_to_hosted(conn, queued, |slot| HostedInput::Leave { slot })
             }
             ClientMsg::StartHosted { texts } => self.start_hosted(conn, texts),
             ClientMsg::ReturnToGame { room, token } => self.return_to_game(conn, room, token),
@@ -736,49 +711,6 @@ impl Lobby {
         Ok(())
     }
 
-    fn start(&mut self, conn: ConnId) -> Answer {
-        let id = self.startable_room(conn)?;
-        let seed = self.new_seed();
-        let room = self.rooms.get_mut(&id).expect("hosted");
-        let count = room.slots.len();
-        let slots = room.slots();
-        let mut players = Vec::new();
-        for (you, m) in room.members() {
-            m.outbox.send(&ServerMsg::GameStarted {
-                seed,
-                slots: slots.clone(),
-                you,
-                map: room.map.clone(),
-                speed: room.speed,
-            });
-            players.push(game::Player {
-                slot: you,
-                conn: m.conn,
-                login: m.login.clone(),
-                outbox: m.outbox.clone(),
-            });
-        }
-        let Some(me) = self.me.upgrade() else {
-            return Ok(());
-        };
-        let (max_lead, lag_timeout) = self.game_settings;
-        let settings = game::Settings {
-            turn_interval: room.speed.turn_interval(),
-            max_lead,
-            lag_timeout,
-        };
-        info!(room = id.0, seed, players = count, "starting game");
-        room.phase = Phase::Playing {
-            game: game::spawn(id, players, settings, me),
-        };
-        let humans: Vec<ConnId> = room.members().map(|(_, m)| m.conn).collect();
-        self.room_changed(id);
-        for human in humans {
-            self.move_player(human, Place::Playing(id));
-        }
-        Ok(())
-    }
-
     /// The room this player hosts, ready to start: every human ready, and
     /// as many players as the map takes.
     fn startable_room(&self, conn: ConnId) -> Result<RoomId, Refusal> {
@@ -857,32 +789,6 @@ impl Lobby {
     }
 
     // -- Games -------------------------------------------------------------
-
-    fn pass_to_game(
-        &mut self,
-        conn: ConnId,
-        queued: Queued,
-        input: impl FnOnce(SlotIndex) -> GameInput,
-    ) -> Answer {
-        let Place::Playing(id) = self.players[&conn].place else {
-            return Err(Refusal::NotNow);
-        };
-        let room = &self.rooms[&id];
-        let Phase::Playing { game } = &room.phase else {
-            return Err(Refusal::NotNow);
-        };
-        let slot = room.slot_of(conn).expect("a player is in their game");
-        let _ = game.send((input(slot), Some(queued)));
-        Ok(())
-    }
-
-    /// Whether this player plays a hosted game.
-    fn is_hosted(&self, conn: ConnId) -> bool {
-        match self.players[&conn].place {
-            Place::Playing(id) => matches!(self.rooms[&id].phase, Phase::Hosted { .. }),
-            _ => false,
-        }
-    }
 
     /// Passes an input to the hosted game this player plays, for their
     /// slot.

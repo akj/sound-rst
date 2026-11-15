@@ -25,28 +25,6 @@ const SEED: i64 = 7;
 /// A turn at the speed of the rooms here, [`Speed::Fast4`].
 const TURN: Duration = Duration::from_millis(75);
 
-fn read(relative: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../vendor/soundrts-upstream")
-        .join(relative);
-    let bytes = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"));
-    String::from_utf8_lossy(&bytes).into_owned()
-}
-
-fn text(s: &str) -> GameText {
-    GameText::new(s).unwrap()
-}
-
-/// The original's rules, scripts and the map jl2, for 2 to 4 players.
-fn texts() -> GameTexts {
-    GameTexts {
-        rules: text(&read("res/rules.txt")),
-        ai: text(&read("res/ai.txt")),
-        map: text(&read("res/multi/jl2.txt")),
-    }
-}
-
 /// The room's map: jl2's file.
 fn jl2() -> (MapInfo, MapData) {
     let bytes = read("res/multi/jl2.txt").into_bytes();

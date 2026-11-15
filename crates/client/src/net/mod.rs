@@ -286,15 +286,6 @@ impl Net {
                 self.map_received(cx, map);
                 self.changed();
             }
-            // Messages of lockstep games, which this client no longer plays.
-            ServerMsg::GameStarted { .. }
-            | ServerMsg::Turn { .. }
-            | ServerMsg::Waiting { .. }
-            | ServerMsg::Resumed
-            | ServerMsg::PlayerLeftGame { .. }
-            | ServerMsg::OutOfSync { .. } => {
-                cx.log.warning("a message of a lockstep game");
-            }
             ServerMsg::GameEnded => {
                 if let Some(g) = &mut self.game {
                     g.ended = true;

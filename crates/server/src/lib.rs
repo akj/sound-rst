@@ -1,25 +1,19 @@
-//! The SoundRTS multiplayer server: a lobby, a chat and a turn clock, and
-//! the host of games it runs itself.
+//! The SoundRTS multiplayer server: a lobby and a chat, and the host of the
+//! games played on it.
 //!
-//! A game runs one of two ways, chosen by the room's host when it starts.
-//! In lockstep, clients run the simulation from the seed the server gives
-//! them, and the server tells them which orders to queue at each turn
-//! (`game`). In a hosted game the server runs the simulation, and sends
-//! each player only what that player knows (`hosted`). See
-//! `soundrts-protocol` for the messages.
+//! The server runs each game's simulation, and sends each player only what
+//! that player knows (`hosted`). See `soundrts-protocol` for the messages.
 //!
 //! [`start`] runs a server on its own thread with its own runtime, so a
 //! program that is not async can embed it. The `soundrts-server` binary is
 //! a thin wrapper around it.
 //!
 //! Inside, each connection has one task, one lobby task owns the players,
-//! rooms, chat history and map cache, and each running game has one task:
-//! a lockstep game's owns its turn clock, orders and digests, a hosted
-//! game's owns the game itself.
+//! rooms, chat history and map cache, and each running game has one task,
+//! which owns the game itself.
 
 mod connection;
 mod discovery;
-mod game;
 mod hosted;
 mod lobby;
 mod room;
@@ -57,12 +51,6 @@ pub struct ServerConfig {
     pub max_clients: usize,
     /// The most rooms, games included, at once.
     pub max_rooms: usize,
-    /// How many turns the clock may run ahead of the slowest player
-    /// before the game waits for them.
-    pub max_lead: u32,
-    /// How long one player may keep a game waiting before they are taken
-    /// out of it.
-    pub lag_timeout: Duration,
     /// How long a new connection has to say hello.
     pub hello_timeout: Duration,
     /// How often the server pings each connection.
@@ -101,8 +89,6 @@ impl Default for ServerConfig {
             port: DEFAULT_PORT,
             max_clients: 40,
             max_rooms: 10,
-            max_lead: 10,
-            lag_timeout: Duration::from_secs(60),
             hello_timeout: Duration::from_secs(10),
             heartbeat_interval: Duration::from_secs(5),
             heartbeat_timeout: Duration::from_secs(20),
