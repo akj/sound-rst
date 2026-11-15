@@ -21,7 +21,7 @@ use regex::Regex;
 use crate::defs::{MAX_NUMBER, bounded, check_size, preprocess_within_limits};
 use crate::entity::{Place, PlayerId, SquareId};
 use crate::nofloat::{PRECISION, floordiv, py_float, py_int, to_int};
-use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger};
+use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upgrades};
 use crate::rules::AirGround;
 use crate::square::Square;
 use crate::triggers::{Expr, list_to_tree};
@@ -1126,12 +1126,14 @@ impl World {
         let faction = self.pl(p).faction.clone();
         let resources = self.rules.normalized_cost_or_resources(&start.resources);
         let mut units: Vec<(SquareId, i64, String)> = Vec::new();
-        let mut upgrades = Vec::new();
+        let mut upgrades = Upgrades::default();
         let mut forbidden = Vec::new();
         for item in &start.items {
             match item {
+                // A name of no type forbids nothing: no unit can be told to
+                // make what the rules do not have.
                 StartItem::Forbidden(t) => {
-                    forbidden.push(t.strip_prefix('-').unwrap_or(t).to_owned())
+                    forbidden.extend(self.rules.type_id(t.strip_prefix('-').unwrap_or(t)))
                 }
                 StartItem::Units {
                     square,
@@ -1142,8 +1144,8 @@ impl World {
                     if equivalents && self.rules.unit_type(&t).is_some() {
                         t = self.rules.equivalent_type(&t, &faction);
                     }
-                    match self.rules.unit_type(&t) {
-                        Some(ut) if ut.is_upgrade() => upgrades.push(t),
+                    match self.rules.type_id(&t) {
+                        Some(id) if self.rules.ty(id).is_upgrade() => upgrades.add(id),
                         None => self.warn("couldn't create an initial unit"),
                         Some(_) => {
                             let s = square

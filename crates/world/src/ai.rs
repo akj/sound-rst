@@ -1459,7 +1459,10 @@ impl World {
     fn nb(&self, p: PlayerId, sel: &Sel) -> i64 {
         if let Sel::List(l) = sel
             && let Some(first) = l.first()
-            && self.pl(p).upgrades.contains(first)
+            && self
+                .rules
+                .type_id(first)
+                .is_some_and(|t| self.pl(p).upgrades.has(t))
         {
             return 1;
         }

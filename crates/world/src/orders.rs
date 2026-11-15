@@ -2266,8 +2266,7 @@ impl World {
                 }
             }
             Product::Research(type_id) => {
-                let name = self.rules.ty(type_id).name.clone();
-                self.upgrade_player(&name, p)?;
+                self.upgrade_player(type_id, p)?;
                 self.notify(unit, EntityEvent::ResearchComplete, false);
             }
             Product::UpgradeTo(type_id) => {

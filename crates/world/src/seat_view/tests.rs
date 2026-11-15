@@ -249,7 +249,8 @@ fn only_a_perceived_unit_has_upgrades() {
             .name
             .clone();
         command(&mut w, p, &[format!("cmd add_units {square} footman")]);
-        w.player_mut(p).upgrades.push("melee_weapon".into());
+        let melee = w.rules.type_id("melee_weapon").unwrap();
+        w.player_mut(p).upgrades.add(melee);
     }
     let theirs = unit(&w, them, "footman");
     let mine = unit(&w, me, "footman");
@@ -488,7 +489,8 @@ fn a_seat_takes_note_of_what_it_sees_only_when_told_to() {
     // The square's terrain and the footman's upgrades change. A new
     // message tells them; what the seat remembers of them changes only
     // once it takes note.
-    w.player_mut(me).upgrades.push("melee_weapon".into());
+    let melee = w.rules.type_id("melee_weapon").unwrap();
+    w.player_mut(me).upgrades.add(melee);
     w.squares[home.0 as usize].type_name = "_forest".into();
     s.install(w.turn_message(me, Vec::new()));
     assert_eq!(s.terrain(home), "_meadows");

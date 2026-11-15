@@ -14,6 +14,7 @@ use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
     BuildStep, GatherStep, Keyword, Order, OrderInfo, OrderKind, Request, TargetRef,
 };
+use crate::player::Upgrades;
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
 use crate::seat_view::Comrades;
 use crate::world::{Abort, Res, World};
@@ -78,8 +79,8 @@ pub(crate) trait UnitFacts: EntityFacts {
 /// What the rules read of a player whose units the asker controls.
 #[derive(Clone, Copy)]
 pub(crate) struct PlayerFacts<'a> {
-    pub upgrades: &'a [String],
-    pub forbidden_techs: &'a [String],
+    pub upgrades: &'a Upgrades,
+    pub forbidden_techs: &'a [TypeId],
     /// The player has everything any requirement asks for.
     pub has_everything: bool,
     pub is_human: bool,
@@ -523,7 +524,11 @@ pub(crate) fn type_list<'t>(t: Option<&'t UnitType>, attr: &str) -> &'t [String]
 
 /// `has`: an upgrade, or a unit of the type or derived from it.
 pub(crate) fn has<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_name: &str) -> bool {
-    if p.has_everything || p.upgrades.iter().any(|u| u == type_name) {
+    if p.has_everything
+        || k.rules()
+            .type_id(type_name)
+            .is_some_and(|t| p.upgrades.has(t))
+    {
         return true;
     }
     p.units.iter().filter_map(|&u| k.unit(u)).any(|e| {
@@ -590,7 +595,10 @@ fn additional_condition<'a, K: Knowledge<'a>>(
 ) -> bool {
     match kw {
         Keyword::Research => {
-            if p.upgrades.iter().any(|u| u == type_name) {
+            if k.rules()
+                .type_id(type_name)
+                .is_some_and(|t| p.upgrades.has(t))
+            {
                 return false;
             }
             let researching = p.units.iter().filter_map(|&u| k.unit(u)).any(|e| {
@@ -628,7 +636,9 @@ fn is_almost_allowed<'a, K: Knowledge<'a>>(
     let Some(p) = unit.owner().and_then(|p| k.player_facts(p)) else {
         return false;
     };
-    !p.forbidden_techs.iter().any(|t| t == type_name)
+    !k.rules()
+        .type_id(type_name)
+        .is_some_and(|t| p.forbidden_techs.contains(&t))
         && unit
             .orders()
             .last()
@@ -1047,10 +1057,14 @@ pub(crate) fn activity<'n>(
 }
 
 /// The upgrades of its owner that apply to a unit of type `t`.
-pub(crate) fn upgrades_applying(t: Option<&UnitType>, owner_upgrades: &[String]) -> Vec<String> {
+pub(crate) fn upgrades_applying(
+    rules: &Rules,
+    t: Option<&UnitType>,
+    owner_upgrades: &Upgrades,
+) -> Vec<String> {
     t.map_or(&[][..], |t| &t.can_use)
         .iter()
-        .filter(|u| owner_upgrades.contains(u))
+        .filter(|u| rules.type_id(u).is_some_and(|u| owner_upgrades.has(u)))
         .cloned()
         .collect()
 }

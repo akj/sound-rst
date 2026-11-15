@@ -20,8 +20,8 @@ use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::events::Event;
 use crate::known::KnownEntity;
 use crate::msg::Msg;
-use crate::player::{Objective, PlayerStats};
-use crate::rules::Rules;
+use crate::player::{Objective, PlayerStats, Upgrades};
+use crate::rules::{Rules, TypeId};
 use crate::world::World;
 
 /// What every seat knows from the start of the game: what does not change
@@ -261,10 +261,10 @@ pub struct ControlledPlayer {
     /// Its units, in the order it got them. Each is among the perceived
     /// entities or the unperceived units.
     pub units: Vec<EntityId>,
-    /// The upgrades it researched; one researched twice is here twice.
-    pub upgrades: Vec<String>,
+    /// The upgrades it has, with their levels.
+    pub upgrades: Upgrades,
     /// The types it may not build, train, research or use.
-    pub forbidden_techs: Vec<String>,
+    pub forbidden_techs: Vec<TypeId>,
     /// It has everything any requirement asks for: the random computer
     /// player, or the all-techs cheat.
     pub has_everything: bool,

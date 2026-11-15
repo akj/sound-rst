@@ -283,6 +283,7 @@ impl KnownEntity {
             },
             upgrades: match (last_seen, e.player) {
                 (None, Some(p)) => questions::upgrades_applying(
+                    &w.rules,
                     e.type_id.map(|t| w.rules.ty(t)),
                     &w.player(p).upgrades,
                 ),

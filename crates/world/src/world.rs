@@ -197,6 +197,67 @@ impl Hash for World {
     }
 }
 
+/// The names the hashes of ids read, so that the digest is fed what the
+/// state fed when it held names. Set by [`World::digest_u64`] while it
+/// hashes.
+pub(crate) struct HashTexts {
+    type_names: Vec<String>,
+}
+
+thread_local! {
+    static HASH_TEXTS: std::cell::RefCell<Option<HashTexts>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) struct HashTextsGuard;
+
+impl Drop for HashTextsGuard {
+    fn drop(&mut self) {
+        HASH_TEXTS.with(|h| *h.borrow_mut() = None);
+    }
+}
+
+impl HashTexts {
+    /// Makes the names of `w` available to the hashes until the guard is
+    /// dropped.
+    pub(crate) fn set(w: &World) -> HashTextsGuard {
+        let texts = HashTexts {
+            type_names: w.rules.types().iter().map(|t| t.name.clone()).collect(),
+        };
+        HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
+        HashTextsGuard
+    }
+
+    fn with<R>(f: impl FnOnce(&HashTexts) -> R) -> R {
+        HASH_TEXTS.with(|t| f(t.borrow().as_ref().expect("hashed by World::digest_u64")))
+    }
+
+    #[expect(clippy::indexing_slicing, reason = "temporary: the proof of the ids")]
+    fn type_name(&self, t: crate::rules::TypeId) -> String {
+        self.type_names[t.0 as usize].clone()
+    }
+
+    /// Feeds the upgrades as the list of names they were: each name as
+    /// many times as its level.
+    pub(crate) fn upgrades<H: Hasher>(u: &crate::player::Upgrades, state: &mut H) {
+        Self::with(|t| {
+            let names: Vec<String> = u
+                .iter()
+                .flat_map(|(id, n)| std::iter::repeat_n(t.type_name(id), n as usize))
+                .collect();
+            names.hash(state);
+        });
+    }
+
+    /// Feeds types as the list of their names.
+    pub(crate) fn types<H: Hasher>(types: &[crate::rules::TypeId], state: &mut H) {
+        Self::with(|t| {
+            let names: Vec<String> = types.iter().map(|&id| t.type_name(id)).collect();
+            names.hash(state);
+        });
+    }
+}
+
 // Slices of integers hash as their bytes in memory, which the hasher
 // cannot reorder.
 #[cfg(not(target_endian = "little"))]
@@ -1232,6 +1293,7 @@ impl World {
     /// `truth` feature has it.
     #[cfg(feature = "truth")]
     pub fn digest_u64(&self) -> u64 {
+        let _texts = HashTexts::set(self);
         let mut h = Fnv1a::default();
         self.hash(&mut h);
         h.finish()

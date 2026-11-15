@@ -16,6 +16,7 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::events::Event;
 use crate::known::{KnownEntity, KnownTarget};
 use crate::message::{GameEnd, GameStart, StartMessage, TurnMessage};
+use crate::rules::TypeId;
 
 /// The largest food cost, transport capacity or volume, either side of 0,
 /// in thousandths. The rules give far smaller ones; within it, a cost less
@@ -178,7 +179,20 @@ impl GameStart {
         {
             return malformed("too many objectives, or too long");
         }
+        for c in &s.controlled {
+            let types = c.upgrades.iter().map(|(t, _)| t);
+            for t in types.chain(c.forbidden_techs.iter().copied()) {
+                self.unit_type(t)?;
+            }
+        }
         inside_nothing_it_contains(m)
+    }
+
+    fn unit_type(&self, t: TypeId) -> Result<(), Malformed> {
+        if self.rules.types().get(t.0 as usize).is_none() {
+            return malformed(format!("unknown unit type {}", t.0));
+        }
+        Ok(())
     }
 
     fn square(&self, s: SquareId) -> Result<(), Malformed> {

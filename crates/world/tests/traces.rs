@@ -196,7 +196,11 @@ fn dump_tick(w: &World) -> Vec<String> {
             pl.food,
             pl.used_food,
             pl.units.len(),
-            pl.upgrades.join(","),
+            pl.upgrades
+                .iter()
+                .flat_map(|(t, n)| std::iter::repeat_n(w.rules.ty(t).name.as_str(), n as usize))
+                .collect::<Vec<_>>()
+                .join(","),
             pl.perception.len(),
             pl.memory.len(),
             pl.observed_squares.len(),

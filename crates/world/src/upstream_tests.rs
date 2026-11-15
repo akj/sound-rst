@@ -605,7 +605,8 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "dragon"), 1);
         set_rule(&mut w, "dragon", |s| s.count_limit = 2);
         add(&mut w, cp, "a1 mage");
-        w.plm(cp).upgrades.push("u_summon_dragon".into());
+        let upgrade = w.rules.type_id("u_summon_dragon").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         w.update();
         let m = find(&w, cp, "mage", 0).unwrap();
         take(&mut w, m, "use a_summon_dragon a1");
@@ -629,7 +630,6 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "zombie"), 0);
         set_rule(&mut w, "zombie", |s| s.count_limit = 1);
         add(&mut w, cp, "a1 necromancer");
-        w.plm(cp).upgrades.push("u_raise_dead".into());
         w.update();
         let n = find(&w, cp, "necromancer", 0).unwrap();
         take(&mut w, n, "use a_raise_dead a1");
@@ -647,7 +647,8 @@ starting_resources 10 10
         w.update();
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let p = find(&w, cp, "priest", 0).unwrap();
         take(&mut w, p, "use a_resurrection a1");
         w.update();
@@ -667,7 +668,8 @@ starting_resources 10 10
         take(&mut w, b, "train footman");
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let p = find(&w, cp, "priest", 0).unwrap();
         take(&mut w, p, "use a_resurrection a1");
         w.update();
@@ -688,7 +690,8 @@ starting_resources 10 10
         // After the first turn, each search for a free space starts afresh.
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let a1 = sq(&w, "a1");
         let (x, y) = (w.square(a1).x, w.square(a1).y);
         let tid = w.rules.type_id("footman").unwrap();

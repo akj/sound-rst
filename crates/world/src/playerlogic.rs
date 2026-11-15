@@ -321,14 +321,16 @@ impl World {
 
     fn update_allied_upgrades(&mut self, p: PlayerId) -> Res {
         for a in self.pl(p).allied.clone() {
-            for name in self.pl(a).upgrades.clone() {
-                while self.pl(p).level(&name) < self.pl(a).level(&name) {
-                    if self.rules.unit_type(&name).is_none_or(|t| !t.is_upgrade()) {
+            for (upg, _) in self.pl(a).upgrades.clone().iter() {
+                while self.pl(p).upgrades.level(upg) < self.pl(a).upgrades.level(upg) {
+                    let t = self.rules.ty(upg);
+                    if !t.is_upgrade() {
                         return Err(Abort::new(format!(
-                            "{name} has no attribute 'upgrade_player'"
+                            "{} has no attribute 'upgrade_player'",
+                            t.name
                         )));
                     }
-                    self.upgrade_player(&name, p)?;
+                    self.upgrade_player(upg, p)?;
                 }
             }
         }

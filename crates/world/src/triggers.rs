@@ -392,16 +392,18 @@ impl World {
             } else if is_digits(i) {
                 nb = py_int(i).unwrap_or(1).min(MAX_START_UNITS);
             } else {
-                match self
-                    .rules
-                    .unit_type(i)
-                    .map(|t| (t.is_upgrade(), t.is_ability()))
-                {
-                    Some((true, _)) => {
-                        self.plm(p).upgrades.push(i.clone());
+                match self.rules.type_id(i).map(|t| {
+                    (
+                        t,
+                        self.rules.ty(t).is_upgrade(),
+                        self.rules.ty(t).is_ability(),
+                    )
+                }) {
+                    Some((t, true, _)) => {
+                        self.plm(p).upgrades.add(t);
                         self.send_voice_important(p, msg(mp::OK));
                     }
-                    Some((_, true)) => {
+                    Some((_, _, true)) => {
                         self.send_voice_important(p, msg(mp::BEEP));
                         self.warn("cannot add an ability");
                     }
