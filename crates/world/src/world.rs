@@ -66,6 +66,100 @@ pub(crate) enum TPlace {
     At(Place),
 }
 
+/// The entities a world stores, in id order, and where each one is. An id
+/// is given once, by [`World::get_next_id`], so a new entity always comes
+/// last; an id that named an entity which is no longer stored names
+/// nothing, for ever.
+#[derive(Default)]
+struct Entities {
+    /// The entities, in increasing order of id.
+    slots: Vec<Entity>,
+    /// For each id, the position of its entity in `slots`, or [`NO_SLOT`]
+    /// for an id that names no entity stored: one freed, or a square's or
+    /// a player's. It keeps a place for every id up to the greatest given
+    /// to an entity, 4 bytes each, since an id is never given again: 16
+    /// computers on js13 give about 4,600 ids in 20 minutes, some 55 kB an
+    /// hour.
+    index: Vec<u32>,
+    /// One more than the greatest id ever stored: the length of the list
+    /// that the digest hashes, which had a place for every id up to it.
+    digest_len: usize,
+}
+
+/// The place in [`Entities::index`] of an id that names no entity stored.
+const NO_SLOT: u32 = u32::MAX;
+
+impl Entities {
+    /// The position in `slots` of the entity with this id.
+    fn slot(&self, id: EntityId) -> Option<usize> {
+        let &i = self.index.get(id.0 as usize)?;
+        (i != NO_SLOT).then_some(i as usize)
+    }
+
+    fn get(&self, id: EntityId) -> Option<&Entity> {
+        self.slot(id).and_then(|i| self.slots.get(i))
+    }
+
+    fn get_mut(&mut self, id: EntityId) -> Option<&mut Entity> {
+        self.slot(id).and_then(|i| self.slots.get_mut(i))
+    }
+
+    /// Stores an entity under its id. A new id is greater than every id
+    /// given before, so the entity goes last.
+    fn insert(&mut self, e: Entity) {
+        let id = e.id;
+        self.digest_len = self.digest_len.max(id.0 as usize + 1);
+        if let Some(i) = self.slot(id) {
+            if let Some(slot) = self.slots.get_mut(i) {
+                *slot = e;
+            }
+            return;
+        }
+        let at = id.0 as usize;
+        if self.index.len() <= at {
+            self.index.resize(at + 1, NO_SLOT);
+        }
+        if self.slots.last().is_none_or(|last| last.id < id) {
+            let i = self.slots.len() as u32;
+            if let Some(x) = self.index.get_mut(at) {
+                *x = i;
+            }
+            self.slots.push(e);
+        } else {
+            let i = self.slots.partition_point(|s| s.id < id);
+            self.slots.insert(i, e);
+            self.reindex();
+        }
+    }
+
+    /// Makes `index` give the position of every entity in `slots` again.
+    fn reindex(&mut self) {
+        self.index.fill(NO_SLOT);
+        for (i, e) in self.slots.iter().enumerate() {
+            if let Some(x) = self.index.get_mut(e.id.0 as usize) {
+                *x = i as u32;
+            }
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Entity> {
+        self.slots.iter()
+    }
+}
+
+/// Hashed as the list it replaced: a place for every id below
+/// `digest_len`, empty for an id that names no entity stored.
+impl Hash for Entities {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.digest_len.hash(state);
+        let mut stored = self.slots.iter().peekable();
+        for i in 0..self.digest_len {
+            let e = stored.next_if(|e| e.id.0 as usize == i);
+            e.hash(state);
+        }
+    }
+}
+
 /// The game world.
 pub struct World {
     /// The rules of this game. Tests change them; a game does not.
@@ -89,7 +183,7 @@ pub struct World {
     pub(crate) grid_names: BTreeMap<String, SquareId>,
     pub(crate) grid_xy: BTreeMap<(i64, i64), SquareId>,
     pub(crate) square_by_obj: BTreeMap<u32, SquareId>,
-    entities: Vec<Option<Entity>>,
+    entities: Entities,
     pub(crate) active_objects: Vec<EntityId>,
     players_arena: Vec<Player>,
     /// The players still in the game, in creation order.
@@ -288,7 +382,7 @@ impl World {
             grid_names: BTreeMap::new(),
             grid_xy: BTreeMap::new(),
             square_by_obj: BTreeMap::new(),
-            entities: Vec::new(),
+            entities: Entities::default(),
             active_objects: Vec::new(),
             players_arena: Vec::new(),
             players: Vec::new(),
@@ -374,15 +468,13 @@ impl World {
     /// The entity with this id. Deleted entities stay, without a place, as
     /// in the original.
     pub fn entity(&self, id: EntityId) -> Option<&Entity> {
-        self.entities.get(id.0 as usize).and_then(Option::as_ref)
+        self.entities.get(id)
     }
 
     /// The entity with this id, to change it. Tests use this; a game does
     /// not.
     pub fn entity_mut(&mut self, id: EntityId) -> Option<&mut Entity> {
-        self.entities
-            .get_mut(id.0 as usize)
-            .and_then(Option::as_mut)
+        self.entities.get_mut(id)
     }
 
     pub(crate) fn e(&self, id: EntityId) -> &Entity {
@@ -408,7 +500,7 @@ impl World {
 
     /// Every entity ever registered, in id order.
     pub fn entities(&self) -> impl Iterator<Item = &Entity> {
-        self.entities.iter().filter_map(Option::as_ref)
+        self.entities.iter()
     }
 
     /// Whether the map has a square of this id.
@@ -638,12 +730,8 @@ impl World {
         e.y = y;
         e.o = o;
         e.place = None;
-        let idx = id.0 as usize;
-        if self.entities.len() <= idx {
-            self.entities.resize_with(idx + 1, || None);
-        }
         let active = Self::is_active_kind(&e.kind);
-        self.entities[idx] = Some(e);
+        self.entities.insert(e);
         self.enter(place, id);
         if active {
             self.active_objects.push(id);
@@ -670,12 +758,8 @@ impl World {
         let id = EntityId(self.get_next_id());
         e.id = id;
         e.place = None;
-        let idx = id.0 as usize;
-        if self.entities.len() <= idx {
-            self.entities.resize_with(idx + 1, || None);
-        }
         let active = Self::is_active_kind(&e.kind);
-        self.entities[idx] = Some(e);
+        self.entities.insert(e);
         if active {
             self.active_objects.push(id);
         }

@@ -48,7 +48,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("test_games.rs",         [  0,  0,  0,  3,  1,  2]),
     ("triggers.rs",           [  9,  0,  0,  0,  0,  4]),
     ("unit.rs",               [  0, 17,  0,  0,  3,  3]),
-    ("world.rs",              [  0,  0,  0,  0,  2,  8]),
+    ("world.rs",              [  0,  0,  0,  0,  2,  6]),
 ];
 
 fn src_dir() -> PathBuf {
