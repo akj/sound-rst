@@ -56,13 +56,17 @@ fn a_game_saved_and_loaded_tells_what_it_told_and_plays_on_the_same() {
     };
     assert_eq!(loaded.game.me, me);
     assert_eq!(loaded.game.place, Some(square));
-    assert_eq!(loaded.game.group, peasants);
     assert_eq!(
         loaded.game.host().message(me),
         g.game.host().message(me),
         "the loaded game tells what the saved one told"
     );
     h.run_until_voice_idle(&mut loaded);
+    // The selection is back once the first turn is taken.
+    let turn = loaded.game.view().turn() + 1;
+    h.run_until_turn(&mut loaded, turn);
+    assert_eq!(loaded.game.group, peasants);
+    h.run_until_turn(&mut g, turn);
     // As at the start of a game, the objective follows.
     assert_eq!(
         h.said_since(from),

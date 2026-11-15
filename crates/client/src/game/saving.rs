@@ -97,15 +97,17 @@ impl GameInterface {
     }
 
     /// Takes back what the interface kept in a save: the cursor's square,
-    /// if the map has it, and the units selected, which the first end of
-    /// turn keeps to those the player still has. What is told when the
+    /// if the map has it, and the units selected, from the first end of
+    /// turn, which keeps those the player still has. What is told when the
     /// game goes on: "loaded", and the square under the cursor.
     pub(crate) fn resume(&mut self, ui: InterfaceState) -> soundrts_world::msg::Msg {
         let squares = self.view().square_count();
         self.place = ui
             .cursor
             .filter(|s| usize::try_from(s.0).is_ok_and(|i| i < squares));
-        self.group = ui.selection;
+        if let Source::Local(l) = &mut self.source {
+            l.selection_to_restore = ui.selection;
+        }
         let mut told = text(words::LOADED);
         if let Some(s) = self.place {
             told.extend(soundrts_world::msg::msg(soundrts_world::msgparts::COMMA));

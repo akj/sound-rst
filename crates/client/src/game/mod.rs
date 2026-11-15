@@ -237,6 +237,9 @@ pub(crate) struct Local {
     waiting_for_world_update: bool,
     /// What a save of the game says it is; `None` if it is not saved.
     save: Option<crate::saves::SaveInfo>,
+    /// The selection of a game loaded, taken at the first end of turn,
+    /// once the interface knows the units.
+    selection_to_restore: Vec<EntityId>,
 }
 
 /// The interface of a running game.
@@ -335,6 +338,7 @@ impl GameInterface {
             next_update: 0.0,
             waiting_for_world_update: false,
             save: None,
+            selection_to_restore: Vec::new(),
         };
         let speed = cx.config.speed;
         Self::with(cx, Source::Local(local), seat, speed)
@@ -849,6 +853,9 @@ impl GameInterface {
         self.last_virtual_time = m.time as f64 / 1000.0;
         if let Source::Local(l) = &mut self.source {
             l.waiting_for_world_update = false;
+            if !l.selection_to_restore.is_empty() {
+                self.group = std::mem::take(&mut l.selection_to_restore);
+            }
         }
         self.scouted_squares = m.squares.observed.clone();
         self.scouted_before_squares = m.squares.observed_before.clone();
