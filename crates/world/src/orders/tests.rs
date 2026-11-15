@@ -1150,10 +1150,11 @@ fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
         .find(|&o| w.e(o).is_a_building_land());
     let meadow = meadow.unwrap();
     // Queued, not yet carried out.
+    let before = w.pl(me).resources.clone();
     let build = Request::build("farm", TargetRef::Entity(meadow));
     w.take_order(peasant, build, true, false, None).unwrap();
+    assert_ne!(w.pl(me).resources, before, "the build reserves its cost");
     let uid = w.e(peasant).orders()[0].uid;
-    let before = w.pl(me).resources.clone();
     // The player remembers the meadow; another building takes it earlier
     // in this turn, after the player's memory was brought up to date.
     let snapshot = std::sync::Arc::new(w.e(meadow).clone());
@@ -1175,7 +1176,7 @@ fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
     let refused = EntityEvent::OrderImpossible(Some(Reason::CannotBuildHere));
     assert!(events.contains(&refused), "{events:?}");
     assert!(all(&w, me, "buildingsite").is_empty());
-    assert!(w.pl(me).resources >= before);
+    assert_eq!(w.pl(me).resources, before);
 }
 
 #[test]
