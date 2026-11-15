@@ -721,6 +721,42 @@ fn what_came_before_a_lost_connection_is_taken() {
 }
 
 #[test]
+fn a_game_on_a_server_that_gives_ever_more_objectives_is_ended() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, stream, mut g) = fake_game(&mut h, &two_slots());
+    let map = jl1(&mut h);
+    let SeatFrame::Whole(mut last) = stream.opening(map, Speed::Normal).remove(2) else {
+        panic!("a whole message");
+    };
+    // Five turns that come together, each with a full set of new
+    // objectives.
+    let t0 = h.clock.now();
+    for turn in 1..=5 {
+        let mut next = last.clone();
+        next.time = turn * 300;
+        next.events.clear();
+        next.state.objectives = (0..soundrts_world::MAX_OBJECTIVES)
+            .map(|i| soundrts_world::player::Objective {
+                number: format!("{turn}.{i}"),
+                description: vec![1],
+            })
+            .collect();
+        let change = soundrts_world::TurnChange::between(&last, &next);
+        server.frame_at(t0, SeatFrame::Change(change));
+        last = next;
+    }
+    h.run_for(&mut g, 1.0);
+    assert!(g.game.end_loop, "the game went on");
+    h.finish(&mut g);
+    let said = h.said_since(0);
+    assert_eq!(
+        said.last().map(String::as_str),
+        Some("game ended: the server sent what cannot be right"),
+        "{said:#?}"
+    );
+}
+
+#[test]
 fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let (server, mut stream, mut g) = fake_game(&mut h, &two_slots());

@@ -82,26 +82,37 @@ impl StartMessage {
 /// far: the interface finds the square of an entity through its
 /// containers.
 fn inside_nothing_it_contains(m: &TurnMessage) -> Result<(), Malformed> {
-    let mut place: BTreeMap<EntityId, Option<Place>> = BTreeMap::new();
+    let mut container: BTreeMap<EntityId, Option<EntityId>> = BTreeMap::new();
     for e in m
         .unperceived_units
         .iter()
         .chain(&m.remembered)
         .chain(&m.perceived)
     {
-        place.insert(e.id, e.place);
+        let inside = match e.place {
+            Some(Place::Inside(c)) => Some(c),
+            _ => None,
+        };
+        container.insert(e.id, inside);
     }
-    for &start in place.keys() {
-        let mut at = start;
-        // A chain longer than the entities named goes round.
-        for _ in 0..=place.len() {
-            match place.get(&at).copied().flatten() {
-                Some(Place::Inside(c)) => at = c,
-                _ => break,
+    // Each chain is walked once: `true` for an entity on the chain being
+    // walked, `false` for one whose chain ends.
+    let mut walked: BTreeMap<EntityId, bool> = BTreeMap::new();
+    for &start in container.keys() {
+        let mut chain = Vec::new();
+        let mut at = Some(start);
+        while let Some(e) = at {
+            match walked.get(&e) {
+                Some(true) => return malformed(format!("entity {e} is inside itself")),
+                Some(false) => break,
+                None => {}
             }
-            if at == start {
-                return malformed(format!("entity {} is inside itself", start));
-            }
+            walked.insert(e, true);
+            chain.push(e);
+            at = container.get(&e).copied().flatten();
+        }
+        for e in chain {
+            walked.insert(e, false);
         }
     }
     Ok(())

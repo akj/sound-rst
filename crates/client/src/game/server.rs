@@ -51,6 +51,8 @@ pub struct ServerGame {
     /// The game told the player it is over for them, and the end has not
     /// come yet: the game ends when it comes.
     quit: bool,
+    /// The objectives the turns taken brought, each counted when it came.
+    objectives_given: usize,
 }
 
 /// Whether the server has sent the end of the game for the seat.
@@ -70,6 +72,7 @@ impl ServerGame {
             sent_since_turn: 0,
             end: End::Waiting,
             quit: false,
+            objectives_given: 0,
         };
         game.next_turn = game.after_a_turn(now);
         game
@@ -372,12 +375,20 @@ impl GameInterface {
         // that joins, cannot be right: so a stream cannot grow it without
         // bound.
         encode_turn(&m).map_err(|e| format!("a turn: {e}"))?;
-        let seen = &self.objectives_seen;
-        let new = m.state.objectives.iter().filter(|o| !seen.contains(o));
-        if seen.len() + new.count() > MAX_OBJECTIVES_SEEN {
-            return Err("more objectives than a game gives".into());
-        }
+        let before = &last.state.objectives;
+        let new = m
+            .state
+            .objectives
+            .iter()
+            .filter(|o| !before.contains(o))
+            .count();
         let end_of_turn = m.time > last.time && m.state.players.contains(&self.me);
+        if let Some(server) = self.server() {
+            server.objectives_given = server.objectives_given.saturating_add(new);
+            if server.objectives_given > MAX_OBJECTIVES_SEEN {
+                return Err("more objectives than a game gives".into());
+            }
+        }
         if end_of_turn {
             let now = cx.clock.now();
             if let Some(server) = self.server() {
