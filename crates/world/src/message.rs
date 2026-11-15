@@ -342,7 +342,7 @@ impl GameStart {
                 intro: w.map.intro.clone(),
             },
             player_names: w.all_players().map(|(_, p)| p.name()).collect(),
-            player_factions: w.all_players().map(|(_, p)| p.faction.clone()).collect(),
+            player_factions: w.all_players().map(|(id, _)| w.faction_name(id)).collect(),
             cheats_allowed: w.allow_cheatmode,
         }
     }

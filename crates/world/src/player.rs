@@ -14,7 +14,7 @@ use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::nofloat::PRECISION;
 use crate::orders::Order;
-use crate::rules::TypeId;
+use crate::rules::{FactionId, TypeId};
 use crate::triggers::Expr;
 
 /// Who controls a player.
@@ -287,7 +287,9 @@ pub struct Player {
     pub kind: PlayerKind,
     pub controller: Controller,
     pub neutral: bool,
-    pub faction: String,
+    /// `None` for a faction the rules do not define, which a controller
+    /// may name: the player then uses every type as it is.
+    pub faction: Option<FactionId>,
     /// The allies, the player included, each once.
     pub allied: Vec<super::entity::PlayerId>,
     /// 1 for the first non-neutral player, and so on.
@@ -412,7 +414,7 @@ impl Hash for Player {
         kind.hash(state);
         controller.hash(state);
         neutral.hash(state);
-        faction.hash(state);
+        crate::world::HashTexts::faction(*faction, &controller.faction, state);
         allied.hash(state);
         number.hash(state);
         perception.hash(state);
@@ -471,7 +473,7 @@ impl Player {
         obj_id: u32,
         kind: PlayerKind,
         controller: Controller,
-        faction: String,
+        faction: Option<FactionId>,
     ) -> Player {
         Player {
             obj_id,

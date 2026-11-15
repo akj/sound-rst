@@ -37,6 +37,24 @@ fn build(rules: &str, ai: &str, map: &str, seed: i64) -> Result<World, String> {
     Ok(w)
 }
 
+/// The cross-references of the original's rules and of each of its mods
+/// and campaigns with rules all name types: they load with no warning.
+#[test]
+fn the_rules_of_the_original_and_its_mods_load_without_a_warning() {
+    let layers = [
+        "mods/orc/rules.txt",
+        "mods/flyingtownhall/rules.txt",
+        "mods/teleportation/rules.txt",
+        "single/orc/rules.txt",
+    ];
+    let base = common::read("res/rules.txt");
+    assert_eq!(Rules::load(&[&base]).warnings, Vec::<String>::new());
+    for layer in layers {
+        let rules = Rules::load(&[base.clone(), common::read(layer)]);
+        assert_eq!(rules.warnings, Vec::<String>::new(), "{layer}");
+    }
+}
+
 fn multiplayer_maps() -> Vec<String> {
     maps_in("res/multi")
         .into_iter()

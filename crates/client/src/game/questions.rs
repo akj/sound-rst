@@ -641,7 +641,7 @@ mod tests {
             .view()
             .players()
             .iter()
-            .map(|&p| g.game.host().world().player(p).faction.clone())
+            .map(|&p| g.game.host().world().faction_name(p))
             .collect();
         assert_eq!(factions, ["orc_faction", "human_faction"]);
         assert_eq!(

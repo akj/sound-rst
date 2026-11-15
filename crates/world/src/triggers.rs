@@ -291,8 +291,8 @@ impl World {
             "faction" => {
                 let f = args.first().map(Expr::word).transpose()?;
                 match f {
-                    Some(f) if self.rules.factions().iter().any(|x| x == f) => {
-                        self.plm(p).faction = f.to_owned();
+                    Some(f) if let Some(id) = self.rules.faction_id(f) => {
+                        self.plm(p).faction = Some(id);
                     }
                     _ => {
                         let words: Vec<String> = args

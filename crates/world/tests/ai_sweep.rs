@@ -28,7 +28,7 @@ use std::collections::BTreeSet;
 
 use soundrts_world::entity::{Action, ActionKind, Entity};
 use soundrts_world::orders::Keyword;
-use soundrts_world::rules::{EntityClass, TypeId};
+use soundrts_world::rules::{EntityClass, Role, TypeId};
 use soundrts_world::test_games::computer;
 use soundrts_world::{
     AiScripts, PlayerId, Rules, SquareId, Target, VIRTUAL_TIME_INTERVAL, World,
@@ -96,7 +96,7 @@ struct Farm {
 }
 
 fn farm_of(w: &World, p: PlayerId) -> Farm {
-    let name = w.rules.equivalent_type("farm", &w.player(p).faction);
+    let name = w.rules.role_name(w.player(p).faction, Role::Farm);
     Farm {
         type_id: w.rules.type_id(&name),
         cost: w

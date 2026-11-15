@@ -22,7 +22,7 @@ use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::pathfinding::Viewer;
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, EntityClass};
+use crate::rules::{AirGround, EntityClass, Role};
 use crate::world::{Abort, Res, TPlace, World};
 
 /// The number of workers a scripted computer keeps getting.
@@ -384,7 +384,7 @@ impl World {
         }
         self.raise_dead(p)?;
         self.build_a_warehouse_if_useful(p)?;
-        let peasant = self.equivalent(p, "peasant");
+        let peasant = self.rules.role_name(self.pl(p).faction, Role::Worker);
         // A recursion error here ends the player's update with a warning, as
         // the original's ends at the world's catch.
         self.ai_get(p, NB_WORKERS_TO_GET, &peasant)?;
@@ -425,8 +425,17 @@ impl World {
         Ok(self.turn().rem_euclid(10) == turn)
     }
 
-    fn equivalent(&self, p: PlayerId, type_name: &str) -> String {
-        self.rules.equivalent_type(type_name, &self.pl(p).faction)
+    /// What the player's faction uses instead of the class `name`.
+    fn equivalent(&self, p: PlayerId, name: &str) -> String {
+        let faction = self.pl(p).faction;
+        match self.rules.type_id(name) {
+            Some(t) => self
+                .rules
+                .ty(self.rules.equivalent(faction, t))
+                .name
+                .clone(),
+            None => self.rules.equivalent_name(faction, name),
+        }
     }
 
     fn follow_plan(&mut self, p: PlayerId) -> Res {
@@ -1104,8 +1113,9 @@ impl World {
         let place = self.builders_place(p)?;
         self.send_units(p, fighters, place)?;
         // build static defenses
-        let gate = self.rules.unit_type("gate").map(|t| t.cost.clone());
-        if let (Some(b), Some(gate_cost)) = (self.cs(p).sensible_building, gate) {
+        let gate = self.rules.roles.get(Role::Gate);
+        if let (Some(b), Some(gate)) = (self.cs(p).sensible_building, gate) {
+            let gate_cost = self.rules.ty(gate).cost.clone();
             let e = self.e(b);
             let s = Self::square_of(e.place)?;
             let (bx, by) = (e.x, e.y);
@@ -1116,7 +1126,8 @@ impl World {
                 && self.ai_gather(p, &gate_cost, 0, 0)?
             {
                 for w in self.cs(p).workers.clone() {
-                    let gate = Request::build("gate", TargetRef::Entity(exit));
+                    let name = self.rules.ty(gate).name.clone();
+                    let gate = Request::build(name, TargetRef::Entity(exit));
                     self.take_order(w, gate, true, false, None)?;
                 }
             }
@@ -1161,7 +1172,7 @@ impl World {
     // Computer: warehouses
 
     fn best_warehouse(&self, p: PlayerId) -> Option<(String, Vec<i64>)> {
-        let name = self.equivalent(p, "townhall");
+        let name = self.rules.role_name(self.pl(p).faction, Role::TownHall);
         self.rules
             .unit_type(&name)
             .map(|t| (t.name.clone(), t.cost.clone()))
@@ -1600,7 +1611,7 @@ impl World {
         let pl = self.pl(p);
         if food != 0 && food > pl.available_food(limit) - pl.used_food {
             if pl.available_food(limit) < limit {
-                let t = Sel::One(self.equivalent(p, "farm"));
+                let t = Sel::One(self.rules.role_name(self.pl(p).faction, Role::Farm));
                 if self.future_nb(p, &t) == self.nb(p, &t) {
                     let Sel::One(name) = t else { unreachable!() };
                     self.build_or_train_or_upgradeto_or_summon(p, &name, 1, depth)?;

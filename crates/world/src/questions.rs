@@ -553,9 +553,7 @@ pub(crate) fn future_count<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_n
     let mut result = 0;
     for e in p.units.iter().filter_map(|&u| k.unit(u)) {
         let site_of = e.site_type().map(|s| rules.ty(s).name.as_str());
-        if e.type_name() == type_name
-            || (e.type_name() == "buildingsite" && site_of == Some(type_name))
-        {
+        if e.type_name() == type_name || site_of == Some(type_name) {
             result += 1;
         }
         for o in e.orders() {

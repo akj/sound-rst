@@ -201,7 +201,7 @@ impl Hash for World {
 /// state fed when it held names. Set by [`World::digest_u64`] while it
 /// hashes.
 pub(crate) struct HashTexts {
-    type_names: Vec<String>,
+    rules: Rules,
 }
 
 thread_local! {
@@ -222,7 +222,7 @@ impl HashTexts {
     /// dropped.
     pub(crate) fn set(w: &World) -> HashTextsGuard {
         let texts = HashTexts {
-            type_names: w.rules.types().iter().map(|t| t.name.clone()).collect(),
+            rules: w.rules.clone(),
         };
         HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
         HashTextsGuard
@@ -232,9 +232,8 @@ impl HashTexts {
         HASH_TEXTS.with(|t| f(t.borrow().as_ref().expect("hashed by World::digest_u64")))
     }
 
-    #[expect(clippy::indexing_slicing, reason = "temporary: the proof of the ids")]
     fn type_name(&self, t: crate::rules::TypeId) -> String {
-        self.type_names[t.0 as usize].clone()
+        self.rules.ty(t).name.clone()
     }
 
     /// Feeds the upgrades as the list of names they were: each name as
@@ -246,6 +245,21 @@ impl HashTexts {
                 .flat_map(|(id, n)| std::iter::repeat_n(t.type_name(id), n as usize))
                 .collect();
             names.hash(state);
+        });
+    }
+
+    /// Feeds a player's faction as its name.
+    pub(crate) fn faction<H: Hasher>(
+        f: Option<crate::rules::FactionId>,
+        controller_faction: &str,
+        state: &mut H,
+    ) {
+        Self::with(|t| {
+            let name = match f {
+                Some(f) => t.rules.faction(f).name.clone(),
+                None => controller_faction.to_owned(),
+            };
+            name.hash(state);
         });
     }
 
@@ -489,6 +503,16 @@ impl World {
 
     pub fn player(&self, id: PlayerId) -> &Player {
         &self.players_arena[id.0 as usize]
+    }
+
+    /// The name of a player's faction: as the rules name it, or as its
+    /// controller named one the rules do not define.
+    pub fn faction_name(&self, id: PlayerId) -> String {
+        let p = self.player(id);
+        match p.faction {
+            Some(f) => self.rules.faction(f).name.clone(),
+            None => p.controller.faction.clone(),
+        }
     }
 
     /// The player, to change it. Tests use this; a game does not.

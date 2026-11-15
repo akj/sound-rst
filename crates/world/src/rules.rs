@@ -1026,12 +1026,86 @@ impl UnitType {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TypeId(pub u32);
 
+/// An index into the factions of [`Rules`]: the classes whose `class` is
+/// `faction`. Factions are not unit types, so they have no [`TypeId`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FactionId(u32);
+
+/// A faction: its name, and the types it uses instead of others (`peasant
+/// peon` in `orc_faction`).
+#[derive(Clone, Debug, Default)]
+pub struct Faction {
+    pub name: String,
+    equivalents: BTreeMap<TypeId, TypeId>,
+}
+
+/// A type the simulation itself names. A computer player trains the
+/// worker, builds the farm for food, the town hall as a warehouse and the
+/// gate on an exit, each as its player's faction has it; woods make a
+/// square a forest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Worker,
+    Farm,
+    TownHall,
+    Gate,
+    Wood,
+}
+
+impl Role {
+    /// The name of the type that plays the role.
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Worker => "peasant",
+            Role::Farm => "farm",
+            Role::TownHall => "townhall",
+            Role::Gate => "gate",
+            Role::Wood => "wood",
+        }
+    }
+}
+
+/// The type that plays each [`Role`], if the rules have it.
+#[derive(Clone, Debug, Default)]
+pub struct Roles {
+    worker: Option<TypeId>,
+    farm: Option<TypeId>,
+    town_hall: Option<TypeId>,
+    gate: Option<TypeId>,
+    wood: Option<TypeId>,
+}
+
+impl Roles {
+    fn new(by_name: &BTreeMap<String, TypeId>) -> Roles {
+        let find = |r: Role| by_name.get(r.name()).copied();
+        Roles {
+            worker: find(Role::Worker),
+            farm: find(Role::Farm),
+            town_hall: find(Role::TownHall),
+            gate: find(Role::Gate),
+            wood: find(Role::Wood),
+        }
+    }
+
+    pub fn get(&self, role: Role) -> Option<TypeId> {
+        match role {
+            Role::Worker => self.worker,
+            Role::Farm => self.farm,
+            Role::TownHall => self.town_hall,
+            Role::Gate => self.gate,
+            Role::Wood => self.wood,
+        }
+    }
+}
+
 /// The game rules: `rules.txt`, then the mods' and the map's rules.
 #[derive(Clone, Debug, Default)]
 pub struct Rules {
     raw: Definitions,
     types: Vec<UnitType>,
     by_name: BTreeMap<String, TypeId>,
+    factions: Vec<Faction>,
+    pub roles: Roles,
     /// What went wrong while reading the rules. The original logs these.
     pub warnings: Vec<String>,
 }
@@ -1083,10 +1157,14 @@ impl Rules {
             by_name.insert(name.clone(), TypeId(types.len() as u32));
             types.push(t);
         }
+        check_references(&types, &by_name, &mut warnings);
+        let factions = read_factions(&raw, &types, &by_name, &mut warnings);
         Rules {
             raw,
+            roles: Roles::new(&by_name),
             types,
             by_name,
+            factions,
             warnings,
         }
     }
@@ -1126,13 +1204,29 @@ impl Rules {
         name != "parameters" && self.raw.index(name).is_some()
     }
 
-    /// The classes whose `class` is `faction`, in definition order.
+    /// The names of the factions, in definition order.
     pub fn factions(&self) -> Vec<String> {
-        self.classnames()
-            .into_iter()
-            .filter(|c| self.get(c, "class") == Some(RawValue::Words(vec!["faction".into()])))
-            .map(str::to_owned)
-            .collect()
+        self.factions.iter().map(|f| f.name.clone()).collect()
+    }
+
+    /// The faction called `name`.
+    pub fn faction_id(&self, name: &str) -> Option<FactionId> {
+        let i = self.factions.iter().position(|f| f.name == name)?;
+        Some(FactionId(i as u32))
+    }
+
+    /// The faction at `index` among [`Rules::factions`].
+    pub(crate) fn faction_at(&self, index: usize) -> Option<FactionId> {
+        (index < self.factions.len()).then_some(FactionId(index as u32))
+    }
+
+    /// The faction of an id these rules gave.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "a FactionId comes from the same rules, whose factions do not change"
+    )]
+    pub fn faction(&self, id: FactionId) -> &Faction {
+        &self.factions[id.0 as usize]
     }
 
     /// The number of resource types (`parameters nb_of_resource_types`,
@@ -1175,11 +1269,32 @@ impl Rules {
         &self.types
     }
 
-    /// The type a faction uses instead of `type_name`, or `type_name`.
-    pub fn equivalent_type(&self, type_name: &str, faction: &str) -> String {
-        match self.get_words(faction, type_name) {
-            Some(w) => w.first().cloned().unwrap_or_else(|| type_name.to_owned()),
-            None => type_name.to_owned(),
+    /// The type a faction uses instead of `t`, or `t`. A player whose
+    /// faction the rules do not define uses every type as it is.
+    pub fn equivalent(&self, faction: Option<FactionId>, t: TypeId) -> TypeId {
+        faction
+            .and_then(|f| self.faction(f).equivalents.get(&t))
+            .copied()
+            .unwrap_or(t)
+    }
+
+    /// What a faction calls `name`, a word that names no type: a computer
+    /// player's script (`easy orc_easy`), or a role the rules lack. `name`
+    /// if the faction says nothing of it.
+    pub fn equivalent_name(&self, faction: Option<FactionId>, name: &str) -> String {
+        faction
+            .and_then(|f| self.get_words(&self.faction(f).name, name))
+            .and_then(|w| w.first().cloned())
+            .unwrap_or_else(|| name.to_owned())
+    }
+
+    /// The name of the type a faction uses for a role: the role's type as
+    /// the faction has it, or, when the rules lack the role,
+    /// [`Rules::equivalent_name`] of the role's name.
+    pub fn role_name(&self, faction: Option<FactionId>, role: Role) -> String {
+        match self.roles.get(role) {
+            Some(t) => self.ty(self.equivalent(faction, t)).name.clone(),
+            None => self.equivalent_name(faction, role.name()),
         }
     }
 
@@ -1225,6 +1340,74 @@ impl Rules {
             _ => 17 * PRECISION / 100,
         }
     }
+}
+
+/// Warns of each type that a type's requirements or lists name and the
+/// rules do not have.
+fn check_references(
+    types: &[UnitType],
+    by_name: &BTreeMap<String, TypeId>,
+    warnings: &mut Vec<String>,
+) {
+    for t in types {
+        let lists = [
+            ("requirements", &t.requirements),
+            ("can_build", &t.can_build),
+            ("can_train", &t.can_train),
+            ("can_use", &t.can_use),
+            ("can_research", &t.can_research),
+            ("can_upgrade_to", &t.can_upgrade_to),
+        ];
+        for (attr, list) in lists {
+            for name in list {
+                if !by_name.contains_key(name) {
+                    warnings.push(format!("error in {}.{attr}: {name} doesn't exist", t.name));
+                }
+            }
+        }
+    }
+}
+
+/// The factions, in definition order, with the type each uses instead of
+/// a type of the rules. An equivalent that names no type is left out, with
+/// a warning. A word of a faction that names no type, such as a computer
+/// player's script, is read by [`Rules::equivalent_name`].
+fn read_factions(
+    raw: &Definitions,
+    types: &[UnitType],
+    by_name: &BTreeMap<String, TypeId>,
+    warnings: &mut Vec<String>,
+) -> Vec<Faction> {
+    let faction_class = Some(RawValue::Words(vec!["faction".into()]));
+    let mut factions = Vec::new();
+    for (name, _) in &raw.defs {
+        if name == "parameters" || raw.get(name, "class") != faction_class {
+            continue;
+        }
+        let mut equivalents = BTreeMap::new();
+        for (t, ut) in types.iter().enumerate() {
+            let Some(RawValue::Words(w)) = raw.get(name, &ut.name) else {
+                continue;
+            };
+            let Some(other) = w.first() else {
+                continue;
+            };
+            match by_name.get(other) {
+                Some(&o) => {
+                    equivalents.insert(TypeId(t as u32), o);
+                }
+                None => warnings.push(format!(
+                    "error in {name}.{}: {other} doesn't exist",
+                    ut.name
+                )),
+            }
+        }
+        factions.push(Faction {
+            name: name.clone(),
+            equivalents,
+        });
+    }
+    factions
 }
 
 /// `parameters nb_of_resource_types`: 2 if missing or negative, and
@@ -1670,5 +1853,46 @@ mod tests {
         let ai = AiScripts::load(&["def easy\na\nb\ndef hard\nc\n", "def easy\nd\n"]);
         assert_eq!(ai.names(), ["easy", "hard"]);
         assert_eq!(ai.get("easy").unwrap(), ["d"]);
+    }
+
+    #[test]
+    fn a_type_named_that_the_rules_lack_is_a_warning() {
+        let r = Rules::load(&["def a\nclass soldier\nrequirements b z\ncan_use y\n\
+             def b\nclass building\ncan_train a x\n\
+             def f\nclass faction\na b\nb w\neasy f_easy\n"]);
+        assert_eq!(
+            r.warnings,
+            [
+                "error in a.requirements: z doesn't exist",
+                "error in a.can_use: y doesn't exist",
+                "error in b.can_train: x doesn't exist",
+                "error in f.b: w doesn't exist",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_faction_uses_its_own_types_and_names_its_scripts() {
+        let r = Rules::load(&[
+            "def peasant\nclass worker\ndef peon\nclass worker\ndef farm\nclass building\n\
+             def human\nclass faction\n\
+             def orc\nclass faction\npeasant peon\neasy orc_easy\ntownhall great_hall\n",
+        ]);
+        assert_eq!(r.factions(), ["human", "orc"]);
+        let (human, orc) = (r.faction_id("human"), r.faction_id("orc"));
+        assert!(orc.is_some() && r.faction_id("peasant").is_none());
+        let peasant = r.type_id("peasant").unwrap();
+        assert_eq!(r.equivalent(orc, peasant), r.type_id("peon").unwrap());
+        assert_eq!(r.equivalent(human, peasant), peasant);
+        assert_eq!(r.equivalent(None, peasant), peasant);
+        assert_eq!(r.equivalent_name(orc, "easy"), "orc_easy");
+        assert_eq!(r.equivalent_name(human, "easy"), "easy");
+        assert_eq!(r.role_name(orc, Role::Worker), "peon");
+        assert_eq!(r.role_name(orc, Role::Farm), "farm");
+        // The rules lack the town hall: the faction's word for it, else
+        // the role's name.
+        assert_eq!(r.roles.get(Role::TownHall), None);
+        assert_eq!(r.role_name(orc, Role::TownHall), "great_hall");
+        assert_eq!(r.role_name(human, Role::TownHall), "townhall");
     }
 }
