@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
-use soundrts_protocol::game::{SeatFrame, decode_frame, encode_command};
+use soundrts_protocol::game::{Role, SeatFrame, decode_frame, encode_command};
 use soundrts_protocol::*;
 use soundrts_server::{ServerConfig, ServerHandle};
 use soundrts_world::{
@@ -162,7 +162,9 @@ enum Came {
 /// A human seat, played by a client that knows only what it was sent.
 struct Seat {
     c: Client,
+    /// The player's slot, for a player's seat.
     slot: SlotIndex,
+    role: Role,
     token: SeatToken,
     rules: String,
     start: Option<Arc<GameStart>>,
@@ -185,6 +187,7 @@ impl Seat {
         let mut seat = Seat {
             c,
             slot: 0,
+            role: Role::Watcher,
             token: SeatToken::from_bits(0),
             rules: rules.to_owned(),
             start: None,
@@ -205,7 +208,10 @@ impl Seat {
         loop {
             match heard(&mut self.c).await {
                 Heard::Game(SeatFrame::Seated { you, token, .. }) => {
-                    self.slot = you;
+                    if let Role::Player(slot) = you {
+                        self.slot = slot;
+                    }
+                    self.role = you;
                     self.token = token;
                     break;
                 }
@@ -1097,4 +1103,525 @@ async fn hostile_start_texts_and_commands_are_refused_without_a_panic() {
     a.hear(refused(Refusal::SlowDown)).await;
     let at = a.time() / 300;
     a.play_to(at + 5).await;
+}
+
+// -- Watchers ----------------------------------------------------------------
+
+/// `c` asks to watch `room`, and is in it: the room as it is told.
+async fn watch(c: &mut Client, room: RoomId) -> RoomState {
+    c.send(ClientMsg::Watch { room }).await;
+    let entered = c
+        .skip_until(|m| {
+            matches!(
+                m,
+                ServerMsg::Room {
+                    change: RoomChange::Entered,
+                    ..
+                }
+            )
+        })
+        .await;
+    let ServerMsg::Room { room, .. } = entered else {
+        unreachable!()
+    };
+    room
+}
+
+/// Whether `m` tells that `login` watches (or, `false`, stopped).
+fn is_watching_news(m: &ServerMsg, login: &Login, watching: bool) -> bool {
+    match m {
+        ServerMsg::Room {
+            change: RoomChange::Watching { login: l },
+            ..
+        } => watching && l == login,
+        ServerMsg::Room {
+            change: RoomChange::StoppedWatching { login: l },
+            ..
+        } => !watching && l == login,
+        _ => false,
+    }
+}
+
+/// Reads until `c` hears that `login` watches (or, `false`, stopped).
+async fn hears_watching(c: &mut Client, login: &Login, watching: bool) {
+    c.skip_until(|m| is_watching_news(m, login, watching)).await;
+}
+
+/// How many times a seat was told, beside the stream, that `login`
+/// watches (or, `false`, stopped).
+fn told_watching(s: &Seat, login: &Login, watching: bool) -> usize {
+    s.told
+        .iter()
+        .filter(|h| matches!(h, Heard::Msg(m) if is_watching_news(m, login, watching)))
+        .count()
+}
+
+/// Checks that every message the watcher `w` had of `p`'s side, from game
+/// time `from`, is one `p` had of the same time: a change as `p` had it,
+/// a whole message without its events. How many there were.
+fn as_the_player_had(w: &Seat, p: &Seat, from: i64) -> usize {
+    let mut n = 0;
+    for (came, m) in &w.history {
+        if m.seat != p.player() || m.time < from {
+            continue;
+        }
+        let found = p.history.iter().any(|(_, pm)| {
+            pm.time == m.time
+                && match came {
+                    Came::Change => pm == m,
+                    Came::Whole => {
+                        let mut whole = pm.clone();
+                        whole.events.clear();
+                        &whole == m
+                    }
+                }
+        });
+        assert!(
+            found,
+            "{} at {}: not what {} had",
+            w.c.login, m.time, p.c.login
+        );
+        n += 1;
+    }
+    n
+}
+
+/// The whole messages a seat had.
+fn wholes(s: &Seat) -> usize {
+    s.history.iter().filter(|(c, _)| *c == Came::Whole).count()
+}
+
+/// The host, `clients[0]`, starts the game of their room, which
+/// `watchers` watch: each joins it.
+async fn start_watched(
+    clients: Vec<Client>,
+    watchers: Vec<Client>,
+    texts: &GameTexts,
+) -> (Vec<Seat>, Vec<Seat>) {
+    let mut clients = clients;
+    clients[0]
+        .send(ClientMsg::Start {
+            texts: texts.clone(),
+        })
+        .await;
+    let mut players = Vec::new();
+    for c in clients {
+        players.push(Seat::join(c, texts.rules.as_str()).await);
+    }
+    let mut seated = Vec::new();
+    for c in watchers {
+        seated.push(Seat::join(c, texts.rules.as_str()).await);
+    }
+    for w in &seated {
+        assert_eq!(w.role, Role::Watcher);
+    }
+    (players, seated)
+}
+
+#[tokio::test]
+async fn watchers_are_sent_what_the_player_they_follow_is_and_change_nothing() {
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "carol", "dave"]).await;
+    let mut dave = clients.pop().unwrap();
+    let mut carol = clients.pop().unwrap();
+    let room = room(&mut clients, 1).await;
+    let carol_login = carol.login.clone();
+    let dave_login = dave.login.clone();
+
+    // Carol watches before the start: the room says so to everyone in it,
+    // and names her as a watcher, in no slot.
+    let state = watch(&mut carol, room).await;
+    assert_eq!(state.watchers, std::slice::from_ref(&carol_login));
+    assert!(state.slots.iter().all(|s| s.player != human(&carol_login)));
+    for c in clients.iter_mut() {
+        hears_watching(c, &carol_login, true).await;
+    }
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![carol], &texts).await;
+    let mut c = watchers.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    assert_eq!(c.player(), a.player(), "Carol follows the first player");
+    tokio::join!(a.play_to(3), b.play_to(3), c.play_to(3));
+
+    // Nothing Carol sends of a player's is taken: commands to Andrew's
+    // units, a cheat, a speed, quitting, the clock, a removal, a line to
+    // allies.
+    let b2 = c.view().square_at(1, 1).unwrap();
+    let mut refused_commands = go(a.own("peasant"), b2).to_vec();
+    refused_commands.extend([
+        Command::Cheat(soundrts_world::Cheat::Resources),
+        Command::Speed(2.0),
+        Command::Quit,
+    ]);
+    for command in refused_commands {
+        c.command(command).await;
+        c.hear(refused(Refusal::NotNow)).await;
+    }
+    for msg in [
+        ClientMsg::PauseGame,
+        ClientMsg::SetGameSpeed { speed: Speed::Slow },
+        ClientMsg::RemovePlayer { slot: 1 },
+        ClientMsg::Chat {
+            channel: Channel::Allies,
+            text: chat("go north"),
+        },
+    ] {
+        c.c.send(msg).await;
+        c.hear(refused(Refusal::NotNow)).await;
+    }
+    // Only a watcher follows another player.
+    a.c.send(ClientMsg::Follow { step: Step::Next }).await;
+    a.hear(refused(Refusal::NotNow)).await;
+    // A watcher's line to the game reaches every player, marked as hers.
+    c.c.send(ClientMsg::Chat {
+        channel: Channel::Game,
+        text: chat("good luck"),
+    })
+    .await;
+    let line = ServerMsg::Chat {
+        line: ChatLine {
+            channel: Channel::Game,
+            from: carol_login.clone(),
+            watcher: true,
+            text: chat("good luck"),
+        },
+    };
+    for s in [&mut a, &mut b, &mut c] {
+        s.hear(line.clone()).await;
+    }
+
+    // Dave joins the game that runs, and follows Andrew from his whole
+    // message on; the players hear it once.
+    let at = a.time();
+    dave.send(ClientMsg::Watch { room }).await;
+    let mut d = Seat::join(dave, texts.rules.as_str()).await;
+    assert_eq!(d.role, Role::Watcher);
+    assert_eq!(d.player(), a.player(), "Dave follows the first player");
+    assert!(d.time() >= at, "Dave starts from the game as it is");
+    let joined = d.time();
+    let at = a.time() / 300 + 6;
+    tokio::join!(a.play_to(at), b.play_to(at), c.play_to(at), d.play_to(at));
+    // Every message either had was Andrew's, as he had it.
+    assert_eq!(as_the_player_had(&c, &a, 0), c.history.len());
+    assert_eq!(as_the_player_had(&d, &a, joined), d.history.len());
+    assert!(c.history.len() > 8 && d.history.len() > 4);
+    for p in [&a, &b] {
+        assert_eq!(told_watching(p, &dave_login, true), 1, "{}", p.c.login);
+    }
+
+    // Carol follows the next player, Bob, then the previous, Andrew.
+    let switched = c.time();
+    c.c.send(ClientMsg::Follow { step: Step::Next }).await;
+    while c.player() != b.player() {
+        assert!(c.step(TIMEOUT).await);
+    }
+    let on_bob = c.time();
+    let at = a.time() / 300 + 4;
+    tokio::join!(a.play_to(at), b.play_to(at), c.play_to(at), d.play_to(at));
+    assert!(as_the_player_had(&c, &b, switched) > 2);
+    assert_eq!(wholes(&c), 2, "the start, and Bob's whole message");
+    c.c.send(ClientMsg::Follow {
+        step: Step::Previous,
+    })
+    .await;
+    while c.player() != a.player() {
+        assert!(c.step(TIMEOUT).await);
+    }
+    let at = a.time() / 300 + 3;
+    tokio::join!(a.play_to(at), b.play_to(at), c.play_to(at), d.play_to(at));
+    assert!(as_the_player_had(&c, &a, on_bob) > 1);
+    assert!(as_the_player_had(&d, &a, joined) > 8);
+
+    // Carol leaves: she is told her end, and the players that she stopped.
+    c.c.send(ClientMsg::LeaveGame).await;
+    while !c.left {
+        assert!(c.step(TIMEOUT).await);
+    }
+    assert!(c.end.is_some());
+    let at = a.time() / 300 + 2;
+    tokio::join!(a.play_to(at), b.play_to(at), d.play_to(at));
+    for p in [&a, &b] {
+        assert_eq!(told_watching(p, &carol_login, false), 1, "{}", p.c.login);
+    }
+    // The game is the one played with no watcher at all, turn for turn.
+    check_against_host(&texts, &[&a, &b], &[]);
+}
+
+#[tokio::test]
+async fn a_room_takes_eight_watchers_and_none_if_its_host_says_so() {
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let names: Vec<String> = (1..=9).map(|i| format!("w{i}")).collect();
+    let names: Vec<&str> = ["andrew", "zoe"]
+        .into_iter()
+        .chain(names.iter().map(String::as_str))
+        .collect();
+    let mut clients = clients(addr, &names).await;
+    let map = map(2, 4);
+    let room = open_room(&mut clients, 0, &map, true).await;
+    for (n, c) in clients[2..10].iter_mut().enumerate() {
+        let state = watch(c, room).await;
+        assert_eq!(state.watchers.len(), n + 1);
+        assert!(state.takes_watchers);
+    }
+    let ninth = &mut clients[10];
+    ninth.send(ClientMsg::Watch { room }).await;
+    ninth.skip_to(&refused(Refusal::WatchersFull)).await;
+    // The host heard each of the eight.
+    for i in 2..10 {
+        let login = clients[i].login.clone();
+        hears_watching(&mut clients[0], &login, true).await;
+    }
+
+    // Zoe's room takes no watchers.
+    clients[1]
+        .send(ClientMsg::CreateRoom {
+            map: map.0.clone(),
+            speed: Speed::Normal,
+            open: true,
+            watchers: false,
+        })
+        .await;
+    let entered = clients[1]
+        .skip_until(|m| matches!(m, ServerMsg::Room { .. }))
+        .await;
+    let ServerMsg::Room {
+        room: unwatched, ..
+    } = entered
+    else {
+        unreachable!()
+    };
+    assert!(!unwatched.takes_watchers);
+    let ninth = &mut clients[10];
+    ninth.send(ClientMsg::Watch { room: unwatched.id }).await;
+    ninth.skip_to(&refused(Refusal::NoWatchers)).await;
+    // Ten requests to watch a minute, then the server slows them down:
+    // everyone in a room hears each watcher come and go.
+    for _ in 0..8 {
+        ninth.send(ClientMsg::Watch { room: RoomId(999) }).await;
+        ninth.skip_to(&refused(Refusal::NoSuchRoom)).await;
+    }
+    ninth.send(ClientMsg::Watch { room }).await;
+    ninth.skip_to(&refused(Refusal::SlowDown)).await;
+
+    // A watcher leaves; when the host leaves too, no player is left and
+    // the room closes: its watchers are back in the lobby.
+    clients[2].send(ClientMsg::LeaveRoom).await;
+    clients[2]
+        .skip_to(&ServerMsg::RoomExited {
+            reason: RoomExit::Left,
+        })
+        .await;
+    let w1 = clients[2].login.clone();
+    hears_watching(&mut clients[0], &w1, false).await;
+    clients[0].send(ClientMsg::LeaveRoom).await;
+    for c in &mut clients[3..10] {
+        c.skip_to(&ServerMsg::RoomExited {
+            reason: RoomExit::Closed,
+        })
+        .await;
+        let me = c.login.clone();
+        c.skip_to(&moved(&me, Whereabouts::Lobby)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_closed_room_is_watched_only_by_those_invited_who_then_do_nothing_a_player_does() {
+    let server = hosting_server(|_| {});
+    let mut clients = clients(server.local_addr(), &["andrew", "carol", "dave"]).await;
+    let room = open_room(&mut clients, 0, &jl2(), false).await;
+    clients[2].send(ClientMsg::Watch { room }).await;
+    clients[2].skip_to(&refused(Refusal::NotNow)).await;
+    let carol = clients[1].login.clone();
+    clients[0].send(ClientMsg::Invite { login: carol }).await;
+    clients[1]
+        .skip_until(|m| matches!(m, ServerMsg::Invited { .. }))
+        .await;
+    watch(&mut clients[1], room).await;
+    // A watcher in the room has no slot: nothing of a player's is taken,
+    // and the room goes on.
+    for msg in [
+        ClientMsg::SetReady { ready: true },
+        ClientMsg::SetFaction {
+            slot: 0,
+            faction: Faction::random(),
+        },
+        ClientMsg::AddComputer {
+            level: AiLevel::Easy,
+        },
+        ClientMsg::RemoveSlot { slot: 0 },
+        ClientMsg::Start { texts: texts() },
+        ClientMsg::LeaveGame,
+        ClientMsg::Follow { step: Step::Next },
+    ] {
+        clients[1].send(msg).await;
+        clients[1].skip_to(&refused(Refusal::NotNow)).await;
+    }
+    // Its line to the room reaches the host, marked as a watcher's.
+    clients[1]
+        .send(ClientMsg::Chat {
+            channel: Channel::Room,
+            text: chat("hello"),
+        })
+        .await;
+    let line = ServerMsg::Chat {
+        line: ChatLine {
+            channel: Channel::Room,
+            from: clients[1].login.clone(),
+            watcher: true,
+            text: chat("hello"),
+        },
+    };
+    clients[0].skip_to(&line).await;
+}
+
+#[tokio::test]
+async fn a_watcher_returns_unheard_and_one_away_too_long_stops_watching() {
+    let server = hosting_server(|c| c.grace_period = Duration::from_secs(2));
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "carol", "dave"]).await;
+    let mut dave = clients.pop().unwrap();
+    let mut carol = clients.pop().unwrap();
+    let room = room(&mut clients, 1).await;
+    watch(&mut carol, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![carol], &texts).await;
+    let mut c = watchers.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    dave.send(ClientMsg::Watch { room }).await;
+    let d = Seat::join(dave, texts.rules.as_str()).await;
+    tokio::join!(a.play_to(4), c.play_to(4));
+
+    // Carol's connection is lost, and she comes back with her token;
+    // Dave's is lost, and he does not.
+    let token = c.token.clone();
+    let old = std::mem::replace(&mut c.c, Client::connect(addr).await);
+    old.close().await;
+    d.c.close().await;
+    let lost = Instant::now();
+    let at = a.time() / 300 + 6;
+    a.play_to(at).await;
+    let (mut back, _) = Client::hello(addr, "carol").await;
+    back.send(ClientMsg::ReturnToGame { room, token }).await;
+    c.c = back;
+    c.until_seated().await;
+    assert_eq!(c.role, Role::Watcher);
+    let returned = c.time();
+    let at = a.time() / 300 + 4;
+    tokio::join!(a.play_to(at), c.play_to(at));
+    assert!(as_the_player_had(&c, &a, returned) > 2);
+    let dave = login("dave");
+    while told_watching(&a, &dave, false) == 0 {
+        assert!(a.step(TIMEOUT).await);
+    }
+    assert!(lost.elapsed() >= Duration::from_secs(2));
+    // The players heard nothing of Carol's loss and return, and of Dave
+    // only that he stopped watching.
+    assert!(
+        !a.told
+            .iter()
+            .any(|h| matches!(h, Heard::Game(SeatFrame::Seat { .. }))),
+        "{:?}",
+        a.told
+    );
+    assert_eq!(told_watching(&a, &login("carol"), false), 0);
+    check_against_host(&texts, &[&a], &[]);
+}
+
+#[tokio::test]
+async fn hostile_watchers_change_nothing_and_hold_up_nobody() {
+    let server = hosting_server(|c| c.send_buffer = Some(2048));
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "eve"]).await;
+    let (mut dave, _) = Client::hello_with_small_buffer(addr, "dave", 1024).await;
+    for c in clients.iter_mut() {
+        c.skip_until(|m| {
+            matches!(
+                m,
+                ServerMsg::Lobby {
+                    change: LobbyChange::PlayerArrived { .. }
+                }
+            )
+        })
+        .await;
+    }
+    let mut eve = clients.pop().unwrap();
+    let room = room(&mut clients, 1).await;
+    watch(&mut eve, room).await;
+    watch(&mut dave, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![eve, dave], &texts).await;
+    let mut d = watchers.pop().unwrap();
+    let mut e = watchers.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    tokio::join!(a.play_to(2), b.play_to(2), e.play_to(2), d.play_to(2));
+
+    // For four seconds Eve floods the game with requests to follow
+    // another player and with commands, and Dave asks to follow another
+    // player at every turn but stops reading. The players' turns keep
+    // coming at the clock's pace.
+    let stalled = Duration::from_secs(4);
+    let before = a.arrivals.len();
+    let wholes_before = wholes(&e);
+    let turn_before = a.time() / 300;
+    let peasants = a.own("peasant");
+    let square = a.view().square_at(1, 1).unwrap();
+    let eve_floods = async {
+        let until = Instant::now() + stalled;
+        while Instant::now() < until {
+            for _ in 0..10 {
+                e.c.send(ClientMsg::Follow { step: Step::Next }).await;
+            }
+            for c in go(peasants.clone(), square) {
+                e.c.send_binary(&encode_command(&c).unwrap()).await;
+            }
+            e.read_for(TURN / 3).await;
+        }
+    };
+    let dave_switches = async {
+        let until = Instant::now() + stalled;
+        while Instant::now() < until {
+            d.c.send_text_lossy(&ClientMsg::Follow { step: Step::Next }.to_json())
+                .await;
+            tokio::time::sleep(TURN).await;
+        }
+    };
+    tokio::join!(
+        a.read_for(stalled),
+        b.read_for(stalled),
+        eve_floods,
+        dave_switches
+    );
+    let gaps: Vec<Duration> = a.arrivals[before..]
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .collect();
+    let longest = gaps.iter().max().copied().unwrap();
+    let mean = gaps.iter().sum::<Duration>() / gaps.len() as u32;
+    eprintln!(
+        "while the watchers flooded: {} turns to Andrew, mean {mean:?}, longest {longest:?}",
+        gaps.len() + 1
+    );
+    assert!(gaps.len() as u32 >= stalled.as_millis() as u32 / 75 / 2);
+    assert!(mean < TURN * 2, "mean {mean:?}");
+    assert!(longest < TURN * 6, "longest {longest:?}");
+    // Eve was refused for going too fast, and was sent at most one whole
+    // message a turn however much she asked.
+    assert!(e.told.contains(&Heard::Msg(refused(Refusal::SlowDown))));
+    let turns = a.time() / 300 - turn_before;
+    let sent = wholes(&e) - wholes_before;
+    eprintln!("Eve was sent {sent} whole messages in {turns} turns");
+    assert!(sent as i64 <= turns + 1, "{sent} wholes in {turns} turns");
+    assert!(sent >= 2, "Eve's steps were taken");
+    // Dave reads again: he is caught up, or was dropped as any slow
+    // reader is; either way the game went on without him.
+    let at = a.time() / 300 + 3;
+    let dave_reads = async { while d.time() < at * 300 && d.step(Duration::from_secs(5)).await {} };
+    tokio::join!(a.play_to(at), b.play_to(at), e.play_to(at), dave_reads);
+    eprintln!("Dave got to turn {} of {at}", d.time() / 300);
+    // The game is the one played with no watcher at all, turn for turn.
+    check_against_host(&texts, &[&a, &b], &[]);
 }

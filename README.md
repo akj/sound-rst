@@ -155,7 +155,7 @@ To join a game, choose one of these:
 - Choose a server in a list: the servers on your local network, the public list, your favorite servers, and the servers you used recently.
 - Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`, or paste it with Control V.
 
-On a server, the menu lists the invitations you received and the open games you can join. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
+On a server, the menu lists the invitations you received, the open games you can join, and the games you can watch. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. The speed menu also has the item "watchers": Enter changes it from "welcome" to "not welcome" and back. It is "welcome" unless you change it. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
 
 A map from a server can bring its own rules, and names and sounds for its own units. It cannot change your keys, the game's own words, sounds or help, or anything a mod you installed defines. The game ignores those parts of the map and notes them in `tmp/client.log`. A map that you put in a `multi` folder yourself keeps every power.
 
@@ -167,6 +167,8 @@ In a game room, the host invites players and computers, sets the alliances and f
 | Shift+F7 | | Write to your allies |
 | Ctrl+F5 | Read the previous chat message again | Read the previous chat message again |
 | Ctrl+F6 | Read the next chat message again | Read the next chat message again |
+| Ctrl+F12 | | While you watch: follow the next player |
+| Ctrl+Shift+F12 | | While you watch: follow the previous player |
 
 A chat message plays a short sound, then the game says who wrote it and what they wrote, after the message that is being said. In a game, the game goes on while you type. The multiplayer menu has an option that stops the game from saying when players arrive on the server or leave it.
 
@@ -177,6 +179,20 @@ If your connection is lost during a game on a server, the game does not end. You
 The game says, in the system news, when a player loses the connection, comes back, does not come back in time, leaves the game or is removed from it, and when the server stops a game or cannot start it. In the game menu, the speeds change the speed of the game for everyone, and only the room's host can change it: the others hear "only the host can change the speed". Everyone hears the new speed and who set it. The room's host also has an item that reads "pause", or "resume" while the game is paused: everyone hears "paused by" or "resumed by" and the host's login. A game on a server has no console and no cheats.
 
 Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
+
+### Watch a game
+
+You can join a game only to watch it: a friend's game, a game you teach or referee, or a game that has already started. In the server's menu, choose "watch", then the host and the map. You can watch a game before it starts, from its room, or while it runs. You can watch an open game, or a game you are invited to before it starts, if its host lets people watch. A game takes at most 8 watchers. When a game takes no more watchers, you hear "no room for another watcher". When its host does not let people watch, you hear "this game takes no watchers".
+
+A watcher hears the game from the side of one player at a time, as that player hears it: the same map, the same news and the same answers to the questions. You hear "watching" and the player's name, and the cursor is on the square of that player's first unit. You hear nothing of what happened before you came. Control F12 follows the next player still in the game, and Control Shift F12 the previous one. You hear "watching" and that player's name. You can follow only people, not computers. When the player you follow leaves the game, you follow the next player. When no player is left, you hear the result and the score of the player you followed last.
+
+A watcher gives no orders. When you press a key that gives an order, you hear "watching: you give no orders", once. The server takes no order, speed, pause or removal from a watcher, whatever a client sends.
+
+Nothing is hidden from the players. Everyone in the room or the game hears "carol is watching" when Carol starts to watch, and "carol stopped watching" when she stops. When a room changes, its list of players names the watchers after the players. In a game, F11 names the watchers after the players. A watcher's chat message reaches everyone, and you hear "watching" after the watcher's name. A watcher cannot write to the allies.
+
+If your connection is lost while you watch, you return to the game as a player does. The players hear nothing unless you stay away longer than the server holds your seat. Then they hear that you stopped watching. To stop watching, leave the game from the game menu.
+
+A player who is defeated hears the score and goes back to the server's menu, as before. To keep listening to an open game that takes watchers, choose "watch" for it there.
 
 ## Run a server
 
@@ -248,7 +264,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs`, `crates/client/tests/multiplayer.rs` and `crates/client/tests/returning.rs` also run real servers, on 127.0.0.1 only; `returning.rs` pulls a player's connection out through a proxy on 127.0.0.1 and plugs it back in. One of them plays the same game twice, on the client and through a server, and checks that the player hears and plays the same. No test asks a router to forward a port.
+The tests need the original game in `vendor/soundrts-upstream`. They fail with a pointer to the fetch script when it is missing. No test speaks, plays sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests in `crates/client/tests/net_play.rs`, `crates/client/tests/multiplayer.rs`, `crates/client/tests/returning.rs` and `crates/client/tests/watching.rs` also run real servers, on 127.0.0.1 only; `returning.rs` pulls a player's connection out through a proxy on 127.0.0.1 and plugs it back in. One of them plays the same game twice, on the client and through a server, and checks that the player hears and plays the same. No test asks a router to forward a port.
 
 Two sets of tests check the port against recordings:
 

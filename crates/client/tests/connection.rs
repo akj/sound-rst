@@ -38,6 +38,7 @@ fn line(i: usize) -> ServerMsg {
         line: ChatLine {
             channel: Channel::Lobby,
             from: Login::new("flood").unwrap(),
+            watcher: false,
             text: ChatText::clean(&format!("{i} {}", "x".repeat(390))).unwrap(),
         },
     }

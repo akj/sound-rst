@@ -26,7 +26,7 @@ use crate::paths::Paths;
 use crate::session::Session;
 use crate::tts::{Progress, SpeechBackend};
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
-use soundrts_protocol::game::{SeatFrame, decode_command, decode_frame};
+use soundrts_protocol::game::{Role, SeatFrame, decode_command, decode_frame};
 use soundrts_protocol::{
     AiLevel, ClientMsg, Faction, LobbyPlayer, LobbySnapshot, Login, MapInfo, PROTOCOL_VERSION,
     RoomId, RoomState, SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
@@ -924,10 +924,11 @@ impl FakeServer {
 pub const FAKE_HOLD: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// A game run here as a server runs one, for a fake server to send its
-/// stream to the seat of slot `you`: the frames a server sends.
+/// stream to the seat of slot `you`, or to a watcher following that slot's
+/// player: the frames a server sends.
 pub struct FakeStream {
     host: Host,
-    you: usize,
+    you: Role,
     seat: PlayerId,
     last: TurnMessage,
 }
@@ -950,10 +951,24 @@ impl FakeStream {
         let last = host.message(seat);
         FakeStream {
             host,
-            you,
+            you: Role::Player(you),
             seat,
             last,
         }
+    }
+
+    /// The stream of a watcher following the player of slot `you`.
+    pub fn watching(mut self) -> FakeStream {
+        self.you = Role::Watcher;
+        self
+    }
+
+    /// The watcher follows the player of `slot` from now on: what a
+    /// server sends it, that player's whole message as it is now.
+    pub fn follow(&mut self, slot: usize) -> SeatFrame {
+        self.seat = self.host.seats()[slot];
+        self.last = self.host.message(self.seat);
+        SeatFrame::Whole(self.last.clone())
     }
 
     /// What a server sends the seat when the game starts: its seat, the
@@ -1065,6 +1080,8 @@ pub fn fake_room(map: MapInfo, slots: Vec<Slot>) -> RoomState {
         speed: Speed::Normal,
         open: true,
         content: soundrts_protocol::ContentHash::new("x").expect("a hash"),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots,
     }
 }
@@ -1088,6 +1105,7 @@ pub fn welcome_back(you: &str, room: &RoomState, playing: &[&str]) -> LobbySnaps
         content: room.content.clone(),
         players: room.slots.iter().map(|s| s.player.clone()).collect(),
         started: true,
+        takes_watchers: true,
     }];
     s
 }
@@ -1370,8 +1388,22 @@ impl Harness {
     }
 
     /// Creates a room on the multiplayer map `map` at `speed` and adds
-    /// these computers: the room's id. Waits in real time for the server.
+    /// these computers: the room's id. Only those invited join it; anyone
+    /// invited may watch. Waits in real time for the server.
     pub fn open_room(&mut self, map: &str, computers: &[AiLevel], speed: Speed) -> RoomId {
+        self.create_room(map, computers, speed, false, true)
+    }
+
+    /// As [`Harness::open_room`], for a room anyone may join if `open`,
+    /// and watch if `watchers`.
+    pub fn create_room(
+        &mut self,
+        map: &str,
+        computers: &[AiLevel],
+        speed: Speed,
+        open: bool,
+        watchers: bool,
+    ) -> RoomId {
         let m = self.multiplayer_map(map);
         let info = m.info().expect("a map file");
         let net = self.client.net.as_mut().expect("on the server");
@@ -1379,7 +1411,8 @@ impl Harness {
         net.send(ClientMsg::CreateRoom {
             map: info,
             speed,
-            open: false,
+            open,
+            watchers,
         });
         self.pump_until(|n| n.room.is_some());
         for (i, &level) in computers.iter().enumerate() {
@@ -1400,6 +1433,13 @@ impl Harness {
         let login = Login::new(login).expect("a login");
         self.pump_until(|n| n.lobby.players.iter().any(|p| p.login == login));
         crate::net::send(&mut self.client, ClientMsg::Invite { login });
+    }
+
+    /// Watches the room `room`, or its game: once in it, the room as the
+    /// player knows it. Waits in real time for the server.
+    pub fn watch_room(&mut self, room: RoomId) {
+        crate::net::send(&mut self.client, ClientMsg::Watch { room });
+        self.pump_until(|n| n.room.is_some());
     }
 
     /// Joins the room `room` once invited, and is ready. Waits in real time

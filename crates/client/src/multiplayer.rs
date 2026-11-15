@@ -7,7 +7,9 @@
 //! The other menus are static and give up, as Escape would, when the
 //! server interrupts them (see [`crate::net`]).
 
+use std::cell::Cell;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,6 +41,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long to wait for servers of the local network to answer.
 const DISCOVERY_WAIT: Duration = Duration::from_millis(500);
+
+/// How long a watcher who joins a game that runs waits for its map, in
+/// seconds.
+const MAP_WAIT: f64 = 30.0;
 
 /// The multiplayer menu of the main menu: a server from a list, a server
 /// by its address, or a server of one's own.
@@ -409,6 +415,13 @@ fn join(room: soundrts_protocol::RoomId) -> Action {
     })
 }
 
+fn watch(room: soundrts_protocol::RoomId) -> Action {
+    Action::run(move |cx| {
+        net::send(cx, ClientMsg::Watch { room });
+        Ok(Flow::Stay)
+    })
+}
+
 fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
     let net = net_ref(cx);
     let mut choices = Vec::new();
@@ -446,6 +459,30 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
             ]
             .concat();
             choices.push(Choice::explained(label, join(r.id), explanation));
+        }
+    }
+    // Rooms and running games that take watchers: an open one, or one the
+    // player is invited to before it starts.
+    for r in &net.lobby.rooms {
+        let invited = net.invitations.iter().any(|i| i.room == r.id);
+        let can_watch = r.takes_watchers
+            && r.content == net.content
+            && r.host != net.lobby.you
+            && (r.open || (invited && !r.started));
+        if can_watch {
+            let label = [
+                text(words::WATCH),
+                vec![literal(r.host.as_str())],
+                title_of(&r.map),
+            ]
+            .concat();
+            let explanation = [
+                nb2msg(r.players.len() as i64),
+                msg(mp::PLAYERS_ON),
+                nb2msg(i64::from(r.map.nb_players_max)),
+            ]
+            .concat();
+            choices.push(Choice::explained(label, watch(r.id), explanation));
         }
     }
     choices.push(Choice::new(
@@ -502,9 +539,14 @@ fn create_menu(cx: &mut Client, open: bool) -> Result<(), Exit> {
     menu.run(cx)
 }
 
+/// The speeds a room can be created with, and whether it takes watchers:
+/// yes unless the host says no.
 fn speed_menu(cx: &mut Client, map: Arc<Map>, open: bool, title: &Msg) -> Result<Flow, Exit> {
+    let watchers = Rc::new(Cell::new(true));
+    let changed = Rc::new(Cell::new(false));
     let create = |speed: Speed| {
         let map = map.clone();
+        let watchers = watchers.clone();
         Action::run(move |cx| {
             if let Some(info) = map.info() {
                 net_mut(cx).creating = Some(map.clone());
@@ -514,11 +556,32 @@ fn speed_menu(cx: &mut Client, map: Arc<Map>, open: bool, title: &Msg) -> Result
                         map: info,
                         speed,
                         open,
+                        watchers: watchers.get(),
                     },
                 );
             }
             Ok(Flow::Stay)
         })
+    };
+    let welcome = |on: bool| {
+        text(if on {
+            words::WELCOME
+        } else {
+            words::NOT_WELCOME
+        })
+    };
+    let watchers_setting = {
+        let (shown, set) = (watchers.clone(), watchers.clone());
+        let changed = changed.clone();
+        Choice::setting(
+            text(words::WATCHERS),
+            move |_| welcome(shown.get()),
+            move |_| {
+                set.set(!set.get());
+                changed.set(true);
+                Ok(welcome(set.get()))
+            },
+        )
     };
     let mut menu = Menu::new(
         title.clone(),
@@ -533,21 +596,36 @@ fn speed_menu(cx: &mut Client, map: Arc<Map>, open: bool, title: &Msg) -> Result
                 [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
                 create(Speed::Fast4),
             ),
+            watchers_setting,
             Choice::new(msg(mp::CANCEL), Action::Nothing),
         ],
     );
     menu.default_choice_index = 1;
-    menu.run(cx)?;
-    Ok(Flow::Stay)
+    // The setting changes and the menu goes on; any other item ends it.
+    loop {
+        changed.set(false);
+        menu.run(cx)?;
+        if !changed.get() {
+            return Ok(Flow::Stay);
+        }
+    }
 }
 
 /// The room the player entered, until they leave it, are removed, or its
 /// game is played. `true` if a game was played (its end said the menu).
 fn room(cx: &mut Client) -> Result<bool, Exit> {
-    let title = net_ref(cx)
+    // Those who join hear whether the room takes watchers; its host chose.
+    let n = net_ref(cx);
+    let title = n
         .room
         .as_ref()
-        .map(|r| r.title())
+        .map(|r| {
+            if r.is_host(&n.lobby.you) {
+                r.title()
+            } else {
+                r.welcome()
+            }
+        })
         .unwrap_or_default();
     cx.voice.menu(&title);
     let factions = Rules::load(&[cx.res.rules_text()]).factions();
@@ -778,9 +856,25 @@ pub fn game_texts(cx: &mut Client, map: &Map) -> Option<GameTexts> {
         .ok()
 }
 
-/// Plays the game the server started, from the room's map. A game whose
-/// map is missing is left.
+/// Plays or watches the game the server started, from the room's map. A
+/// game whose map is missing is left. A watcher who joins a game that runs
+/// may still be downloading its map: the game waits for it, while its
+/// turns wait to be taken.
 fn play(cx: &mut Client, seated: net::Seated) -> Result<(), Exit> {
+    let deadline = cx.clock.now() + MAP_WAIT;
+    loop {
+        net::pump(cx);
+        let n = net_ref(cx);
+        let waiting = n.closed.is_none()
+            && n.room
+                .as_ref()
+                .is_some_and(|r| matches!(r.map, MapState::Downloading));
+        if !waiting || cx.clock.now() > deadline {
+            break;
+        }
+        cx.voice.update();
+        cx.clock.sleep(0.01);
+    }
     let room_map = net_ref(cx)
         .room
         .as_ref()

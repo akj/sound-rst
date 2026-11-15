@@ -159,6 +159,32 @@ pub const THE_GAME_IS_OVER: &str = "the game is over";
 pub const THE_SEAT_WAS_GIVEN_UP: &str = "your seat was given up";
 pub const NO_ANSWER_IN_TIME: &str = "the server could not be reached in time";
 
+// Watching a game: no units and no part in it, the side of one player at
+// a time.
+
+/// After someone's name: they joined the room or its game to watch.
+pub const IS_WATCHING: &str = "is watching";
+pub const STOPPED_WATCHING: &str = "stopped watching";
+/// Before the names of those who watch.
+pub const WATCHING_LIST: &str = "watching:";
+/// Before the name of the player a watcher follows, and after a watcher's
+/// name in a chat line.
+pub const WATCHING: &str = "watching";
+/// The lobby's item that watches a game, before its host and map.
+pub const WATCH: &str = "watch";
+pub const TAKES_WATCHERS: &str = "watchers welcome";
+pub const NO_WATCHERS_HERE: &str = "no watchers";
+/// The setting of a room being created: whether people may join it only
+/// to watch, and its two values.
+pub const WATCHERS: &str = "watchers";
+pub const WELCOME: &str = "welcome";
+pub const NOT_WELCOME: &str = "not welcome";
+pub const NO_WATCHERS: &str = "this game takes no watchers";
+pub const WATCHERS_FULL: &str = "no room for another watcher";
+pub const ROOM_CLOSED: &str = "the room closed: no player is left";
+pub const WATCHING_NO_ORDERS: &str = "watching: you give no orders";
+pub const NOT_WATCHING: &str = "only a watcher follows another player";
+
 /// What happened to a player of the game, `who`.
 pub fn seat_news(who: Msg, change: &SeatChange) -> Msg {
     let what = match change {

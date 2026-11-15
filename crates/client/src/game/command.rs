@@ -160,6 +160,8 @@ pub enum GameCommand {
     JumpToAlert,
     /// The next (1) or previous (-1) objective, with whether it is done.
     Objectives(i64),
+    /// A watcher follows the next player (1) or the previous one (-1).
+    FollowPlayer(i64),
     GameMenu,
     SayPlayers,
     /// The player's own faction.
@@ -238,6 +240,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "copy_message",
     "jump_to_alert",
     "objectives",
+    "follow_player",
     "gamemenu",
     "say_players",
     "say_faction",
@@ -408,6 +411,13 @@ impl GameCommand {
                     None => 1,
                 })
             }
+            "follow_player" => {
+                arity(args, 0, 1)?;
+                C::FollowPlayer(match args.first() {
+                    Some(a) => int(a)?,
+                    None => 1,
+                })
+            }
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
             "say_faction" => none(C::SayFaction)?,
@@ -562,6 +572,7 @@ impl GameCommand {
             C::UnitStatus => "say the controlled units and follow them".into(),
             C::SayTime => "say the time".into(),
             C::Objectives(i) => format!("{} objective", direction(*i)),
+            C::FollowPlayer(i) => format!("watching, follow the {} player", direction(*i)),
             C::SayPlayers => "say the names of the players".into(),
             C::SayFaction => "say your faction".into(),
             C::PlayersStatus => "say who is an ally or an enemy".into(),
@@ -767,6 +778,14 @@ mod tests {
         assert_eq!(describe("volume -1"), "lower the volume");
         assert_eq!(describe("objectives"), "next objective");
         assert_eq!(describe("objectives -1"), "previous objective");
+        assert_eq!(
+            describe("follow_player"),
+            "watching, follow the next player"
+        );
+        assert_eq!(
+            describe("follow_player -1"),
+            "watching, follow the previous player"
+        );
     }
 
     #[test]
@@ -787,6 +806,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 176);
+        assert_eq!(seen.len(), 178);
     }
 }

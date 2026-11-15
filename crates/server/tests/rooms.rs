@@ -25,6 +25,7 @@ async fn creating_a_room_asks_for_the_map_once() {
         map: info.clone(),
         speed: Speed::Normal,
         open: true,
+        watchers: true,
     };
 
     // The wrong file is refused, and the room is not created.
@@ -54,6 +55,8 @@ async fn creating_a_room_asks_for_the_map_once() {
         speed: Speed::Normal,
         open: true,
         content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots: vec![slot(human(&andrew), 1, true)],
     };
     all[0]
@@ -71,6 +74,7 @@ async fn creating_a_room_asks_for_the_map_once() {
         content: content(),
         players: vec![human(&andrew)],
         started: false,
+        takes_watchers: true,
     };
     for c in &mut all {
         c.expect(lobby(LobbyChange::RoomOpened {
@@ -87,6 +91,7 @@ async fn creating_a_room_asks_for_the_map_once() {
             map: info.clone(),
             speed: Speed::Fast2,
             open: false,
+            watchers: true,
         })
         .await;
     let msg = all[1].recv().await;
@@ -119,6 +124,7 @@ async fn a_map_that_does_not_suit_any_number_of_players_is_refused() {
             map: info,
             speed: Speed::Normal,
             open: true,
+            watchers: true,
         })
         .await;
         c.expect(refused(Refusal::Invalid)).await;
@@ -135,6 +141,7 @@ async fn a_map_title_with_too_many_sounds_is_refused() {
         map: info.clone(),
         speed: Speed::Normal,
         open: true,
+        watchers: true,
     })
     .await;
     c.expect(refused(Refusal::Invalid)).await;
@@ -144,6 +151,7 @@ async fn a_map_title_with_too_many_sounds_is_refused() {
         map: info.clone(),
         speed: Speed::Normal,
         open: true,
+        watchers: true,
     })
     .await;
     c.expect(ServerMsg::SendMap { hash: info.hash }).await;
@@ -233,6 +241,7 @@ async fn the_number_of_rooms_is_capped() {
             map: m.0.clone(),
             speed: Speed::Normal,
             open: true,
+            watchers: true,
         })
         .await;
     all[1].expect(refused(Refusal::TooManyRooms)).await;
@@ -254,6 +263,8 @@ async fn joining_an_open_room() {
         speed: Speed::Fast4,
         open: true,
         content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots: vec![slot(human(&andrew), 1, true), slot(human(&bob), 2, false)],
     };
     all[1]
@@ -279,6 +290,7 @@ async fn joining_an_open_room() {
         content: content(),
         players: vec![human(&andrew), human(&bob)],
         started: false,
+        takes_watchers: true,
     };
     for c in &mut all {
         c.expect(lobby(LobbyChange::RoomChanged {
@@ -357,6 +369,7 @@ async fn a_player_is_invited_to_a_room_once() {
             line: ChatLine {
                 channel: Channel::Lobby,
                 from: login("andrew"),
+                watcher: false,
                 text: chat("after"),
             },
         })
@@ -426,6 +439,8 @@ async fn ready_factions_and_alliances() {
         speed: Speed::Fast4,
         open: true,
         content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots: slots.clone(),
     };
 
@@ -548,6 +563,8 @@ async fn the_host_adds_and_removes_computers_and_players() {
         speed: Speed::Fast4,
         open: true,
         content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots: vec![
             slot(human(&andrew), 1, true),
             slot(human(&bob), 2, false),
@@ -667,6 +684,8 @@ async fn the_host_leaving_hands_the_room_over_and_the_last_human_closes_it() {
         speed: Speed::Fast4,
         open: true,
         content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
         slots: slots_after,
     };
     for i in [1, 2] {
@@ -694,6 +713,7 @@ async fn the_host_leaving_hands_the_room_over_and_the_last_human_closes_it() {
         content: content(),
         players: vec![human(&bob), human(&carol), easy],
         started: false,
+        takes_watchers: true,
     };
     for c in &mut all {
         c.expect(lobby(LobbyChange::RoomChanged {
@@ -797,6 +817,7 @@ async fn a_good_start() {
         content: content(),
         players: slots.iter().map(|s| s.player.clone()).collect(),
         started: true,
+        takes_watchers: true,
     };
     for c in &mut all {
         c.expect(lobby(LobbyChange::RoomChanged {
@@ -826,7 +847,7 @@ async fn a_good_start() {
         assert_eq!(
             (y, m, speed, paused, hold),
             (
-                you,
+                soundrts_protocol::game::Role::Player(you),
                 info.clone(),
                 Speed::Fast4,
                 false,

@@ -6,6 +6,7 @@ use soundrts_protocol::{Channel, ChatLine};
 use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
+use super::words::{WATCHING, text};
 use crate::message::{Category, News};
 use crate::sound_cache::literal;
 
@@ -74,13 +75,16 @@ pub fn line_news(line: &ChatLine) -> News {
 }
 
 /// How a chat line is said: who says what, "allied" first for a line to
-/// the allies.
+/// the allies, "watching" after the name of a watcher.
 pub fn line_msg(line: &ChatLine) -> Msg {
     let mut m = Vec::new();
     if line.channel == Channel::Allies {
         m.extend(msg(mp::ALLY));
     }
     m.push(literal(line.from.as_str()));
+    if line.watcher {
+        m.extend(text(WATCHING));
+    }
     m.extend(msg(mp::SAYS));
     m.push(literal(line.text.as_str()));
     m
@@ -95,6 +99,7 @@ mod tests {
         ChatLine {
             channel: Channel::Lobby,
             from: Login::new("a").unwrap(),
+            watcher: false,
             text: ChatText::clean(s).unwrap(),
         }
     }

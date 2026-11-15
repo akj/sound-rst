@@ -139,6 +139,8 @@ pub enum RoomTopic {
     Ready(SlotIndex),
     /// Who organizes the game.
     Host,
+    /// Whether this person watches.
+    Watcher(soundrts_protocol::Login),
 }
 
 /// What a piece of news is about. Newer news about a subject replaces the

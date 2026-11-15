@@ -788,7 +788,7 @@ fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
                     with(
                         0,
                         encoded(SeatFrame::Seated {
-                            you: 1,
+                            you: soundrts_protocol::game::Role::Player(1),
                             map,
                             speed,
                             paused,
@@ -851,3 +851,93 @@ fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
 
 /// Returns with a frame changed at random.
 const RETURN_CASES: u64 = 60;
+
+/// The frames a server sends Carol, who watches Andrew's game against a
+/// computer on jl1: the seat, the start, Andrew's whole message, then a
+/// change a turn, and Andrew's whole message again every other turn, as
+/// when she asks to follow the next player and he is the only one; then
+/// the end.
+fn watcher_stream(h: &mut Harness) -> Vec<Vec<u8>> {
+    let mut stream = FakeStream::new(h, "jl1", &slots(), 0, 1).watching();
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut frames = stream.opening(map, Speed::Normal);
+    for turn in 0..STREAM_TURNS {
+        frames.extend(stream.turn(Vec::new()));
+        if turn % 2 == 1 {
+            frames.push(stream.follow(0));
+        }
+    }
+    frames.push(stream.end());
+    frames.into_iter().map(encoded).collect()
+}
+
+#[test]
+fn hostile_frames_of_a_watched_game_are_taken_without_a_panic() {
+    let worker = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let mut h = Harness::new("en", Script::new().keep_open());
+            let frames = watcher_stream(&mut h);
+            let mut failures = Vec::new();
+            // The real stream plays to its end: a whole message during the
+            // game is a watcher's own.
+            assert!(!play_stream(&mut h, &frames), "the real stream was refused");
+            let whole = |i: usize| {
+                let SeatFrame::Whole(m) = frame(&frames, i) else {
+                    panic!("a whole message at {i}");
+                };
+                m
+            };
+            let later = frames
+                .iter()
+                .rposition(|f| {
+                    matches!(
+                        soundrts_protocol::game::decode_frame(f),
+                        Ok(SeatFrame::Whole(_))
+                    )
+                })
+                .unwrap();
+            let with = |at: usize, f: Vec<u8>| {
+                let mut s = frames.clone();
+                s.insert(at, f);
+                s
+            };
+            let cases = [
+                // The first whole message, from the start of the game.
+                (
+                    "a whole message back in time",
+                    with(later + 1, frames[2].clone()),
+                ),
+                ("a whole message of a player no longer in the game", {
+                    let mut m = whole(later);
+                    m.state.players.retain(|&p| p != m.seat);
+                    with(later + 1, encoded(SeatFrame::Whole(m)))
+                }),
+                ("a whole message of a player that is none", {
+                    let mut m = whole(later);
+                    m.seat = soundrts_world::PlayerId(200);
+                    with(later + 1, encoded(SeatFrame::Whole(m)))
+                }),
+            ];
+            for (what, stream) in cases {
+                match catch_unwind(AssertUnwindSafe(|| play_stream(&mut h, &stream))) {
+                    Ok(true) => {}
+                    Ok(false) => failures.push(format!("{what}: not refused")),
+                    Err(_) => failures.push(format!("{what}: panic")),
+                }
+            }
+            for case in 0..FRAME_CASES / 3 {
+                let mut r = Rng::new(0x5A7C, case);
+                let mut stream = frames.clone();
+                let i = r.below(stream.len());
+                mutate_bytes(&mut r, &mut stream[i]);
+                if catch_unwind(AssertUnwindSafe(|| play_stream(&mut h, &stream))).is_err() {
+                    failures.push(format!("case {case}: frame {i}: panic"));
+                }
+            }
+            failures
+        })
+        .unwrap();
+    let failures = worker.join().unwrap();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

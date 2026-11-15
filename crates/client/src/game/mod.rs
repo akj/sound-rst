@@ -572,9 +572,11 @@ impl GameInterface {
     /// nothing. A server takes no cheat, and sets its speed only when the
     /// room's host asks (see [`GameInterface::server_update`]). While the
     /// connection is lost, a command is not taken, and the player hears it
-    /// once.
+    /// once; a watcher gives none, and hears it once.
     pub fn send_command(&mut self, cx: &Client, command: Command) {
-        if !self.view().players().contains(&self.me) {
+        if self.refuse_while_watching() {
+            cx.log.info(format!("watching: didn't send {command:?}"));
+        } else if !self.view().players().contains(&self.me) {
             cx.log.info(format!(
                 "didn't send the order for player {}: {command:?}",
                 self.me.0

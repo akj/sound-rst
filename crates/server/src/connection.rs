@@ -49,6 +49,12 @@ const CHAT_WINDOW: Duration = Duration::from_secs(5);
 const INVITATIONS: usize = 20;
 const INVITATION_WINDOW: Duration = Duration::from_secs(60);
 
+/// The watching rate limit: this many requests to watch in this window.
+/// Everyone in a room hears each watcher come and go, and a game sends
+/// each new watcher a whole message.
+const WATCHES: usize = 10;
+const WATCH_WINDOW: Duration = Duration::from_secs(60);
+
 /// The map transfer rate limit: this many maps asked for or sent in this
 /// window. A client asks for a room's map once, on entering a room whose
 /// map it lacks, and a host sends one when the server lacks its map.
@@ -482,6 +488,7 @@ struct Limits {
     refilled: Instant,
     chat: Window,
     invitations: Window,
+    watches: Window,
     maps: Window,
 }
 
@@ -492,6 +499,7 @@ impl Limits {
             refilled: now,
             chat: Window::new(CHAT_LINES, CHAT_WINDOW),
             invitations: Window::new(INVITATIONS, INVITATION_WINDOW),
+            watches: Window::new(WATCHES, WATCH_WINDOW),
             maps: Window::new(MAP_TRANSFERS, MAP_WINDOW),
         }
     }
@@ -510,11 +518,13 @@ impl Limits {
     }
 
     /// Whether a message of this kind is allowed now: chat lines,
-    /// invitations and map transfers have their own limits.
+    /// invitations, requests to watch and map transfers have their own
+    /// limits.
     fn kind(&mut self, msg: &ClientMsg, now: Instant) -> bool {
         let window = match msg {
             ClientMsg::Chat { .. } => &mut self.chat,
             ClientMsg::Invite { .. } => &mut self.invitations,
+            ClientMsg::Watch { .. } => &mut self.watches,
             ClientMsg::Map { .. } | ClientMsg::GetMap { .. } | ClientMsg::Start { .. } => {
                 &mut self.maps
             }

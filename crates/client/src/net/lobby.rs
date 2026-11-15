@@ -40,6 +40,20 @@ impl std::fmt::Display for TooMany {
     }
 }
 
+/// The most watchers a client keeps for a room. A server takes 8 by
+/// default.
+pub const MAX_ROOM_WATCHERS: usize = 255;
+
+/// Whether the watchers of a room from the server are within what a
+/// client keeps.
+pub fn check_watchers(watchers: usize) -> Result<(), TooMany> {
+    if watchers > MAX_ROOM_WATCHERS {
+        Err(TooMany("watchers in a room"))
+    } else {
+        Ok(())
+    }
+}
+
 /// Whether a room from the server is within what a client keeps.
 pub fn check_room(map: &MapInfo, slots: usize) -> Result<(), TooMany> {
     if slots > MAX_ROOM_SLOTS {
@@ -209,6 +223,40 @@ impl RoomModel {
         self.state.host == *login
     }
 
+    /// Whether `login` watches the room or its game.
+    pub fn is_watcher(&self, login: &Login) -> bool {
+        self.state.watchers.contains(login)
+    }
+
+    /// Who watches, as said: "watching:" and their names; nothing if
+    /// nobody does.
+    pub fn watchers(&self) -> Msg {
+        if self.state.watchers.is_empty() {
+            return Vec::new();
+        }
+        [
+            text(words::WATCHING_LIST),
+            names(
+                self.state
+                    .watchers
+                    .iter()
+                    .map(|l| vec![literal(l.as_str())]),
+            ),
+        ]
+        .concat()
+    }
+
+    /// What is said on entering the room: the map, and whether it takes
+    /// watchers.
+    pub fn welcome(&self) -> Msg {
+        let watchers = if self.state.takes_watchers {
+            words::TAKES_WATCHERS
+        } else {
+            words::NO_WATCHERS_HERE
+        };
+        [self.title(), msg(mp::COMMA), text(watchers)].concat()
+    }
+
     pub fn map(&self) -> Option<Arc<Map>> {
         match &self.map {
             MapState::Ready(m) => Some(m.clone()),
@@ -236,6 +284,11 @@ impl RoomModel {
         m.extend(names(
             self.state.slots.iter().map(|s| player_name(&s.player)),
         ));
+        let watchers = self.watchers();
+        if !watchers.is_empty() {
+            m.extend(msg(mp::PERIOD));
+            m.extend(watchers);
+        }
         m
     }
 
@@ -308,6 +361,14 @@ impl RoomModel {
                 ]
                 .concat(),
                 RoomTopic::Host,
+            ),
+            RoomChange::Watching { login } => (
+                [vec![literal(login.as_str())], text(words::IS_WATCHING)].concat(),
+                RoomTopic::Watcher(login.clone()),
+            ),
+            RoomChange::StoppedWatching { login } => (
+                [vec![literal(login.as_str())], text(words::STOPPED_WATCHING)].concat(),
+                RoomTopic::Watcher(login.clone()),
             ),
         })
     }

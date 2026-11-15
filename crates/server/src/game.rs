@@ -3,18 +3,20 @@
 //!
 //! The task builds the game from the set-up the lobby made, owns the
 //! [`Host`], steps it on a clock that waits for nobody, and sends each
-//! human seat its stream: the start and the whole message when the seat
+//! seat its stream: the start and the whole message when the seat
 //! joins or returns, then the change since the last message it was sent,
 //! each turn. The world's work (building, and each turn with every seat's
 //! message) runs on a blocking thread with a time budget; a panic there
 //! ends this game and nothing else.
 //!
-//! Where watchers would attach: a watcher is a [`Seat`] with no player of
-//! its own and a message that follows one; [`Link`], [`Pace`] and
-//! [`Game::deliver`] would serve it as they serve a player, and returning
-//! is how a watcher would join late. Where the record would attach: the
-//! clock's branch of `run` takes every command of a turn, in the order the
-//! host runs them, with the turn's number.
+//! A seat is a player's or a watcher's ([`SeatId`]). A watcher has no
+//! player of its own: it is sent the side of a human player it follows,
+//! the very stream that player's seat is sent, and the world never hears
+//! of it. [`Link`], [`Pace`] and [`Game::deliver`] serve both alike. A
+//! watcher joins a game that runs as a player returns to it: it is sent
+//! the start and the whole message of the player it follows. Where the
+//! record would attach: the clock's branch of `run` takes every command of
+//! a turn, in the order the host runs them, with the turn's number.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -27,10 +29,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use soundrts_protocol::game::{SeatFrame, encode_frame};
+use soundrts_protocol::game::{Role, SeatFrame, encode_frame};
 use soundrts_protocol::{
     ChatText, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapInfo, Refusal, RoomId, SeatChange,
-    SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, StopReason,
+    SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step, StopReason,
 };
 use soundrts_world::{
     Command, Event, GameSetup, Host, Order, OrderTarget, PlayerId, SeatTurn, TurnMessage,
@@ -147,36 +149,58 @@ async fn within<T: Send + 'static>(
     }
 }
 
-/// A human seat as the lobby hands it over when the game starts.
+/// Who has a seat in a game: the player of a slot of the room, or a
+/// watcher. A watcher's seat is sent the side of a player it follows, and
+/// what it may send the game is only [`GameInput::Follow`] and
+/// [`GameInput::Leave`]: the inputs that change the game take a
+/// [`SlotIndex`], which a watcher does not have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum SeatId {
+    Player(SlotIndex),
+    Watcher(WatcherId),
+}
+
+/// A watcher of a room and its game, for as long as it watches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct WatcherId(pub u32);
+
+/// A seat as the lobby hands it over when the game starts.
 pub(crate) struct Joining {
-    pub slot: SlotIndex,
+    pub seat: SeatId,
     pub conn: ConnId,
     pub login: Login,
     pub outbox: Outbox,
 }
 
 /// What the lobby passes to a game. The lobby has checked who may
-/// send it: a seat's own player for a command, and the room's host for
-/// the clock and removals.
+/// send it: a seat's own player for a command, the room's host for the
+/// clock and removals, a watcher to follow another player.
 pub(crate) enum GameInput {
     Command {
         slot: SlotIndex,
         command: Command,
         bytes: usize,
     },
-    /// The player asked to leave.
+    /// The seat's player or watcher asked to leave.
     Leave {
-        slot: SlotIndex,
+        seat: SeatId,
     },
-    /// The player's connection is gone.
+    /// The seat's connection is gone.
     Dropped {
-        slot: SlotIndex,
+        seat: SeatId,
     },
     /// A player in the lobby asks for a dropped seat back.
     Return {
         conn: ConnId,
         token: SeatToken,
         outbox: Outbox,
+    },
+    /// Someone joins the game that runs, to watch.
+    Watch(Joining),
+    /// A watcher follows the next player, or the previous one.
+    Follow {
+        watcher: WatcherId,
+        step: Step,
     },
     Pause {
         by: SlotIndex,
@@ -211,9 +235,9 @@ pub(crate) enum Ending {
 }
 
 /// Starts a game's task. The game reports to the lobby each seat
-/// whose game is over ([`LobbyInput::LeftGame`]), returns accepted or
-/// refused, and how it ended ([`LobbyInput::GameEnded`]), even if it
-/// panics.
+/// whose game is over ([`LobbyInput::LeftGame`], or
+/// [`LobbyInput::WatcherLeft`]), returns accepted or refused, and how it
+/// ended ([`LobbyInput::GameEnded`]), even if it panics.
 pub(crate) fn spawn(
     room: RoomId,
     setup: GameSetup,
@@ -237,12 +261,14 @@ pub(crate) fn spawn(
     tx
 }
 
-/// A human seat still in the game.
+/// A seat still in the game: a player's, or a watcher's.
 struct Seat {
-    player: PlayerId,
     login: Login,
     token: SeatToken,
     link: Link,
+    /// The player whose side of the game the seat is sent: its own
+    /// player's, or the one a watcher follows.
+    side: PlayerId,
 }
 
 /// A seat's connection. A seat that is gone is no longer in the game's
@@ -291,6 +317,10 @@ impl Clock {
     }
 }
 
+/// The most players a watcher's steps along the players count: more go
+/// round again.
+const MAX_STEPS: i64 = 256;
+
 struct Game {
     room: RoomId,
     settings: Settings,
@@ -301,10 +331,17 @@ struct Game {
     start: Bytes,
     /// The player of each slot.
     players: Vec<PlayerId>,
-    seats: BTreeMap<SlotIndex, Seat>,
+    seats: BTreeMap<SeatId, Seat>,
+    /// How far along the players each watcher asked to move, not yet done:
+    /// at the next turn, or after [`Game::switch_at`] while paused.
+    steps: BTreeMap<WatcherId, i64>,
+    /// While the game is paused, when the watchers' steps are done: a turn
+    /// after the first was asked for, so that no watcher has the game
+    /// build messages faster than a running game would.
+    switch_at: Option<Instant>,
     /// The commands for the next turn, in the order they came.
     commands: Vec<(PlayerId, Command)>,
-    /// The bytes of commands each seat has given for the next turn.
+    /// The bytes of commands each player has given for the next turn.
     command_bytes: BTreeMap<SlotIndex, usize>,
     clock: Clock,
     turn: u64,
@@ -314,20 +351,40 @@ struct Game {
     squares: usize,
 }
 
-/// A connected seat's share of a turn: whether it is sent the turn, and
-/// from which message.
-struct Plan {
-    slot: SlotIndex,
-    player: PlayerId,
-    send: Option<(Arc<TurnMessage>, VecDeque<Event>)>,
+/// What a connected seat is sent of the coming turn.
+enum Sending {
+    /// The change from its last message, with the events it missed first.
+    Change {
+        last: Arc<TurnMessage>,
+        missed: VecDeque<Event>,
+    },
+    /// The whole message of its side: a watcher that follows another
+    /// player.
+    Whole,
 }
 
-/// What a turn gave a connected seat, and the frames that send it, if it
-/// is sent the turn.
+/// A connected seat's share of a turn: whose side it is sent, and what,
+/// if it is sent the turn.
+struct Plan {
+    seat: SeatId,
+    side: PlayerId,
+    send: Option<Sending>,
+}
+
+/// What a turn gave a connected seat's side, and the frames that send it,
+/// if it is sent the turn.
 struct Delivery {
-    slot: SlotIndex,
-    turn: SeatTurn,
-    frames: Option<Vec<Bytes>>,
+    seat: SeatId,
+    side: PlayerId,
+    turn: Arc<SeatTurn>,
+    frames: Option<Sent>,
+}
+
+/// The frames a seat is sent of a turn.
+struct Sent {
+    frames: Vec<Bytes>,
+    /// They are a whole message: the seat follows its side from now on.
+    whole: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -370,6 +427,8 @@ async fn run(
         map,
         start,
         seats: BTreeMap::new(),
+        steps: BTreeMap::new(),
+        switch_at: None,
         players,
         commands: Vec::new(),
         command_bytes: BTreeMap::new(),
@@ -378,19 +437,7 @@ async fn run(
         squares: host.game_start().map.squares.len(),
     };
     for j in joining {
-        let Some(&player) = game.players.get(j.slot) else {
-            continue;
-        };
-        let seat = Seat {
-            player,
-            login: j.login,
-            token: SeatToken::from_bits(rand::random()),
-            link: Link::Dropped {
-                deadline: Instant::now(),
-            },
-        };
-        game.seats.insert(j.slot, seat);
-        game.connect(&host, j.slot, j.conn, j.outbox);
+        game.seat(&host, j);
     }
     info!(room = room.0, seats = game.seats.len(), "game started");
 
@@ -429,7 +476,11 @@ async fn run(
                     }
                 }
             }
-            _ = sleep_until(deadline) => game.give_up_expired(Instant::now()),
+            _ = sleep_until(deadline) => {
+                let now = Instant::now();
+                game.give_up_expired(now);
+                game.switch_if_due(&host, now);
+            }
             input = inputs.recv() => match input {
                 Some((input, _queued)) => game.on_input(&host, input),
                 None => break,
@@ -501,6 +552,11 @@ async fn build(
 
 /// The world's part of a turn, on a blocking thread: the commands, the
 /// step, and the frames of each connected seat that is sent the turn.
+///
+/// The world builds each side's message once, however many seats are
+/// sent it, and seats sent the same thing share its encoding: a watcher
+/// in step with the player it follows is sent the very bytes that player
+/// is.
 fn play_turn(
     host: &mut Host,
     commands: Vec<(PlayerId, Command)>,
@@ -511,25 +567,104 @@ fn play_turn(
         // nothing is told now.
         let _ = host.queue(player, command);
     }
-    let players: Vec<PlayerId> = plans.iter().map(|p| p.player).collect();
-    let turns = host.step_seats(&players);
+    let mut sides: Vec<PlayerId> = Vec::new();
+    for plan in &plans {
+        if !sides.contains(&plan.side) {
+            sides.push(plan.side);
+        }
+    }
+    let turns: Vec<(PlayerId, Arc<SeatTurn>)> = sides
+        .iter()
+        .copied()
+        .zip(host.step_seats(&sides).into_iter().map(Arc::new))
+        .collect();
+    let mut shared = Shared::default();
     plans
         .into_iter()
-        .zip(turns)
-        .map(|(plan, turn)| Delivery {
-            slot: plan.slot,
-            frames: plan
+        .filter_map(|plan| {
+            let (_, turn) = turns.iter().find(|(side, _)| *side == plan.side)?;
+            let frames = plan
                 .send
-                .and_then(|(last, missed)| frames(plan.slot, &last, &missed, &turn)),
-            turn,
+                .and_then(|send| shared.frames(plan.seat, plan.side, turn, send));
+            Some(Delivery {
+                seat: plan.seat,
+                side: plan.side,
+                turn: Arc::clone(turn),
+                frames,
+            })
         })
         .collect()
+}
+
+/// The frames of a turn encoded so far, for seats sent the same thing.
+#[derive(Default)]
+struct Shared {
+    /// The changes of a side from a last message, for seats that missed
+    /// nothing.
+    changes: Vec<(PlayerId, Arc<TurnMessage>, Vec<Bytes>)>,
+    /// The whole message of a side.
+    wholes: Vec<(PlayerId, Bytes)>,
+}
+
+impl Shared {
+    /// The frames that send `send` of `turn`, the turn of `side`, to
+    /// `seat`; `None` if one cannot be encoded.
+    fn frames(
+        &mut self,
+        seat: SeatId,
+        side: PlayerId,
+        turn: &SeatTurn,
+        send: Sending,
+    ) -> Option<Sent> {
+        match send {
+            Sending::Change { last, missed } if missed.is_empty() => {
+                let found = self
+                    .changes
+                    .iter()
+                    .find(|(s, l, _)| *s == side && Arc::ptr_eq(l, &last));
+                let frames = match found {
+                    Some((_, _, frames)) => frames.clone(),
+                    None => {
+                        let frames = frames(seat, &last, &missed, turn)?;
+                        self.changes.push((side, last, frames.clone()));
+                        frames
+                    }
+                };
+                Some(Sent {
+                    frames,
+                    whole: false,
+                })
+            }
+            Sending::Change { last, missed } => Some(Sent {
+                frames: frames(seat, &last, &missed, turn)?,
+                whole: false,
+            }),
+            Sending::Whole => {
+                let bytes = match self.wholes.iter().find(|(s, _)| *s == side) {
+                    Some((_, bytes)) => bytes.clone(),
+                    None => {
+                        let whole = TurnMessage {
+                            events: Vec::new(),
+                            ..(*turn.message).clone()
+                        };
+                        let bytes = encoded(&SeatFrame::Whole(whole))?;
+                        self.wholes.push((side, bytes.clone()));
+                        bytes
+                    }
+                };
+                Some(Sent {
+                    frames: vec![bytes],
+                    whole: true,
+                })
+            }
+        }
+    }
 }
 
 /// The changes of [`SeatTurn::changes`], encoded; `None` if one cannot
 /// be.
 fn frames(
-    slot: SlotIndex,
+    seat: SeatId,
     last: &TurnMessage,
     missed: &VecDeque<Event>,
     turn: &SeatTurn,
@@ -539,7 +674,7 @@ fn frames(
         .map(|c| match encode_frame(&SeatFrame::Change(c)) {
             Ok(bytes) => Some(Bytes::from(bytes)),
             Err(e) => {
-                warn!(slot, error = %e, "cannot encode a change");
+                warn!(?seat, error = %e, "cannot encode a change");
                 None
             }
         })
@@ -581,18 +716,49 @@ fn told_later(turn: &SeatTurn) -> impl Iterator<Item = &Event> {
 impl Game {
     // -- Seats ---------------------------------------------------------------
 
-    /// Connects a seat that is in `seats` to `conn`, and sends it the game
-    /// and its whole message as it is now.
-    fn connect(&mut self, host: &Host, slot: SlotIndex, conn: ConnId, outbox: Outbox) {
-        let paused = matches!(self.clock, Clock::Paused);
-        let Some(seat) = self.seats.get_mut(&slot) else {
+    /// Seats someone who joins the game: a player when it starts, or a
+    /// watcher, then or later, who follows the first player still in it.
+    fn seat(&mut self, host: &Host, j: Joining) {
+        // A watcher who comes when no player is left to follow is told the
+        // end of the first player's game.
+        let side = match j.seat {
+            SeatId::Player(slot) => self.players.get(slot).copied(),
+            SeatId::Watcher(_) => self
+                .along(None, 1)
+                .or_else(|| self.players.first().copied()),
+        };
+        let Some(side) = side else {
             return;
         };
-        let message = Arc::new(host.message(seat.player));
+        let seat = Seat {
+            login: j.login,
+            token: SeatToken::from_bits(rand::random()),
+            link: Link::Dropped {
+                deadline: Instant::now(),
+            },
+            side,
+        };
+        info!(room = self.room.0, seat = ?j.seat, login = %seat.login, "seated");
+        self.seats.insert(j.seat, seat);
+        self.connect(host, j.seat, j.conn, j.outbox);
+    }
+
+    /// Connects a seat that is in `seats` to `conn`, and sends it the game
+    /// and its whole message as it is now.
+    fn connect(&mut self, host: &Host, id: SeatId, conn: ConnId, outbox: Outbox) {
+        let paused = matches!(self.clock, Clock::Paused);
+        let Some(seat) = self.seats.get_mut(&id) else {
+            return;
+        };
+        let message = Arc::new(host.message(seat.side));
+        let you = match id {
+            SeatId::Player(slot) => Role::Player(slot),
+            SeatId::Watcher(_) => Role::Watcher,
+        };
         tell(
             &outbox,
             &SeatFrame::Seated {
-                you: slot,
+                you,
                 map: self.map.clone(),
                 speed: self.settings.speed,
                 paused,
@@ -603,42 +769,111 @@ impl Game {
         outbox.send_binary(self.start.clone());
         match encode_frame(&SeatFrame::Whole((*message).clone())) {
             Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
-            Err(e) => warn!(room = self.room.0, slot, error = %e, "cannot encode a whole message"),
+            Err(e) => {
+                warn!(room = self.room.0, seat = ?id, error = %e, "cannot encode a whole message")
+            }
         }
-        let over = !message.state.players.contains(&seat.player);
+        let side_over = !message.state.players.contains(&seat.side);
         seat.link = Link::Connected {
             conn,
             outbox,
             last: message,
             pace: Pace::InStep,
         };
+        let over = match id {
+            SeatId::Player(_) => side_over,
+            // A watcher's side is a player still in the game, if one is.
+            SeatId::Watcher(_) => side_over && self.followable().is_empty(),
+        };
         if over {
-            self.end_seat(host, slot);
+            self.end_seat(host, id);
         }
     }
 
-    /// Ends the game for a seat: if connected, it is sent its end, and its
-    /// player goes back to the lobby. The seat is gone.
-    fn end_seat(&mut self, host: &Host, slot: SlotIndex) {
-        let Some(seat) = self.seats.remove(&slot) else {
+    /// Ends the game for a seat: if connected, it is sent its end, the end
+    /// of its side's player. The seat is gone, and the lobby hears of it: a
+    /// player goes back to the lobby, and a watcher stops watching.
+    fn end_seat(&mut self, host: &Host, id: SeatId) {
+        let Some(seat) = self.seats.remove(&id) else {
             return;
         };
-        if let Link::Connected { conn, outbox, .. } = seat.link {
-            match encode_frame(&SeatFrame::End(host.game_end(seat.player))) {
-                Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
-                Err(e) => warn!(room = self.room.0, slot, error = %e, "cannot encode an end"),
+        let conn = match seat.link {
+            Link::Connected { conn, outbox, .. } => {
+                match encode_frame(&SeatFrame::End(host.game_end(seat.side))) {
+                    Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
+                    Err(e) => {
+                        warn!(room = self.room.0, seat = ?id, error = %e, "cannot encode an end")
+                    }
+                }
+                Some(conn)
             }
-            let _ = self.lobby.send(LobbyInput::LeftGame {
-                room: self.room,
-                conn,
-            });
+            Link::Dropped { .. } => None,
+        };
+        match (id, conn) {
+            (SeatId::Player(_), Some(conn)) => {
+                let _ = self.lobby.send(LobbyInput::LeftGame {
+                    room: self.room,
+                    conn,
+                });
+            }
+            (SeatId::Player(_), None) => {}
+            (SeatId::Watcher(watcher), _) => {
+                self.steps.remove(&watcher);
+                let _ = self.lobby.send(LobbyInput::WatcherLeft {
+                    room: self.room,
+                    watcher,
+                });
+            }
         }
-        info!(room = self.room.0, slot, login = %seat.login, "seat left the game");
+        info!(room = self.room.0, seat = ?id, login = %seat.login, "seat left the game");
     }
 
     /// Takes a seat's player out of the game, as a player who leaves.
     fn quit(&mut self, player: PlayerId) {
         self.commands.push((player, Command::Quit));
+    }
+
+    /// The players a watcher may follow, in the room's order: humans
+    /// still in the game. A computer's side is not told events, so it has
+    /// no stream to follow.
+    fn followable(&self) -> Vec<PlayerId> {
+        self.slots
+            .iter()
+            .zip(&self.players)
+            .filter(|(s, p)| {
+                matches!(s.player, soundrts_protocol::SlotPlayer::Human(_))
+                    && self.in_game.contains(p)
+            })
+            .map(|(_, &p)| p)
+            .collect()
+    }
+
+    /// The player `steps` along the players a watcher may follow from
+    /// `from` (from before the first if `None`): forward if positive, back
+    /// if negative, and round again past either end. From a player who
+    /// is no longer among them, one step forward is the next of them in
+    /// the room's order. `None` if there is none to follow.
+    fn along(&self, from: Option<PlayerId>, steps: i64) -> Option<PlayerId> {
+        let order = self.followable();
+        let len = i64::try_from(order.len()).ok().filter(|&n| n > 0)?;
+        let slot = |p: PlayerId| self.players.iter().position(|&q| q == p);
+        let from_slot = from.and_then(slot);
+        // The index that counts as 0 steps, and the steps from it.
+        let (base, steps) = match from.and_then(|f| order.iter().position(|&p| p == f)) {
+            Some(i) => (i64::try_from(i).ok()?, steps),
+            None => {
+                // Between two of them: a step forward reaches the next.
+                let next = order.iter().position(|&p| slot(p) > from_slot).unwrap_or(0);
+                let next = i64::try_from(next).ok()?;
+                if steps > 0 {
+                    (next, steps.checked_sub(1)?)
+                } else {
+                    (next, steps)
+                }
+            }
+        };
+        let i = base.checked_add(steps)?.checked_rem_euclid(len)?;
+        order.get(usize::try_from(i).ok()?).copied()
     }
 
     fn next_deadline(&self) -> Option<Instant> {
@@ -648,93 +883,214 @@ impl Game {
                 Link::Dropped { deadline } => Some(deadline),
                 Link::Connected { .. } => None,
             })
+            .chain(self.switch_at)
             .min()
     }
 
     fn give_up_expired(&mut self, now: Instant) {
-        let expired: Vec<SlotIndex> = self
+        let expired: Vec<SeatId> = self
             .seats
             .iter()
             .filter(|(_, s)| matches!(s.link, Link::Dropped { deadline } if deadline <= now))
-            .map(|(&slot, _)| slot)
+            .map(|(&id, _)| id)
             .collect();
-        for slot in expired {
-            if let Some(seat) = self.seats.remove(&slot) {
-                info!(room = self.room.0, slot, login = %seat.login, "seat given up");
-                self.quit(seat.player);
-                self.tell_all(&SeatFrame::Seat {
-                    slot,
-                    change: SeatChange::GivenUp,
-                });
+        for id in expired {
+            let Some(seat) = self.seats.remove(&id) else {
+                continue;
+            };
+            info!(room = self.room.0, seat = ?id, login = %seat.login, "seat given up");
+            match id {
+                SeatId::Player(slot) => {
+                    self.quit(seat.side);
+                    self.tell_all(&SeatFrame::Seat {
+                        slot,
+                        change: SeatChange::GivenUp,
+                    });
+                }
+                SeatId::Watcher(watcher) => {
+                    self.steps.remove(&watcher);
+                    let _ = self.lobby.send(LobbyInput::WatcherLeft {
+                        room: self.room,
+                        watcher,
+                    });
+                }
             }
         }
+    }
+
+    // -- Following -----------------------------------------------------------
+
+    /// A watcher asks to follow the next player, or the previous one: done
+    /// at the next turn, or a turn from now while the game is paused.
+    fn follow(&mut self, watcher: WatcherId, step: Step) {
+        let connected = self
+            .seats
+            .get(&SeatId::Watcher(watcher))
+            .is_some_and(|s| matches!(s.link, Link::Connected { .. }));
+        if !connected {
+            return;
+        }
+        let steps = self.steps.entry(watcher).or_default();
+        let one = match step {
+            Step::Next => 1,
+            Step::Previous => -1,
+        };
+        *steps = steps.saturating_add(one).clamp(-MAX_STEPS, MAX_STEPS);
+        if matches!(self.clock, Clock::Paused) && self.switch_at.is_none() {
+            self.switch_at = Some(after(self.settings.speed.turn_interval()));
+        }
+    }
+
+    /// The side a watcher follows from the coming turn: `steps` along from
+    /// its own.
+    fn stepped(&self, side: PlayerId, steps: i64) -> PlayerId {
+        self.along(Some(side), steps).unwrap_or(side)
+    }
+
+    /// While the game is paused, does the steps asked for once their time
+    /// has come: each watcher is sent its new side's whole message now.
+    fn switch_if_due(&mut self, host: &Host, now: Instant) {
+        if self.switch_at.is_none_or(|at| at > now) {
+            return;
+        }
+        self.switch_at = None;
+        for (watcher, steps) in std::mem::take(&mut self.steps) {
+            let id = SeatId::Watcher(watcher);
+            let Some(side) = self.seats.get(&id).map(|s| s.side) else {
+                continue;
+            };
+            let side = self.stepped(side, steps);
+            self.refollow(host, id, side);
+        }
+    }
+
+    /// A watcher follows `side` from now on: if connected, it is sent
+    /// that player's whole message as it is now.
+    fn refollow(&mut self, host: &Host, id: SeatId, side: PlayerId) {
+        let Some(seat) = self.seats.get_mut(&id) else {
+            return;
+        };
+        seat.side = side;
+        let Link::Connected {
+            outbox, last, pace, ..
+        } = &mut seat.link
+        else {
+            return;
+        };
+        let message = Arc::new(host.message(side));
+        match encode_frame(&SeatFrame::Whole((*message).clone())) {
+            Ok(bytes) => outbox.send_binary(Bytes::from(bytes)),
+            Err(e) => {
+                warn!(room = self.room.0, seat = ?id, error = %e, "cannot encode a whole message");
+                return;
+            }
+        }
+        *last = message;
+        *pace = Pace::InStep;
     }
 
     // -- Turns ---------------------------------------------------------------
 
     /// What each connected seat is sent of the coming turn: nothing if its
-    /// connection is not keeping up.
+    /// connection is not keeping up. A watcher that asked to follow
+    /// another player and keeps up is sent that player's whole message.
     fn plans(&mut self) -> Vec<Plan> {
-        self.seats
-            .iter_mut()
-            .filter_map(|(&slot, seat)| match &mut seat.link {
-                Link::Connected {
-                    outbox, last, pace, ..
-                } => {
-                    let send = (outbox.queued() < SEAT_BACKLOG).then(|| {
-                        let missed = match pace {
-                            Pace::InStep => VecDeque::new(),
-                            Pace::Behind { missed } => std::mem::take(missed),
-                        };
-                        (Arc::clone(last), missed)
-                    });
-                    Some(Plan {
-                        slot,
-                        player: seat.player,
-                        send,
-                    })
+        let mut plans = Vec::new();
+        let ids: Vec<SeatId> = self.seats.keys().copied().collect();
+        for id in ids {
+            let steps = match id {
+                SeatId::Watcher(w) => self.steps.get(&w).copied(),
+                SeatId::Player(_) => None,
+            };
+            let Some(seat) = self.seats.get(&id) else {
+                continue;
+            };
+            let Link::Connected { outbox, .. } = &seat.link else {
+                continue;
+            };
+            let keeps_up = outbox.queued() < SEAT_BACKLOG;
+            let new_side = match (steps, keeps_up) {
+                (Some(steps), true) => Some(self.stepped(seat.side, steps)),
+                _ => None,
+            };
+            if let (Some(_), SeatId::Watcher(w)) = (new_side, id) {
+                self.steps.remove(&w);
+            }
+            let Some(seat) = self.seats.get_mut(&id) else {
+                continue;
+            };
+            let Link::Connected { last, pace, .. } = &mut seat.link else {
+                continue;
+            };
+            let send = match new_side {
+                Some(side) => {
+                    seat.side = side;
+                    Some(Sending::Whole)
                 }
-                Link::Dropped { .. } => None,
-            })
-            .collect()
+                None => keeps_up.then(|| {
+                    let missed = match pace {
+                        Pace::InStep => VecDeque::new(),
+                        Pace::Behind { missed } => std::mem::take(missed),
+                    };
+                    Sending::Change {
+                        last: Arc::clone(last),
+                        missed,
+                    }
+                }),
+            };
+            plans.push(Plan {
+                seat: id,
+                side: seat.side,
+                send,
+            });
+        }
+        plans
     }
 
     /// Sends each seat its frames of the turn, keeps the events of a seat
     /// that was not sent the turn, and ends the game of seats whose player
-    /// is no longer in it. A seat whose game is over is sent the turn, and
-    /// any it missed, whatever its connection: its end comes after.
+    /// is no longer in it. A player whose game is over is sent the turn,
+    /// and any it missed, whatever its connection: its end comes after. A
+    /// watcher whose player is no longer in the game follows the next one
+    /// still in it, or, if none is, has its end, that player's.
     fn deliver(&mut self, host: &Host, deliveries: Vec<Delivery>) {
         let in_game = deliveries
             .first()
             .map(|d| d.turn.message.state.players.clone());
         for d in deliveries {
             let Some(Seat {
-                player,
                 link: Link::Connected {
                     outbox, last, pace, ..
                 },
                 ..
-            }) = self.seats.get_mut(&d.slot)
+            }) = self.seats.get_mut(&d.seat)
             else {
                 continue;
             };
-            let over = !d.turn.message.state.players.contains(player);
-            let frames = d.frames.or_else(|| {
+            let over = matches!(d.seat, SeatId::Player(_))
+                && !d.turn.message.state.players.contains(&d.side);
+            let sent = d.frames.or_else(|| {
                 over.then(|| {
                     let missed = match pace {
                         Pace::Behind { missed } => std::mem::take(missed),
                         Pace::InStep => VecDeque::new(),
                     };
-                    frames(d.slot, last, &missed, &d.turn)
+                    frames(d.seat, last, &missed, &d.turn).map(|frames| Sent {
+                        frames,
+                        whole: false,
+                    })
                 })
                 .flatten()
             });
-            match frames {
-                Some(frames) => {
-                    for frame in frames {
+            match sent {
+                Some(sent) => {
+                    for frame in sent.frames {
                         outbox.send_binary(frame);
                     }
-                    *last = d.turn.message;
+                    if sent.whole {
+                        debug!(room = self.room.0, seat = ?d.seat, side = d.side.0, "follows");
+                    }
+                    *last = Arc::clone(&d.turn.message);
                     *pace = Pace::InStep;
                 }
                 None => {
@@ -754,14 +1110,17 @@ impl Game {
         }
         if let Some(in_game) = in_game {
             self.in_game = in_game;
-            let over: Vec<SlotIndex> = self
+            let over: Vec<(SeatId, PlayerId)> = self
                 .seats
                 .iter()
-                .filter(|(_, s)| !self.in_game.contains(&s.player))
-                .map(|(&slot, _)| slot)
+                .filter(|(_, s)| !self.in_game.contains(&s.side))
+                .map(|(&id, s)| (id, s.side))
                 .collect();
-            for slot in over {
-                self.end_seat(host, slot);
+            for (id, side) in over {
+                match (id, self.along(Some(side), 1)) {
+                    (SeatId::Watcher(_), Some(next)) => self.refollow(host, id, next),
+                    _ => self.end_seat(host, id),
+                }
             }
         }
     }
@@ -775,22 +1134,29 @@ impl Game {
                 command,
                 bytes,
             } => self.command(slot, command, bytes),
-            GameInput::Leave { slot } => {
-                if let Some(seat) = self.seats.get(&slot) {
-                    self.quit(seat.player);
-                    self.end_seat(host, slot);
+            GameInput::Leave { seat } => {
+                let Some(side) = self.seats.get(&seat).map(|s| s.side) else {
+                    return;
+                };
+                if let SeatId::Player(slot) = seat {
+                    self.quit(side);
+                    self.end_seat(host, seat);
                     self.tell_all(&SeatFrame::Seat {
                         slot,
                         change: SeatChange::Left,
                     });
+                } else {
+                    self.end_seat(host, seat);
                 }
             }
-            GameInput::Dropped { slot } => self.dropped(slot),
+            GameInput::Dropped { seat } => self.dropped(seat),
             GameInput::Return {
                 conn,
                 token,
                 outbox,
             } => self.take_back(host, conn, &token, outbox),
+            GameInput::Watch(j) => self.seat(host, j),
+            GameInput::Follow { watcher, step } => self.follow(watcher, step),
             GameInput::Pause { by } => self.clock_change(by, ClockChange::Paused),
             GameInput::Resume { by } => self.clock_change(by, ClockChange::Resumed),
             GameInput::Speed { by, speed } => {
@@ -801,7 +1167,7 @@ impl Game {
     }
 
     fn command(&mut self, slot: SlotIndex, command: Command, bytes: usize) {
-        let Some(seat) = self.seats.get(&slot) else {
+        let Some(seat) = self.seats.get(&SeatId::Player(slot)) else {
             return;
         };
         let Link::Connected { outbox, .. } = &seat.link else {
@@ -830,34 +1196,39 @@ impl Game {
             return;
         }
         *given = total;
-        self.commands.push((seat.player, command));
+        self.commands.push((seat.side, command));
     }
 
-    fn dropped(&mut self, slot: SlotIndex) {
-        let Some(seat) = self.seats.get_mut(&slot) else {
+    /// A seat's connection is lost: the seat is held. Everyone hears of a
+    /// player's; a watcher's is said only if it does not come back
+    /// ([`LobbyInput::WatcherLeft`]).
+    fn dropped(&mut self, id: SeatId) {
+        let Some(seat) = self.seats.get_mut(&id) else {
             return;
         };
         if let Link::Dropped { .. } = seat.link {
             return;
         }
-        info!(room = self.room.0, slot, login = %seat.login, "seat dropped");
+        info!(room = self.room.0, seat = ?id, login = %seat.login, "seat dropped");
         seat.link = Link::Dropped {
             deadline: after(self.settings.grace),
         };
-        self.tell_all(&SeatFrame::Seat {
-            slot,
-            change: SeatChange::Dropped,
-        });
+        if let SeatId::Player(slot) = id {
+            self.tell_all(&SeatFrame::Seat {
+                slot,
+                change: SeatChange::Dropped,
+            });
+        }
     }
 
-    /// Gives a dropped seat back to the player who holds its token, or
-    /// refuses. The lobby hears of it before the player is sent anything,
-    /// so that whatever the player sends after it finds them in the game.
+    /// Gives a dropped seat back to the player or watcher who holds its
+    /// token, or refuses. The lobby hears of it before the seat is sent
+    /// anything, so that whatever is sent after it finds it in the game.
     fn take_back(&mut self, host: &Host, conn: ConnId, token: &SeatToken, outbox: Outbox) {
-        let found = self.seats.iter().find_map(|(&slot, s)| {
-            (matches!(s.link, Link::Dropped { .. }) && s.token.matches(token)).then_some(slot)
+        let found = self.seats.iter().find_map(|(&id, s)| {
+            (matches!(s.link, Link::Dropped { .. }) && s.token.matches(token)).then_some(id)
         });
-        let Some(slot) = found else {
+        let Some(id) = found else {
             let _ = self.lobby.send(LobbyInput::ReturnRefused {
                 room: self.room,
                 conn,
@@ -867,16 +1238,18 @@ impl Game {
         let _ = self.lobby.send(LobbyInput::Returned {
             room: self.room,
             conn,
-            slot,
+            seat: id,
         });
-        self.tell_all(&SeatFrame::Seat {
-            slot,
-            change: SeatChange::Returned,
-        });
-        if let Some(seat) = self.seats.get(&slot) {
-            info!(room = self.room.0, slot, login = %seat.login, "seat returned");
+        if let SeatId::Player(slot) = id {
+            self.tell_all(&SeatFrame::Seat {
+                slot,
+                change: SeatChange::Returned,
+            });
         }
-        self.connect(host, slot, conn, outbox);
+        if let Some(seat) = self.seats.get(&id) {
+            info!(room = self.room.0, seat = ?id, login = %seat.login, "seat returned");
+        }
+        self.connect(host, id, conn, outbox);
     }
 
     fn clock_change(&mut self, by: SlotIndex, change: ClockChange) {
@@ -922,7 +1295,7 @@ impl Game {
             });
             return;
         };
-        let is_seat = self.seats.contains_key(&slot);
+        let is_seat = self.seats.contains_key(&SeatId::Player(slot));
         let is_computer = self
             .slots
             .get(slot)
@@ -940,21 +1313,21 @@ impl Game {
             change: SeatChange::Removed { by: login },
         });
         self.quit(player);
-        self.end_seat(host, slot);
+        self.end_seat(host, SeatId::Player(slot));
     }
 
     // -- Helpers -------------------------------------------------------------
 
-    /// The login and outbox of a connected seat.
+    /// The login and outbox of a player's connected seat.
     fn connected(&self, slot: SlotIndex) -> Option<(Login, Outbox)> {
-        let seat = self.seats.get(&slot)?;
+        let seat = self.seats.get(&SeatId::Player(slot))?;
         match &seat.link {
             Link::Connected { outbox, .. } => Some((seat.login.clone(), outbox.clone())),
             Link::Dropped { .. } => None,
         }
     }
 
-    /// Tells every connected seat.
+    /// Tells every connected seat, players and watchers.
     fn tell_all(&self, frame: &SeatFrame) {
         let Some(bytes) = encoded(frame) else {
             return;
@@ -1015,6 +1388,163 @@ pub mod fault {
             Some(Fault(PANIC_IN_TURN)) => panic!("fault injected in the turn"),
             Some(Fault(SLOW_TURN)) => std::thread::sleep(SLOW),
             _ => {}
+        }
+    }
+}
+
+// The tests may panic: that is how they fail.
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+mod tests {
+    use super::*;
+    use soundrts_world::Controller;
+
+    fn read(relative: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../vendor/soundrts-upstream")
+            .join(relative);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"))
+    }
+
+    /// Andrew and Bob on jl2, with an easy computer.
+    fn host() -> Host {
+        let setup = GameSetup::multiplayer(
+            read("res/rules.txt"),
+            read("res/ai.txt"),
+            read("res/multi/jl2.txt"),
+            7,
+            vec![
+                Controller::human("andrew", true),
+                Controller::human("bob", true),
+                Controller::computer("easy"),
+            ],
+        );
+        Host::new(&setup).unwrap()
+    }
+
+    /// Andrew's seat, Bob's, and `watchers` watchers following Andrew,
+    /// each in step from the last message it was sent.
+    fn plans(seats: &[(SeatId, PlayerId, Arc<TurnMessage>)]) -> Vec<Plan> {
+        seats
+            .iter()
+            .map(|(seat, side, last)| Plan {
+                seat: *seat,
+                side: *side,
+                send: Some(Sending::Change {
+                    last: Arc::clone(last),
+                    missed: VecDeque::new(),
+                }),
+            })
+            .collect()
+    }
+
+    fn seats(host: &Host, watchers: u32) -> Vec<(SeatId, PlayerId, Arc<TurnMessage>)> {
+        let (a, b) = (host.seats()[0], host.seats()[1]);
+        let (last_a, last_b) = (Arc::new(host.message(a)), Arc::new(host.message(b)));
+        let mut seats = vec![
+            (SeatId::Player(0), a, Arc::clone(&last_a)),
+            (SeatId::Player(1), b, last_b),
+        ];
+        for w in 0..watchers {
+            seats.push((SeatId::Watcher(WatcherId(w)), a, Arc::clone(&last_a)));
+        }
+        seats
+    }
+
+    /// Plays `turns` turns, as the game's task does, and gives what each
+    /// turn delivered.
+    fn play(
+        host: &mut Host,
+        seats: &mut [(SeatId, PlayerId, Arc<TurnMessage>)],
+        turns: usize,
+    ) -> Vec<Vec<Delivery>> {
+        (0..turns)
+            .map(|_| {
+                let deliveries = play_turn(host, Vec::new(), plans(seats));
+                for (seat, d) in seats.iter_mut().zip(&deliveries) {
+                    seat.2 = Arc::clone(&d.turn.message);
+                }
+                deliveries
+            })
+            .collect()
+    }
+
+    fn bytes(d: &Delivery) -> Vec<*const u8> {
+        d.frames
+            .as_ref()
+            .unwrap()
+            .frames
+            .iter()
+            .map(|b| b.as_ptr())
+            .collect()
+    }
+
+    #[test]
+    fn watchers_in_step_are_sent_the_very_bytes_of_their_player() {
+        let mut host = host();
+        let mut seats = seats(&host, 8);
+        for turn in play(&mut host, &mut seats, 20) {
+            let (andrew, bob) = (&turn[0], &turn[1]);
+            assert!(!Arc::ptr_eq(&andrew.turn, &bob.turn));
+            for w in &turn[2..] {
+                // One turn of the world for Andrew's side, and one
+                // encoding, whoever is sent it.
+                assert!(Arc::ptr_eq(&w.turn, &andrew.turn));
+                assert_eq!(bytes(w), bytes(andrew));
+            }
+        }
+    }
+
+    #[test]
+    fn a_watcher_that_follows_another_player_is_sent_its_whole_message() {
+        let mut host = host();
+        let mut seats = seats(&host, 2);
+        play(&mut host, &mut seats, 3);
+        let bob = host.seats()[1];
+        let mut plans = plans(&seats);
+        for p in &mut plans[2..] {
+            p.side = bob;
+            p.send = Some(Sending::Whole);
+        }
+        let turn = play_turn(&mut host, Vec::new(), plans);
+        let (w1, w2) = (&turn[2], &turn[3]);
+        assert!(Arc::ptr_eq(&w1.turn, &turn[1].turn), "Bob's turn");
+        assert!(w1.frames.as_ref().unwrap().whole);
+        assert_eq!(bytes(w1), bytes(w2), "encoded once");
+        let Ok(SeatFrame::Whole(m)) =
+            soundrts_protocol::game::decode_frame(&w1.frames.as_ref().unwrap().frames[0])
+        else {
+            panic!("a whole message");
+        };
+        assert_eq!(m.seat, bob);
+        assert!(m.events.is_empty());
+        assert_eq!(m.time, turn[1].turn.message.time);
+    }
+
+    /// The time of a turn for the players, with and without eight
+    /// watchers following Andrew: what eight watchers add beyond the
+    /// sending. A measurement, not a check: run it with
+    /// `cargo test -p soundrts-server --release --lib -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a measurement"]
+    fn measure_eight_watchers() {
+        let turns = 600;
+        for watchers in [0, 8, 0, 8] {
+            let mut host = host();
+            let mut seats = seats(&host, watchers);
+            let start = std::time::Instant::now();
+            play(&mut host, &mut seats, turns);
+            let took = start.elapsed();
+            eprintln!(
+                "{watchers} watchers: {turns} turns in {took:?}, {:?} a turn",
+                took / turns as u32
+            );
         }
     }
 }

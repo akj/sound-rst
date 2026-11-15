@@ -13,6 +13,12 @@
 //! cannot be right ends the game, with a short reason said, and the player
 //! goes back to the server's lobby.
 //!
+//! A watcher's seat plays the same way, from the stream of the player it
+//! follows: the interface is that player's, and only the orders are not
+//! given. When the watcher follows another player, the server sends that
+//! player's whole message, and the interface starts again from it
+//! ([`GameInterface::follow`]), keeping only its settings.
+//!
 //! When the connection is lost during the game, the game goes on without
 //! it ([`Link::Returning`]): the player hears it, asks the questions of
 //! the last view and reviews the log, and the orders given are not taken.
@@ -27,10 +33,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use soundrts_protocol::game::{SeatFrame, encode_command, encode_turn};
+use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
     ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, SeatToken,
-    ServerMsg, SlotIndex, Speed, StopReason, Whereabouts,
+    ServerMsg, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
@@ -80,13 +86,18 @@ pub struct ServerGame {
     objectives_given: usize,
     seat: SeatKey,
     link: Link,
+    /// The start of the game, which a watcher's view of another player is
+    /// made from.
+    start: Arc<GameStart>,
+    /// Whether a watcher gave orders, and heard that it gives none.
+    orders: Orders,
 }
 
 /// What takes the seat back after a lost connection. No `Debug`: the
 /// token is a secret for the length of the game.
 struct SeatKey {
-    /// The player's slot in the room.
-    you: SlotIndex,
+    /// The player's slot in the room, or that the player watches.
+    you: Role,
     map: MapHash,
     /// How long the server holds the seat once it notices the loss, in
     /// seconds.
@@ -213,7 +224,7 @@ enum End {
 }
 
 impl ServerGame {
-    fn new(seated: &Seated, now: f64) -> ServerGame {
+    fn new(seated: &Seated, start: Arc<GameStart>, now: f64) -> ServerGame {
         let mut game = ServerGame {
             speed: seated.speed,
             paused: seated.paused,
@@ -223,9 +234,16 @@ impl ServerGame {
             objectives_given: 0,
             seat: SeatKey::of(seated),
             link: Link::Playing { sent_since_turn: 0 },
+            start,
+            orders: Orders::NoneGiven,
         };
         game.next_turn = game.after_a_turn(now);
         game
+    }
+
+    /// Whether the player only watches.
+    pub(crate) fn watching(&self) -> bool {
+        self.seat.you == Role::Watcher
     }
 
     /// How many times faster than real time the server plays.
@@ -307,8 +325,12 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
                     .check(&m)
                     .map_err(|e| Some(format!("the first message: {e}")))?;
                 let seat = SeatView::new(Arc::clone(start), m);
-                let server = ServerGame::new(seated, cx.clock.now());
-                return Ok(GameInterface::on_server(cx, seat, server));
+                let server = ServerGame::new(seated, Arc::clone(start), cx.clock.now());
+                let mut game = GameInterface::on_server(cx, seat, server);
+                if seated.you == Role::Watcher {
+                    game.now_following(cx);
+                }
+                return Ok(game);
             }
             (other, _) => return Err(Some(format!("before the game: {}", kind(&other)))),
         }
@@ -490,7 +512,7 @@ impl Presented {
                 Expect::Seat,
             ) => {
                 if you != key.you || map.hash != key.map {
-                    return wrong(format!("the seat of slot {you}"));
+                    return wrong(format!("the seat {you:?}"));
                 }
                 self.expect = Expect::Start(Clock {
                     speed,
@@ -512,7 +534,9 @@ impl Presented {
                 if let Err(e) = seat.game_start().check(&message) {
                     return wrong(format!("the whole message: {e}"));
                 }
-                if message.seat != last.seat {
+                // A watcher may have been moved on to another player
+                // meanwhile.
+                if message.seat != last.seat && key.you != Role::Watcher {
                     return wrong(format!("the message of player {}", message.seat.0));
                 }
                 if message.time < last.time {
@@ -582,6 +606,12 @@ impl GameInterface {
         if !gone {
             self.send_pending(cx);
         }
+        if let Some(server) = self.server()
+            && server.orders == Orders::Given
+        {
+            server.orders = Orders::Told;
+            cx.voice.item(&text(words::WATCHING_NO_ORDERS));
+        }
         // What came before a lost connection is taken first.
         while let Some(frame) = crate::net::game_link(cx).and_then(|l| l.frames.pop_front()) {
             if let Err(why) = self.take_frame(cx, frame) {
@@ -602,11 +632,13 @@ impl GameInterface {
     }
 
     /// The room and the player's login, if the connection is lost while
-    /// the player is still in a game the server has not ended for them.
+    /// the player is still in a game the server has not ended for them, or
+    /// still watches one.
     fn may_return(&mut self, cx: &mut Client) -> Option<(RoomId, Login)> {
         let playing = self.view().players().contains(&self.me);
         let server = self.server()?;
-        if !playing || server.quit || !matches!(server.end, End::Waiting) {
+        let in_it = playing || server.watching();
+        if !in_it || server.quit || !matches!(server.end, End::Waiting) {
             return None;
         }
         let net = cx.net.as_ref()?;
@@ -733,6 +765,13 @@ impl GameInterface {
         }
         cx.log.info("back in the game");
         cx.news(News::new(Category::System, text(words::BACK_IN_THE_GAME)));
+        // A watcher moved on to another player meanwhile follows that one.
+        if message.seat != self.me {
+            if let Err(why) = self.follow(cx, message) {
+                self.cannot_be_right(cx, &format!("on return: {why}"));
+            }
+            return;
+        }
         let m = Arc::new(message);
         self.take_turn(Arc::clone(&m), Some(m), Vec::new());
         if self.srv_queue.len() > MAX_WAITING_EVENTS {
@@ -753,8 +792,11 @@ impl GameInterface {
 
     /// The game told the player it is over for them. On a server, the
     /// loop ends once the end has come, with the statistics of the score.
+    /// A watcher hears that the player it follows is out of the game: the
+    /// server moves it on to another player, or ends its game.
     pub(crate) fn quit_heard(&mut self, cx: &mut Client) {
         match self.server() {
+            Some(server) if server.watching() => {}
             Some(server) if matches!(server.end, End::Waiting) => server.quit = true,
             _ => self.srv_quit(cx),
         }
@@ -838,7 +880,8 @@ impl GameInterface {
                 let mut quit = false;
                 if let Some(server) = self.server() {
                     server.end = End::Came(end);
-                    quit = server.quit;
+                    // A watcher's game ends when its end comes.
+                    quit = server.quit || server.watching();
                 }
                 // The server has taken the player out of the game.
                 if let Some(link) = crate::net::game_link(cx) {
@@ -879,6 +922,9 @@ impl GameInterface {
             SeatFrame::Stopped(reason) => {
                 self.stopped(cx, reason);
                 Ok(())
+            }
+            SeatFrame::Whole(m) if self.server().is_some_and(|s| s.watching()) => {
+                self.follow(cx, m)
             }
             other @ (SeatFrame::Start(_)
             | SeatFrame::Whole(_)
@@ -944,6 +990,177 @@ impl GameInterface {
             return Err("more events than the game can tell".into());
         }
         Ok(())
+    }
+
+    /// A command given by a watcher: not taken, and it hears so once.
+    /// Whether the player watches.
+    pub(crate) fn refuse_while_watching(&mut self) -> bool {
+        match self.server() {
+            Some(server) if server.watching() => {
+                if server.orders == Orders::NoneGiven {
+                    server.orders = Orders::Given;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A watcher asks the server to follow the next player still in the
+    /// game, or the previous one; the server sends that player's whole
+    /// message. Anyone else hears that only a watcher can.
+    pub(crate) fn follow_player(&mut self, cx: &mut Client, step: Step) {
+        if !self.server().is_some_and(|s| s.watching()) {
+            cx.voice.item(&text(words::NOT_WATCHING));
+            return;
+        }
+        if self.refuse_while_returning() {
+            return;
+        }
+        crate::net::send(cx, ClientMsg::Follow { step });
+    }
+
+    /// The watcher follows the player of `m`, a whole message the server
+    /// sent: from now on the interface is that player's, as if it had just
+    /// joined the game. It keeps only what is its own: the keys, the mode,
+    /// the log, the clock and the settings of the listener; what it knew of
+    /// the game, it learns again from `m`. `Err` says why `m` cannot be
+    /// right.
+    pub(crate) fn follow(&mut self, cx: &mut Client, m: TurnMessage) -> Result<(), String> {
+        let Some(server) = self.server() else {
+            return Err("a whole message in a game run here".into());
+        };
+        let start = Arc::clone(&server.start);
+        start
+            .check(&m)
+            .map_err(|e| format!("a whole message: {e}"))?;
+        let last = self.view().message();
+        if m.time < last.time {
+            return Err("a whole message back in time".into());
+        }
+        if !m.state.players.contains(&m.seat) {
+            return Err(format!("to follow player {}, not in the game", m.seat.0));
+        }
+        let objectives = m.state.objectives.len();
+        self.silence_noises(cx);
+        // Every field is named, so that a new one is given a thought: what
+        // the interface knew of the last player's side goes.
+        let GameInterface {
+            source,
+            me,
+            seat,
+            speed: _,
+            dobjets,
+            scouted_squares,
+            scouted_before_squares,
+            last_virtual_time: _,
+            turns_handled: _,
+            place,
+            target,
+            zoom,
+            order,
+            group,
+            immersion: _,
+            follow_mode: _,
+            x: _,
+            y: _,
+            o: _,
+            mode,
+            previous_order,
+            previous_group,
+            previous_compass,
+            previous_menus,
+            attacks,
+            lost_units,
+            neutralized_units,
+            new_enemy_units,
+            scout_info,
+            known_resource_places,
+            told_units,
+            log_start: _,
+            alert_jump,
+            objectives_seen,
+            objective_at,
+            previous_resources,
+            previous_available_food,
+            previous_used_food,
+            bell_enabled: _,
+            previous_nb_minutes: _,
+            must_play_tick: _,
+            average_turn_duration: _,
+            previous_update_time: _,
+            end_loop: _,
+            already_asked_to_quit: _,
+            forced_quit: _,
+            terrain_noises,
+            previous_animation: _,
+            bindings: _,
+            srv_queue,
+            pending_commands,
+            orders_list: _,
+        } = self;
+        *me = m.seat;
+        let m = Arc::new(m);
+        *seat = SeatView::new(start, Arc::clone(&m));
+        dobjets.clear();
+        scouted_squares.clear();
+        scouted_before_squares.clear();
+        *place = None;
+        *target = None;
+        *zoom = None;
+        *order = None;
+        group.clear();
+        if matches!(mode, super::Mode::OrderShortcut) {
+            *mode = super::Mode::Playing;
+        }
+        *previous_order = None;
+        *previous_group = None;
+        *previous_compass = None;
+        previous_menus.clear();
+        attacks.clear();
+        lost_units.clear();
+        neutralized_units.clear();
+        new_enemy_units.clear();
+        scout_info.clear();
+        known_resource_places.clear();
+        told_units.clear();
+        *alert_jump = None;
+        objectives_seen.clear();
+        *objective_at = None;
+        *previous_resources = None;
+        *previous_available_food = 0;
+        *previous_used_food = 0;
+        terrain_noises.clear();
+        srv_queue.clear();
+        pending_commands.clear();
+        if let super::Source::Server(server) = source {
+            server.objectives_given = objectives;
+            server.quit = false;
+        }
+        // Its end of turn brings the interface's copies of the entities
+        // and squares to the new player's.
+        self.take_turn(Arc::clone(&m), Some(m), Vec::new());
+        self.now_following(cx);
+        Ok(())
+    }
+
+    /// Says whose side the watcher now hears, and puts the cursor on the
+    /// square of that player's first unit, without saying it.
+    pub(crate) fn now_following(&mut self, cx: &mut Client) {
+        let me = self.me;
+        let square = self
+            .view()
+            .own_units()
+            .find_map(|u| self.outer_square(u.place));
+        if square.is_some() {
+            self.place = square;
+        }
+        let name = self.view().player_name(me);
+        cx.log.info(format!("watching player {}", me.0));
+        cx.news(News::new(
+            Category::System,
+            [text(words::WATCHING), name].concat(),
+        ));
     }
 
     /// Whether the game menu offers the speeds: in a game run here, to its
