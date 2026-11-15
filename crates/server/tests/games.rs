@@ -1253,7 +1253,9 @@ async fn a_game_slower_to_build_or_play_than_its_budget_is_stopped() {
 #[tokio::test]
 async fn a_panic_in_one_game_leaves_another_running() {
     use soundrts_server::fault;
-    let server = hosting_server(|_| {});
+    let dir = tempfile::tempdir().unwrap();
+    let records = dir.path().to_path_buf();
+    let server = hosting_server(|c| c.records = Some(records.clone()));
     let addr = server.local_addr();
     let mut steady = clients(addr, &["andrew"]).await;
     room(&mut steady, 1).await;
@@ -1274,6 +1276,15 @@ async fn a_panic_in_one_game_leaves_another_running() {
         d.c.send(ClientMsg::LeaveRoom).await;
         d.c.skip_to(&refused(Refusal::NotNow)).await;
     }
+    // The game whose turn panicked was recorded, to replay to the turn
+    // that failed; the one whose task panicked was not.
+    let written: Vec<_> = std::fs::read_dir(&records)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(written.len(), 1, "{written:?}");
+    let (record, _) = soundrts_world::Record::read(&std::fs::read(&written[0]).unwrap()).unwrap();
+    assert!(record.setup().rules.starts_with(fault::PANIC_IN_TURN));
 }
 
 #[tokio::test]
@@ -2040,4 +2051,75 @@ async fn watchers_of_a_game_not_built_after_its_players_left_are_back_in_the_lob
     carol
         .skip_until(|m| matches!(m, ServerMsg::Chat { .. }))
         .await;
+}
+
+#[tokio::test]
+async fn the_server_records_a_game_and_its_record_replays_to_the_game_it_played() {
+    use soundrts_world::{Completeness, Record};
+    let dir = tempfile::tempdir().unwrap();
+    let records = dir.path().join("records");
+    let server = hosting_server(|c| c.records = Some(records.clone()));
+    let mut clients = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let room = room(&mut clients, 1).await;
+    let texts = texts();
+    let mut seats = start(clients, &texts).await;
+    let (a, b) = seats.split_at_mut(1);
+    let (a, b) = (&mut a[0], &mut b[0]);
+    tokio::join!(a.play_to(3), b.play_to(3));
+    let b2 = a.view().square_at(1, 1).unwrap();
+    for c in go(a.own("peasant"), b2) {
+        a.command(c).await;
+    }
+    for c in go(b.own("peasant"), b2) {
+        b.command(c).await;
+    }
+    tokio::join!(a.play_to(30), b.play_to(30));
+    a.command(Command::Quit).await;
+    tokio::join!(a.play_to(40), b.play_to(40));
+    b.command(Command::Quit).await;
+    for s in [&mut *a, &mut *b] {
+        while !s.left {
+            assert!(s.step(TIMEOUT).await);
+        }
+    }
+    a.c.skip_to(&lobby(LobbyChange::RoomClosed { id: room }))
+        .await;
+    // The record is written as the game's task ends.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let file = loop {
+        let found = std::fs::read_dir(&records).ok().and_then(|d| {
+            d.filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        });
+        if let Some(f) = found {
+            break f;
+        }
+        assert!(Instant::now() < deadline, "no record");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let (record, whole) = Record::read(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(whole, Completeness::Whole);
+    assert_eq!(
+        record.setup(),
+        &setup(&texts, &room_slots(&[&*a, &*b])),
+        "the set-up the server built the game from"
+    );
+    // Every command, at the turn it ran: each seat's every message is the
+    // one the record's game tells it.
+    let given: Vec<(PlayerId, i64, Command)> = record
+        .turns()
+        .iter()
+        .flat_map(|t| {
+            t.commands()
+                .iter()
+                .map(move |(p, c)| (*p, t.number() as i64 + 1, c.clone()))
+        })
+        .collect();
+    let quits = given.iter().filter(|(_, _, c)| *c == Command::Quit);
+    assert_eq!(quits.count(), 2);
+    assert_eq!(given.len(), 6);
+    check_against_host(&texts, &[&*a, &*b], &given);
+    let replayed = Host::replay(&record, |_| std::ops::ControlFlow::Continue(())).unwrap();
+    assert_eq!(replayed.record(), &record);
 }

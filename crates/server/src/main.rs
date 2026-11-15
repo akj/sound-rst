@@ -17,6 +17,7 @@ Options:
   --max-clients <n>     the most players at once (default 40)
   --max-rooms <n>       the most rooms at once (default 10)
   --upnp                ask the router to forward the port
+  --records <folder>    write the record of each game there, keeping the newest 100 (default: none)
   --help                show this help
 ";
 
@@ -76,6 +77,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Option<ServerConfig>,
             "--max-clients" => config.max_clients = number(&arg, value(&arg)?)?,
             "--max-rooms" => config.max_rooms = number(&arg, value(&arg)?)?,
             "--upnp" => config.upnp = true,
+            "--records" => config.records = Some(value(&arg)?.into()),
             "--help" | "-h" => return Ok(None),
             _ => return Err(format!("unknown option: {arg}")),
         }

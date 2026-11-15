@@ -11,6 +11,7 @@ Single-player and multiplayer games work.
 - The main menu, the options menu (login, sound and speech, mods, soundpacks), and the single-player menus.
 - Games against the computer on every multiplayer map, with the `easy`, `aggressive`, and `ai2` computer players.
 - The campaigns, with cut scenes, objectives, and the chapter bookmark.
+- Saving and loading a single-player game. See [Saved games](#saved-games).
 - Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.
 - Every in-game command in `res/ui/bindings.txt` except fullscreen.
 - The 13 languages of the original.
@@ -18,7 +19,7 @@ Single-player and multiplayer games work.
 The following parts of the original are not ported:
 
 - Games with players of the original game. The port has its own server and protocol.
-- Saved games and replays.
+- Replays: listening to a recorded game.
 - The map editor.
 - The on-screen map. The window stays blank.
 - The Documentation menu item, the update check, and the statistics upload.
@@ -82,6 +83,22 @@ In a text field, such as your login, a server's address, a chat message or the c
 The speed you choose in the game menu of a single-player game is also the speed of your next single-player game.
 
 The map lists remember the map you chose last and open on it: press Down to hear it. A letter goes to the next item that starts with it, from where you are, and wraps around.
+
+### Saved games
+
+In a training game or a campaign mission, "save game" in the game menu saves the game and says "saved". The game goes on.
+
+When you quit a game that is not over, or close the window during one, the game saves it by itself as the last game. There is one last game for training and one for missions, and each new one replaces the old one. Closing the window by accident loses nothing.
+
+To load a game, choose "load a game" in the single-player menu. The item is there once you have a save. The list starts with the newest save. For each save it says the map or mission, the game time, and how long ago you saved it. The last game starts with "last game". Delete removes the save you are on after you confirm.
+
+Loading plays the game again from its start, silently. You hear "loading", then every few seconds how far it has got. An hour of play takes a few seconds on a fast computer. Escape stops loading. When the game is ready, you hear "loaded" and the square under the cursor. The game goes on from where you saved it, with the same cursor and the same units selected. The game does not keep the log of messages, the news you have heard, the zoom, or an order you were choosing.
+
+A save loads only in the version of the game that made it. After an update, an old save says "cannot load, made by another version of the game".
+
+A mission's save is separate from the campaign's bookmark. Winning a loaded mission unlocks the next chapter, as winning it from the campaign menu does.
+
+The saves are in the `saves` folder of the settings folder.
 
 ### Sound and speech settings
 
@@ -224,6 +241,10 @@ cargo run -p soundrts-server -- --port 2501 --name "My server"
 ```
 
 The server listens on TCP port 2501 for players and answers on UDP port 2501 to players who look for servers on the local network. Add `--upnp` to ask the router to forward the port to players on the internet. Run `cargo run -p soundrts-server -- --help` for every option. Press Ctrl+C to stop the server.
+
+Add `--records <folder>` to keep a record of each game played on the server. The server writes the record when the game ends, or when it stops the game, and keeps the newest 100. A record holds what the game was built from and every player's commands, so it replays the whole game. It also holds the players' logins. It does not hold the chat. A game stopped because a turn took too long is not recorded.
+
+To replay a record, or a saved game, from the command line, run `soundrts --check-record <file>`. It says how many turns ran and who was still in the game at the end, or why the file cannot be replayed. Use it to reproduce a bug report that comes with a record or a save. It needs no game data.
 
 ### A public server
 

@@ -684,6 +684,13 @@ impl GameInterface {
         self.group.iter().map(|&u| (u, now(u))).collect()
     }
 
+    /// `units` as the game has them now: each one replaced in a turn
+    /// waiting to be taken is the unit that took its place.
+    pub(super) fn followed_now(&self, units: &[EntityId]) -> Vec<EntityId> {
+        let replaced = self.replaced_in_turns_waiting();
+        units.iter().map(|&u| followed(&replaced, u)).collect()
+    }
+
     /// The units replaced in the turns that have come and wait to be
     /// taken, old and new, in order.
     fn replaced_in_turns_waiting(&self) -> Vec<(EntityId, EntityId)> {

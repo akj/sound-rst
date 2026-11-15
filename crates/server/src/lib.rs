@@ -21,6 +21,7 @@ mod upnp;
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::thread::JoinHandle;
@@ -34,6 +35,7 @@ use tracing::{debug, info, warn};
 
 #[cfg(feature = "fault-injection")]
 pub use game::fault;
+pub use game::{RECORD_EXTENSION, RECORDS_KEPT};
 pub use upnp::UpnpOutcome;
 
 /// How a server runs. [`Default`] gives the values of a server players host.
@@ -82,6 +84,10 @@ pub struct ServerConfig {
     pub seed: Option<i64>,
     /// Ask the router to forward the port (UPnP).
     pub upnp: bool,
+    /// The folder the server writes the record of each game to, when the
+    /// game ends or is stopped, keeping the newest [`RECORDS_KEPT`]. `None`
+    /// keeps no record.
+    pub records: Option<PathBuf>,
 }
 
 impl Default for ServerConfig {
@@ -102,6 +108,7 @@ impl Default for ServerConfig {
             send_buffer: Some(64 * 1024),
             seed: None,
             upnp: false,
+            records: None,
         }
     }
 }

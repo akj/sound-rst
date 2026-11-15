@@ -27,6 +27,8 @@ enum GameMenuChoice {
     Speed(f64),
     /// Pauses a game on a server, or resumes it.
     PauseOrResume,
+    /// Saves a game run here.
+    Save,
 }
 
 /// The game menu, the choice made in it, and the story it was opened
@@ -437,7 +439,8 @@ impl GameInterface {
     }
 
     /// Opens the game menu: quit, the speeds, continue; on a server, for
-    /// the room's host, pause or resume. The keys go to it until a choice
+    /// the room's host, pause or resume; in a game run here, save. The
+    /// keys go to it until a choice
     /// is made. In single-player the world waits meanwhile, and its sounds
     /// stop; in a game on a server, the game goes on.
     fn cmd_gamemenu(&mut self, cx: &mut Client) {
@@ -480,6 +483,9 @@ impl GameInterface {
         if let Some(paused) = self.paused_for_the_host(cx) {
             let item = if paused { words::RESUME } else { words::PAUSE };
             menu.append(text(item), set(GameMenuChoice::PauseOrResume), None);
+        }
+        if self.can_be_saved() {
+            menu.append(text(words::SAVE_GAME), set(GameMenuChoice::Save), None);
         }
         menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
         menu.say_title(cx);
@@ -531,6 +537,7 @@ impl GameInterface {
         match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
             Some(GameMenuChoice::PauseOrResume) => self.pause_or_resume(cx),
+            Some(GameMenuChoice::Save) => self.cmd_save_game(cx),
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.
@@ -544,7 +551,8 @@ impl GameInterface {
     }
 
     /// Asks the world to quit; asked again, while the connection is lost,
-    /// or while a game on a server is paused, quits at once.
+    /// or while a game on a server is paused, quits at once. A game run
+    /// here that is not over is saved first, as the last game.
     fn gm_quit(&mut self, cx: &mut Client) {
         if self.leave_while_returning(cx)
             || self.leave_while_watching(cx)
@@ -553,6 +561,7 @@ impl GameInterface {
             return;
         }
         if !self.already_asked_to_quit {
+            self.save_on_leaving(cx);
             self.turn_due_at(cx.clock.now());
             self.send_command(cx, Command::Quit);
             cx.input.clear();

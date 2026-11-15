@@ -16,14 +16,18 @@ workspace = true
 # and is told about entities only as `KnownEntity`.
 truth = []
 # The sendable form of what a seat is sent, and of a command and a game's
-# set-up: `serde` traits on those types. The simulation builds without it.
-serde = ["dep:serde"]
+# set-up: `serde` traits on those types, and a game's record as a file.
+# The simulation builds without it.
+serde = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl"] }
 # `rc` sends the `Arc<str>` type names of `KnownEntity`.
 serde = { version = "1", features = ["derive", "rc"], optional = true }
+# A record's file is JSON lines. `float_roundtrip`: a number read back is
+# the number written.
+serde_json = { version = "1", features = ["float_roundtrip"], optional = true }
 
 [dev-dependencies]
 # The tests read the whole world.
-soundrts-world = { path = ".", features = ["truth"] }
+soundrts-world = { path = ".", features = ["truth", "serde"] }

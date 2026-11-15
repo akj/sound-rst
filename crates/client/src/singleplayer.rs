@@ -14,10 +14,23 @@ use crate::client::Client;
 use crate::game::style_msg;
 use crate::mapfile::Map;
 use crate::menu::{Action, Choice, Exit, Flow, Menu};
+use crate::net::words::{self, text};
 use crate::session::Session;
 
-/// The campaigns, a training game, and back.
+/// The campaigns, a training game, loading a saved game if there is one,
+/// and back. The menu is made again each time it comes back, so that a
+/// game saved meanwhile can be loaded.
 pub fn single_player_menu(cx: &mut Client) -> Result<(), Exit> {
+    loop {
+        let mut menu = build_single_player_menu(cx);
+        menu.run(cx)?;
+        if menu.ended() {
+            return Ok(());
+        }
+    }
+}
+
+pub(crate) fn build_single_player_menu(cx: &Client) -> Menu {
     let mut choices = Vec::new();
     for c in cx.res.campaigns() {
         let title = c.title.clone();
@@ -31,8 +44,14 @@ pub fn single_player_menu(cx: &mut Client) -> Result<(), Exit> {
         msg(mp::START_A_GAME_ON),
         Action::run(|cx| training_menu(cx).map(|()| Flow::Stay)),
     ));
+    if crate::saves::any_save(&cx.paths.saves()) {
+        choices.push(Choice::new(
+            text(words::LOAD_A_GAME),
+            Action::run(|cx| crate::saves::load::load_menu(cx).map(|()| Flow::Stay)),
+        ));
+    }
     choices.push(Choice::new(msg(mp::BACK), Action::CloseMenu));
-    Menu::new(msg(mp::MAKE_A_SELECTION), choices).run_loop(cx)
+    Menu::new(msg(mp::MAKE_A_SELECTION), choices)
 }
 
 /// The maps; the choice is remembered for next time.

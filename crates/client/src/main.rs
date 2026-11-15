@@ -41,6 +41,18 @@ fn main() -> ExitCode {
             }
         };
     }
+    if let Some(path) = &options.check_record {
+        return match soundrts::saves::check_record(path) {
+            Ok(report) => {
+                notice::print(&report);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                notice::fatal(&e);
+                ExitCode::FAILURE
+            }
+        };
+    }
     if options.fetch_data {
         return if upstream::fetch_data(options.root.as_deref()) {
             ExitCode::SUCCESS

@@ -2641,6 +2641,7 @@ dependencies = [
  "soundrts-protocol",
  "soundrts-server",
  "soundrts-world",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "tracing",
@@ -2653,6 +2654,7 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "serde",
+ "serde_json",
  "soundrts-world",
 ]
 
