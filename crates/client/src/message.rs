@@ -163,6 +163,8 @@ pub enum Subject {
     /// An order refused for this reason.
     Refusal(Reason),
     ProductionDeferred,
+    /// What the room's host did to the clock of a game on a server.
+    Clock,
     Room(RoomTopic),
 }
 

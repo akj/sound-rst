@@ -21,7 +21,8 @@ use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView};
 
 use super::GameInterface;
 use crate::client::Client;
-use crate::message::{Category, News};
+use crate::message::{Category, News, Subject};
+use crate::net::lobby::player_name;
 use crate::net::words::{self, text};
 use crate::net::{Incoming, Seated};
 
@@ -285,15 +286,14 @@ impl GameInterface {
                 Ok(())
             }
             SeatFrame::Seat { slot, change } => {
-                let known = cx
+                let who = cx
                     .net
                     .as_ref()
                     .and_then(|n| n.room.as_ref())
-                    .is_some_and(|r| r.state.slots.get(slot).is_some());
-                if !known {
-                    return Err(format!("news of slot {slot}, not in the room"));
-                }
-                cx.log.info(format!("slot {slot}: {change:?}"));
+                    .and_then(|r| r.state.slots.get(slot))
+                    .map(|s| player_name(&s.player))
+                    .ok_or_else(|| format!("news of slot {slot}, not in the room"))?;
+                cx.news(News::new(Category::System, words::seat_news(who, &change)));
                 Ok(())
             }
             SeatFrame::Clock { by, change } => {
@@ -308,12 +308,14 @@ impl GameInterface {
                     let factor = server.speed_factor();
                     self.speed = factor;
                 }
-                cx.log.info(format!("{by}: {change:?}"));
+                let m = words::clock_news(&by, change);
+                cx.news(News::new(Category::System, m).about(Subject::Clock));
                 Ok(())
             }
             SeatFrame::Stopped(reason) => {
                 cx.log
                     .warning(format!("the server stopped the game: {reason:?}"));
+                cx.news(News::new(Category::System, words::stopped(reason)));
                 if let Some(link) = crate::net::game_link(cx) {
                     link.ended = true;
                 }

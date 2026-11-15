@@ -172,7 +172,7 @@ A chat message plays a short sound, then the game says who wrote it and what the
 
 In a game on a server, the server runs the game and tells each player only what that player knows: the fog of war holds. The game does not wait for a slow player or a lost connection. When the host starts the game, their computer sends the server the rules, the computer players and the map, as the host's game has them with its mods; every player needs the same mods, as before.
 
-In the game menu, the speeds change the speed of the game for everyone, and only the room's host can change it: the others hear "only the host can change the speed". A game on a server has no console and no cheats.
+The game says, in the system news, when a player loses the connection, comes back, does not come back in time, leaves the game or is removed from it, and when the server stops a game or cannot start it. In the game menu, the speeds change the speed of the game for everyone, and only the room's host can change it: the others hear "only the host can change the speed". Everyone hears the new speed and who set it. A game on a server has no console and no cheats.
 
 Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
 

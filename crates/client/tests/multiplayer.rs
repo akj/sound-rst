@@ -558,6 +558,74 @@ fn a_game_on_a_map_the_player_does_not_have_is_left() {
     );
 }
 
+#[test]
+fn what_happens_to_the_players_and_the_clock_is_said() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let slots = vec![slot(human("andrew"), 1, true), slot(human("bob"), 2, true)];
+    let (server, _, mut g) = fake_game(&mut h, &slots);
+    let map = jl1(&mut h);
+    h.client.net.as_mut().unwrap().room = Some(soundrts::net::lobby::RoomModel {
+        state: room_state(&map, slots),
+        map: soundrts::net::lobby::MapState::Downloading,
+    });
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    let news = [
+        SeatFrame::Seat {
+            slot: 1,
+            change: SeatChange::Dropped,
+        },
+        SeatFrame::Seat {
+            slot: 1,
+            change: SeatChange::Returned,
+        },
+        SeatFrame::Clock {
+            by: login("andrew"),
+            change: ClockChange::Paused,
+        },
+        SeatFrame::Clock {
+            by: login("andrew"),
+            change: ClockChange::Speed {
+                speed: Speed::Fast2,
+            },
+        },
+        SeatFrame::Seat {
+            slot: 1,
+            change: SeatChange::Removed {
+                by: login("andrew"),
+            },
+        },
+        SeatFrame::Seat {
+            slot: 1,
+            change: SeatChange::GivenUp,
+        },
+        SeatFrame::Seat {
+            slot: 1,
+            change: SeatChange::Left,
+        },
+        SeatFrame::Stopped(StopReason::TooSlow),
+    ];
+    for (i, frame) in news.into_iter().enumerate() {
+        server.frame_at(t0 + 10.0 * i as f64, frame);
+    }
+    h.run_for(&mut g, 100.0);
+    assert!(g.game.end_loop, "the server stopped the game");
+    assert_eq!(
+        h.said_since(from),
+        [
+            "bob lost the connection",
+            "bob is back",
+            "paused by andrew",
+            "speed fast 2 set by andrew",
+            "bob removed from the game by andrew",
+            "bob did not come back, and is out of the game",
+            "bob left the game",
+            "game stopped by the server: a turn took too long",
+        ]
+    );
+}
+
 /// Andrew chooses the second speed of the game menu in a game on a fake
 /// server whose room `host` hosts: what was said from the menu on, and
 /// what his client sent.
@@ -627,6 +695,36 @@ fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
     );
     soundrts::session::leave_server_game(&mut h.client);
     assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
+}
+
+#[test]
+fn a_game_that_did_not_start_says_why() {
+    let script = Script::new().at(30.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = jl1(h);
+        s.at(
+            10.0,
+            room(RoomChange::Entered, &room_state(&map, two_slots())),
+        );
+        s.frame_at(
+            15.0,
+            SeatFrame::NotStarted(StartRefusal::CannotBuild {
+                error: ChatText::clean("no starting place").unwrap(),
+            }),
+        );
+        s.frame_at(20.0, SeatFrame::NotStarted(StartRefusal::Busy));
+    });
+    let said = said(&h);
+    assert!(
+        said.contains(
+            &"game not started: the server cannot build it: no starting place".to_owned()
+        ),
+        "{said:#?}"
+    );
+    assert!(
+        said.contains(&"game not started: the server is busy, try again later".to_owned()),
+        "{said:#?}"
+    );
 }
 
 #[test]

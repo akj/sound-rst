@@ -343,8 +343,9 @@ impl Net {
         }
     }
 
-    /// A frame of a game's stream. The seat starts the game; any other
-    /// frame waits for the game, which checks it.
+    /// A frame of a game's stream. The seat starts the game; the start of
+    /// a game that did not start is said; any other frame waits for the
+    /// game, which checks it.
     fn handle_frame(&mut self, cx: &mut Client, frame: Incoming) {
         let frame = match frame {
             Ok(f) => f,
@@ -379,6 +380,7 @@ impl Net {
             SeatFrame::NotStarted(refusal) if self.game.is_none() => {
                 cx.log
                     .warning(format!("the game did not start: {refusal:?}"));
+                cx.news(News::new(Category::System, words::not_started(&refusal)));
             }
             other => self.for_the_game(cx, Ok(Box::new(other))),
         }
