@@ -464,6 +464,10 @@ impl Request {
                 .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
         };
         let aim = || self.given(w).map(Aim::new);
+        let target = || -> Res<TargetRef> {
+            self.given(w)?
+                .ok_or_else(|| Abort::new("list index out of range"))
+        };
         let now = Taken::Now;
         let queued = Taken::Queued;
         Ok(match self.keyword {
@@ -476,16 +480,9 @@ impl Request {
             Keyword::DisableAutoRepair => now(Immediate::AutoRepair(false)),
             Keyword::ModeOffensive => now(Immediate::Stance(AiMode::Offensive)),
             Keyword::ModeDefensive => now(Immediate::Stance(AiMode::Defensive)),
-            Keyword::RallyingPoint => now(Immediate::RallyingPoint(
-                self.given(w)?
-                    .ok_or_else(|| Abort::new("list index out of range"))?
-                    .normalized(w),
-            )),
+            Keyword::RallyingPoint => now(Immediate::RallyingPoint(target()?.normalized(w))),
             Keyword::JoinGroup => now(Immediate::JoinGroup(self.first_arg(w)?)),
-            Keyword::Enter => now(Immediate::Enter(
-                self.given(w)?
-                    .ok_or_else(|| Abort::new("list index out of range"))?,
-            )),
+            Keyword::Enter => now(Immediate::Enter(target()?)),
             Keyword::Train => queued(OrderKind::Production(Production::new(Product::Train(
                 type_id()?,
             )))),

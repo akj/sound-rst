@@ -182,7 +182,7 @@ impl GameInterface {
 
     pub fn short_title(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
-        if v.type_name() == "buildingsite" {
+        if v.model.is_building_site() {
             let t = self.site_type_name(&v.model).unwrap_or_default();
             [
                 compute_title(style, &t),
