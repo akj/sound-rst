@@ -11,7 +11,9 @@
 
 use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
-use crate::orders::{Keyword, Mode, Order, OrderInfo, Request, TargetRef};
+use crate::orders::{
+    BuildStep, GatherStep, Keyword, Order, OrderInfo, OrderKind, Request, TargetRef,
+};
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
 use crate::seat_view::Comrades;
 use crate::world::{Abort, Res, World};
@@ -29,7 +31,8 @@ const EFFECTS: &[&str] = &[
 /// An order as the rules read it.
 pub(crate) trait OrderFacts {
     fn keyword(&self) -> Keyword;
-    fn type_name(&self) -> Option<&str>;
+    /// The type of a complex order, by its name in `rules`.
+    fn type_name<'s>(&'s self, rules: &'s Rules) -> Option<&'s str>;
     fn is_imperative(&self) -> bool;
 }
 
@@ -122,11 +125,11 @@ pub(crate) trait Knowledge<'a>: Copy {
 
 impl OrderFacts for Order {
     fn keyword(&self) -> Keyword {
-        self.keyword
+        self.keyword()
     }
 
-    fn type_name(&self) -> Option<&str> {
-        self.type_name.as_deref()
+    fn type_name<'s>(&'s self, rules: &'s Rules) -> Option<&'s str> {
+        Order::type_name(self, rules)
     }
 
     fn is_imperative(&self) -> bool {
@@ -290,7 +293,7 @@ impl<'a> Knowledge<'a> for &'a World {
     }
 
     fn aims_at(self, order: &Order, target: &Target) -> bool {
-        order.target.as_ref().is_some_and(|t| t.same(target))
+        order.target().is_some_and(|t| t.same(target))
     }
 }
 
@@ -301,7 +304,7 @@ impl OrderFacts for KnownOrder {
         self.keyword
     }
 
-    fn type_name(&self) -> Option<&str> {
+    fn type_name<'s>(&'s self, _: &'s Rules) -> Option<&'s str> {
         self.type_name.as_deref()
     }
 
@@ -552,7 +555,7 @@ pub(crate) fn future_count<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_n
         }
         for o in e.orders() {
             if matches!(o.keyword(), Keyword::Train | Keyword::UpgradeTo)
-                && o.type_name() == Some(type_name)
+                && o.type_name(rules) == Some(type_name)
             {
                 result += 1;
             }
@@ -591,9 +594,9 @@ fn additional_condition<'a, K: Knowledge<'a>>(
                 return false;
             }
             let researching = p.units.iter().filter_map(|&u| k.unit(u)).any(|e| {
-                e.orders()
-                    .iter()
-                    .any(|o| o.keyword() == Keyword::Research && o.type_name() == Some(type_name))
+                e.orders().iter().any(|o| {
+                    o.keyword() == Keyword::Research && o.type_name(k.rules()) == Some(type_name)
+                })
             });
             !researching
         }
@@ -766,19 +769,36 @@ pub(crate) fn order_cost(
     type_name: Option<&str>,
 ) -> Res<Vec<i64>> {
     if !kw.is_complex() {
-        return Ok(vec![0; MAX_NB_OF_RESOURCE_TYPES]);
+        return Ok(priced_cost(rules, unit, None));
     }
     let t = complex_type(rules, type_name)?;
-    if kw == Keyword::UpgradeTo {
-        let uc = entity_cost(rules, unit);
-        return Ok(t
-            .cost
-            .iter()
-            .enumerate()
-            .map(|(i, &c)| c - uc.get(i).copied().unwrap_or(0))
-            .collect());
+    Ok(priced_cost(
+        rules,
+        unit,
+        Some((t, kw == Keyword::UpgradeTo)),
+    ))
+}
+
+/// What an order costs in each resource, from the type it pays for and
+/// whether it pays only the difference with the unit's own type; nothing
+/// for an order without a type.
+pub(crate) fn priced_cost(
+    rules: &Rules,
+    unit: &impl UnitFacts,
+    priced: Option<(&UnitType, bool)>,
+) -> Vec<i64> {
+    match priced {
+        None => vec![0; MAX_NB_OF_RESOURCE_TYPES],
+        Some((t, true)) => {
+            let uc = entity_cost(rules, unit);
+            t.cost
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| c - uc.get(i).copied().unwrap_or(0))
+                .collect()
+        }
+        Some((t, false)) => t.cost.clone(),
     }
-    Ok(t.cost.clone())
 }
 
 /// The food an order of a unit uses.
@@ -789,13 +809,19 @@ pub(crate) fn order_food_cost(
     type_name: Option<&str>,
 ) -> Res<i64> {
     if !kw.is_complex() {
-        return Ok(0);
+        return Ok(priced_food_cost(unit, None));
     }
     let t = complex_type(rules, type_name)?;
-    if kw == Keyword::UpgradeTo {
-        return Ok(t.stats.food_cost - unit.food_cost());
+    Ok(priced_food_cost(unit, Some((t, kw == Keyword::UpgradeTo))))
+}
+
+/// The food an order uses, as [`priced_cost`] reads its type.
+pub(crate) fn priced_food_cost(unit: &impl UnitFacts, priced: Option<(&UnitType, bool)>) -> i64 {
+    match priced {
+        None => 0,
+        Some((t, true)) => t.stats.food_cost - unit.food_cost(),
+        Some((t, false)) => t.stats.food_cost,
     }
-    Ok(t.stats.food_cost)
 }
 
 /// The costs and the number of targets of an order a unit could receive
@@ -990,12 +1016,33 @@ pub(crate) fn activity<'n>(
     name_of: impl FnOnce(&'n Target) -> Option<&'n str>,
 ) -> Option<Activity> {
     let o = first?;
-    match o.mode {
-        Mode::Build => Some(Activity::Building),
-        Mode::Gather => Some(Activity::Exploiting(
-            name_of(o.target.as_ref()?)?.to_owned(),
-        )),
-        _ => None,
+    match &o.kind {
+        OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. } => match step {
+            BuildStep::Working => Some(Activity::Building),
+            BuildStep::Waiting | BuildStep::Going => None,
+        },
+        OrderKind::Gather { aim, gathering } => match gathering.step {
+            GatherStep::Extract => Some(Activity::Exploiting(
+                name_of(aim.target.as_ref()?)?.to_owned(),
+            )),
+            GatherStep::Start
+            | GatherStep::BringBack
+            | GatherStep::Store
+            | GatherStep::GoGather => None,
+        },
+        OrderKind::Production(_)
+        | OrderKind::Go { .. }
+        | OrderKind::Attack { .. }
+        | OrderKind::Patrol { .. }
+        | OrderKind::AutoAttack
+        | OrderKind::AutoExplore
+        | OrderKind::Wait { .. }
+        | OrderKind::Block { .. }
+        | OrderKind::Build { .. }
+        | OrderKind::Use { .. }
+        | OrderKind::Load { .. }
+        | OrderKind::LoadAll { .. }
+        | OrderKind::UnloadAll { .. } => None,
     }
 }
 

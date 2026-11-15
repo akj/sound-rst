@@ -487,7 +487,11 @@ fn a_typed_order_and_its_line_store_the_same_order() {
     ];
     let stored = |w: &World| {
         let o = &w.e(peasant).orders[0];
-        (o.keyword, o.type_name.clone(), o.args.clone())
+        (
+            o.keyword(),
+            o.type_name(&w.rules).map(str::to_owned),
+            o.args(w),
+        )
     };
     // Read before the turn moves the peasant, which flees the enemy.
     for (o, imperative, expected) in cases {

@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, SquareId, Target};
-use crate::orders::{Keyword, Order};
+use crate::orders::{Keyword, Order, OrderKind};
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, TypeId};
 use crate::world::World;
@@ -323,7 +323,7 @@ impl KnownEntity {
 
 impl OwnPart {
     fn of(w: &World, viewer: PlayerId, e: &Entity) -> OwnPart {
-        let upgrading = e.orders.iter().any(|o| o.keyword == Keyword::UpgradeTo);
+        let upgrading = e.orders.iter().any(|o| o.keyword() == Keyword::UpgradeTo);
         OwnPart {
             orders: e
                 .orders
@@ -349,18 +349,32 @@ impl OwnPart {
 
 impl KnownOrder {
     fn of(w: &World, viewer: PlayerId, o: &Order) -> KnownOrder {
+        let (time_left, patrol) = match &o.kind {
+            OrderKind::Production(p) => (Some(p.time_left.max(0)), None),
+            OrderKind::Patrol { route, .. } => (None, route.as_ref().map(|r| r.places.clone())),
+            OrderKind::Go { .. }
+            | OrderKind::Attack { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Build { .. }
+            | OrderKind::Use { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => (None, None),
+        };
         KnownOrder {
-            keyword: o.keyword,
-            type_name: o.type_name.clone(),
-            is_deferred: o.is_deferred,
+            keyword: o.keyword(),
+            type_name: o.kind.type_id().map(|t| w.rules.ty(t).name.clone()),
+            is_deferred: o.is_deferred(),
             is_imperative: o.is_imperative,
-            time_left: matches!(
-                o.keyword,
-                Keyword::Train | Keyword::Research | Keyword::UpgradeTo
-            )
-            .then_some(o.time.max(0)),
-            target: o.target.as_ref().map(|t| KnownTarget::of(w, viewer, t)),
-            patrol: o.patrol_targets.clone(),
+            time_left,
+            target: o.target().map(|t| KnownTarget::of(w, viewer, t)),
+            patrol,
         }
     }
 }

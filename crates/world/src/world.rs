@@ -1211,6 +1211,7 @@ impl World {
     /// the same on every machine: two worlds that will play on alike have
     /// the same digest.
     pub fn digest_u64(&self) -> u64 {
+        let _texts = crate::orders::HashTexts::set(self);
         let mut h = Fnv1a::default();
         self.hash(&mut h);
         h.finish()

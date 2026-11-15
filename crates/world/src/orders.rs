@@ -5,11 +5,11 @@
 //! 25`). A unit keeps a queue of orders and executes the first one.
 
 use crate::command::{KeywordOrder, OrderTarget};
-use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
-use crate::rules::{AirGround, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{Abort, Res, TPlace, World};
 
 /// The most orders a unit can queue.
@@ -177,8 +177,8 @@ impl Keyword {
 /// order ([`World::resolve_target`]): an entity it names may then be
 /// perceived, remembered, or nothing.
 ///
-/// The order as stored keeps its target as the text of
-/// [`TargetRef::text`], which [`TargetRef::parse`] reads back.
+/// A queued order keeps it as given. [`TargetRef::text`] writes it as the
+/// map language does, which [`TargetRef::parse`] reads back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum TargetRef {
     /// A square, written as its protocol id.
@@ -198,7 +198,7 @@ pub(crate) enum TargetRef {
 }
 
 impl TargetRef {
-    /// The target as the order stores it.
+    /// The target as the map language writes it.
     pub(crate) fn text(self, w: &World) -> String {
         match self {
             TargetRef::Square(s) => w.square(s).id.to_string(),
@@ -329,10 +329,6 @@ impl Request {
         Request::of(Keyword::Load, None, Some(target))
     }
 
-    pub(crate) fn build_phase_two(target: TargetRef) -> Request {
-        Request::of(Keyword::BuildPhaseTwo, None, Some(target))
-    }
-
     pub(crate) fn train(type_name: impl Into<String>) -> Request {
         Request::of(Keyword::Train, Some(type_name.into()), None)
     }
@@ -403,7 +399,7 @@ impl Request {
         }
     }
 
-    /// What follows the type, as the order stores it.
+    /// What follows the type, in words.
     fn args(&self, w: &World) -> Vec<String> {
         match &self.arg {
             None => Vec::new(),
@@ -429,9 +425,107 @@ impl Request {
         }
     }
 
-    /// The order as a unit stores it.
-    fn stored(&self, uid: u64, w: &World) -> Order {
-        Order::new(uid, self.keyword, self.type_name.clone(), self.args(w))
+    /// The first argument as text: a target as [`TargetRef::text`] writes
+    /// it, or a group's name. The error is an order without one.
+    fn first_arg(&self, w: &World) -> Res<String> {
+        self.args(w)
+            .into_iter()
+            .next()
+            .ok_or_else(|| Abort::new("list index out of range"))
+    }
+
+    /// What the order was given to aim at. Only `join_group` takes a group
+    /// name: any other keyword reads a name as a target.
+    fn given(&self, w: &World) -> Res<Option<TargetRef>> {
+        match &self.arg {
+            None => Ok(None),
+            Some(Arg::Target(t)) => Ok(Some(*t)),
+            Some(Arg::Group(name)) => TargetRef::parse(w, name).map(Some),
+        }
+    }
+
+    /// What the order becomes for a unit that takes it: an action done at
+    /// once, or an order to queue. The error is a missing argument or type.
+    fn taken(&self, w: &World) -> Res<Taken> {
+        let type_id = || {
+            self.type_name
+                .as_deref()
+                .and_then(|n| w.rules.type_id(n))
+                // `is_order_allowed` refuses a type the rules do not have,
+                // so this fails only for an order no unit may take.
+                .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
+        };
+        let aim = || self.given(w).map(Aim::new);
+        let now = Taken::Now;
+        let queued = Taken::Queued;
+        Ok(match self.keyword {
+            Keyword::Stop => now(Immediate::Stop),
+            Keyword::CancelTraining | Keyword::CancelUpgrading => now(Immediate::CancelLast),
+            Keyword::CancelBuilding => now(Immediate::CancelBuilding),
+            Keyword::EnableAutoGather => now(Immediate::AutoGather(true)),
+            Keyword::DisableAutoGather => now(Immediate::AutoGather(false)),
+            Keyword::EnableAutoRepair => now(Immediate::AutoRepair(true)),
+            Keyword::DisableAutoRepair => now(Immediate::AutoRepair(false)),
+            Keyword::ModeOffensive => now(Immediate::Stance(AiMode::Offensive)),
+            Keyword::ModeDefensive => now(Immediate::Stance(AiMode::Defensive)),
+            Keyword::RallyingPoint => now(Immediate::RallyingPoint(self.first_arg(w)?)),
+            Keyword::JoinGroup => now(Immediate::JoinGroup(self.first_arg(w)?)),
+            Keyword::Enter => now(Immediate::Enter(
+                self.given(w)?
+                    .ok_or_else(|| Abort::new("list index out of range"))?,
+            )),
+            Keyword::Train => queued(OrderKind::Production(Production::new(Product::Train(
+                type_id()?,
+            )))),
+            Keyword::Research => queued(OrderKind::Production(Production::new(Product::Research(
+                type_id()?,
+            )))),
+            Keyword::UpgradeTo => queued(OrderKind::Production(Production::new(
+                Product::UpgradeTo(type_id()?),
+            ))),
+            Keyword::Go => queued(OrderKind::Go {
+                aim: aim()?,
+                creation_time: None,
+            }),
+            Keyword::Attack => queued(OrderKind::Attack { aim: aim()? }),
+            Keyword::Patrol => queued(OrderKind::Patrol {
+                aim: aim()?,
+                route: None,
+            }),
+            Keyword::Gather => queued(OrderKind::Gather {
+                aim: aim()?,
+                gathering: Gathering::default(),
+            }),
+            Keyword::AutoAttack => queued(OrderKind::AutoAttack),
+            Keyword::AutoExplore => queued(OrderKind::AutoExplore),
+            Keyword::Wait => queued(OrderKind::Wait {
+                aim: aim()?,
+                must_deploy: false,
+            }),
+            Keyword::Block => queued(OrderKind::Block {
+                aim: aim()?,
+                step: BlockStep::Waiting,
+            }),
+            Keyword::Repair => queued(OrderKind::Repair {
+                aim: aim()?,
+                step: BuildStep::Waiting,
+            }),
+            Keyword::BuildPhaseTwo => queued(OrderKind::BuildPhaseTwo {
+                aim: aim()?,
+                step: BuildStep::Waiting,
+            }),
+            Keyword::Build => queued(OrderKind::Build {
+                building: type_id()?,
+                aim: aim()?,
+            }),
+            Keyword::Use => queued(OrderKind::Use {
+                ability: type_id()?,
+                aim: aim()?,
+            }),
+            Keyword::Load => queued(OrderKind::Load { aim: aim()? }),
+            Keyword::LoadAll => queued(OrderKind::LoadAll { aim: aim()? }),
+            Keyword::UnloadAll => queued(OrderKind::UnloadAll { aim: aim()? }),
+        })
     }
 }
 
@@ -445,88 +539,573 @@ impl From<&KeywordOrder> for Request {
     }
 }
 
-/// The step an order is at.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Mode {
-    None,
-    /// Gather: carrying the cargo to a warehouse.
+/// What a request becomes for the unit that takes it.
+enum Taken {
+    Now(Immediate),
+    Queued(OrderKind),
+}
+
+/// An order done at once instead of being queued (see
+/// [`Keyword::is_immediate`]).
+enum Immediate {
+    Stop,
+    /// `cancel_training` or `cancel_upgrading`: cancels the last order.
+    CancelLast,
+    CancelBuilding,
+    AutoGather(bool),
+    AutoRepair(bool),
+    Stance(AiMode),
+    /// The rallying point, as the text of its target.
+    RallyingPoint(String),
+    /// The name of the group to join.
+    JoinGroup(String),
+    /// The transport to enter.
+    Enter(TargetRef),
+}
+
+/// A queued order's kind, with the state that only this kind has.
+#[derive(Clone, Debug)]
+pub(crate) enum OrderKind {
+    /// `train`, `research` or `upgrade_to`.
+    Production(Production),
+    Go {
+        aim: Aim,
+        /// When it was queued. Two `go` orders are equal only if given at
+        /// the same time.
+        creation_time: Option<i64>,
+    },
+    Attack {
+        aim: Aim,
+    },
+    Patrol {
+        aim: Aim,
+        /// The places patrolled, once queued as the first patrol of the
+        /// queue. A later patrol adds its place to the first one's route.
+        route: Option<Route>,
+    },
+    Gather {
+        aim: Aim,
+        gathering: Gathering,
+    },
+    AutoAttack,
+    AutoExplore,
+    Wait {
+        aim: Aim,
+        /// Whether its next update deploys the unit first.
+        must_deploy: bool,
+    },
+    Block {
+        aim: Aim,
+        step: BlockStep,
+    },
+    Repair {
+        aim: Aim,
+        step: BuildStep,
+    },
+    /// Working on a building site that a `build` order put down.
+    BuildPhaseTwo {
+        aim: Aim,
+        step: BuildStep,
+    },
+    Build {
+        building: TypeId,
+        aim: Aim,
+    },
+    Use {
+        ability: TypeId,
+        aim: Aim,
+    },
+    Load {
+        aim: Aim,
+    },
+    LoadAll {
+        aim: Aim,
+    },
+    UnloadAll {
+        aim: Aim,
+    },
+}
+
+impl OrderKind {
+    pub(crate) fn keyword(&self) -> Keyword {
+        match self {
+            OrderKind::Production(p) => match p.product {
+                Product::Train(_) => Keyword::Train,
+                Product::Research(_) => Keyword::Research,
+                Product::UpgradeTo(_) => Keyword::UpgradeTo,
+            },
+            OrderKind::Go { .. } => Keyword::Go,
+            OrderKind::Attack { .. } => Keyword::Attack,
+            OrderKind::Patrol { .. } => Keyword::Patrol,
+            OrderKind::Gather { .. } => Keyword::Gather,
+            OrderKind::AutoAttack => Keyword::AutoAttack,
+            OrderKind::AutoExplore => Keyword::AutoExplore,
+            OrderKind::Wait { .. } => Keyword::Wait,
+            OrderKind::Block { .. } => Keyword::Block,
+            OrderKind::Repair { .. } => Keyword::Repair,
+            OrderKind::BuildPhaseTwo { .. } => Keyword::BuildPhaseTwo,
+            OrderKind::Build { .. } => Keyword::Build,
+            OrderKind::Use { .. } => Keyword::Use,
+            OrderKind::Load { .. } => Keyword::Load,
+            OrderKind::LoadAll { .. } => Keyword::LoadAll,
+            OrderKind::UnloadAll { .. } => Keyword::UnloadAll,
+        }
+    }
+
+    /// The type of a complex order (`footman` in `train footman`).
+    pub(crate) fn type_id(&self) -> Option<TypeId> {
+        match self {
+            OrderKind::Production(p) => Some(p.product.type_id()),
+            OrderKind::Build { building, .. } => Some(*building),
+            OrderKind::Use { ability, .. } => Some(*ability),
+            OrderKind::Go { .. }
+            | OrderKind::Attack { .. }
+            | OrderKind::Patrol { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => None,
+        }
+    }
+
+    /// The type a complex order pays for, and whether it pays only the
+    /// difference with the unit's own type (`upgrade_to`).
+    fn priced(&self) -> Option<(TypeId, bool)> {
+        match self {
+            OrderKind::Production(p) => Some((
+                p.product.type_id(),
+                matches!(p.product, Product::UpgradeTo(_)),
+            )),
+            OrderKind::Build { .. } | OrderKind::Use { .. } => self.type_id().map(|t| (t, false)),
+            OrderKind::Go { .. }
+            | OrderKind::Attack { .. }
+            | OrderKind::Patrol { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => None,
+        }
+    }
+
+    /// What the order aims at, for the kinds that take a target.
+    pub(crate) fn aim(&self) -> Option<&Aim> {
+        match self {
+            OrderKind::Go { aim, .. }
+            | OrderKind::Attack { aim }
+            | OrderKind::Patrol { aim, .. }
+            | OrderKind::Gather { aim, .. }
+            | OrderKind::Wait { aim, .. }
+            | OrderKind::Block { aim, .. }
+            | OrderKind::Repair { aim, .. }
+            | OrderKind::BuildPhaseTwo { aim, .. }
+            | OrderKind::Build { aim, .. }
+            | OrderKind::Use { aim, .. }
+            | OrderKind::Load { aim }
+            | OrderKind::LoadAll { aim }
+            | OrderKind::UnloadAll { aim } => Some(aim),
+            OrderKind::Production(_) | OrderKind::AutoAttack | OrderKind::AutoExplore => None,
+        }
+    }
+
+    fn aim_mut(&mut self) -> Option<&mut Aim> {
+        match self {
+            OrderKind::Go { aim, .. }
+            | OrderKind::Attack { aim }
+            | OrderKind::Patrol { aim, .. }
+            | OrderKind::Gather { aim, .. }
+            | OrderKind::Wait { aim, .. }
+            | OrderKind::Block { aim, .. }
+            | OrderKind::Repair { aim, .. }
+            | OrderKind::BuildPhaseTwo { aim, .. }
+            | OrderKind::Build { aim, .. }
+            | OrderKind::Use { aim, .. }
+            | OrderKind::Load { aim }
+            | OrderKind::LoadAll { aim }
+            | OrderKind::UnloadAll { aim } => Some(aim),
+            OrderKind::Production(_) | OrderKind::AutoAttack | OrderKind::AutoExplore => None,
+        }
+    }
+}
+
+/// What an order was given to aim at, and what that means now.
+#[derive(Clone, Debug)]
+pub(crate) struct Aim {
+    /// The target as given; `None` for an order given without one, which
+    /// fails when it is queued.
+    given: Option<TargetRef>,
+    /// What it aims at, as its player perceives or remembers it: set when
+    /// the order is queued, and kept up to date while it runs.
+    pub(crate) target: Option<Target>,
+}
+
+impl Aim {
+    fn new(given: Option<TargetRef>) -> Aim {
+        Aim {
+            given,
+            target: None,
+        }
+    }
+}
+
+/// What a production order makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Product {
+    Train(TypeId),
+    Research(TypeId),
+    UpgradeTo(TypeId),
+}
+
+impl Product {
+    pub(crate) fn type_id(self) -> TypeId {
+        match self {
+            Product::Train(t) | Product::Research(t) | Product::UpgradeTo(t) => t,
+        }
+    }
+}
+
+/// A `train`, `research` or `upgrade_to` order: what it makes and how far
+/// it is.
+#[derive(Clone, Debug)]
+pub(crate) struct Production {
+    pub(crate) product: Product,
+    /// The time left, set when the order is queued and paid for.
+    pub(crate) time_left: i64,
+    /// The completeness last announced, in tenths.
+    previous_completeness: Option<i64>,
+}
+
+impl Production {
+    fn new(product: Product) -> Production {
+        Production {
+            product,
+            time_left: 0,
+            previous_completeness: None,
+        }
+    }
+}
+
+/// The route of a patrol.
+#[derive(Clone, Debug)]
+pub(crate) struct Route {
+    /// The places patrolled, in order: `None` for a place that is not a
+    /// square.
+    pub(crate) places: Vec<Option<Place>>,
+    /// The place it goes to next.
+    index: usize,
+}
+
+/// A `gather` order's progress.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Gathering {
+    pub(crate) step: GatherStep,
+    /// The warehouse it carries its cargo to, once chosen.
+    storage: Option<EntityId>,
+    /// When the storing or the extracting ends.
+    delay: i64,
+}
+
+/// The steps of a `gather` order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum GatherStep {
+    /// Queued: its first update chooses between going to the deposit and
+    /// bringing back the cargo it carries.
+    #[default]
+    Start,
+    /// Carrying the cargo to a warehouse.
     BringBack,
-    /// Gather: storing the cargo.
+    /// Storing the cargo.
     Store,
-    /// Gather: going to the deposit.
+    /// Going to the deposit.
     GoGather,
-    /// Gather: extracting.
-    Gather,
-    /// Block: going to the exit.
-    GoBlock,
-    /// Block: blocking the exit.
-    Block,
-    /// Repair and build: going to the building.
-    GoBuild,
-    /// Repair and build: working.
-    Build,
+    /// Extracting.
+    Extract,
+}
+
+/// The steps of a `block` order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlockStep {
+    /// Queued, its target not yet accepted as an exit.
+    Waiting,
+    /// Going to the exit.
+    Going,
+    /// Blocking the exit.
+    Blocking,
+}
+
+/// The steps of a `repair` or `build_phase_two` order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BuildStep {
+    /// Queued, its target not yet accepted as repairable.
+    Waiting,
+    /// Going to the building.
+    Going,
+    /// Working on it.
+    Working,
 }
 
 /// An order in a unit's queue.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug)]
 pub struct Order {
     /// Unique in the world; tells two orders apart.
     pub uid: u64,
-    pub keyword: Keyword,
-    /// The arguments after the keyword (and after the type of a complex
-    /// order).
-    pub args: Vec<String>,
-    /// The type of a complex order (`footman` in `train footman`).
-    pub type_name: Option<String>,
     /// The id of the `order` command that gave it, shared by the units of
     /// a group.
     pub id: Option<u64>,
-    pub target: Option<Target>,
-    pub is_impossible: bool,
-    pub is_complete: bool,
     pub is_imperative: bool,
+    is_impossible: bool,
+    is_complete: bool,
     /// Production waiting for food.
-    pub is_deferred: bool,
-    first_update: bool,
-    pub mode: Mode,
-    delay: i64,
-    storage: Option<EntityId>,
-    /// Production time left.
-    pub time: i64,
+    is_deferred: bool,
     has_started: bool,
-    previous_completeness: Option<i64>,
-    creation_time: Option<i64>,
-    /// Patrol: the places patrolled, in order.
-    pub patrol_targets: Option<Vec<Option<Place>>>,
-    patrol_index: usize,
-    must_deploy: bool,
+    first_update: bool,
+    pub(crate) kind: OrderKind,
 }
 
 impl Order {
-    fn new(uid: u64, keyword: Keyword, type_name: Option<String>, args: Vec<String>) -> Order {
+    fn new(uid: u64, kind: OrderKind) -> Order {
         Order {
             uid,
-            keyword,
-            args,
-            type_name,
             id: None,
-            target: None,
+            is_imperative: kind.keyword().imperative_by_default(),
             is_impossible: false,
             is_complete: false,
-            is_imperative: keyword.imperative_by_default(),
             is_deferred: false,
-            first_update: true,
-            mode: Mode::None,
-            delay: 0,
-            storage: None,
-            time: 0,
             has_started: false,
-            previous_completeness: None,
-            creation_time: None,
-            patrol_targets: None,
-            patrol_index: 0,
-            must_deploy: false,
+            first_update: true,
+            kind,
         }
+    }
+
+    pub fn keyword(&self) -> Keyword {
+        self.kind.keyword()
+    }
+
+    /// What it aims at now, for the kinds that take a target.
+    pub fn target(&self) -> Option<&Target> {
+        self.kind.aim().and_then(|a| a.target.as_ref())
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.is_complete
+    }
+
+    pub fn is_impossible(&self) -> bool {
+        self.is_impossible
+    }
+
+    /// Production waiting for food.
+    pub fn is_deferred(&self) -> bool {
+        self.is_deferred
+    }
+
+    /// Marks it complete: it leaves the queue at the unit's next update.
+    pub(crate) fn complete(&mut self) {
+        self.is_complete = true;
+    }
+
+    /// The type of a complex order, by its name in `rules`.
+    pub fn type_name<'r>(&self, rules: &'r Rules) -> Option<&'r str> {
+        self.kind.type_id().map(|t| rules.ty(t).name.as_str())
+    }
+
+    /// The target as given, written as [`TargetRef::text`] writes it.
+    pub fn args(&self, w: &World) -> Vec<String> {
+        self.kind
+            .aim()
+            .and_then(|a| a.given)
+            .map(|t| t.text(w))
+            .into_iter()
+            .collect()
+    }
+
+    /// The order in words, as given: `["build", "farm", "25"]`.
+    pub fn words(&self, w: &World) -> Vec<String> {
+        let mut words = vec![self.keyword().as_str().to_owned()];
+        words.extend(self.type_name(&w.rules).map(str::to_owned));
+        words.extend(self.args(w));
+        words
+    }
+}
+
+/// The texts an order's hash reads: its type's name and its target as the
+/// order used to store them. Set by [`World::digest_u64`] while it hashes.
+pub(crate) struct HashTexts {
+    square_ids: Vec<u32>,
+    square_names: Vec<String>,
+    type_names: Vec<String>,
+}
+
+thread_local! {
+    static HASH_TEXTS: std::cell::RefCell<Option<HashTexts>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl HashTexts {
+    /// Makes the texts of `w` available to the hashes of orders until the
+    /// guard is dropped.
+    pub(crate) fn set(w: &World) -> HashTextsGuard {
+        let texts = HashTexts {
+            square_ids: w.squares.iter().map(|s| s.id).collect(),
+            square_names: w.squares.iter().map(|s| s.name.clone()).collect(),
+            type_names: w.rules.types().iter().map(|t| t.name.clone()).collect(),
+        };
+        HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
+        HashTextsGuard
+    }
+
+    fn target_text(&self, t: TargetRef) -> String {
+        let id = |s: SquareId| self.square_ids[s.0 as usize];
+        match t {
+            TargetRef::Square(s) => id(s).to_string(),
+            TargetRef::SquareNamed(s) => self.square_names[s.0 as usize].clone(),
+            TargetRef::Point { square, x, y } => format!("zoom-{}-{x}-{y}", id(square)),
+            TargetRef::Entity(e) => e.to_string(),
+            TargetRef::Nothing => "None".to_owned(),
+        }
+    }
+}
+
+pub(crate) struct HashTextsGuard;
+
+impl Drop for HashTextsGuard {
+    fn drop(&mut self) {
+        HASH_TEXTS.with(|h| *h.borrow_mut() = None);
+    }
+}
+
+impl std::hash::Hash for Order {
+    /// Feeds what the order's former single structure fed, field by field.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        #[derive(Hash)]
+        enum Mode {
+            None,
+            BringBack,
+            Store,
+            GoGather,
+            Gather,
+            GoBlock,
+            Block,
+            GoBuild,
+            Build,
+        }
+        #[derive(Hash)]
+        struct Former<'a> {
+            uid: u64,
+            keyword: Keyword,
+            args: Vec<String>,
+            type_name: Option<String>,
+            id: Option<u64>,
+            target: Option<&'a Target>,
+            is_impossible: bool,
+            is_complete: bool,
+            is_imperative: bool,
+            is_deferred: bool,
+            first_update: bool,
+            mode: Mode,
+            delay: i64,
+            storage: Option<EntityId>,
+            time: i64,
+            has_started: bool,
+            previous_completeness: Option<i64>,
+            creation_time: Option<i64>,
+            patrol_targets: Option<&'a Vec<Option<Place>>>,
+            patrol_index: usize,
+            must_deploy: bool,
+        }
+        HASH_TEXTS.with(|texts| {
+            let texts = texts.borrow();
+            let texts = texts
+                .as_ref()
+                .expect("orders are hashed by World::digest_u64");
+            let mode = match &self.kind {
+                OrderKind::Gather { gathering, .. } => match gathering.step {
+                    GatherStep::Start => Mode::None,
+                    GatherStep::BringBack => Mode::BringBack,
+                    GatherStep::Store => Mode::Store,
+                    GatherStep::GoGather => Mode::GoGather,
+                    GatherStep::Extract => Mode::Gather,
+                },
+                OrderKind::Block { step, .. } => match step {
+                    BlockStep::Waiting => Mode::None,
+                    BlockStep::Going => Mode::GoBlock,
+                    BlockStep::Blocking => Mode::Block,
+                },
+                OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. } => {
+                    match step {
+                        BuildStep::Waiting => Mode::None,
+                        BuildStep::Going => Mode::GoBuild,
+                        BuildStep::Working => Mode::Build,
+                    }
+                }
+                _ => Mode::None,
+            };
+            let (delay, storage) = match &self.kind {
+                OrderKind::Gather { gathering, .. } => (gathering.delay, gathering.storage),
+                _ => (0, None),
+            };
+            let (time, previous_completeness) = match &self.kind {
+                OrderKind::Production(p) => (p.time_left, p.previous_completeness),
+                _ => (0, None),
+            };
+            let (patrol_targets, patrol_index) = match &self.kind {
+                OrderKind::Patrol { route: Some(r), .. } => (Some(&r.places), r.index),
+                _ => (None, 0),
+            };
+            Former {
+                uid: self.uid,
+                keyword: self.keyword(),
+                args: self
+                    .kind
+                    .aim()
+                    .and_then(|a| a.given)
+                    .map(|t| texts.target_text(t))
+                    .into_iter()
+                    .collect(),
+                type_name: self
+                    .kind
+                    .type_id()
+                    .map(|t| texts.type_names[t.0 as usize].clone()),
+                id: self.id,
+                target: self.target(),
+                is_impossible: self.is_impossible,
+                is_complete: self.is_complete,
+                is_imperative: self.is_imperative,
+                is_deferred: self.is_deferred,
+                first_update: self.first_update,
+                mode,
+                delay,
+                storage,
+                time,
+                has_started: self.has_started,
+                previous_completeness,
+                creation_time: match &self.kind {
+                    OrderKind::Go { creation_time, .. } => *creation_time,
+                    _ => None,
+                },
+                patrol_targets,
+                patrol_index,
+                must_deploy: matches!(
+                    self.kind,
+                    OrderKind::Wait {
+                        must_deploy: true,
+                        ..
+                    }
+                ),
+            }
+            .hash(state);
+        });
     }
 }
 
@@ -553,25 +1132,42 @@ impl World {
         Some(&mut self.em(unit).orders[i])
     }
 
+    /// The kind of a queued order, to change its state; `None` once the
+    /// order has left the queue. A uid always names an order of the same
+    /// kind, so the callers' patterns on the kind match whenever this
+    /// finds the order.
+    fn kind_mut(&mut self, unit: EntityId, uid: u64) -> Option<&mut OrderKind> {
+        self.ordm(unit, uid).map(|o| &mut o.kind)
+    }
+
     /// `==` between orders, as the original's `__eq__`: `go` orders are
     /// equal for the same target given at the same time, `build` orders for
     /// the same type, target and command; other orders are never equal.
     pub(crate) fn order_eq(&self, a: &Order, b: &Order) -> bool {
-        match a.keyword {
-            Keyword::Go => {
-                b.keyword == Keyword::Go
-                    && a.target.as_ref().and_then(|t| self.t_id_text(t))
-                        == b.target.as_ref().and_then(|t| self.t_id_text(t))
-                    && a.creation_time == b.creation_time
+        let same_target = || {
+            a.target().and_then(|t| self.t_id_text(t)) == b.target().and_then(|t| self.t_id_text(t))
+        };
+        match &a.kind {
+            OrderKind::Go { creation_time, .. } => {
+                matches!(&b.kind, OrderKind::Go { creation_time: tb, .. } if same_target() && creation_time == tb)
             }
-            Keyword::Build => {
-                b.keyword == Keyword::Build
-                    && a.type_name == b.type_name
-                    && a.target.as_ref().and_then(|t| self.t_id_text(t))
-                        == b.target.as_ref().and_then(|t| self.t_id_text(t))
-                    && a.id == b.id
+            OrderKind::Build { building, .. } => {
+                matches!(&b.kind, OrderKind::Build { building: bb, .. } if building == bb && same_target() && a.id == b.id)
             }
-            _ => false,
+            OrderKind::Production(_)
+            | OrderKind::Attack { .. }
+            | OrderKind::Patrol { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Use { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => false,
         }
     }
 
@@ -582,41 +1178,26 @@ impl World {
 
     // costs
 
-    fn complex_type(&self, o: &Order) -> Res<&crate::rules::UnitType> {
-        questions::complex_type(&self.rules, o.type_name.as_deref())
+    fn priced(&self, o: &Order) -> Option<(&crate::rules::UnitType, bool)> {
+        o.kind
+            .priced()
+            .map(|(t, upgrade)| (self.rules.ty(t), upgrade))
     }
 
-    pub(crate) fn order_cost(&self, unit: EntityId, o: &Order) -> Res<Vec<i64>> {
-        questions::order_cost(
-            &self.rules,
-            &self.e(unit),
-            o.keyword,
-            o.type_name.as_deref(),
-        )
+    pub(crate) fn order_cost(&self, unit: EntityId, o: &Order) -> Vec<i64> {
+        questions::priced_cost(&self.rules, &self.e(unit), self.priced(o))
     }
 
-    pub(crate) fn order_food_cost(&self, unit: EntityId, o: &Order) -> Res<i64> {
-        questions::order_food_cost(
-            &self.rules,
-            &self.e(unit),
-            o.keyword,
-            o.type_name.as_deref(),
-        )
+    pub(crate) fn order_food_cost(&self, unit: EntityId, o: &Order) -> i64 {
+        questions::priced_food_cost(&self.e(unit), self.priced(o))
     }
 
-    fn order_time_cost(&self, unit: EntityId, o: &Order) -> Res<i64> {
-        let t = self.complex_type(o)?;
-        if o.keyword == Keyword::UpgradeTo {
-            return Ok(t.stats.time_cost - self.e(unit).stats.time_cost);
+    fn production_time_cost(&self, unit: EntityId, p: &Production) -> i64 {
+        let t = self.rules.ty(p.product.type_id());
+        match p.product {
+            Product::UpgradeTo(_) => t.stats.time_cost - self.e(unit).stats.time_cost,
+            Product::Train(_) | Product::Research(_) => t.stats.time_cost,
         }
-        Ok(t.stats.time_cost)
-    }
-
-    fn use_effect(&self, o: &Order) -> Res<Vec<String>> {
-        self.complex_type(o)?
-            .effect
-            .clone()
-            .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))
     }
 
     /// The costs and the number of targets of an order a unit could
@@ -698,12 +1279,17 @@ impl World {
             self.cancel_all_orders(unit, true);
         }
         let uid = self.next_order_uid();
-        let mut order = request.stored(uid, self);
-        order.id = order_id;
-        if imperative {
-            order.is_imperative = true;
+        match request.taken(self)? {
+            Taken::Now(immediate) => self.immediate_order(unit, immediate),
+            Taken::Queued(kind) => {
+                let mut order = Order::new(uid, kind);
+                order.id = order_id;
+                if imperative {
+                    order.is_imperative = true;
+                }
+                self.queue_order(unit, order)
+            }
         }
-        self.immediate_action(unit, order)
     }
 
     /// An imperative `go` toward a unit that has an owner becomes `attack`.
@@ -759,9 +1345,10 @@ impl World {
     }
 
     fn order_cancel(&mut self, unit: EntityId, o: &Order, unpay: bool) {
-        if !o.keyword.is_production() {
+        // Only production pays when it is queued.
+        let OrderKind::Production(_) = o.kind else {
             return;
-        }
+        };
         let Some(p) = self.e(unit).player else { return };
         // An impossible order was never paid for, or was refunded when it
         // failed; a complete one has delivered what it paid for. Either
@@ -770,25 +1357,22 @@ impl World {
             self.notify(unit, EntityEvent::OrderOk, false);
             return;
         }
-        if unpay && let Ok(cost) = self.order_cost(unit, o) {
+        if unpay {
+            let cost = self.order_cost(unit, o);
             self.unpay(p, &cost);
         }
-        if o.has_started
-            && let Ok(food) = self.order_food_cost(unit, o)
-        {
+        if o.has_started {
+            let food = self.order_food_cost(unit, o);
             self.plm(p).used_food -= food;
         }
         self.notify(unit, EntityEvent::OrderOk, false);
     }
 
-    fn immediate_action(&mut self, unit: EntityId, order: Order) -> Res {
-        if order.keyword.is_immediate() {
-            return self.immediate_order(unit, order);
-        }
+    fn queue_order(&mut self, unit: EntityId, order: Order) -> Res {
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        let food = self.order_food_cost(unit, &order)?;
+        let food = self.order_food_cost(unit, &order);
         let limit = self.food_limit();
         if self.e(unit).orders.len() >= ORDERS_QUEUE_LIMIT {
             self.notify(
@@ -813,27 +1397,20 @@ impl World {
         Ok(())
     }
 
-    fn arg0(o: &Order) -> Res<String> {
-        o.args
-            .first()
-            .cloned()
-            .ok_or_else(|| Abort::new("list index out of range"))
-    }
-
-    fn immediate_order(&mut self, unit: EntityId, order: Order) -> Res {
+    fn immediate_order(&mut self, unit: EntityId, order: Immediate) -> Res {
         let ok = EntityEvent::OrderOk;
-        match order.keyword {
-            Keyword::Stop => {
+        match order {
+            Immediate::Stop => {
                 self.cancel_all_orders(unit, true);
                 self.stop(unit);
                 self.notify(unit, ok, false);
             }
-            Keyword::CancelTraining | Keyword::CancelUpgrading => {
+            Immediate::CancelLast => {
                 if let Some(o) = self.em(unit).orders.pop() {
                     self.order_cancel(unit, &o, true);
                 }
             }
-            Keyword::CancelBuilding => {
+            Immediate::CancelBuilding => {
                 let cost = self
                     .e(unit)
                     .site
@@ -845,36 +1422,23 @@ impl World {
                 }
                 self.die(unit, None)?;
             }
-            Keyword::EnableAutoGather => {
-                self.em(unit).auto_gather = Some(true);
+            Immediate::AutoGather(on) => {
+                self.em(unit).auto_gather = Some(on);
                 self.notify(unit, ok, false);
             }
-            Keyword::DisableAutoGather => {
-                self.em(unit).auto_gather = Some(false);
+            Immediate::AutoRepair(on) => {
+                self.em(unit).auto_repair = Some(on);
                 self.notify(unit, ok, false);
             }
-            Keyword::EnableAutoRepair => {
-                self.em(unit).auto_repair = Some(true);
+            Immediate::Stance(mode) => {
+                self.em(unit).ai_mode = Some(mode);
                 self.notify(unit, ok, false);
             }
-            Keyword::DisableAutoRepair => {
-                self.em(unit).auto_repair = Some(false);
+            Immediate::RallyingPoint(target) => {
+                self.em(unit).rallying_point = Some(target);
                 self.notify(unit, ok, false);
             }
-            Keyword::ModeOffensive => {
-                self.em(unit).ai_mode = Some(crate::entity::AiMode::Offensive);
-                self.notify(unit, ok, false);
-            }
-            Keyword::ModeDefensive => {
-                self.em(unit).ai_mode = Some(crate::entity::AiMode::Defensive);
-                self.notify(unit, ok, false);
-            }
-            Keyword::RallyingPoint => {
-                self.em(unit).rallying_point = Some(Self::arg0(&order)?);
-                self.notify(unit, ok, false);
-            }
-            Keyword::JoinGroup => {
-                let name = Self::arg0(&order)?;
+            Immediate::JoinGroup(name) => {
                 if !self.groups.iter().any(|(n, _)| *n == name) {
                     self.groups.push((name.clone(), Vec::new()));
                 }
@@ -893,12 +1457,11 @@ impl World {
                     self.notify(unit, ok, false);
                 }
             }
-            Keyword::Enter => {
+            Immediate::Enter(transport) => {
                 let Some(p) = self.e(unit).player else {
                     return Ok(());
                 };
-                let id = Self::arg0(&order)?;
-                let target = self.get_object_by_id(p, &id)?;
+                let target = self.resolve_target(p, &transport)?;
                 let tid = match &target {
                     Some(Target::Entity(t)) => *t,
                     _ => return Err(Abort::new("the target cannot take orders")),
@@ -916,7 +1479,6 @@ impl World {
                     self.take_order(unit, go, true, false, None)?;
                 }
             }
-            _ => {}
         }
         Ok(())
     }
@@ -937,27 +1499,29 @@ impl World {
 
     fn mark_as_complete(&mut self, unit: EntityId, uid: u64) {
         if let Some(o) = self.ordm(unit, uid) {
-            o.is_complete = true;
+            o.complete();
         }
         self.em(unit).distance_to_goal = 0;
     }
 
     fn set_target(&mut self, unit: EntityId, uid: u64, t: Option<Target>) {
-        if let Some(o) = self.ordm(unit, uid) {
-            o.target = t.clone();
+        if let Some(aim) = self.kind_mut(unit, uid).and_then(OrderKind::aim_mut) {
+            aim.target = t.clone();
         }
         // A reserved project is the same object as the order.
         if let Some(p) = self.e(unit).player {
             for b in &mut self.plm(p).budget {
-                if b.uid == uid {
-                    b.target = t.clone();
+                if b.uid == uid
+                    && let Some(aim) = b.kind.aim_mut()
+                {
+                    aim.target = t.clone();
                 }
             }
         }
     }
 
     fn target_of(&self, unit: EntityId, uid: u64) -> Option<Target> {
-        self.ord(unit, uid).and_then(|o| o.target.clone())
+        self.ord(unit, uid).and_then(|o| o.target().cloned())
     }
 
     fn update_target(&mut self, unit: EntityId, uid: u64) -> Res {
@@ -972,16 +1536,16 @@ impl World {
         Ok(())
     }
 
-    fn get_target_arg(&mut self, unit: EntityId, uid: u64) -> Res<Option<Target>> {
+    /// What the target an order was given means to the unit's player now.
+    /// The error is an order given without a target.
+    fn resolve_given(&self, unit: EntityId, aim: &Aim) -> Res<Option<Target>> {
         let Some(p) = self.e(unit).player else {
             return Ok(None);
         };
-        let a = self
-            .ord(unit, uid)
-            .map(Self::arg0)
-            .transpose()?
-            .unwrap_or_default();
-        self.get_object_by_id(p, &a)
+        let given = aim
+            .given
+            .ok_or_else(|| Abort::new("list index out of range"))?;
+        self.resolve_target(p, &given)
     }
 
     // queueing
@@ -991,10 +1555,10 @@ impl World {
             return Ok(());
         };
         let ok = EntityEvent::OrderOk;
-        match o.keyword {
-            Keyword::Train | Keyword::Research | Keyword::UpgradeTo => {
-                let cost = self.order_cost(unit, &o)?;
-                let food = self.order_food_cost(unit, &o)?;
+        match &o.kind {
+            OrderKind::Production(production) => {
+                let cost = self.order_cost(unit, &o);
+                let food = self.order_food_cost(unit, &o);
                 if let Some(r) = self.check_if_enough_resources(unit, &cost, food) {
                     self.mark_as_impossible(unit, uid, Some(r));
                     return Ok(());
@@ -1002,17 +1566,17 @@ impl World {
                 if let Some(p) = self.e(unit).player {
                     self.pay(p, &cost);
                 }
-                let tc = self.order_time_cost(unit, &o)?;
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.time = tc;
+                let tc = self.production_time_cost(unit, production);
+                if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
+                    p.time_left = tc;
                 }
             }
-            Keyword::Go => {
+            OrderKind::Go { aim, .. } => {
                 let now = self.time;
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.creation_time = Some(now);
+                if let Some(OrderKind::Go { creation_time, .. }) = self.kind_mut(unit, uid) {
+                    *creation_time = Some(now);
                 }
-                let mut t = self.get_target_arg(unit, uid)?;
+                let mut t = self.resolve_given(unit, aim)?;
                 if t.is_none() {
                     self.mark_as_impossible(unit, uid, None);
                     return Ok(());
@@ -1026,8 +1590,8 @@ impl World {
                 self.set_target(unit, uid, t);
                 self.notify(unit, ok, false);
             }
-            Keyword::Attack => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Attack { aim } => {
+                let t = self.resolve_given(unit, aim)?;
                 let none = t.is_none();
                 self.set_target(unit, uid, t);
                 if none {
@@ -1036,8 +1600,8 @@ impl World {
                 }
                 self.notify(unit, ok, false);
             }
-            Keyword::Patrol => {
-                let mut t = self.get_target_arg(unit, uid)?;
+            OrderKind::Patrol { aim, .. } => {
+                let mut t = self.resolve_given(unit, aim)?;
                 if !matches!(t, Some(Target::Square(_))) {
                     let Some(tt) = t.clone() else {
                         self.mark_as_impossible(unit, uid, None);
@@ -1057,31 +1621,34 @@ impl World {
                 }
                 self.set_target(unit, uid, t.clone());
                 self.notify(unit, ok, false);
-                let place_of = |t: &Option<Target>| match t {
+                let place = match &t {
                     Some(Target::Square(s)) => Some(Place::Square(*s)),
                     _ => None,
                 };
-                let first_has_targets =
-                    self.e(unit).orders.first().is_some_and(|f| {
-                        f.keyword == Keyword::Patrol && f.patrol_targets.is_some()
-                    });
-                if first_has_targets {
-                    if let Some(f) = self.em(unit).orders.first_mut()
-                        && let Some(tl) = f.patrol_targets.as_mut()
-                    {
-                        tl.push(place_of(&t));
-                    }
+                // A patrol queued after a first one adds its place to the
+                // first one's route.
+                if let Some(Order {
+                    kind:
+                        OrderKind::Patrol {
+                            route: Some(route), ..
+                        },
+                    ..
+                }) = self.em(unit).orders.first_mut()
+                {
+                    route.places.push(place);
                     self.mark_as_complete(unit, uid);
                 } else {
                     let here = self.e(unit).place;
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.patrol_targets = Some(vec![here, place_of(&t)]);
-                        o.patrol_index = 0;
+                    if let Some(OrderKind::Patrol { route, .. }) = self.kind_mut(unit, uid) {
+                        *route = Some(Route {
+                            places: vec![here, place],
+                            index: 0,
+                        });
                     }
                 }
             }
-            Keyword::Gather => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Gather { aim, .. } => {
+                let t = self.resolve_given(unit, aim)?;
                 let is_deposit = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
@@ -1092,12 +1659,12 @@ impl World {
                     return Ok(());
                 }
                 self.notify(unit, ok, false);
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.mode = Mode::None;
+                if let Some(OrderKind::Gather { gathering, .. }) = self.kind_mut(unit, uid) {
+                    gathering.step = GatherStep::Start;
                 }
             }
-            Keyword::AutoAttack => {}
-            Keyword::AutoExplore => {
+            OrderKind::AutoAttack => {}
+            OrderKind::AutoExplore => {
                 let Some(p) = self.e(unit).player else {
                     return Ok(());
                 };
@@ -1113,15 +1680,15 @@ impl World {
                     self.plm(p).places_to_explore = Some(places);
                 }
             }
-            Keyword::Wait => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Wait { aim, .. } => {
+                let t = self.resolve_given(unit, aim)?;
                 self.set_target(unit, uid, t);
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.must_deploy = true;
+                if let Some(OrderKind::Wait { must_deploy, .. }) = self.kind_mut(unit, uid) {
+                    *must_deploy = true;
                 }
             }
-            Keyword::Block => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Block { aim, .. } => {
+                let t = self.resolve_given(unit, aim)?;
                 let is_exit = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
@@ -1132,12 +1699,12 @@ impl World {
                     return Ok(());
                 }
                 self.notify(unit, ok, false);
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.mode = Mode::GoBlock;
+                if let Some(OrderKind::Block { step, .. }) = self.kind_mut(unit, uid) {
+                    *step = BlockStep::Going;
                 }
             }
-            Keyword::Repair | Keyword::BuildPhaseTwo => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Repair { aim, .. } | OrderKind::BuildPhaseTwo { aim, .. } => {
+                let t = self.resolve_given(unit, aim)?;
                 let repairable = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
@@ -1148,14 +1715,19 @@ impl World {
                     return Ok(());
                 }
                 self.notify(unit, ok, false);
-                if let Some(o) = self.ordm(unit, uid) {
-                    o.mode = Mode::GoBuild;
+                if let Some(
+                    OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. },
+                ) = self.kind_mut(unit, uid)
+                {
+                    *step = BuildStep::Going;
                 }
             }
-            Keyword::Build => self.build_on_queued(unit, uid)?,
-            Keyword::Use => self.use_on_queued(unit, uid)?,
-            Keyword::Load => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::Build { building, aim } => {
+                self.build_on_queued(unit, uid, *building, aim)?
+            }
+            OrderKind::Use { ability, aim } => self.use_on_queued(unit, uid, *ability, aim)?,
+            OrderKind::Load { aim } => {
+                let t = self.resolve_given(unit, aim)?;
                 let p = self.e(unit).player;
                 let same_player = t
                     .as_ref()
@@ -1168,8 +1740,8 @@ impl World {
                 }
                 self.notify(unit, ok, false);
             }
-            Keyword::LoadAll | Keyword::UnloadAll => {
-                let t = self.get_target_arg(unit, uid)?;
+            OrderKind::LoadAll { aim } | OrderKind::UnloadAll { aim } => {
+                let t = self.resolve_given(unit, aim)?;
                 let t = match t {
                     Some(Target::Square(s)) => Some(Target::Square(s)),
                     // A unit inside something is not on a square to load or
@@ -1188,20 +1760,16 @@ impl World {
                 }
                 self.notify(unit, ok, false);
             }
-            _ => {}
         }
         Ok(())
     }
 
-    fn build_on_queued(&mut self, unit: EntityId, uid: u64) -> Res {
-        let Some(o) = self.ord(unit, uid).cloned() else {
-            return Ok(());
-        };
-        let bt = self.complex_type(&o)?.clone();
+    fn build_on_queued(&mut self, unit: EntityId, uid: u64, building: TypeId, aim: &Aim) -> Res {
+        let bt = self.rules.ty(building).clone();
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        let mut t = self.get_target_arg(unit, uid)?;
+        let mut t = self.resolve_given(unit, aim)?;
         let cannot = Some(Reason::CannotBuildHere);
         if bt.stats.is_buildable_on_exits_only != 0 {
             let is_exit = t
@@ -1268,8 +1836,8 @@ impl World {
         let o = self.ord(unit, uid).cloned().expect("queued");
         let reserved = self.order_in(&self.pl(p).budget, &o);
         if !reserved {
-            let cost = self.order_cost(unit, &o)?;
-            let food = self.order_food_cost(unit, &o)?;
+            let cost = self.order_cost(unit, &o);
+            let food = self.order_food_cost(unit, &o);
             if let Some(r) = self.check_if_enough_resources(unit, &cost, food) {
                 self.mark_as_impossible(unit, uid, Some(r));
                 return Ok(());
@@ -1286,24 +1854,21 @@ impl World {
         self.notify(unit, EntityEvent::OrderOk, false);
         let o = self.ord(unit, uid).cloned().expect("queued");
         if !self.order_in(&self.pl(p).budget, &o) {
-            let cost = self.order_cost(unit, &o)?;
+            let cost = self.order_cost(unit, &o);
             self.pay(p, &cost);
             self.plm(p).budget.push(o);
         }
         Ok(())
     }
 
-    fn use_on_queued(&mut self, unit: EntityId, uid: u64) -> Res {
-        let Some(o) = self.ord(unit, uid).cloned() else {
-            return Ok(());
-        };
-        let t = self.complex_type(&o)?.clone();
+    fn use_on_queued(&mut self, unit: EntityId, uid: u64, ability: TypeId, aim: &Aim) -> Res {
+        let t = self.rules.ty(ability).clone();
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
         if t.effect_target == ["ask"] {
-            let target = match o.args.first() {
-                Some(a) => self.get_object_by_id(p, a)?,
+            let target = match aim.given {
+                Some(given) => self.resolve_target(p, &given)?,
                 None => None,
             };
             let none = target.is_none();
@@ -1369,12 +1934,10 @@ impl World {
         let Some(o) = self.ord(unit, uid).cloned() else {
             return Ok(());
         };
-        match o.keyword {
-            Keyword::Train | Keyword::Research | Keyword::UpgradeTo => {
-                self.production_execute(unit, uid)
-            }
-            Keyword::Go => self.go_execute(unit, uid),
-            Keyword::Attack => {
+        match &o.kind {
+            OrderKind::Production(production) => self.production_execute(unit, &o, production),
+            OrderKind::Go { .. } => self.go_execute(unit, uid),
+            OrderKind::Attack { .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
                 let vulnerable = t
@@ -1396,19 +1959,22 @@ impl World {
                 }
                 Ok(())
             }
-            Keyword::Patrol => {
-                let targets = o.patrol_targets.clone().unwrap_or_default();
-                if targets.is_empty() {
+            OrderKind::Patrol { route, .. } => {
+                let Some(route) = route.as_ref().filter(|r| !r.places.is_empty()) else {
                     return Ok(());
-                }
-                let i = o.patrol_index;
-                if self.e(unit).place == targets[i] {
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.patrol_index = (i + 1) % targets.len();
+                };
+                let i = route.index;
+                let next = route.places[i];
+                if self.e(unit).place == next {
+                    if let Some(OrderKind::Patrol {
+                        route: Some(route), ..
+                    }) = self.kind_mut(unit, uid)
+                    {
+                        route.index = (i + 1) % route.places.len();
                     }
                     self.deploy(unit)?;
                 } else if self.e(unit).is_idle() {
-                    let t = match targets[i] {
+                    let t = match next {
                         Some(Place::Square(s)) => Some(Target::Square(s)),
                         _ => None,
                     };
@@ -1416,35 +1982,34 @@ impl World {
                 }
                 Ok(())
             }
-            Keyword::Gather => self.gather_execute(unit, uid),
-            Keyword::AutoAttack => {
+            OrderKind::Gather { gathering, .. } => self.gather_execute(unit, uid, gathering.step),
+            OrderKind::AutoAttack => {
                 if self.e(unit).is_idle() {
                     self.start_moving_to_enemy(unit)?;
                 }
                 Ok(())
             }
-            Keyword::AutoExplore => self.auto_explore(unit),
-            Keyword::Wait => {
-                if o.must_deploy {
+            OrderKind::AutoExplore => self.auto_explore(unit),
+            OrderKind::Wait { aim, must_deploy } => {
+                if *must_deploy {
                     self.deploy(unit)?;
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.must_deploy = false;
+                    if let Some(OrderKind::Wait { must_deploy, .. }) = self.kind_mut(unit, uid) {
+                        *must_deploy = false;
                     }
                 }
                 let Some(p) = self.e(unit).player else {
                     return Ok(());
                 };
-                if self.time_has_come(p, o.target.as_ref())? {
+                if self.time_has_come(p, aim.target.as_ref())? {
                     self.mark_as_complete(unit, uid);
                 }
                 Ok(())
             }
-            Keyword::Block => {
+            OrderKind::Block { step, .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
-                let mode = self.ord(unit, uid).map(|o| o.mode);
                 let Some(t) = t else {
-                    if mode == Some(Mode::GoBlock) {
+                    if *step == BlockStep::Going {
                         return Err(Abort::new("'NoneType' object has no attribute 'place'"));
                     }
                     return Err(Abort::new(
@@ -1452,11 +2017,11 @@ impl World {
                     ));
                 };
                 let exit = t.entity_id().expect("an exit");
-                match mode {
-                    Some(Mode::GoBlock) => {
+                match *step {
+                    BlockStep::Going => {
                         if self.near_enough(unit, &t) {
-                            if let Some(o) = self.ordm(unit, uid) {
-                                o.mode = Mode::Block;
+                            if let Some(OrderKind::Block { step, .. }) = self.kind_mut(unit, uid) {
+                                *step = BlockStep::Blocking;
                             }
                             self.stop(unit);
                             self.move_on_border(unit, exit);
@@ -1464,12 +2029,12 @@ impl World {
                             self.move_to_or_fail(unit, uid, Some(t))?;
                         }
                     }
-                    Some(Mode::Block) => self.block(unit, exit),
-                    _ => {}
+                    BlockStep::Blocking => self.block(unit, exit),
+                    BlockStep::Waiting => {}
                 }
                 Ok(())
             }
-            Keyword::Repair | Keyword::BuildPhaseTwo => {
+            OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
                 let done = match &t {
@@ -1491,34 +2056,38 @@ impl World {
                     return Ok(());
                 }
                 let t = t.expect("not done");
-                match o.mode {
-                    Mode::GoBuild => {
+                let set_step = |w: &mut World, new: BuildStep| {
+                    if let Some(
+                        OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. },
+                    ) = w.kind_mut(unit, uid)
+                    {
+                        *step = new;
+                    }
+                };
+                match *step {
+                    BuildStep::Going => {
                         if self.near_enough(unit, &t) {
-                            if let Some(o) = self.ordm(unit, uid) {
-                                o.mode = Mode::Build;
-                            }
+                            set_step(self, BuildStep::Working);
                             self.stop(unit);
                         } else if self.e(unit).is_idle() {
                             self.move_to_or_fail(unit, uid, Some(t))?;
                         }
                     }
-                    Mode::Build => {
+                    BuildStep::Working => {
                         if !self.near_enough(unit, &t) {
-                            if let Some(o) = self.ordm(unit, uid) {
-                                o.mode = Mode::GoBuild;
-                            }
+                            set_step(self, BuildStep::Going);
                             self.stop(unit);
                         } else if let Some(id) = t.entity_id() {
                             self.be_built(id, unit)?;
                         }
                     }
-                    _ => {}
+                    BuildStep::Waiting => {}
                 }
                 Ok(())
             }
-            Keyword::Build => self.build_execute(unit, uid),
-            Keyword::Use => self.use_execute(unit, uid),
-            Keyword::Load => {
+            OrderKind::Build { building, .. } => self.build_execute(unit, uid, *building),
+            OrderKind::Use { ability, .. } => self.use_execute(unit, uid, *ability),
+            OrderKind::Load { .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
                 let te = t.as_ref().and_then(|t| self.t_entity(t)).cloned();
@@ -1559,42 +2128,45 @@ impl World {
                 }
                 Ok(())
             }
-            Keyword::LoadAll | Keyword::UnloadAll => {
-                self.update_target(unit, uid)?;
-                let Some(Target::Square(s)) = self.target_of(unit, uid) else {
-                    self.mark_as_impossible(unit, uid, None);
-                    return Ok(());
-                };
-                let here = self.e(unit).place;
-                if self.e(unit).airground_type == AirGround::Water {
-                    let sq = self.square(s);
-                    let near = matches!(here, Some(Place::Square(h)) if self.square(h).strict_neighbors.contains(&s))
-                        && !sq.high_ground
-                        && (o.keyword == Keyword::LoadAll || sq.is_ground);
-                    if near {
-                        self.mark_as_complete(unit, uid);
-                        if o.keyword == Keyword::LoadAll {
-                            self.load_all(unit, Some(Place::Square(s)));
-                        } else {
-                            self.unload_all(unit, Some(s));
-                        }
-                    } else {
-                        self.mark_as_impossible(unit, uid, None);
-                    }
-                } else if here != Some(Place::Square(s)) {
-                    self.move_to_or_fail(unit, uid, Some(Target::Square(s)))?;
-                } else {
-                    self.mark_as_complete(unit, uid);
-                    if o.keyword == Keyword::LoadAll {
-                        self.load_all(unit, None);
-                    } else {
-                        self.unload_all(unit, None);
-                    }
-                }
-                Ok(())
-            }
-            _ => Ok(()),
+            OrderKind::LoadAll { .. } => self.load_all_execute(unit, uid, true),
+            OrderKind::UnloadAll { .. } => self.load_all_execute(unit, uid, false),
         }
+    }
+
+    /// `load_all` (`load`) or `unload_all`.
+    fn load_all_execute(&mut self, unit: EntityId, uid: u64, load: bool) -> Res {
+        self.update_target(unit, uid)?;
+        let Some(Target::Square(s)) = self.target_of(unit, uid) else {
+            self.mark_as_impossible(unit, uid, None);
+            return Ok(());
+        };
+        let here = self.e(unit).place;
+        if self.e(unit).airground_type == AirGround::Water {
+            let sq = self.square(s);
+            let near = matches!(here, Some(Place::Square(h)) if self.square(h).strict_neighbors.contains(&s))
+                && !sq.high_ground
+                && (load || sq.is_ground);
+            if near {
+                self.mark_as_complete(unit, uid);
+                if load {
+                    self.load_all(unit, Some(Place::Square(s)));
+                } else {
+                    self.unload_all(unit, Some(s));
+                }
+            } else {
+                self.mark_as_impossible(unit, uid, None);
+            }
+        } else if here != Some(Place::Square(s)) {
+            self.move_to_or_fail(unit, uid, Some(Target::Square(s)))?;
+        } else {
+            self.mark_as_complete(unit, uid);
+            if load {
+                self.load_all(unit, None);
+            } else {
+                self.unload_all(unit, None);
+            }
+        }
+        Ok(())
     }
 
     fn move_to_or_fail(&mut self, unit: EntityId, uid: u64, target: Option<Target>) -> Res {
@@ -1620,8 +2192,9 @@ impl World {
 
     fn smart_move_to_or_fail(&mut self, unit: EntityId, uid: u64, target: Option<Target>) -> Res {
         self.start_moving_to(unit, target.as_ref(), true)?;
-        let kw = self.ord(unit, uid).map(|o| o.keyword);
-        let grouped = matches!(kw, Some(Keyword::Go | Keyword::Patrol));
+        let grouped = self
+            .ord(unit, uid)
+            .is_some_and(|o| matches!(o.kind, OrderKind::Go { .. } | OrderKind::Patrol { .. }));
         if self.e(unit).is_idle() && grouped {
             let p = self.e(unit).player.expect("smart units have a player");
             let next_square = match &target {
@@ -1706,14 +2279,12 @@ impl World {
         Ok(())
     }
 
-    fn production_execute(&mut self, unit: EntityId, uid: u64) -> Res {
-        let Some(o) = self.ord(unit, uid).cloned() else {
-            return Ok(());
-        };
+    fn production_execute(&mut self, unit: EntityId, o: &Order, production: &Production) -> Res {
+        let uid = o.uid;
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        let food = self.order_food_cost(unit, &o)?;
+        let food = self.order_food_cost(unit, o);
         if !o.has_started {
             let limit = self.food_limit();
             let can_start =
@@ -1724,20 +2295,20 @@ impl World {
                     o.is_deferred = false;
                 }
                 self.plm(p).used_food += food;
-                self.notify_completeness(unit, uid)?;
+                self.notify_completeness(unit, uid);
             } else if !o.is_deferred {
                 if let Some(o) = self.ordm(unit, uid) {
                     o.is_deferred = true;
                 }
                 self.notify(unit, EntityEvent::ProductionDeferred, false);
             }
-        } else if o.time > 0 {
-            if let Some(o) = self.ordm(unit, uid) {
-                o.time -= VIRTUAL_TIME_INTERVAL;
+        } else if production.time_left > 0 {
+            if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
+                p.time_left -= VIRTUAL_TIME_INTERVAL;
             }
-            self.notify_completeness(unit, uid)?;
+            self.notify_completeness(unit, uid);
         } else {
-            self.production_complete(unit, uid)?;
+            self.production_complete(unit, o, production.product)?;
             if let Some(o) = self.ordm(unit, uid) {
                 o.is_complete = true;
             }
@@ -1745,42 +2316,44 @@ impl World {
         Ok(())
     }
 
-    fn notify_completeness(&mut self, unit: EntityId, uid: u64) -> Res {
-        let Some(o) = self.ord(unit, uid).cloned() else {
-            return Ok(());
+    fn notify_completeness(&mut self, unit: EntityId, uid: u64) {
+        // Read again: the caller may have just counted the time down.
+        let Some(Order {
+            kind: OrderKind::Production(production),
+            ..
+        }) = self.ord(unit, uid).cloned()
+        else {
+            return;
         };
-        let tc = self.order_time_cost(unit, &o)?;
+        let tc = self.production_time_cost(unit, &production);
         if tc == 0 {
-            return Ok(());
+            return;
         }
-        let t = if o.time < 0 {
+        let time = production.time_left;
+        let t = if time < 0 {
             0
-        } else if o.time > tc {
+        } else if time > tc {
             tc
         } else {
-            o.time
+            time
         };
         let c = (tc - t) * 10 / tc;
-        if Some(c) != o.previous_completeness {
+        if Some(c) != production.previous_completeness {
             self.notify(unit, EntityEvent::Completeness(c), false);
-            if let Some(o) = self.ordm(unit, uid) {
-                o.previous_completeness = Some(c);
+            if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
+                p.previous_completeness = Some(c);
             }
         }
-        Ok(())
     }
 
-    fn production_complete(&mut self, unit: EntityId, uid: u64) -> Res {
-        let Some(o) = self.ord(unit, uid).cloned() else {
-            return Ok(());
-        };
+    fn production_complete(&mut self, unit: EntityId, o: &Order, product: Product) -> Res {
+        let uid = o.uid;
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        let t = self.complex_type(&o)?.clone();
-        let type_id = self.rules.type_id(&t.name).expect("a type");
-        match o.keyword {
-            Keyword::Train => {
+        match product {
+            Product::Train(type_id) => {
+                let t = self.rules.ty(type_id).clone();
                 let found = if t.airground_type == AirGround::Water
                     && self.e(unit).stats.is_buildable_near_water_only != 0
                 {
@@ -1805,11 +2378,11 @@ impl World {
                     }
                 };
                 let Some((place, Some((x, y)))) = found else {
-                    self.order_cancel(unit, &o, true);
+                    self.order_cancel(unit, o, true);
                     self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                     return Ok(());
                 };
-                let food = self.order_food_cost(unit, &o)?;
+                let food = self.order_food_cost(unit, o);
                 self.plm(p).used_food -= food;
                 let u = self
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
@@ -1828,11 +2401,13 @@ impl World {
                     }
                 }
             }
-            Keyword::Research => {
-                self.upgrade_player(&t.name, p)?;
+            Product::Research(type_id) => {
+                let name = self.rules.ty(type_id).name.clone();
+                self.upgrade_player(&name, p)?;
                 self.notify(unit, EntityEvent::ResearchComplete, false);
             }
-            Keyword::UpgradeTo => {
+            Product::UpgradeTo(type_id) => {
+                let t = self.rules.ty(type_id).clone();
                 let e = self.e(unit).clone();
                 let Some(place) = e.place else { return Ok(()) };
                 let (mut x, mut y) = (e.x, e.y);
@@ -1893,7 +2468,6 @@ impl World {
                     self.create_meadow(s, Some((x, y)));
                 }
             }
-            _ => {}
         }
         Ok(())
     }
@@ -1948,26 +2522,40 @@ impl World {
         Ok(())
     }
 
-    fn gather_execute(&mut self, unit: EntityId, uid: u64) -> Res {
+    /// The gathering state of a gather order, to change it.
+    fn gathering_mut(&mut self, unit: EntityId, uid: u64) -> Option<&mut Gathering> {
+        match self.kind_mut(unit, uid) {
+            Some(OrderKind::Gather { gathering, .. }) => Some(gathering),
+            _ => None,
+        }
+    }
+
+    fn gather_execute(&mut self, unit: EntityId, uid: u64, step: GatherStep) -> Res {
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        if self.ord(unit, uid).is_some_and(|o| o.mode == Mode::None) {
-            let m = if self.e(unit).cargo.is_some() {
-                Mode::BringBack
+        if step == GatherStep::Start {
+            let s = if self.e(unit).cargo.is_some() {
+                GatherStep::BringBack
             } else {
-                Mode::GoGather
+                GatherStep::GoGather
             };
-            if let Some(o) = self.ordm(unit, uid) {
-                o.mode = m;
+            if let Some(g) = self.gathering_mut(unit, uid) {
+                g.step = s;
             }
         }
         self.update_target(unit, uid)?;
-        let Some(o) = self.ord(unit, uid).cloned() else {
+        // Read again after the target's update; the order may have left the
+        // queue.
+        let Some(Order {
+            kind: OrderKind::Gather { aim, gathering },
+            ..
+        }) = self.ord(unit, uid).cloned()
+        else {
             return Ok(());
         };
-        match o.mode {
-            Mode::BringBack => match o.storage {
+        match gathering.step {
+            GatherStep::BringBack => match gathering.storage {
                 None => {
                     let cargo = self
                         .e(unit)
@@ -1977,8 +2565,8 @@ impl World {
                         return Ok(());
                     };
                     let storage = self.nearest_warehouse(p, here, cargo.0, false)?;
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.storage = storage;
+                    if let Some(g) = self.gathering_mut(unit, uid) {
+                        g.storage = storage;
                     }
                     match storage {
                         None => {
@@ -1992,9 +2580,9 @@ impl World {
                     let st = Target::Entity(storage);
                     if self.near_enough(unit, &st) {
                         let delay = self.time + 1000;
-                        if let Some(o) = self.ordm(unit, uid) {
-                            o.mode = Mode::Store;
-                            o.delay = delay;
+                        if let Some(g) = self.gathering_mut(unit, uid) {
+                            g.step = GatherStep::Store;
+                            g.delay = delay;
                         }
                         let r = self.e(unit).cargo.map_or(0, |c| c.0);
                         self.notify(unit, EntityEvent::Store(r), false);
@@ -2002,25 +2590,25 @@ impl World {
                     } else if self.e(unit).is_idle() {
                         self.start_moving_to(unit, Some(&st), false)?;
                         if self.e(unit).is_idle()
-                            && let Some(o) = self.ordm(unit, uid)
+                            && let Some(g) = self.gathering_mut(unit, uid)
                         {
-                            o.storage = None;
+                            g.storage = None;
                         }
                     }
                 }
             },
-            Mode::Store => {
-                if self.time > o.delay {
+            GatherStep::Store => {
+                if self.time > gathering.delay {
                     if let Some((r, q)) = self.e(unit).cargo {
                         self.store(p, r, q);
                     }
                     self.em(unit).cargo = None;
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.mode = Mode::GoGather;
+                    if let Some(g) = self.gathering_mut(unit, uid) {
+                        g.step = GatherStep::GoGather;
                     }
                 }
             }
-            Mode::GoGather => match o.target.clone() {
+            GatherStep::GoGather => match aim.target {
                 None => {
                     self.mark_as_impossible(unit, uid, None);
                     self.deploy(unit)?;
@@ -2032,9 +2620,9 @@ impl World {
                             .and_then(|e| e.type_id)
                             .map_or(0, |ty| self.rules.ty(ty).stats.extraction_time);
                         let delay = self.time + et;
-                        if let Some(o) = self.ordm(unit, uid) {
-                            o.mode = Mode::Gather;
-                            o.delay = delay;
+                        if let Some(g) = self.gathering_mut(unit, uid) {
+                            g.step = GatherStep::Extract;
+                            g.delay = delay;
                         }
                         self.stop(unit);
                     } else if self.e(unit).is_idle() {
@@ -2042,15 +2630,15 @@ impl World {
                     }
                 }
             },
-            Mode::Gather => match o.target.clone() {
+            GatherStep::Extract => match aim.target {
                 None => self.mark_as_impossible(unit, uid, None),
                 Some(t) => {
                     if !self.near_enough(unit, &t) {
-                        if let Some(o) = self.ordm(unit, uid) {
-                            o.mode = Mode::GoGather;
+                        if let Some(g) = self.gathering_mut(unit, uid) {
+                            g.step = GatherStep::GoGather;
                         }
                         self.stop(unit);
-                    } else if self.time > o.delay {
+                    } else if self.time > gathering.delay {
                         let dep = self.t_entity(&t).cloned().expect("a deposit");
                         let ty = dep.type_id.map(|ty| self.rules.ty(ty));
                         let cargo = (
@@ -2061,24 +2649,25 @@ impl World {
                         if let Some(id) = t.entity_id() {
                             self.extract_resource(id)?;
                         }
-                        if let Some(o) = self.ordm(unit, uid) {
-                            o.mode = Mode::BringBack;
-                            o.storage = None;
+                        if let Some(g) = self.gathering_mut(unit, uid) {
+                            g.step = GatherStep::BringBack;
+                            g.storage = None;
                         }
                     }
                 }
             },
-            _ => {}
+            // Left above for one of the other steps.
+            GatherStep::Start => {}
         }
         Ok(())
     }
 
-    fn build_execute(&mut self, unit: EntityId, uid: u64) -> Res {
+    fn build_execute(&mut self, unit: EntityId, uid: u64, building: TypeId) -> Res {
         self.update_target(unit, uid)?;
         let Some(o) = self.ord(unit, uid).cloned() else {
             return Ok(());
         };
-        let Some(t) = o.target.clone() else {
+        let Some(t) = o.target().cloned() else {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         };
@@ -2092,19 +2681,21 @@ impl World {
         };
         if at_target {
             self.free_resources(p, &o)?;
-            let bt = self.complex_type(&o)?.clone();
+            let bt = self.rules.ty(building);
+            let airground = bt.airground_type;
             let (tx, ty) = self.t_xy(&t);
             let Some(Place::Square(s)) = here else {
                 return Err(Abort::new(
                     "'Inside' object has no attribute 'find_free_space'",
                 ));
             };
-            if self.find_free_space(s, bt.airground_type, tx, ty).is_none() {
+            if self.find_free_space(s, airground, tx, ty).is_none() {
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                 return Ok(());
             }
-            if self.check_count_limit(p, &bt.name) {
-                self.put_building_site(unit, uid, &bt.name, t)?;
+            let name = self.rules.ty(building).name.clone();
+            if self.check_count_limit(p, &name) {
+                self.put_building_site(unit, uid, building, t)?;
             } else {
                 self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
             }
@@ -2118,13 +2709,12 @@ impl World {
         &mut self,
         unit: EntityId,
         uid: u64,
-        type_name: &str,
+        type_id: TypeId,
         target: Target,
     ) -> Res {
         let Some(p) = self.e(unit).player else {
             return Ok(());
         };
-        let type_id = self.rules.type_id(type_name).expect("a type");
         let bt = self.rules.ty(type_id).clone();
         let target = match target {
             Target::Memory(m) => Target::Entity(m.snapshot.id),
@@ -2157,7 +2747,10 @@ impl World {
         let Some(order) = self.ord(unit, uid).cloned() else {
             return Ok(());
         };
-        let phase_two = Request::build_phase_two(TargetRef::Entity(site));
+        let phase_two = || OrderKind::BuildPhaseTwo {
+            aim: Aim::new(Some(TargetRef::Entity(site))),
+            step: BuildStep::Waiting,
+        };
         for u in self.pl(p).units.clone() {
             if u == unit {
                 continue;
@@ -2165,16 +2758,14 @@ impl World {
             for n in 0..self.e(u).orders.len() {
                 if self.order_eq(&self.e(u).orders[n], &order) {
                     let nuid = self.next_order_uid();
-                    let new = phase_two.stored(nuid, self);
-                    self.em(u).orders[n] = new;
+                    self.em(u).orders[n] = Order::new(nuid, phase_two());
                     self.order_on_queued(u, nuid)?;
                 }
             }
         }
         let nuid = self.next_order_uid();
-        let new = phase_two.stored(nuid, self);
         if let Some(i) = self.find_order(unit, uid) {
-            self.em(unit).orders[i] = new;
+            self.em(unit).orders[i] = Order::new(nuid, phase_two());
             self.order_on_queued(unit, nuid)?;
         }
         Ok(())
@@ -2182,17 +2773,20 @@ impl World {
 
     // use
 
-    fn use_execute(&mut self, unit: EntityId, uid: u64) -> Res {
+    fn use_execute(&mut self, unit: EntityId, uid: u64, ability: TypeId) -> Res {
         self.update_target(unit, uid)?;
-        let Some(o) = self.ord(unit, uid).cloned() else {
+        let Some(o) = self.ord(unit, uid) else {
             return Ok(());
         };
-        if o.target.is_none() {
+        if o.target().is_none() {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         }
-        let t = self.complex_type(&o)?.clone();
-        let effect = self.use_effect(&o)?;
+        let t = self.rules.ty(ability).clone();
+        let effect = t
+            .effect
+            .clone()
+            .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
         let kind = effect.first().cloned().unwrap_or_default();
         if self.use_is_not_necessary(unit, uid, &kind, &t)? {
             self.mark_as_complete(unit, uid);

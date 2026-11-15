@@ -163,7 +163,7 @@ fn obj_line(w: &World, o: &Entity) -> String {
     let orders = o
         .orders
         .iter()
-        .map(|x| x.keyword.as_str())
+        .map(|x| x.keyword().as_str())
         .collect::<Vec<_>>()
         .join(",");
     let action = match (&o.action, creature) {
