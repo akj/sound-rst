@@ -4,6 +4,7 @@
 
 use std::cell::Cell;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use super::{Progress, SpeechBackend, SpeechEnd};
@@ -58,6 +59,7 @@ pub struct SpeechThread {
     /// Whether the speaker can report ends. If so, each utterance is
     /// speaking until its own report comes, which may say it cannot tell.
     reporting: bool,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl SpeechThread {
@@ -75,18 +77,30 @@ impl SpeechThread {
             reports: report,
         };
         // If the thread cannot start, every command fails and says so.
-        let _ = std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("speech".to_owned())
             .spawn(move || {
                 let mut speaker = make(link);
                 serve(&received, speaker.as_mut());
-            });
+            })
+            .ok();
         SpeechThread {
             commands,
             reports,
             last: 0,
             progress: Cell::new(Progress::Unknown),
             reporting,
+            thread,
+        }
+    }
+
+    /// Ends the speech thread and waits until it has handed the screen
+    /// reader what was said last. Dropping does not wait: a speech thread
+    /// made right after could then be overtaken by this one.
+    pub fn finish(mut self) {
+        let _ = self.commands.send(Command::Quit);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 

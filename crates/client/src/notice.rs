@@ -18,9 +18,10 @@ pub fn fatal(text: &str) {
     imp::fatal(text);
 }
 
-/// Whether the game can ask the player in a message box: exactly when
-/// [`fatal`] would use one, so a game started from a terminal, a script or
-/// a pipe never waits on a dialog.
+/// Whether the game can ask the player in a message box: only when it was
+/// given no standard stream at all and has no launching terminal, as when
+/// started from the desktop. A game started from a terminal, or by a script
+/// or a program that gives it any stream, never waits on a dialog.
 pub fn can_ask() -> bool {
     imp::can_ask()
 }
@@ -68,7 +69,7 @@ mod imp {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
         ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE,
-        STD_OUTPUT_HANDLE,
+        STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IDRETRY, IDYES, MB_ICONERROR, MB_ICONQUESTION, MB_OK, MB_RETRYCANCEL, MB_SETFOREGROUND,
@@ -95,7 +96,10 @@ mod imp {
     }
 
     pub fn can_ask() -> bool {
-        !has_stream(STD_ERROR_HANDLE) && launching_terminal().is_none()
+        ![STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+            .into_iter()
+            .any(has_stream)
+            && launching_terminal().is_none()
     }
 
     pub fn ask_yes_no(text: &str) -> bool {

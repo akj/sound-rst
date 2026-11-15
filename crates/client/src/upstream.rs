@@ -12,7 +12,7 @@
     clippy::arithmetic_side_effects
 )]
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{Cursor, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -34,6 +34,14 @@ const FOLDERS: [&str; 4] = ["res", "cfg", "mods", "single"];
 
 /// The file that marks a folder as the game root.
 const ROOT_MARKER: &str = "res/rules.txt";
+
+/// The most parts an entry's path may have, top folder included. The data
+/// has at most 6. It bounds the folders one entry can make.
+const MAX_PATH_PARTS: usize = 16;
+
+/// The names Windows gives to devices, whatever follows a dot: a file of
+/// such a name is the device.
+const DEVICES: [&str; 4] = ["con", "prn", "aux", "nul"];
 
 /// A connection that sends nothing for this long has stalled.
 const STALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -112,9 +120,13 @@ pub fn fetch(player: &Path, progress: &mut dyn FnMut(u64)) -> Result<PathBuf, St
 
 /// Installs the zip that `reader` gives as `<data>/<commit>` and returns
 /// that folder. It is extracted into `<data>/<commit>.partial` first, which
-/// is removed on any failure, so the data folder is complete or absent;
-/// the other entries of `data` are removed after a success. Safe to rerun,
-/// also after a run that stopped halfway.
+/// is removed on any failure, so the data folder is complete or absent.
+/// Safe to rerun, also after a run that stopped halfway.
+///
+/// One game installs at a time: a second is refused while the first works,
+/// and finds the data there afterwards. Data that is complete is never
+/// replaced: a running game may be reading it. The data of an older pin is
+/// left for the same reason.
 pub fn install(
     reader: impl Read,
     data: &Path,
@@ -124,6 +136,11 @@ pub fn install(
 ) -> Result<PathBuf, String> {
     let target = data.join(commit);
     let partial = data.join(format!("{commit}.partial"));
+    fs::create_dir_all(data).map_err(|e| format!("cannot make {}: {e}", data.display()))?;
+    let _lock = lock(data)?;
+    if target.join(ROOT_MARKER).is_file() {
+        return Ok(target);
+    }
     remove_dir(&partial)?;
     let result = read_limited(reader, limits.download, progress)
         .and_then(|bytes| extract(bytes, &partial, limits))
@@ -131,6 +148,7 @@ pub fn install(
             if !partial.join(ROOT_MARKER).is_file() {
                 return Err(format!("the download holds no {ROOT_MARKER}"));
             }
+            // At most what an install that failed left: it has no rules.
             remove_dir(&target)?;
             fs::rename(&partial, &target)
                 .map_err(|e| format!("cannot move the data to {}: {e}", target.display()))
@@ -139,8 +157,28 @@ pub fn install(
         let _ = fs::remove_dir_all(&partial);
         return Err(e);
     }
-    remove_others(data, commit);
     Ok(target)
+}
+
+/// The right to install into `data`, until the file is closed or the
+/// program ends, however it ends.
+fn lock(data: &Path) -> Result<File, String> {
+    let path = data.join("install.lock");
+    let cannot = |e: std::io::Error| format!("cannot lock {}: {e}", path.display());
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(cannot)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => Err(
+            "another SoundRTS is downloading the game data. Try again when it has finished."
+                .to_owned(),
+        ),
+        Err(TryLockError::Error(e)) => Err(cannot(e)),
+    }
 }
 
 /// Removes a folder if it is there.
@@ -150,24 +188,6 @@ fn remove_dir(dir: &Path) -> Result<(), String> {
             Err(format!("cannot remove {}: {e}", dir.display()))
         }
         _ => Ok(()),
-    }
-}
-
-/// Removes the entries of `data` other than `keep`: the data of an older
-/// pin. One that cannot be removed is left.
-fn remove_others(data: &Path, keep: &str) {
-    let Ok(entries) = fs::read_dir(data) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if entry.file_name() == keep {
-            continue;
-        }
-        let path = entry.path();
-        let _ = match entry.file_type() {
-            Ok(t) if t.is_dir() => fs::remove_dir_all(&path),
-            _ => fs::remove_file(&path),
-        };
     }
 }
 
@@ -195,16 +215,32 @@ fn read_limited(
     }
 }
 
+/// Whether a part of an entry's path names a file or folder of its own on
+/// Windows: not `.` or `..`, not a device (`NUL`, `COM1.txt`), and with no
+/// dot or space at its end, which Windows drops.
+fn plain(part: &str) -> bool {
+    let stem = part.split('.').next().unwrap_or(part).trim_end();
+    let stem = stem.to_ascii_lowercase();
+    let port = ["com", "lpt"].iter().any(|p| {
+        stem.strip_prefix(p)
+            .is_some_and(|n| n.chars().count() == 1 && n != "0")
+    });
+    !(part.ends_with(['.', ' ']) || DEVICES.contains(&stem.as_str()) || port)
+}
+
 /// The first part of an entry's name, if the name is safe: relative, with
-/// no `..` or `.` part, no drive and no backslash.
+/// no drive and no backslash, at most [`MAX_PATH_PARTS`] parts, and every
+/// part [`plain`]. A folder's name ends with one `/`.
 fn top_of(name: &str) -> Option<&str> {
-    let mut parts = name.split('/');
+    let path = name.strip_suffix('/').unwrap_or(name);
+    let mut parts = path.split('/');
     let top = parts.next().filter(|p| !p.is_empty())?;
     let safe = !name.contains(['\\', ':'])
+        && path.split('/').count() <= MAX_PATH_PARTS
         && [top]
             .into_iter()
             .chain(parts)
-            .all(|p| p != ".." && p != ".");
+            .all(|p| !p.is_empty() && plain(p));
     safe.then_some(top)
 }
 
@@ -368,6 +404,8 @@ fn fetch_speaking(player: &Path) -> Result<PathBuf, String> {
         Ok(_) => "The game data is ready.",
         Err(_) => "The game data could not be downloaded.",
     });
+    // The game's own speech starts next: this must have been said by then.
+    speech.finish();
     result
 }
 
@@ -518,7 +556,7 @@ mod tests {
             ]
         );
         assert_eq!(fs::read(root.join("res/rules.txt")).unwrap(), b"rules");
-        assert_eq!(entries(&data), ["c0ffee"]);
+        assert_eq!(entries(&data), ["c0ffee", "install.lock"]);
         assert_eq!(received.last(), Some(&(bytes.len() as u64)));
         // The installed folder is what the game finds.
         assert_eq!(
@@ -540,7 +578,7 @@ mod tests {
             let bytes = zip_of(&[("soundrts-c0ffee/res/rules.txt", b"rules"), (name, b"evil")]);
             let error = install_bytes(&bytes, &data, &SMALL).unwrap_err();
             assert!(error.contains("unsafe path"), "{name}: {error}");
-            assert_eq!(entries(&data), Vec::<String>::new(), "{name}");
+            assert_eq!(entries(&data), ["install.lock"], "{name}");
             assert!(!dir.path().join("evil.txt").exists());
         }
     }
@@ -556,7 +594,7 @@ mod tests {
         };
         let error = install_bytes(&bytes, &data, &limits).unwrap_err();
         assert!(error.contains("larger than"), "{error}");
-        assert_eq!(entries(&data), Vec::<String>::new());
+        assert_eq!(entries(&data), ["install.lock"]);
     }
 
     #[test]
@@ -591,7 +629,7 @@ mod tests {
             let data = dir.path().join("data");
             let error = install_bytes(bytes, &data, limits).unwrap_err();
             assert!(error.contains(says), "{error}");
-            assert_eq!(entries(&data), Vec::<String>::new());
+            assert_eq!(entries(&data), ["install.lock"]);
         }
     }
 
@@ -623,13 +661,13 @@ mod tests {
         let error =
             install(Broken { bytes, left }, &data, "c0ffee", &SMALL, &mut |_| {}).unwrap_err();
         assert!(error.contains("connection reset"), "{error}");
-        assert_eq!(entries(&data), Vec::<String>::new());
+        assert_eq!(entries(&data), ["install.lock"]);
 
         // What a run that died while extracting leaves behind.
         fs::create_dir_all(data.join("c0ffee.partial/res")).unwrap();
         fs::write(data.join("c0ffee.partial/res/stale.txt"), "stale").unwrap();
         let root = install_bytes(&game_zip(), &data, &SMALL).unwrap();
-        assert_eq!(entries(&data), ["c0ffee"]);
+        assert_eq!(entries(&data), ["c0ffee", "install.lock"]);
         assert!(!root.join("res/stale.txt").exists());
         assert!(root.join("res/rules.txt").is_file());
     }
@@ -641,21 +679,101 @@ mod tests {
         let bytes = zip_of(&[("soundrts-c0ffee/cfg/language.txt", b"en")]);
         let error = install_bytes(&bytes, &data, &SMALL).unwrap_err();
         assert!(error.contains("res/rules.txt"), "{error}");
-        assert_eq!(entries(&data), Vec::<String>::new());
+        assert_eq!(entries(&data), ["install.lock"]);
     }
 
     #[test]
-    fn the_data_of_an_older_pin_is_removed() {
+    fn a_failed_install_of_this_pin_is_replaced_and_an_older_pin_is_left() {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().join("data");
         fs::create_dir_all(data.join("0ld/res")).unwrap();
         fs::write(data.join("0ld/res/rules.txt"), "old").unwrap();
-        // A folder of this pin without its marker is replaced.
+        // A folder of this pin without its marker.
         fs::create_dir_all(data.join("c0ffee/res")).unwrap();
         fs::write(data.join("c0ffee/res/broken.txt"), "").unwrap();
         install_bytes(&game_zip(), &data, &SMALL).unwrap();
-        assert_eq!(entries(&data), ["c0ffee"]);
+        assert_eq!(entries(&data), ["0ld", "c0ffee", "install.lock"]);
         assert!(!data.join("c0ffee/res/broken.txt").exists());
+        assert_eq!(fs::read(data.join("0ld/res/rules.txt")).unwrap(), b"old");
+    }
+
+    #[test]
+    fn data_that_is_complete_is_never_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        // Another game finished installing while this one was asking.
+        fs::create_dir_all(data.join("c0ffee/res")).unwrap();
+        fs::write(data.join("c0ffee/res/rules.txt"), "theirs").unwrap();
+        let root = install_bytes(&game_zip(), &data, &SMALL).unwrap();
+        assert_eq!(root, data.join("c0ffee"));
+        assert_eq!(fs::read(root.join("res/rules.txt")).unwrap(), b"theirs");
+        assert_eq!(files(&root), ["res/rules.txt"]);
+    }
+
+    #[test]
+    fn a_second_install_at_the_same_time_is_refused_and_touches_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        // What the first install has extracted so far.
+        fs::create_dir_all(data.join("c0ffee.partial/res")).unwrap();
+        fs::write(data.join("c0ffee.partial/res/rules.txt"), "half").unwrap();
+        let first = lock(&data).unwrap();
+        let error = install_bytes(&game_zip(), &data, &SMALL).unwrap_err();
+        assert!(error.contains("another SoundRTS is downloading"), "{error}");
+        assert_eq!(entries(&data), ["c0ffee.partial", "install.lock"]);
+        assert_eq!(
+            fs::read(data.join("c0ffee.partial/res/rules.txt")).unwrap(),
+            b"half"
+        );
+        // When the first has ended, the next install goes through.
+        drop(first);
+        install_bytes(&game_zip(), &data, &SMALL).unwrap();
+        assert_eq!(entries(&data), ["c0ffee", "install.lock"]);
+    }
+
+    #[test]
+    fn names_that_windows_reads_as_something_else_are_refused() {
+        for name in [
+            "soundrts-c0ffee/res/NUL",
+            "soundrts-c0ffee/res/nul.txt",
+            "soundrts-c0ffee/res/Com1.ogg",
+            "soundrts-c0ffee/res/aux/x.txt",
+            "soundrts-c0ffee/res/LPT9",
+            "soundrts-c0ffee/res/rules.txt.",
+            "soundrts-c0ffee/res/rules.txt ",
+            "soundrts-c0ffee/res//x.txt",
+            // 17 parts.
+            "soundrts-c0ffee/res/1/2/3/4/5/6/7/8/9/10/11/12/13/14/x.txt",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let data = dir.path().join("data");
+            let bytes = zip_of(&[("soundrts-c0ffee/res/rules.txt", b"rules"), (name, b"x")]);
+            let error = install_bytes(&bytes, &data, &SMALL).unwrap_err();
+            assert!(error.contains("unsafe path"), "{name}: {error}");
+            assert_eq!(entries(&data), ["install.lock"], "{name}");
+        }
+        // Names that only look like those are files like any other.
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let bytes = zip_of(&[
+            ("soundrts-c0ffee/res/rules.txt", b"rules"),
+            ("soundrts-c0ffee/res/console.txt", b"a"),
+            ("soundrts-c0ffee/res/com10.txt", b"b"),
+            (
+                "soundrts-c0ffee/res/1/2/3/4/5/6/7/8/9/10/11/12/13/x.txt",
+                b"c",
+            ),
+        ]);
+        let root = install_bytes(&bytes, &data, &SMALL).unwrap();
+        assert_eq!(
+            files(&root),
+            [
+                "res/1/2/3/4/5/6/7/8/9/10/11/12/13/x.txt",
+                "res/com10.txt",
+                "res/console.txt",
+                "res/rules.txt"
+            ]
+        );
     }
 
     #[test]
@@ -681,6 +799,9 @@ mod tests {
     fn the_pinned_commit_is_a_full_commit_id() {
         assert_eq!(COMMIT.len(), 40);
         assert!(COMMIT.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert!(archive_url().ends_with(&format!("/archive/{COMMIT}.zip")));
+        assert_eq!(
+            archive_url(),
+            format!("https://github.com/soundmud/soundrts/archive/{COMMIT}.zip")
+        );
     }
 }
