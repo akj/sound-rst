@@ -24,7 +24,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check formatting
         run: cargo fmt --check
+      # The profiles in the workspace's Cargo.toml decide how dependencies are
+      # compiled, and the action does not look at that file: without this, a
+      # change there would leave compiled dependencies that no build can use.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The tests turn on `soundrts-world/truth`, which gives the whole world
@@ -43,6 +48,8 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-upstream.ps1
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
@@ -65,6 +72,8 @@ jobs:
         shell: pwsh
         run: ./scripts/fetch-upstream.ps1
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest

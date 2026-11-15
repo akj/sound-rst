@@ -32,8 +32,10 @@ jobs:
       - name: Fetch the original game
         shell: pwsh
         run: ./scripts/fetch-upstream.ps1
-      # The compiled dependencies, as in the CI workflow.
+      # The compiled dependencies, kept as in the CI workflow.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Keep the Steam Audio download
         uses: actions/cache@v6
         with:
