@@ -20,6 +20,10 @@ use std::fmt;
 /// Why the work in progress stops.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Abort {
+    /// A trigger of the map, or one typed in the console, cannot be read.
+    /// The trigger's action stops; a trigger not done is tried again at
+    /// the next check.
+    Trigger(TriggerError),
     /// The simulation broke one of its own rules: a defect to fix.
     Invariant(Invariant),
     /// A stop not yet given a kind of its own. The text says what went
@@ -37,8 +41,50 @@ impl Abort {
 impl fmt::Display for Abort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Abort::Trigger(t) => write!(f, "trigger: {t}"),
             Abort::Invariant(i) => write!(f, "broken invariant: {i}"),
             Abort::Unclassified(s) => f.write_str(s),
+        }
+    }
+}
+
+impl From<TriggerError> for Abort {
+    fn from(t: TriggerError) -> Abort {
+        Abort::Trigger(t)
+    }
+}
+
+/// What a trigger's words lack to be read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TriggerError {
+    /// A list in parentheses where a word is expected.
+    ListForWord,
+    /// A word where a list in parentheses is expected.
+    WordForList,
+    /// An empty list where a condition or an action is expected.
+    Empty,
+    /// A word of the trigger is missing after its name.
+    MissingWord(String),
+    /// A word that should be a number is not one.
+    NotANumber(String),
+    /// A word that should name a square names none.
+    NoSuchSquare(String),
+    /// `order` takes the units to choose, then the orders, each a list.
+    OrderWithoutTwoLists,
+}
+
+impl fmt::Display for TriggerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TriggerError::ListForWord => f.write_str("a list where a word is expected"),
+            TriggerError::WordForList => f.write_str("a word where a list is expected"),
+            TriggerError::Empty => f.write_str("an empty list"),
+            TriggerError::MissingWord(name) => write!(f, "{name} lacks a word"),
+            TriggerError::NotANumber(w) => write!(f, "{w:?} is not a number"),
+            TriggerError::NoSuchSquare(w) => write!(f, "no square {w:?}"),
+            TriggerError::OrderWithoutTwoLists => {
+                f.write_str("order takes the units, then the orders, each a list")
+            }
         }
     }
 }

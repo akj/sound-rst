@@ -1,7 +1,7 @@
 //! Map triggers, the trigger language (`lang_*`) and the text commands of
 //! players (`cmd_*`), from `worldplayerbase.py` and `worldplayercomputer.py`.
 
-use crate::abort::{Abort, Res};
+use crate::abort::{Res, TriggerError};
 use crate::command::{Cheat, Command, Order, Queue};
 use crate::entity::{EntityId, Place, PlayerId, Target};
 use crate::events::{EntityEvent, Event};
@@ -37,14 +37,14 @@ impl Expr {
     fn word(&self) -> Res<&str> {
         match self {
             Expr::Word(w) => Ok(w),
-            Expr::List(_) => Err(Abort::new("expected a word, found a list")),
+            Expr::List(_) => Err(TriggerError::ListForWord.into()),
         }
     }
 
     fn list(&self) -> Res<&[Expr]> {
         match self {
             Expr::List(l) => Ok(l),
-            Expr::Word(_) => Err(Abort::new("expected a list, found a word")),
+            Expr::Word(_) => Err(TriggerError::WordForList.into()),
         }
     }
 
@@ -81,7 +81,7 @@ pub fn list_to_tree(words: &[String]) -> Result<Vec<Expr>, String> {
                 open.push(Vec::new());
             }
             ")" => {
-                let last = open.pop().ok_or("list index out of range")?;
+                let last = open.pop().ok_or("a ')' closes no '('")?;
                 open.last_mut().unwrap_or(&mut top).push(Expr::List(last));
             }
             _ => open
@@ -130,40 +130,30 @@ impl World {
     }
 
     /// `my_eval`: runs `lang_<first word>` with the rest; false for an
-    /// unknown name. A lone word is read as its first letter, like the
-    /// original indexing a string, and names nothing.
+    /// unknown name. A lone word names nothing.
     fn my_eval(&mut self, p: PlayerId, l: &Expr) -> Res<bool> {
-        let items = match l {
-            Expr::Word(w) => {
-                if w.is_empty() {
-                    return Err(Abort::new("string index out of range"));
-                }
-                return Ok(false);
-            }
-            Expr::List(items) => items,
+        let Expr::List(items) = l else {
+            return Ok(false);
         };
-        let name = items
-            .first()
-            .ok_or_else(|| Abort::new("list index out of range"))?
-            .word()
-            .map_err(|_| Abort::new("can only concatenate str (not \"list\") to str"))?
-            .to_owned();
-        let args = &items[1..];
+        let Some((name, args)) = items.split_first() else {
+            return Err(TriggerError::Empty.into());
+        };
+        let name = name.word()?.to_owned();
         self.lang(p, &name, args)
     }
 
     pub(crate) fn lang(&mut self, p: PlayerId, name: &str, args: &[Expr]) -> Res<bool> {
         let arg_word = |i: usize| -> Res<String> {
             args.get(i)
-                .ok_or_else(|| Abort::new("list index out of range"))?
+                .ok_or_else(|| TriggerError::MissingWord(name.to_owned()))?
                 .word()
                 .map(str::to_owned)
         };
+        let number = |w: &str| TriggerError::NotANumber(w.to_owned());
         match name {
             "timer" => {
                 let s = arg_word(0)?;
-                let f = py_float(&s)
-                    .map_err(|_| Abort::new(format!("could not convert string to float: {s:?}")))?;
+                let f = py_float(&s).map_err(|_| number(&s))?;
                 let lhs = (self.time / 1000) as f64;
                 Ok(lhs >= f * self.map.timer_coefficient as f64)
             }
@@ -176,7 +166,7 @@ impl World {
                 for x in args {
                     let x = x.word()?;
                     if is_digits(x) {
-                        nb = py_int(x).map_err(|_| Abort::new("invalid number"))?;
+                        nb = py_int(x).map_err(|_| number(x))?;
                     } else {
                         for &u in &self.pl(p).units {
                             if *self.e(u).type_name == *x {
@@ -195,14 +185,15 @@ impl World {
                 Ok(true)
             }
             "has_entered" => {
+                // The triggers of a player run while it is in the game.
                 let Some(&first) = self.players.first() else {
-                    return Err(Abort::new("list index out of range"));
+                    return Ok(false);
                 };
                 for x in args {
                     let x = x.word()?;
                     let s = self
                         .square_by_name(x)
-                        .ok_or_else(|| Abort::new(format!("KeyError: '{x}'")))?;
+                        .ok_or_else(|| TriggerError::NoSuchSquare(x.to_owned()))?;
                     for &o in &self.square(s).objects {
                         if self.pl(first).units.contains(&o) && self.e(o).stats.presence != 0 {
                             return Ok(true);
@@ -254,10 +245,7 @@ impl World {
                 let mut description = Vec::new();
                 for x in &args[1..] {
                     let x = x.word()?;
-                    description.push(
-                        py_int(x)
-                            .map_err(|_| Abort::new(format!("invalid literal for int(): {x}")))?,
-                    );
+                    description.push(py_int(x).map_err(|_| number(x))?);
                 }
                 if !self.pl(p).objectives.iter().any(|o| o.number == n) {
                     let mut m = msg(mp::NEW_OBJECTIVE);
@@ -322,7 +310,7 @@ impl World {
 
     fn lang_order(&mut self, p: PlayerId, args: &[Expr]) -> Res {
         let [select, orders] = args else {
-            return Err(Abort::new("not enough values to unpack"));
+            return Err(TriggerError::OrderWithoutTwoLists.into());
         };
         let select = select.list()?;
         let words: Vec<Vec<String>> = orders.list()?.iter().map(Expr::words).collect::<Res<_>>()?;
@@ -343,11 +331,11 @@ impl World {
                 default_square = x.to_owned();
                 n = 1;
             } else if is_digits(x) {
-                n = py_int(x).map_err(|_| Abort::new("invalid number"))?;
+                n = py_int(x).map_err(|_| TriggerError::NotANumber(x.to_owned()))?;
             } else {
                 let s = self
                     .square_by_name(&default_square)
-                    .ok_or_else(|| Abort::new(format!("KeyError: '{default_square}'")))?;
+                    .ok_or_else(|| TriggerError::NoSuchSquare(default_square.clone()))?;
                 // The list may change while orders are given, as in the
                 // original, which walks it by index.
                 let mut i = 0;
@@ -382,7 +370,7 @@ impl World {
         notify: bool,
     ) {
         let Some(mut square) = self.square_by_name("a1") else {
-            self.warn("KeyError: 'a1'");
+            self.warn("add_units: the map has no square a1");
             return;
         };
         let mut nb: i64 = 1;
@@ -453,16 +441,14 @@ impl World {
         let tid = self
             .rules
             .type_id(type_name)
-            .ok_or(AddUnitError::Other("no type".into()))?;
+            .ok_or(AddUnitError::Other("no such type".into()))?;
         if self
             .rules
             .ty(tid)
             .entity_class()
             .is_none_or(|c| c == crate::rules::EntityClass::Deposit)
         {
-            return Err(AddUnitError::Other(
-                "__init__() takes 3 positional arguments".into(),
-            ));
+            return Err(AddUnitError::Other("not a unit or a building".into()));
         }
         let mut land = None;
         let (place, x, y) = if let Some(corpses) = corpses {
@@ -528,8 +514,6 @@ impl World {
                     for op in self.players.clone() {
                         self.push(op, Event::Speed(f));
                     }
-                } else if !self.players.contains(&p) {
-                    return Err(Abort::new("x not in list"));
                 } else {
                     self.warn("non admin client tried to change game speed");
                 }
