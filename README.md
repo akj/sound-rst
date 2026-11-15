@@ -9,7 +9,7 @@ The port reads the original game's data files unchanged: rules, maps, sounds, tr
 Single-player and multiplayer games work.
 
 - The main menu, the options menu (login, sound and speech, mods, soundpacks), and the single-player menus.
-- Games against the computer on every multiplayer map, with the `easy`, `aggressive`, and `ai2` computer players.
+- Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
 - The campaigns, with cut scenes, objectives, and the chapter bookmark.
 - Saving and loading a single-player game. See [Saved games](#saved-games).
 - Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.

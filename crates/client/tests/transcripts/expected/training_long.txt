@@ -111,120 +111,120 @@ length 9999 208980
 @37040 voice item "invite aggressive computer ,"
 @39840 sounds 1 daf7cd86a4a2b2cc
 @39840 step 15 key DOWN
-@39840 voice item "invite aggressive computer 2 ,"
-@43040 sounds 1 4c78433db8a7f2ae
-@43040 step 16 key DOWN
-@43040 voice item "start ,"
-@43740 sounds 1 be2894a493c15945
-@43740 step 17 key RETURN
-@43740 voice confirmation "start"
-@44250 voice info "objective: neutralized enemy"
-@47056 sounds 5 dc86298b56adaaae
-@47056 step 18 key e
-@47056 voice item "peasant 1 at j 8 , exploit gold mine , awaiting your orders"
-@47151 voice item "j 8 , forest , plateau , 1 town hall , 1 farm and 4 peasant , 1 gold mine and 2 wood"
-@56751 voice info ", 1 gold mine and 2 wood at j 8"
-@60452 sounds 152 16ecbcabbd2ccd34
-@60452 step 19 key ALT a
-@60452 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
-@77252 sounds 190 9594337cda8a36d5
-@77252 step 20 key f
-@77252 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
-@88352 sounds 118 6197cc73c2d993b5
-@88352 step 21 key TAB
-@88352 voice item [1003] "a meadow to the southeast , build farm on" vol=0.140,0.990
-@92471 sounds 48 5e2e814196bae126
-@92471 step 22 key RETURN
-@92471 voice item "build farm on a meadow"
-@94671 voice info "11 gold"
-@95771 voice info "9 wood"
-@96572 sounds 41 2e21c6b31423c6d0
-@96572 step 23 key w
-@96572 voice item "town hall 1 at j 8 , awaiting your orders"
-@101072 sounds 46 ca25ecb9840de2cd
-@101072 step 24 key a
-@101072 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
-@108372 sounds 70 1830acdf89280896
-@108372 step 25 key RETURN
-@108372 voice item "recruit peasant"
-@109872 voice info "8 gold"
-@119051 voice info "peasant 5 ready!"
-@123851 voice info "9 gold"
-@139151 voice info "10 gold"
-@140651 voice info "farm 2 complete"
-@155351 voice info "1 peasant enemy at j 7"
-@183251 sounds 829 9e82723e9860a474
-@183251 step 26 wait_turns 250
-@183253 sounds 1 1ec6a8dac27a78a6
-@183253 step 27 key F3
-@183253 voice item "2 minutes 16 seconds , speed 1.0"
-@187453 sounds 47 4178daac4a1fed25
-@187453 step 28 key CTRL PAGEDOWN
-@187453 voice item "j 7 , meadows , plateau , in the fog of war , 1 peasant enemy"
-@218951 voice info "20 gold"
-@262451 sounds 859 264f63d4272e0de4
-@262451 step 29 wait_turns 250
-@262452 step 30 key F3
-@262452 voice item "3 minutes 35 seconds , speed 1.0"
-@266652 sounds 51 21bb14d1d1ed3529
-@266652 step 31 key CTRL PAGEDOWN
-@266652 voice item "j 7 , meadows , plateau , in the fog of war , 1 peasant enemy"
-@297551 voice info "30 gold"
-@341651 sounds 849 4979c08d17f0a55c
-@341651 step 32 wait_turns 250
-@341652 step 33 key F3
-@341652 voice item "4 minutes 54 seconds , speed 1.0"
-@345852 sounds 49 37ec01a67abd78fa
-@345852 step 34 key CTRL PAGEDOWN
-@345852 voice item "nothing!"
-@374951 voice info "40 gold"
-@391751 voice info "1 archer enemy at j 7"
-@394452 voice info "alert at j 8"
-@400460 voice info "1 peasant lost at j 8"
-@404957 voice info "1 peasant lost at j 8"
-@409751 voice info "1 archer enemy at j 7"
-@413956 voice info "1 peasant lost at j 8"
-@420851 sounds 952 1b89a13baafa9af0
-@420851 step 35 wait_turns 250
-@420852 step 36 key F3
-@420852 voice item "6 minutes 14 seconds , speed 1.0"
-@425052 voice info "40 gold"
-@426153 sounds 58 24d79af49bf097b8
-@426153 step 37 key CTRL PAGEDOWN
-@426153 voice item "j 7 , meadows , plateau , in the fog of war , 2 archer enemy"
-@432553 voice info "1 archer enemy at j 7"
-@435053 voice info "1 peasant lost at j 8"
-@445755 voice info "1 archer enemy at j 7"
-@450257 voice info "70 wood"
-@463757 voice info "1 archer enemy at j 7"
-@466758 voice info "1 farm lost at j 8"
-@468958 voice info "1 peasant lost at j 8"
-@482353 voice info "1 archer enemy at j 7"
-@500951 sounds 1079 fb0be3f976a2ea1a
-@500951 step 38 wait_turns 250
-@500954 sounds 2 4df4ed3788f95d49
-@500954 step 39 key F3
-@500954 voice item "7 minutes 34 seconds , speed 1.0"
-@505154 sounds 70 819936c0f02ef767
-@505154 step 40 key CTRL PAGEDOWN
-@505154 voice item "j 8 , forest , plateau , 3 archer enemy , 1 town hall and 1 farm , 1 gold mine and 2 wood"
-@515254 voice info "1 town hall lost at j 8"
-@526154 voice info "1 farm lost at j 8"
-@528358 voice info "You have been defeated."
-@530658 voice info "Defeat at 7 minutes 59 seconds"
-@534258 voice info "5 units produced , 5 lost , 0 neutralized"
-@538958 voice info "3 building produced , 3 lost , 0 neutralized"
-@543958 voice info "51 gold gathered , 11 consumed"
-@547758 voice info "78 wood gathered , 7 consumed"
-@551258 voice info "score 147 press F5 to listen again"
-@555458 voice menu "please make a selection"
-@555458 sounds 384 7756e95f60986399
-@555458 step 41 wait_game_end
-@557758 step 42 key ESCAPE
-@557758 voice confirmation "go back to the previous menu"
-@560568 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@565668 sounds 1 83385bf573409228
-@565668 step 43 key ESCAPE
-@565668 voice confirmation "quit,"
-@566178 sounds 1 e22ba7e44799df07
-@566178 end
+@39840 voice item "invite random computer with unlimited resources and no requirements ,"
+@46740 sounds 1 4c78433db8a7f2ae
+@46740 step 16 key DOWN
+@46740 voice item "start ,"
+@47440 sounds 1 e824f088bfcb8b11
+@47440 step 17 key RETURN
+@47440 voice confirmation "start"
+@47950 voice info "objective: neutralized enemy"
+@50756 sounds 5 2ff670c9797f9d4b
+@50756 step 18 key e
+@50756 voice item "peasant 1 at j 8 , exploit gold mine , awaiting your orders"
+@50852 voice item "j 8 , forest , plateau , 1 town hall , 1 farm and 4 peasant , 1 gold mine and 2 wood"
+@60452 voice info ", 1 gold mine and 2 wood at j 8"
+@64153 sounds 152 2f23e81281944d2e
+@64153 step 19 key ALT a
+@64153 voice item "f build farm on , b build barracks on , l build sawmill on , k build blacksmith on , a build wall on , g build gate on , t build scout tower on , h build town hall on ,"
+@80953 sounds 190 903c2b6466f311a7
+@80953 step 20 key f
+@80953 voice item "build farm on , requires 5 gold and 5 wood , press tab to select the target and then press enter to confirm"
+@92053 sounds 118 1c8181251137daef
+@92053 step 21 key TAB
+@92053 voice item [1003] "a meadow to the southeast , build farm on" vol=0.140,0.990
+@96172 sounds 48 213a286b552c6e23
+@96172 step 22 key RETURN
+@96172 voice item "build farm on a meadow"
+@98372 voice info "11 gold"
+@99472 voice info "9 wood"
+@100273 sounds 41 f7b4428b8f3a93f6
+@100273 step 23 key w
+@100273 voice item "town hall 1 at j 8 , awaiting your orders"
+@104773 sounds 46 38006c293746ee00
+@104773 step 24 key a
+@104773 voice item "recruit peasant , requires 4 gold and 1 food , press enter to confirm"
+@112073 sounds 70 c199476f6a292c14
+@112073 step 25 key RETURN
+@112073 voice item "recruit peasant"
+@113573 voice info "8 gold"
+@122751 voice info "peasant 5 ready!"
+@127551 voice info "9 gold"
+@142851 voice info "10 gold"
+@144351 voice info "farm 2 complete"
+@159051 voice info "1 peasant enemy at j 7"
+@186951 sounds 828 b00a4a60ae1fcff3
+@186951 step 26 wait_turns 250
+@186953 sounds 1 daa45b6dad59491a
+@186953 step 27 key F3
+@186953 voice item "2 minutes 16 seconds , speed 1.0"
+@191153 sounds 45 f56491e1aa121137
+@191153 step 28 key CTRL PAGEDOWN
+@191153 voice item "j 7 , meadows , plateau , in the fog of war , 1 peasant enemy"
+@222651 voice info "20 gold"
+@266151 sounds 856 2efd9b7996148c69
+@266151 step 29 wait_turns 250
+@266152 step 30 key F3
+@266152 voice item "3 minutes 35 seconds , speed 1.0"
+@270352 sounds 50 e756e307877d0728
+@270352 step 31 key CTRL PAGEDOWN
+@270352 voice item "j 7 , meadows , plateau , in the fog of war , 1 peasant enemy"
+@301251 voice info "30 gold"
+@345351 sounds 853 ad9b05ed1de8dbda
+@345351 step 32 wait_turns 250
+@345352 step 33 key F3
+@345352 voice item "4 minutes 54 seconds , speed 1.0"
+@349552 sounds 44 983fe8a4c081651b
+@349552 step 34 key CTRL PAGEDOWN
+@349552 voice item "nothing!"
+@378651 voice info "40 gold"
+@395451 voice info "1 archer enemy at j 7"
+@398152 voice info "alert at j 8"
+@404160 voice info "1 peasant lost at j 8"
+@408657 voice info "1 peasant lost at j 8"
+@413451 voice info "1 archer enemy at j 7"
+@417656 voice info "1 peasant lost at j 8"
+@424551 sounds 950 6312e739afece936
+@424551 step 35 wait_turns 250
+@424552 step 36 key F3
+@424552 voice item "6 minutes 14 seconds , speed 1.0"
+@428752 voice info "40 gold"
+@429853 sounds 54 76d431228ad8481a
+@429853 step 37 key CTRL PAGEDOWN
+@429853 voice item "j 7 , meadows , plateau , in the fog of war , 2 archer enemy"
+@436253 voice info "1 archer enemy at j 7"
+@438753 voice info "1 peasant lost at j 8"
+@449455 voice info "1 archer enemy at j 7"
+@453957 voice info "70 wood"
+@467457 voice info "1 archer enemy at j 7"
+@470458 voice info "1 farm lost at j 8"
+@472658 voice info "1 peasant lost at j 8"
+@486053 voice info "1 archer enemy at j 7"
+@504651 sounds 1080 63bec29dafce3539
+@504651 step 38 wait_turns 250
+@504654 sounds 2 0bee4f0e5efe722d
+@504654 step 39 key F3
+@504654 voice item "7 minutes 34 seconds , speed 1.0"
+@508854 sounds 73 88019cac41dee769
+@508854 step 40 key CTRL PAGEDOWN
+@508854 voice item "j 8 , forest , plateau , 3 archer enemy , 1 town hall and 1 farm , 1 gold mine and 2 wood"
+@518954 voice info "1 town hall lost at j 8"
+@529854 voice info "1 farm lost at j 8"
+@532058 voice info "You have been defeated."
+@534358 voice info "Defeat at 7 minutes 59 seconds"
+@537958 voice info "5 units produced , 5 lost , 0 neutralized"
+@542658 voice info "3 building produced , 3 lost , 0 neutralized"
+@547658 voice info "51 gold gathered , 11 consumed"
+@551458 voice info "78 wood gathered , 7 consumed"
+@554958 voice info "score 147 press F5 to listen again"
+@559158 voice menu "please make a selection"
+@559158 sounds 384 79b6f527da9677b3
+@559158 step 41 wait_game_end
+@561458 step 42 key ESCAPE
+@561458 voice confirmation "go back to the previous menu"
+@564268 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@569368 sounds 1 cc97e44561318a7a
+@569368 step 43 key ESCAPE
+@569368 voice confirmation "quit,"
+@569878 sounds 1 50bbb9dd7b93e394
+@569878 end

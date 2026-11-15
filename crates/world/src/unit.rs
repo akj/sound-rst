@@ -412,11 +412,6 @@ impl World {
             .unwrap_or_default()
     }
 
-    /// The list of a type attribute (`can_train`...) of an entity.
-    pub(crate) fn type_list(&self, id: EntityId, attr: &str) -> Vec<String> {
-        questions::type_list(self.type_of(id), attr).to_vec()
-    }
-
     /// The cost of an entity's type: zeros for building sites and others.
     pub(crate) fn entity_cost(&self, id: EntityId) -> Vec<i64> {
         questions::entity_cost(&self.rules, &self.e(id))
