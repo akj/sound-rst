@@ -611,3 +611,36 @@ fn a_building_upgraded_keeps_its_rallying_point() {
     let peasant = find(&w, a, "peasant");
     assert_eq!(orders(&w, peasant).first(), Some(&words(&["go", &b1_id])));
 }
+
+#[test]
+fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
+    // A mod whose upgrades raise a knight's hit points and a priest's mana.
+    let extra = "def toughness\nclass upgrade\neffect bonus hp_max 10\n\
+                 def wisdom\nclass upgrade\neffect bonus mana_max 50\n\
+                 def knight\ncan_use toughness\ndef priest\ncan_use a_conversion wisdom\n";
+    let (mut w, a, b) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 u_conversion priest");
+    w.queue_command(b, "cmd add_units a1 toughness wisdom knight priest");
+    w.update();
+    let knight = find(&w, b, "knight");
+    let enemy_priest = find(&w, b, "priest");
+    for u in [knight, enemy_priest] {
+        let e = w.em(u);
+        e.hp = e.stats.hp_max;
+        e.mana = e.stats.mana_max;
+    }
+    let vitals = |w: &World, u| {
+        let e = w.e(u);
+        (e.hp, e.stats.hp_max, e.mana, e.stats.mana_max)
+    };
+    assert_eq!(vitals(&w, knight), (55_000, 55_000, 0, 0));
+    assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 250_000, 250_000));
+    let priest = find(&w, a, "priest");
+    for target in [knight, enemy_priest] {
+        w.em(priest).mana = w.e(priest).stats.mana_max;
+        order(&mut w, a, &[priest], &format!("use a_conversion {target}"));
+        update_until(&mut w, |w| w.e(target).player == Some(a));
+    }
+    assert_eq!(vitals(&w, knight), (45_000, 45_000, 0, 0));
+    assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 200_000, 200_000));
+}
