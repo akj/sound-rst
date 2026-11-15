@@ -306,6 +306,10 @@ impl World {
             let Some(upg) = self.rules.type_id(&name) else {
                 continue;
             };
+            // An ability has no level; a mod may research one, to no effect.
+            if !self.rules.ty(upg).is_upgrade() {
+                continue;
+            }
             for level in 0..self.pl(p).upgrades.level(upg) {
                 self.apply_upgrade_effect(upg, id, i64::from(level))?;
             }
@@ -320,10 +324,16 @@ impl World {
     }
 
     /// `Upgrade.upgrade_player`: applies the upgrade to the player's units
-    /// that can use it, then records it.
+    /// that can use it, then records it. What a mod researches that is not
+    /// an upgrade is recorded, with no effect.
     pub(crate) fn upgrade_player(&mut self, upgrade: TypeId, p: PlayerId) -> Res {
         let level = i64::from(self.pl(p).upgrades.level(upgrade));
-        for u in self.pl(p).units.clone() {
+        let units = if self.rules.ty(upgrade).is_upgrade() {
+            self.pl(p).units.clone()
+        } else {
+            Vec::new()
+        };
+        for u in units {
             if self
                 .can_use(u)
                 .iter()
@@ -337,23 +347,19 @@ impl World {
     }
 
     fn apply_upgrade_effect(&mut self, upgrade: TypeId, unit: EntityId, start_level: i64) -> Res {
-        let t = self.rules.ty(upgrade);
-        let upgrade = &t.name;
-        let effect = t
-            .effect
-            .clone()
-            .ok_or_else(|| Abort::new(format!("{upgrade} has no effect")))?;
-        let arg = |i: usize| -> Res<&String> {
-            effect
-                .get(i)
-                .ok_or_else(|| Abort::new(format!("missing argument in effect of {upgrade}")))
+        // An upgrade without an effect has none. The rules drop an effect
+        // they cannot read, so what follows reads one they could.
+        let Some(effect) = self.rules.ty(upgrade).effect.clone() else {
+            return Ok(());
         };
+        let arg = |i: usize| -> Res<&String> { Ok(effect.get(i).ok_or(Invariant::EffectUnread)?) };
+        let int = |s: &str| -> Res<i64> { Ok(py_int(s).map_err(|_| Invariant::EffectUnread)?) };
         match effect.first().map(String::as_str) {
             Some("bonus") => {
                 let stat = arg(1)?.clone();
-                let base = py_int(arg(2)?).map_err(|_| Abort::new("invalid bonus"))?;
+                let base = int(arg(2)?)?;
                 let incr = match effect.get(3) {
-                    Some(s) => py_int(s).map_err(|_| Abort::new("invalid bonus"))?,
+                    Some(s) => int(s)?,
                     None => 0,
                 };
                 self.effect_bonus(unit, start_level, &stat, base, incr)
@@ -372,7 +378,7 @@ impl World {
                 }
                 Ok(())
             }
-            other => Err(Abort::new(format!("unknown upgrade effect {other:?}"))),
+            _ => Err(Invariant::EffectUnread.into()),
         }
     }
 
@@ -385,10 +391,7 @@ impl World {
         incr: i64,
     ) -> Res {
         let e = self.em(unit);
-        let v = e
-            .stats
-            .get_mut(stat)
-            .ok_or_else(|| Abort::new(format!("no attribute {stat}")))?;
+        let v = e.stats.get_mut(stat).ok_or(Invariant::EffectUnread)?;
         *v += base + incr * start_level;
         if stat == "damage"
             && let Some(c) = e.creature_mut()

@@ -330,13 +330,6 @@ impl World {
         for a in self.pl(p).allied.clone() {
             for (upg, _) in self.pl(a).upgrades.clone().iter() {
                 while self.pl(p).upgrades.level(upg) < self.pl(a).upgrades.level(upg) {
-                    let t = self.rules.ty(upg);
-                    if !t.is_upgrade() {
-                        return Err(Abort::new(format!(
-                            "{} has no attribute 'upgrade_player'",
-                            t.name
-                        )));
-                    }
                     self.upgrade_player(upg, p)?;
                 }
             }

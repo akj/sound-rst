@@ -152,6 +152,9 @@ pub enum Invariant {
     /// An order that needs a target, or a group's name, was taken without
     /// one. `take_order` refuses such an order before anything changes.
     OrderWithoutItsTarget,
+    /// The effect of an upgrade or an ability cannot be read. The rules
+    /// drop such an effect when they load, with a warning.
+    EffectUnread,
 }
 
 impl fmt::Display for Invariant {
@@ -185,6 +188,7 @@ impl fmt::Display for Invariant {
             }
             Invariant::UnknownAbility => "an ability without a known effect is used (use)",
             Invariant::OrderWithoutItsTarget => "an order was taken without its target",
+            Invariant::EffectUnread => "an effect the rules should have dropped is applied",
         })
     }
 }

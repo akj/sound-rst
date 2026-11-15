@@ -912,3 +912,37 @@ fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
         Ok(None)
     );
 }
+
+#[test]
+fn an_effect_the_rules_cannot_apply_is_dropped_when_they_load_and_its_research_has_none() {
+    let extra = "def u_bad\nclass upgrade\neffect bonus nosuchstat 1\n\
+                 def a_bad\nclass ability\neffect summon soon footman\n\
+                 def footman\ncan_use u_bad\n";
+    let (mut w, a, b) = two_humans(extra);
+    for name in ["u_bad", "a_bad"] {
+        assert_eq!(w.rules.unit_type(name).unwrap().effect, None, "{name}");
+    }
+    assert!(
+        w.rules
+            .warnings
+            .contains(&"in u_bad: the effect 'bonus nosuchstat 1' cannot be applied".to_owned())
+    );
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let stats = w.e(footman).stats.clone();
+    let bad = w.rules.type_id("u_bad").unwrap();
+    assert_eq!(w.upgrade_player(bad, a), Ok(()));
+    assert_eq!(w.pl(a).upgrades.level(bad), 1);
+    assert_eq!(w.e(footman).stats, stats);
+    // An ally's research that is not an upgrade, as a mod may allow, is
+    // copied with no effect.
+    w.plm(a).allied.push(b);
+    w.plm(b).allied.push(a);
+    let peasant = w.rules.type_id("peasant").unwrap();
+    w.plm(b).upgrades.add(peasant);
+    w.update();
+    assert_eq!(w.pl(a).upgrades.level(peasant), 1);
+    assert_eq!(w.e(footman).stats, stats);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}

@@ -2892,11 +2892,10 @@ impl World {
         let Some(p) = self.e(unit).player() else {
             return Ok(true);
         };
+        // The rules drop an effect whose numbers they cannot read.
         let decay = || -> Res<i64> {
-            let s = effect
-                .get(1)
-                .ok_or_else(|| Abort::new("list index out of range"))?;
-            to_int(s).map_err(|_| Abort::new(format!("could not convert string to float: {s:?}")))
+            let s = effect.get(1).ok_or(Invariant::EffectUnread)?;
+            Ok(to_int(s).map_err(|_| Invariant::EffectUnread)?)
         };
         match kind {
             "teleportation" => {
@@ -2950,7 +2949,7 @@ impl World {
                 let n = effect
                     .get(1)
                     .and_then(|s| crate::nofloat::py_int(s).ok())
-                    .ok_or_else(|| Abort::new("invalid literal for int()"))?;
+                    .ok_or(Invariant::EffectUnread)?;
                 let (tx, ty) = self.t_xy(&target);
                 let mut corpses = self.effect_targets(unit, kind, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));

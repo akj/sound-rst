@@ -36,10 +36,10 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("ai/order_sites.rs",     [  0,  0,  0,  0, 26,  0, 17]),
     ("map.rs",                [  0,  0,  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  0,  0,  3]),
-    ("orders.rs",             [  0,  0, 17,  7,  0, 14,  3]),
+    ("orders.rs",             [  0,  0, 20,  4,  0, 14,  3]),
     ("pathfinding.rs",        [  0,  0,  1,  0,  0,  0,  3]),
     ("player.rs",             [  0,  0,  0,  0,  0,  0,  1]),
-    ("playerlogic.rs",        [  0,  0,  2,  5,  0,  2,  4]),
+    ("playerlogic.rs",        [  0,  0,  2,  4,  0,  2,  4]),
     ("pyrandom.rs",           [  0,  0,  0,  0,  0,  0, 25]),
     ("questions.rs",          [  0,  0,  0,  0,  0,  0,  2]),
     ("rules.rs",              [  0,  0,  0,  0,  0,  0,  2]),
@@ -48,7 +48,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("squarelogic.rs",        [  0,  0,  0,  0,  0,  1,  1]),
     ("test_games.rs",         [  0,  0,  0,  0,  3,  1,  2]),
     ("triggers.rs",           [  0,  9,  0,  0,  0,  0,  4]),
-    ("unit.rs",               [  0,  0, 13,  8,  0,  3,  3]),
+    ("unit.rs",               [  0,  0, 17,  2,  0,  3,  3]),
     ("world.rs",              [  0,  0,  0,  0,  0,  2,  8]),
 ];
 
