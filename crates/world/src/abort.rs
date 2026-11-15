@@ -86,6 +86,23 @@ pub enum Invariant {
     NoRoomWhereRoomWas,
     /// The map has no square to choose from.
     NoSquare,
+    /// An order that needs a type is given without one, or with one the
+    /// rules lack. `is_order_allowed` refuses both.
+    OrderWithoutItsType,
+    /// `cancel_building` is given to a unit that is not a building site.
+    /// Only a site may receive it.
+    CancelOfNoSite,
+    /// A starting square of the map names no square. The map is refused
+    /// when it loads with such a name.
+    UnknownStartingSquare,
+    /// A worker brings back a cargo it does not carry.
+    BringingBackNothing,
+    /// A building that needs land is placed on something other than a
+    /// meadow it can remove.
+    LandIsNotAnEntity,
+    /// An ability whose effect the game does not know is used.
+    /// `is_order_allowed` refuses such an ability.
+    UnknownAbility,
 }
 
 impl fmt::Display for Invariant {
@@ -110,6 +127,14 @@ impl fmt::Display for Invariant {
                 "a new unit found no room where room was just found or freed"
             }
             Invariant::NoSquare => "the map has no square to choose from",
+            Invariant::OrderWithoutItsType => "an order needing a type has none (taken)",
+            Invariant::CancelOfNoSite => "cancel_building given to no building site",
+            Invariant::UnknownStartingSquare => "a starting square names no square (auto_explore)",
+            Invariant::BringingBackNothing => "a worker brings back no cargo (gather)",
+            Invariant::LandIsNotAnEntity => {
+                "a building is put on land that is not an entity (put_building_site)"
+            }
+            Invariant::UnknownAbility => "an ability without a known effect is used (use)",
         })
     }
 }

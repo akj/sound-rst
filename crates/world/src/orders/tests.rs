@@ -104,15 +104,28 @@ fn a_word_names_a_target_as_the_original_read_it() {
     for nothing in ["007", "+7", "", "None", "foo", "-1", "4294967296"] {
         assert_eq!(parse(nothing), Ok(TargetRef::Nothing), "{nothing:?}");
     }
+    let negative = format!("zoom-{id}--1-0");
     let refused = [
-        ("zoom", "not enough values to unpack"),
-        ("zoom-a1-1", "not enough values to unpack"),
-        (&format!("zoom-{id}--1-0"), "not enough values to unpack"),
-        ("zoom-999999-1-2", "object has no attribute 'title'"),
-        ("zoom-a1-x-2", "invalid literal for int()"),
+        ("zoom", "\"zoom\" is not zoom-<square>-<x>-<y>".to_owned()),
+        (
+            "zoom-a1-1",
+            "\"zoom-a1-1\" is not zoom-<square>-<x>-<y>".to_owned(),
+        ),
+        (
+            &negative,
+            format!("{negative:?} is not zoom-<square>-<x>-<y>"),
+        ),
+        (
+            "zoom-999999-1-2",
+            "\"zoom-999999-1-2\" names no square".to_owned(),
+        ),
+        (
+            "zoom-a1-x-2",
+            "\"x\" in \"zoom-a1-x-2\" is not a number".to_owned(),
+        ),
     ];
     for (word, error) in refused {
-        assert_eq!(parse(word), Err(Abort::new(error)), "{word:?}");
+        assert_eq!(parse(word), Err(error), "{word:?}");
     }
 }
 

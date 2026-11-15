@@ -4,7 +4,7 @@
 //! that take one, and a target (`go 12`, `train footman`, `build farm
 //! 25`). A unit keeps a queue of orders and executes the first one.
 
-use crate::abort::{Abort, Res};
+use crate::abort::{Abort, Invariant, Res};
 use crate::command::{KeywordOrder, OrderTarget};
 use crate::entity::{AiMode, Creature, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
@@ -222,19 +222,19 @@ impl TargetRef {
     /// Reads a target written as the map language, a line of text or a
     /// stored order write it: a point (`zoom-<square>-<x>-<y>`, the square
     /// by name or id), a square's name, a number, or any other word, which
-    /// names nothing. The error is a point that cannot be read.
-    pub(crate) fn parse(w: &World, word: &str) -> Res<TargetRef> {
+    /// names nothing. The error says why a point cannot be read.
+    pub(crate) fn parse(w: &World, word: &str) -> Result<TargetRef, String> {
         if word.starts_with("zoom") {
             let parts: Vec<&str> = word.split('-').collect();
             let [_, square, x, y] = parts[..] else {
-                return Err(Abort::new("not enough values to unpack"));
+                return Err(format!("{word:?} is not zoom-<square>-<x>-<y>"));
             };
             let (TargetRef::Square(square) | TargetRef::SquareNamed(square)) =
                 TargetRef::parse(w, square)?
             else {
-                return Err(Abort::new("object has no attribute 'title'"));
+                return Err(format!("{word:?} names no square"));
             };
-            let int = |s: &str| py_int(s).map_err(|_| Abort::new("invalid literal for int()"));
+            let int = |s: &str| py_int(s).map_err(|_| format!("{s:?} in {word:?} is not a number"));
             let (x, y) = (int(x)?, int(y)?);
             return Ok(TargetRef::Point { square, x, y });
         }
@@ -384,9 +384,7 @@ impl Request {
         let arg = match rest {
             [] => None,
             [name] if keyword == Keyword::JoinGroup => Some(Arg::Group(name.clone())),
-            [word] => Some(Arg::Target(
-                TargetRef::parse(w, word).map_err(|a| a.to_string())?,
-            )),
+            [word] => Some(Arg::Target(TargetRef::parse(w, word)?)),
             _ => return Err(format!("too many words in an order: {words:?}")),
         };
         Ok(Request {
@@ -445,13 +443,12 @@ impl Request {
             .ok_or_else(|| Abort::new("list index out of range"))
     }
 
-    /// What the order was given to aim at. Only `join_group` takes a group
-    /// name: any other keyword reads a name as a target.
-    fn given(&self, w: &World) -> Res<Option<TargetRef>> {
+    /// What the order was given to aim at. A group's name, which only
+    /// `join_group` takes, aims at nothing.
+    fn given(&self) -> Option<TargetRef> {
         match &self.arg {
-            None => Ok(None),
-            Some(Arg::Target(t)) => Ok(Some(*t)),
-            Some(Arg::Group(name)) => TargetRef::parse(w, name).map(Some),
+            Some(Arg::Target(t)) => Some(*t),
+            Some(Arg::Group(_)) | None => None,
         }
     }
 
@@ -462,13 +459,11 @@ impl Request {
             self.type_name
                 .as_deref()
                 .and_then(|n| w.rules.type_id(n))
-                // `is_order_allowed` refuses a type the rules do not have,
-                // so this fails only for an order no unit may take.
-                .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
+                .ok_or(Invariant::OrderWithoutItsType)
         };
-        let aim = || self.given(w).map(Aim::new);
+        let aim = || Ok::<_, Abort>(Aim::new(self.given()));
         let target = || -> Res<TargetRef> {
-            self.given(w)?
+            self.given()
                 .ok_or_else(|| Abort::new("list index out of range"))
         };
         let now = Taken::Now;
@@ -1329,7 +1324,7 @@ impl World {
                     .site()
                     .as_ref()
                     .map(|s| self.rules.ty(s.building_type).cost.clone())
-                    .ok_or_else(|| Abort::new("'BuildingSite' object has no attribute 'type'"))?;
+                    .ok_or(Invariant::CancelOfNoSite)?;
                 if let Some(p) = self.e(unit).player() {
                     self.unpay(p, &cost);
                 }
@@ -1600,7 +1595,7 @@ impl World {
                     for name in self.map.starting_squares.clone() {
                         let s = self
                             .square_by_name(&name)
-                            .ok_or_else(|| Abort::new(format!("KeyError: {name}")))?;
+                            .ok_or(Invariant::UnknownStartingSquare)?;
                         places.push(s);
                     }
                     self.random.shuffle(&mut places);
@@ -1808,7 +1803,7 @@ impl World {
             let i = self
                 .random
                 .choice_index(self.squares.len())
-                .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
+                .ok_or(Invariant::NoSquare)?;
             self.set_target(
                 unit,
                 uid,
@@ -2309,11 +2304,7 @@ impl World {
                             let (x, y) = (self.e(unit).x, self.e(unit).y);
                             Some((s, self.find_free_space(s, t.airground_type, x, y)))
                         }
-                        _ => {
-                            return Err(Abort::new(
-                                "'Inside' object has no attribute 'find_free_space'",
-                            ));
-                        }
+                        _ => return Err(Invariant::ActingInside.into()),
                     }
                 };
                 let Some((place, Some((x, y)))) = found else {
@@ -2321,11 +2312,13 @@ impl World {
                     self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                     return Ok(false);
                 };
-                let food = self.order_food_cost(unit, o);
-                self.plm(p).used_food -= food;
+                // The space was just found, and the type is a creature's: a
+                // deposit cannot be ordered trained.
                 let u = self
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
-                    .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+                    .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
+                let food = self.order_food_cost(unit, o);
+                self.plm(p).used_food -= food;
                 self.notify(u, EntityEvent::Complete, false);
                 if let Some(t) = self.c(unit).and_then(|c| c.rallying_point) {
                     self.take_default_order(u, t, true, false, None)?;
@@ -2377,9 +2370,11 @@ impl World {
                     .and_then(|c| c.inside.as_mut())
                     .map(std::mem::take);
                 self.delete(unit);
+                // The old building's spot was just freed, and the type is a
+                // creature's: a deposit cannot be ordered upgraded to.
                 let nu = self
                     .create_creature(type_id, Some(p), place, x, y)
-                    .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+                    .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
                 if let Some(ex) = blocked_exit {
                     self.block(nu, ex);
                 }
@@ -2510,7 +2505,7 @@ impl World {
                     .e(unit)
                     .work()
                     .and_then(|w| w.cargo)
-                    .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
+                    .ok_or(Invariant::BringingBackNothing)?;
                 let Some(here) = self.e(unit).place else {
                     return Ok(());
                 };
@@ -2619,9 +2614,7 @@ impl World {
             let airground = bt.airground_type;
             let (tx, ty) = self.t_xy(&t);
             let Some(Place::Square(s)) = here else {
-                return Err(Abort::new(
-                    "'Inside' object has no attribute 'find_free_space'",
-                ));
+                return Err(Invariant::ActingInside.into());
             };
             if self.find_free_space(s, airground, tx, ty).is_none() {
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
@@ -2662,15 +2655,18 @@ impl World {
         };
         let is_exit = target.entity_id().is_some_and(|e| self.e(e).is_exit());
         let remember_land = !(is_exit || bt.stats.is_buildable_anywhere != 0);
+        // The land of a building that needs it is a meadow: a remembered
+        // one was made its entity above.
         if remember_land {
             match &target {
                 Target::Entity(e) => self.delete(*e),
-                _ => return Err(Abort::new("this target cannot be deleted")),
+                _ => return Err(Invariant::LandIsNotAnEntity.into()),
             }
         }
+        // The caller found free space at this point.
         let site = self
             .create_building_site(p, place, x, y, type_id)
-            .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
+            .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
         // `site` was just created as a creature.
         if remember_land && let Some(c) = self.cm(site) {
             c.building_land = target.entity_id();
@@ -2722,10 +2718,7 @@ impl World {
             return Ok(());
         }
         let t = self.rules.ty(ability).clone();
-        let effect = t
-            .effect
-            .clone()
-            .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
+        let effect = t.effect.clone().ok_or(Invariant::UnknownAbility)?;
         let kind = effect.first().cloned().unwrap_or_default();
         match self.use_need(unit, uid, &kind, &t)? {
             UseNeed::Effect => {}
@@ -2860,7 +2853,7 @@ impl World {
                     }
                 }
                 let Some(Place::Square(here)) = self.e(unit).place else {
-                    return Err(Abort::new("'Inside' object has no attribute 'can_receive'"));
+                    return Err(Invariant::ActingInside.into());
                 };
                 if !types.iter().any(|&a| self.can_receive(here, a, None)) {
                     return Ok(UseNeed::NoRoom);
@@ -2877,9 +2870,7 @@ impl World {
                     Ok(UseNeed::Effect)
                 }
             }
-            other => Err(Abort::new(format!(
-                "'UseOrder' object has no attribute '{other}_is_not_necessary'"
-            ))),
+            _ => Err(Invariant::UnknownAbility.into()),
         }
     }
 
