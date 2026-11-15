@@ -45,7 +45,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use crate::command::Command;
 use crate::entity::PlayerId;
-use crate::host::Host;
+use crate::host::{Host, SeatTurn};
+use crate::message::{GameEnd, TurnMessage};
 use crate::rules::VIRTUAL_TIME_INTERVAL;
 use crate::setup::GameSetup;
 
@@ -209,55 +210,178 @@ impl Host {
         mut after_step: impl FnMut(&Host) -> ControlFlow<()>,
     ) -> Result<Host, ReplayError> {
         let run = || -> Result<Host, ReplayError> {
-            let mut host = Host::new(&record.setup).map_err(ReplayError::Build)?;
-            let mut turns = record.turns.iter().peekable();
-            for step in 0..=record.turns_run {
-                if let Some(turn) = turns.next_if(|t| t.number == step) {
-                    for (player, command) in &turn.commands {
-                        // A cheat that acts at once tells the seat what it
-                        // knows now: nothing is told while replaying.
-                        let _told = host.queue(*player, command.clone());
-                    }
-                }
-                if step == record.turns_run {
-                    break;
-                }
-                host.step_seats(&[]);
-                host.drain_warnings();
-                if after_step(&host).is_break() {
+            let mut replayer = Replayer::new(record)?;
+            while !replayer.is_over() {
+                replayer.step_seats(&[])?;
+                if after_step(replayer.host()).is_break() {
                     return Err(ReplayError::Stopped);
                 }
             }
-            host.drain_warnings();
-            // Each command recorded was taken when it was given, so the
-            // game takes it again; one refused is not in the new record.
-            if let Some(turn) = first_difference(&record.turns, &host.record().turns) {
-                return Err(ReplayError::Refused { turn });
-            }
-            Ok(host)
+            replayer.into_host()
         };
-        catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|panic| {
-            let why = panic
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_owned())
-                .or_else(|| panic.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "a panic".to_owned());
-            Err(ReplayError::Failed(why))
-        })
+        guarded(run)
     }
 }
 
-/// The number of the first turn where two records' turns differ.
-fn first_difference(a: &[RecordedTurn], b: &[RecordedTurn]) -> Option<u64> {
-    let mut a = a.iter();
-    let mut b = b.iter();
-    loop {
-        match (a.next(), b.next()) {
-            (None, None) => return None,
-            (Some(x), Some(y)) if x == y => {}
-            (Some(x), Some(y)) => return Some(x.number.min(y.number)),
-            (Some(t), None) | (None, Some(t)) => return Some(t.number),
+/// Runs `f`, and makes a panic of the simulation an error that says what
+/// it said.
+fn guarded<T>(f: impl FnOnce() -> Result<T, ReplayError>) -> Result<T, ReplayError> {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|panic| {
+        let why = panic
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "a panic".to_owned());
+        Err(ReplayError::Failed(why))
+    })
+}
+
+/// A record replayed a turn at a time, for someone who listens to it: the
+/// host built from the record's set-up. Each step queues the commands the
+/// record gives before it, runs one turn, and gives what the seats asked
+/// for were told, as a host serving those seats would. Nothing of a seat
+/// not asked for is kept.
+///
+/// `R` holds the record: a reference, or a shared record that outlives
+/// the replayer.
+///
+/// A command the game refuses, or a failure of the simulation, is an
+/// error, never a panic; the host is left as the error left it, so every
+/// later call is that error again.
+pub struct Replayer<R: std::borrow::Borrow<Record>> {
+    record: R,
+    host: Host,
+    /// The index in the record's turns of the next turn whose commands are
+    /// not queued yet.
+    next: usize,
+    /// Why the replay cannot go on.
+    broken: Option<ReplayError>,
+}
+
+impl<R: std::borrow::Borrow<Record>> Replayer<R> {
+    /// The game of `record` built from its set-up, before its first turn.
+    pub fn new(record: R) -> Result<Replayer<R>, ReplayError> {
+        let host = guarded(|| Host::new(&record.borrow().setup).map_err(ReplayError::Build))?;
+        Ok(Replayer {
+            record,
+            host,
+            next: 0,
+            broken: None,
+        })
+    }
+
+    /// The host with every turn of the record replayed, and the commands
+    /// given after the last step queued: the game as it was when the
+    /// record was made. Steps what is left of the record first.
+    pub fn into_host(mut self) -> Result<Host, ReplayError> {
+        while !self.is_over() {
+            self.step_seats(&[])?;
         }
+        self.check()?;
+        self.queue_turn()?;
+        Ok(self.host)
+    }
+
+    /// The record replayed.
+    pub fn record(&self) -> &Record {
+        self.record.borrow()
+    }
+
+    /// The game as replayed so far.
+    pub fn host(&self) -> &Host {
+        &self.host
+    }
+
+    /// How many turns of the record have been replayed.
+    pub fn turns_run(&self) -> u64 {
+        self.host.record().turns_run()
+    }
+
+    /// Whether every turn of the record has been replayed.
+    pub fn is_over(&self) -> bool {
+        self.turns_run() >= self.record().turns_run()
+    }
+
+    /// Queues the commands the record gives before the next turn, runs
+    /// it, and gives each of `seats` what it was told, as
+    /// [`Host::step_seats`] does. Once the record is over, nothing is run.
+    pub fn step_seats(&mut self, seats: &[PlayerId]) -> Result<Vec<SeatTurn>, ReplayError> {
+        self.check()?;
+        if self.is_over() {
+            return Ok(Vec::new());
+        }
+        self.queue_turn()?;
+        let host = &mut self.host;
+        Self::failing(&mut self.broken, || {
+            let turns = host.step_seats(seats);
+            host.drain_warnings();
+            Ok(turns)
+        })
+    }
+
+    /// What `seat` is told of the game as it is now, as [`Host::message`].
+    pub fn message(&mut self, seat: PlayerId) -> Result<TurnMessage, ReplayError> {
+        self.check()?;
+        let host = &self.host;
+        Self::failing(&mut self.broken, || Ok(host.message(seat)))
+    }
+
+    /// What `seat` is sent when the game is over for it, as
+    /// [`Host::game_end`].
+    pub fn game_end(&mut self, seat: PlayerId) -> Result<GameEnd, ReplayError> {
+        self.check()?;
+        let host = &self.host;
+        Self::failing(&mut self.broken, || Ok(host.game_end(seat)))
+    }
+
+    /// The error that broke the replay earlier.
+    fn check(&self) -> Result<(), ReplayError> {
+        self.broken.clone().map_or(Ok(()), Err)
+    }
+
+    /// Runs `f`; its error, or a panic of the simulation, breaks the
+    /// replay.
+    fn failing<T>(
+        broken: &mut Option<ReplayError>,
+        f: impl FnOnce() -> Result<T, ReplayError>,
+    ) -> Result<T, ReplayError> {
+        let result = guarded(f);
+        if let Err(e) = &result {
+            *broken = Some(e.clone());
+        }
+        result
+    }
+
+    /// Queues the commands the record gives before the next step, if any.
+    /// Each was taken when it was given, so the game takes it again; one
+    /// refused is not in the host's own record, which then differs from
+    /// the record replayed.
+    fn queue_turn(&mut self) -> Result<(), ReplayError> {
+        let step = self.turns_run();
+        let Some(turn) = self
+            .record
+            .borrow()
+            .turns
+            .get(self.next)
+            .filter(|t| t.number == step)
+        else {
+            return Ok(());
+        };
+        self.next = self.next.saturating_add(1);
+        let host = &mut self.host;
+        Self::failing(&mut self.broken, || {
+            for (player, command) in &turn.commands {
+                // A cheat that acts at once tells the seat what it knows
+                // now: the next step tells it too.
+                let _told = host.queue(*player, command.clone());
+            }
+            host.drain_warnings();
+            if host.record().turns.last() == Some(turn) {
+                Ok(())
+            } else {
+                Err(ReplayError::Refused { turn: step })
+            }
+        })
     }
 }
 

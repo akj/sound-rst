@@ -175,6 +175,7 @@ impl Session {
             }
             return Err(exit);
         }
+        game.keep_finished(cx);
         self.has_victory = finish(cx, &mut game);
         cx.input.set_game(None);
         Ok(())

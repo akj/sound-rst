@@ -106,6 +106,34 @@ pub const DELETE_THIS_SAVE: &str = "delete this saved game?";
 pub const DELETE: &str = "delete";
 pub const DELETED: &str = "deleted";
 
+// Listening to a recorded game: a save, or a record in the records folder.
+
+pub const LISTEN_TO_A_GAME: &str = "listen to a game";
+/// The game kept by itself when the player's last game ended.
+pub const LAST_FINISHED_GAME: &str = "last finished game";
+/// The record has no more turns.
+pub const RECORDING_ENDED: &str = "end of the recording";
+/// A turn of the record cannot be replayed, or the file ends before its
+/// end: the listener stays where it stopped.
+pub const RECORDING_DAMAGED: &str = "the recording is damaged: it stops here";
+/// The result of a player still in the game when the recording ends.
+pub const NOT_OVER: &str = "Not over";
+pub const PAUSED: &str = "paused";
+pub const SLOWER: &str = "slower";
+pub const FASTER: &str = "faster";
+/// The fastest pace: the game is replayed silently, and only how far it
+/// has got is said.
+pub const FASTEST: &str = "fastest, silent";
+pub const FORWARD: &str = "forward";
+pub const BACK: &str = "back";
+pub const ONE_MINUTE: &str = "1 minute";
+pub const FIVE_MINUTES: &str = "5 minutes";
+pub const KEEP_THIS_RECORD: &str = "keep this game's record";
+pub const KEPT: &str = "kept in the records folder";
+pub const CANNOT_KEEP: &str = "cannot keep it";
+/// A key of the listener pressed in a game being played.
+pub const NOT_LISTENING: &str = "only while you listen to a recorded game";
+
 // The sound and speech settings of the options menu.
 
 pub const SOUND_AND_SPEECH: &str = "sound and speech";

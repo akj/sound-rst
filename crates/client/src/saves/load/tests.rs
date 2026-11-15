@@ -254,7 +254,7 @@ fn a_save_cut_short_loads_to_a_whole_earlier_turn_or_is_refused() {
 }
 
 #[test]
-fn the_single_player_menu_offers_loading_only_when_there_is_a_save() {
+fn the_single_player_menu_offers_loading_and_listening_only_when_there_is_a_save() {
     let mut h = Harness::new("en", Script::new().keep_open());
     let labels = |h: &mut Harness| -> Vec<String> {
         let menu = crate::singleplayer::build_single_player_menu(&h.client);
@@ -265,8 +265,9 @@ fn the_single_player_menu_offers_loading_only_when_there_is_a_save() {
     let saves = h.client.paths.saves();
     std::fs::write(saves.join("x.sav"), b"").unwrap();
     let after = labels(&mut h);
-    assert_eq!(after.len(), before.len() + 1);
-    assert_eq!(after[after.len() - 2], "load a game");
+    assert_eq!(after.len(), before.len() + 2);
+    assert_eq!(after[after.len() - 3], "load a game");
+    assert_eq!(after[after.len() - 2], "listen to a game");
 }
 
 #[test]

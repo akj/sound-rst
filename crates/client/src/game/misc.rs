@@ -18,7 +18,8 @@ use soundrts_protocol::{Channel, Step};
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
-use super::{GameInterface, Mode, POSITIONAL_BEEP_SOUND, Story, TURN, style_msg};
+use super::replay::Pace;
+use super::{GameInterface, Mode, POSITIONAL_BEEP_SOUND, Source, Story, TURN, style_msg};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,6 +30,20 @@ enum GameMenuChoice {
     PauseOrResume,
     /// Saves a game run here.
     Save,
+    /// What a listener to a recorded game does with its keys.
+    Listen(ListenChoice),
+}
+
+/// The game menu's items for a listener to a recorded game: what its keys
+/// do, for someone who does not know them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ListenChoice {
+    PauseOrResume,
+    Pace(Pace),
+    /// Minutes forward, or back below 0.
+    Jump(i64),
+    /// Keeps the record in the records folder.
+    Keep,
 }
 
 /// The game menu, the choice made in it, and the story it was opened
@@ -120,7 +135,11 @@ impl GameInterface {
             }
             C::Fullscreen => cx.toggle_fullscreen(),
             C::ToggleCheatmode => self.cmd_toggle_cheatmode(cx),
-            C::SayTime => self.cmd_say_time(cx),
+            C::SayTime => {
+                if !self.say_replay_time(cx) {
+                    self.cmd_say_time(cx);
+                }
+            }
             C::ToggleTick => self.must_play_tick = !self.must_play_tick,
             C::ToggleTalkingClock => self.cmd_toggle_talking_clock(cx),
             C::ChangePlayer => self.cmd_change_player(cx),
@@ -142,6 +161,9 @@ impl GameInterface {
                 let step = if *inc < 0 { Step::Previous } else { Step::Next };
                 self.follow_player(cx, step);
             }
+            C::ListenSpeed(step) => self.listen_speed(cx, *step),
+            C::ListenPause => self.listen_pause(cx),
+            C::ListenJump(minutes) => self.listen_jump(cx, *minutes),
             C::GameMenu => self.cmd_gamemenu(cx),
             C::SayPlayers => {
                 let mut m = Vec::new();
@@ -185,7 +207,7 @@ impl GameInterface {
             C::ReloadParameters => cx.reload_parameters(),
             C::KeyHelp => self.start_key_help(cx),
             C::Cmd(cmd) => {
-                if self.view().cheats_allowed() {
+                if self.cheats_allowed() {
                     self.execute_command(cx, cmd);
                 } else {
                     cx.voice.item(&msg(mp::BEEP));
@@ -323,8 +345,14 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
+    /// Whether the player may cheat: in a game run here that allows it.
+    /// Nobody cheats in a game on a server, nor in a record listened to.
+    fn cheats_allowed(&self) -> bool {
+        matches!(self.source, Source::Local(_)) && self.view().cheats_allowed()
+    }
+
     fn cmd_toggle_cheatmode(&mut self, cx: &mut Client) {
-        if self.view().cheats_allowed() {
+        if self.cheats_allowed() {
             self.send_command(cx, Command::Cheat(Cheat::ToggleMode));
             let state = if self.view().cheat_mode() {
                 mp::IS_NOW_OFF
@@ -401,7 +429,7 @@ impl GameInterface {
     /// Starts typing a command of the console, in a game that allows
     /// cheats.
     fn cmd_console(&mut self, cx: &mut Client) {
-        if !self.view().cheats_allowed() {
+        if !self.cheats_allowed() {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
@@ -422,7 +450,7 @@ impl GameInterface {
     /// Plays as the next player of the game (a cheat): the logins stay with
     /// the players, the events now come from the new one.
     fn cmd_change_player(&mut self, cx: &mut Client) {
-        if !self.view().cheats_allowed() {
+        if !self.cheats_allowed() {
             cx.voice.item(&msg(mp::BEEP));
             return;
         }
@@ -439,12 +467,13 @@ impl GameInterface {
     }
 
     /// Opens the game menu: quit, the speeds, continue; on a server, for
-    /// the room's host, pause or resume; in a game run here, save. The
-    /// keys go to it until a choice
-    /// is made. In single-player the world waits meanwhile, and its sounds
-    /// stop; in a game on a server, the game goes on.
+    /// the room's host, pause or resume; in a game run here, save; for a
+    /// listener to a record, what the listener's keys do. The keys go to
+    /// it until a choice is made. In single-player the world waits
+    /// meanwhile, and its sounds stop; in a game on a server or a record,
+    /// the game goes on.
     fn cmd_gamemenu(&mut self, cx: &mut Client) {
-        if !self.on_a_server() {
+        if self.waits_for_the_player() {
             cx.stop_sound(false);
         }
         let choice: Rc<Cell<Option<GameMenuChoice>>> = Rc::new(Cell::new(None));
@@ -457,6 +486,43 @@ impl GameInterface {
         };
         let mut menu = Menu::new(msg(mp::MENU), Vec::new());
         menu.append(msg(mp::CANCEL_GAME), set(GameMenuChoice::Quit), None);
+        if let Some(paused) = self.listening_paused() {
+            let item = if paused { words::RESUME } else { words::PAUSE };
+            let listen = |c| set(GameMenuChoice::Listen(c));
+            menu.append(text(item), listen(ListenChoice::PauseOrResume), None);
+            let paces = [
+                (msg(mp::SET_SPEED_TO_SLOW), Pace::Slow),
+                (msg(mp::SET_SPEED_TO_NORMAL), Pace::Normal),
+                (msg(mp::SET_SPEED_TO_FAST), Pace::Fast2),
+                (
+                    [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
+                    Pace::Fast4,
+                ),
+                (
+                    [msg(mp::SET_SPEED_TO_FAST), nb2msg(8)].concat(),
+                    Pace::Fast8,
+                ),
+                (Pace::Fastest.spoken(), Pace::Fastest),
+            ];
+            for (label, pace) in paces {
+                menu.append(label, listen(ListenChoice::Pace(pace)), None);
+            }
+            let jumps = [
+                (words::FORWARD, words::ONE_MINUTE, 1),
+                (words::FORWARD, words::FIVE_MINUTES, 5),
+                (words::BACK, words::ONE_MINUTE, -1),
+                (words::BACK, words::FIVE_MINUTES, -5),
+            ];
+            for (way, how_long, minutes) in jumps {
+                let label = [text(way), text(how_long)].concat();
+                menu.append(label, listen(ListenChoice::Jump(minutes)), None);
+            }
+            menu.append(
+                text(words::KEEP_THIS_RECORD),
+                listen(ListenChoice::Keep),
+                None,
+            );
+        }
         // In a game on a server, the room's host sets the server's speed.
         if self.offers_speeds() {
             menu.append(
@@ -541,11 +607,17 @@ impl GameInterface {
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.
-                if !self.on_a_server() {
+                if self.waits_for_the_player() {
                     cx.config.speed = s;
                     cx.save_config();
                 }
             }
+            Some(GameMenuChoice::Listen(c)) => match c {
+                ListenChoice::PauseOrResume => self.listen_pause(cx),
+                ListenChoice::Pace(pace) => self.set_pace(cx, pace),
+                ListenChoice::Jump(minutes) => self.listen_jump(cx, minutes),
+                ListenChoice::Keep => self.keep_record(cx),
+            },
             None => {}
         }
     }
