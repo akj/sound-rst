@@ -82,6 +82,7 @@ impl GameInterface {
             C::ProductionStatus => self.cmd_production_status(cx)?,
             C::WorkersStatus => self.cmd_workers_status(cx),
             C::FightStatus => self.cmd_fight_status(cx),
+            C::CombatStatus => self.cmd_combat_status(cx),
             C::Examine => self.cmd_examine(cx)?,
             C::UnitStatus => self.cmd_unit_status(cx)?,
             C::SelectSquare {

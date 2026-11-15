@@ -112,6 +112,7 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 | B | What your buildings train, research or upgrade to, soonest done first, with the seconds left and where. Production that waits for food comes last. |
 | N | How many of your workers are idle, how many gather each resource, and how many build. |
 | V | With more than one unit controlled: the hit points of the group against its most, how many units are below half their hit points, and how many of each type. With one unit, as before. |
+| Shift+V | How the first unit you control fights, with the upgrades that apply to it: its damage and how often it strikes, its range and armor, then its most hit points and its speed, for example "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5". |
 | M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
 | Shift+X | Every resource, also those that a map adds. |
 | F12 | The other players: each an ally or an enemy, and whether defeated. F11 still says the names only. |

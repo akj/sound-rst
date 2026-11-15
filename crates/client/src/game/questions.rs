@@ -1,12 +1,15 @@
 //! The questions a player asks to learn what a sighted player reads off
 //! the edge of the screen: what is in production, what the workers do,
-//! the other players, every resource, and how the fight on a square goes.
+//! the other players, every resource, how the fight on a square goes, and
+//! how a unit fights.
 //! Each is answered in one sentence, the most important word first, from
 //! what the player knows.
 
-use soundrts_world::msg::{Msg, msg, nb2msg};
+use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
+use soundrts_world::nofloat::py_int;
 use soundrts_world::orders::Keyword;
+use soundrts_world::rules::Stats;
 use soundrts_world::{KnownEntity, KnownTarget, SeatView};
 
 use crate::client::Client;
@@ -16,7 +19,7 @@ use super::command::UnitFilter;
 use super::order::{PRECISION, substitute_args};
 use super::selection::TypeFilter;
 use super::squares::summary;
-use super::{GameInterface, R, style_msg};
+use super::{GameInterface, R, compute_title, style_msg};
 
 /// How the strength on the player's side of a fight compares with the
 /// enemies'.
@@ -244,6 +247,80 @@ impl GameInterface {
         .concat();
         cx.voice.item(&m);
     }
+
+    /// How the first unit the player controls fights, by the rules of its
+    /// type and the upgrades that apply to it: "footman , damage 6 every
+    /// 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5".
+    pub(crate) fn cmd_combat_status(&self, cx: &mut Client) {
+        let view = self.view();
+        let unit = self.group.first().and_then(|&u| view.perceived(u));
+        let Some((e, s)) = unit.and_then(|e| combat_stats(view, &e).map(|s| (e, s))) else {
+            cx.voice.item(&msg(mp::NOTHING));
+            return;
+        };
+        let mut m = compute_title(cx.res.style(), &e.type_name);
+        m.extend(msg(mp::COMMA));
+        if s.damage > 0 {
+            m.extend(text(words::DAMAGE));
+            m.extend(decimal(s.damage));
+            m.extend(text(words::EVERY));
+            m.extend(decimal(s.cooldown));
+            m.extend(msg(mp::SECONDS));
+            m.extend(msg(mp::COMMA));
+            m.extend(text(words::RANGE));
+            m.extend(decimal(s.range));
+        } else {
+            m.extend(text(words::NO_ATTACK));
+        }
+        m.extend(msg(mp::COMMA));
+        m.extend(text(words::ARMOR));
+        m.extend(decimal(s.armor));
+        m.extend(msg(mp::PERIOD));
+        m.extend(nb2msg(e.hp_max / PRECISION));
+        m.extend(text(words::HIT_POINTS));
+        if s.speed > 0 {
+            m.extend(msg(mp::COMMA));
+            m.extend(msg(mp::SPEED));
+            m.extend(decimal(s.speed));
+        }
+        cx.voice.item(&m);
+    }
+}
+
+/// The statistics of an entity by the rules of its type, with the effects
+/// of the upgrades that apply to it, as the simulation applies them to a
+/// unit: an upgrade's `bonus` adds its value, `apply_bonus` adds the type's
+/// own bonus for the statistic. Each upgrade counts once, as researched
+/// once. `None` for an entity without a type.
+fn combat_stats(view: &SeatView, e: &KnownEntity) -> Option<Stats> {
+    let t = view.unit_type(&e.type_name)?;
+    let mut stats = t.stats.clone();
+    for u in &e.upgrades {
+        let Some(effect) = view.unit_type(u).and_then(|u| u.effect.as_deref()) else {
+            continue;
+        };
+        let (stat, value) = match effect {
+            [kind, stat, base, ..] if kind == "bonus" => (stat, py_int(base).unwrap_or(0)),
+            [kind, stat, ..] if kind == "apply_bonus" => (stat, t.bonus(stat)),
+            _ => continue,
+        };
+        if let Some(v) = stats.get_mut(stat) {
+            *v = v.saturating_add(value);
+        }
+    }
+    Some(stats)
+}
+
+/// A value in thousandths as a number said: 1500 is "1.5". A whole
+/// number is said as the other numbers are.
+fn decimal(thousandths: i64) -> Msg {
+    if thousandths % PRECISION == 0 {
+        nb2msg(thousandths / PRECISION)
+    } else {
+        vec![MsgPart::Text(
+            (thousandths as f64 / PRECISION as f64).to_string(),
+        )]
+    }
 }
 
 /// The danger a creature represents by the rules of its type, as the
@@ -457,6 +534,65 @@ mod tests {
         assert!(g.game.view().perceived(unit(&g, them, "footman")).is_none());
         g.game.place = Some(theirs);
         assert_eq!(ask(&mut h, &mut g, Key::M, Mods::NONE), "nothing!");
+    }
+
+    #[test]
+    fn how_the_controlled_unit_fights_counts_its_upgrades() {
+        let (mut h, mut g) = training();
+        let me = g.game.me;
+        let (_, name) = home(&g, me);
+        cheat(&mut g, me, &format!("add_units {name} 1 footman 1 archer"));
+        run_turns(&mut h, &mut g, 1);
+        let (footman, archer) = (unit(&g, me, "footman"), unit(&g, me, "archer"));
+        assert_eq!(ask(&mut h, &mut g, Key::V, Mods::SHIFT), "nothing!");
+        g.game.group = vec![footman];
+        assert_eq!(
+            ask(&mut h, &mut g, Key::V, Mods::SHIFT),
+            "footman , damage 3.5 every 1.5 seconds , range 1 , armor 0.5 . 15 hit points , speed 1.5"
+        );
+        g.game.group = vec![archer, footman];
+        assert_eq!(
+            ask(&mut h, &mut g, Key::V, Mods::SHIFT),
+            "archer , damage 2.5 every 1.5 seconds , range 4 , armor 0 . 10 hit points , speed 1.5"
+        );
+        // The upgrades, then new units, which have them: the footman's
+        // weapon and armor add the bonuses of its type, the archer's add
+        // their own values, as the simulation does.
+        cheat(
+            &mut g,
+            me,
+            &format!(
+                "add_units {name} melee_weapon melee_armor archer_weapon archer_armor archer_range"
+            ),
+        );
+        run_turns(&mut h, &mut g, 1);
+        cheat(&mut g, me, &format!("add_units {name} 1 footman 1 archer"));
+        run_turns(&mut h, &mut g, 1);
+        let newest = |g: &TestGame, t: &str| *units(g, me, t).last().unwrap();
+        let (footman, archer) = (newest(&g, "footman"), newest(&g, "archer"));
+        g.game.group = vec![archer];
+        assert_eq!(
+            ask(&mut h, &mut g, Key::V, Mods::SHIFT),
+            "archer , damage 4 every 1.5 seconds , range 5 , armor 0.5 . 10 hit points , speed 1.5"
+        );
+        g.game.group = vec![footman];
+        assert_eq!(
+            ask(&mut h, &mut g, Key::V, Mods::SHIFT),
+            "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5"
+        );
+        let w = g.game.host.world();
+        let stats = |u: EntityId| {
+            let s = &w.entity(u).unwrap().stats;
+            (s.damage, s.range, s.armor)
+        };
+        assert_eq!(stats(archer), (4000, 5000, 500));
+        assert_eq!(stats(footman), (6000, 1000, 1500));
+        // A building that does not attack.
+        g.game.group = vec![unit(&g, me, "townhall")];
+        assert_eq!(
+            ask(&mut h, &mut g, Key::V, Mods::SHIFT),
+            "town hall , no attack , armor 0 . 400 hit points"
+        );
     }
 
     #[test]

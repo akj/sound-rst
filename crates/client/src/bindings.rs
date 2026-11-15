@@ -44,6 +44,7 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// Control Shift C, the last alerts' squares), the
 /// questions: what is in production, the workers and the fight here
 /// beside the original's status keys Z to V, every resource on Shift X,
+/// how the controlled unit fights on Shift V, beside its hit points on V,
 /// and the other players beside F11; the previous objective on Shift F9,
 /// beside the next on F9; and key help on Control F1, beside help on F1. Each key is one the original leaves free and that neither
 /// Windows nor a screen reader takes. Shift Z is left to maps, which bind
@@ -53,7 +54,7 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     CTRL SHIFT c: copy_message\n\
     DELETE: jump_to_alert\n\
     b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
-    F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\n";
+    F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\nSHIFT v: combat_status\n";
 
 /// The text of the game's bindings: every `ui/bindings.txt` of the
 /// resource layers (translations included) but a map that came from a

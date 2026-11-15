@@ -86,6 +86,8 @@ pub enum GameCommand {
     WorkersStatus,
     /// The strength of each side on the selected square.
     FightStatus,
+    /// How the first unit controlled fights, its upgrades included.
+    CombatStatus,
     Examine,
     UnitStatus,
     SelectSquare {
@@ -193,6 +195,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "production_status",
     "workers_status",
     "fight_status",
+    "combat_status",
     "examine",
     "unit_status",
     "select_square",
@@ -299,6 +302,7 @@ impl GameCommand {
             "production_status" => none(C::ProductionStatus)?,
             "workers_status" => none(C::WorkersStatus)?,
             "fight_status" => none(C::FightStatus)?,
+            "combat_status" => none(C::CombatStatus)?,
             "examine" => none(C::Examine)?,
             "unit_status" => none(C::UnitStatus)?,
             "select_square" => {
@@ -549,6 +553,7 @@ impl GameCommand {
             C::ProductionStatus => "say what is in production".into(),
             C::WorkersStatus => "say what the workers do".into(),
             C::FightStatus => "say how the fight on this square goes".into(),
+            C::CombatStatus => "say how the controlled unit fights".into(),
             C::Examine => "describe the target or the square".into(),
             C::UnitStatus => "say the controlled units and follow them".into(),
             C::SayTime => "say the time".into(),
@@ -777,6 +782,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 160);
+        assert_eq!(seen.len(), 161);
     }
 }
