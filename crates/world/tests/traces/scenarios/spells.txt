@@ -1,8 +1,9 @@
 # Covers what no other case reaches: a building finished on an exit; an
-# upgrade of a unit in a group; an upgrade of a building with units inside;
-# a flying transport destroyed with units inside; resurrection; raising the
-# dead; a deadly fog and an exorcism that harm; a holy vision that detects
-# an invisible unit. Player 0 starts on b1, player 1 on b6.
+# upgrade of a unit in a group; an upgrade of a building with units inside,
+# cancelled once and given again; a flying transport destroyed with units
+# inside; resurrection; raising the dead; a deadly fog and an exorcism that
+# harm; a holy vision that detects an invisible unit.
+# Player 0 starts on b1, player 1 on b6.
 # The events that show the case still does what it covers:
 expect 0 wall complete
 expect 0 darkarcher complete
@@ -30,6 +31,10 @@ expect 1 priest use_complete,a_holy_vision
 5 0 order 0 0 enter {u:scouttower:0}
 20 0 control {u:scouttower:0}
 20 0 order 0 0 upgrade_to guardtower
+21 0 control {u:scouttower:0}
+21 0 order 0 0 cancel_upgrading
+22 0 control {u:scouttower:0}
+22 0 order 0 0 upgrade_to guardtower
 40 0 cmd add_units b2 priest necromancer u_resurrection u_deadly_fog
 42 0 control {u:priest:0}
 42 0 order 0 0 use a_resurrection {sq:b2}

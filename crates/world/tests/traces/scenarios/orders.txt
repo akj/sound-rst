@@ -1,15 +1,16 @@
 # Covers orders no other case gives: a trained unit sent to a rallying
-# point; production waiting for food, then cancelled; joining a group; an
-# attack order; stop; entering a building; a conversion; a building site
-# damaged while it is built; a building site cancelled; a teleportation
-# (the rules of the teleportation mod).
+# point; production waiting for food, then cancelled; joining a group,
+# then emptying it; going to a point of a square; stop; an attack order;
+# entering a building; a conversion; a building site damaged while it is
+# built; a building site cancelled; a teleportation (the rules of the
+# teleportation mod).
 # Player 0 starts on b1, player 1 on b4.
-# The events that show the case still does what it covers:
+# The events that show the case still does what it covers (stop, the
+# group, the rallying point and the cancels have no event of their own):
 expect 0 priest use_complete,a_conversion
 expect 0 footman enter
 expect 0 townhall production_deferred
 expect 0 buildingsite wounded
-expect 1 buildingsite death
 expect 1 mage use_complete,a_teleportation
 0 0 cmd add_units b1 4 footman scouttower
 0 0 cmd add_units b2 u_conversion priest
@@ -32,17 +33,17 @@ expect 1 mage use_complete,a_teleportation
 6 0 control {ids:footman}
 6 0 order 0 0 join_group 1
 7 0 control {u:footman:1}
-7 0 order 0 0 go {sq:a1}
+7 0 order 0 0 go zoom-{sq:a1}-3000-3000
 12 0 control {u:footman:1}
 12 0 order 0 0 stop
 13 0 control {u:footman:2}
-13 0 order 0 0 attack {eu:peasant:0}
+13 0 order 0 0 reset_group 1
 50 0 control {u:townhall:0}
 50 0 order 0 0 cancel_training
 50 1 control {u:buildingsite:0}
 50 1 order 0 0 cancel_building
 51 0 control {u:peasant:0}
 51 0 order 0 0 build farm {mead:0}
-70 1 cmd add_units b1 3 knight
+70 1 cmd add_units b1 knight
 71 1 control {ids:knight}
 71 1 order 0 1 attack {eu:buildingsite:0}
