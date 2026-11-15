@@ -26,7 +26,7 @@ use crate::paths::Paths;
 use crate::session::Session;
 use crate::tts::{Progress, SpeechBackend};
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
-use soundrts_protocol::game::{Role, SeatFrame, decode_command, decode_frame};
+use soundrts_protocol::game::{Role, RulesHash, SeatFrame, decode_command, decode_frame};
 use soundrts_protocol::{
     AiLevel, ClientMsg, Faction, LobbyPlayer, LobbySnapshot, Login, MapInfo, PROTOCOL_VERSION,
     RoomId, RoomState, SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
@@ -928,6 +928,8 @@ pub const FAKE_HOLD: std::time::Duration = std::time::Duration::from_secs(30);
 /// player: the frames a server sends.
 pub struct FakeStream {
     host: Host,
+    /// The hash of the rules text the game was built from.
+    rules: RulesHash,
     you: Role,
     seat: PlayerId,
     last: TurnMessage,
@@ -937,10 +939,24 @@ impl FakeStream {
     /// The game on the multiplayer map `map` with these slots, built as a
     /// server builds it from the texts the client would send.
     pub fn new(h: &mut Harness, map: &str, slots: &[Slot], you: usize, seed: i64) -> FakeStream {
+        FakeStream::with_rules(h, map, slots, you, seed, |rules| rules)
+    }
+
+    /// As [`FakeStream::new`], for a game built from the client's rules
+    /// text as `edit` changes it.
+    pub fn with_rules(
+        h: &mut Harness,
+        map: &str,
+        slots: &[Slot],
+        you: usize,
+        seed: i64,
+        edit: impl FnOnce(String) -> String,
+    ) -> FakeStream {
         let m = h.multiplayer_map(map);
         let texts = crate::multiplayer::game_texts(&mut h.client, &m).expect("the texts");
+        let rules = edit(texts.rules.into_string());
         let setup = GameSetup::multiplayer(
-            texts.rules.into_string(),
+            rules.clone(),
             texts.ai.into_string(),
             texts.map.into_string(),
             seed,
@@ -951,6 +967,7 @@ impl FakeStream {
         let last = host.message(seat);
         FakeStream {
             host,
+            rules: RulesHash::of(&rules),
             you: Role::Player(you),
             seat,
             last,
@@ -983,7 +1000,7 @@ impl FakeStream {
                 hold: FAKE_HOLD,
                 token: SeatToken::from_bits(1),
             },
-            SeatFrame::Start(self.host.game_start().message()),
+            self.start(),
             SeatFrame::Whole(self.last.clone()),
         ]
     }
@@ -1020,6 +1037,14 @@ impl FakeStream {
 
     pub fn host(&self) -> &Host {
         &self.host
+    }
+
+    /// The start of the game, as a server sends it.
+    pub fn start(&self) -> SeatFrame {
+        SeatFrame::Start {
+            start: self.host.game_start().message(),
+            rules: self.rules,
+        }
     }
 }
 
@@ -1120,6 +1145,7 @@ pub fn test_net_config() -> NetConfig {
         discovery_targets: Vec::new(),
         public_list_url: None,
         liveness: crate::net::conn::Liveness::default(),
+        trust: crate::net::conn::Trust::built_in(),
     }
 }
 
@@ -1373,7 +1399,8 @@ impl Harness {
     pub fn connect_to(&mut self, address: &str, wrap: impl FnOnce(Connection) -> Connection) {
         let content = self.client.res.content_hash();
         let dialer = crate::net::conn::Dialer {
-            address: address.to_owned(),
+            address: crate::net::conn::ServerAddress::parse(address).expect("an address"),
+            trust: self.client.net_config.trust.clone(),
             hello: ClientMsg::Hello {
                 protocol: PROTOCOL_VERSION,
                 login: Login::new(self.client.config.login.as_str()).expect("a login"),

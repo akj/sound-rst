@@ -21,6 +21,11 @@ soundrts-server = { path = "../server" }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
 tokio = { version = "1.54.1", features = ["rt", "net", "time", "sync", "macros"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+# Encrypted connections (`wss://`): the TLS that ureq already brings, on
+# ring, with the roots of trust built in (see `net::conn::Trust`).
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false }
+webpki-roots = "1.0.10"
 ureq = "3"
 indexmap = "2"
 serde = { version = "1", features = ["derive"] }
@@ -54,6 +59,10 @@ tts = "0.26"
 
 [dev-dependencies]
 soundrts = { path = ".", features = ["testkit"] }
+# Certificates for the tests of encrypted connections, made in memory.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
+# The TLS proxy of those tests passes bytes both ways.
+tokio = { version = "1.54.1", features = ["io-util"] }
 # The tests check results in the whole world; the interface itself reads
 # only what its player knows, and cannot name the simulation's `Entity`
 # (see the CI workflow).

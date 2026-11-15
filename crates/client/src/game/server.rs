@@ -9,6 +9,11 @@
 //! runs. The server's clock is the game's: the interface keeps none of its
 //! own.
 //!
+//! The start names the rules the game was built from by their hash. The
+//! stream names unit types, upgrades and factions by their place in those
+//! rules, so a client whose rules differ does not play the game, and says
+//! why.
+//!
 //! Everything received is checked before it is trusted. A frame that
 //! cannot be right ends the game, with a short reason said, and the player
 //! goes back to the server's lobby.
@@ -34,7 +39,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
+use soundrts_protocol::game::{Role, RulesHash, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
     Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId,
     RoomState, SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
@@ -102,6 +107,8 @@ struct SeatKey {
     /// The player's slot in the room, or that the player watches.
     you: Role,
     map: MapHash,
+    /// The rules the seat reads the stream with, which are the game's.
+    rules: RulesHash,
     /// How long the server holds the seat once it notices the loss, in
     /// seconds.
     hold: f64,
@@ -109,10 +116,11 @@ struct SeatKey {
 }
 
 impl SeatKey {
-    fn of(seated: &Seated) -> SeatKey {
+    fn of(seated: &Seated, rules: RulesHash) -> SeatKey {
         SeatKey {
             you: seated.you,
             map: seated.map.hash.clone(),
+            rules,
             hold: seated.hold.min(MAX_HOLD).as_secs_f64(),
             token: seated.token.clone(),
         }
@@ -234,7 +242,7 @@ enum End {
 }
 
 impl ServerGame {
-    fn new(seated: &Seated, start: Arc<GameStart>, now: f64) -> ServerGame {
+    fn new(seated: &Seated, start: Arc<GameStart>, rules: RulesHash, now: f64) -> ServerGame {
         let mut game = ServerGame {
             speed: seated.speed,
             paused: seated.paused,
@@ -242,7 +250,7 @@ impl ServerGame {
             end: End::Waiting,
             quit: false,
             objectives_given: 0,
-            seat: SeatKey::of(seated),
+            seat: SeatKey::of(seated, rules),
             link: Link::Playing { sent_since_turn: 0 },
             start,
             orders: Orders::NoneGiven,
@@ -315,11 +323,12 @@ fn is_room_host(cx: &Client) -> bool {
 
 /// Builds the interface of the seat a server gave the player, from the
 /// start of the game and the seat's whole message, which the server sends
-/// with the seat. `Err` says why the game cannot be played: `None` when the
-/// connection or the game ended meanwhile.
+/// with the seat. `Err` says why the game cannot be played: `None` when
+/// the player was told why, or the connection or the game ended
+/// meanwhile.
 pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Option<String>> {
     let deadline = cx.clock.now() + JOIN_WAIT;
-    let mut start: Option<Arc<GameStart>> = None;
+    let mut start: Option<(Arc<GameStart>, RulesHash)> = None;
     loop {
         crate::net::pump(cx);
         let gone = cx.net.as_ref().is_none_or(|n| n.closed.is_some());
@@ -337,18 +346,27 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
         };
         let frame = frame.map_err(|e| Some(format!("a frame cannot be read: {e}")))?;
         match (*frame, &start) {
-            (SeatFrame::Start(s), None) => {
+            (SeatFrame::Start { start: s, rules }, None) => {
                 s.check().map_err(|e| Some(format!("the start: {e}")))?;
-                let rules = Rules::load(&[cx.res.rules_text()]);
-                start = Some(Arc::new(GameStart::from_message(s, rules)));
+                let ours_text = cx.res.rules_text();
+                let ours = RulesHash::of(&ours_text);
+                if ours != rules {
+                    cx.log.warning(format!(
+                        "cannot play the game: its rules are {rules:?}, ours {ours:?}"
+                    ));
+                    cx.news(News::new(Category::System, text(words::RULES_DIFFER)));
+                    return Err(None);
+                }
+                let loaded = Rules::load(&[ours_text]);
+                start = Some((Arc::new(GameStart::from_message(s, loaded)), rules));
             }
-            (SeatFrame::Whole(m), Some(start)) => {
+            (SeatFrame::Whole(m), Some((start, rules))) => {
                 start
                     .check(&m)
                     .map_err(|e| Some(format!("the first message: {e}")))?;
                 let m = Arc::new(m);
                 let seat = SeatView::new(Arc::clone(start), Arc::clone(&m));
-                let server = ServerGame::new(seated, Arc::clone(start), cx.clock.now());
+                let server = ServerGame::new(seated, Arc::clone(start), *rules, cx.clock.now());
                 let mut game = GameInterface::on_server(cx, seat, server);
                 if seated.you == Role::Watcher {
                     // A watcher may join a game that is paused: the
@@ -560,8 +578,9 @@ impl Presented {
                 });
                 Answer::GoOn
             }
-            (SeatFrame::Start(start), Expect::Start(clock)) => {
-                if start.check().is_err() || start != seat.game_start().message() {
+            (SeatFrame::Start { start, rules }, Expect::Start(clock)) => {
+                let same = rules == key.rules && start == seat.game_start().message();
+                if start.check().is_err() || !same {
                     return wrong("the start of another game".into());
                 }
                 self.expect = Expect::Whole(clock);
@@ -590,7 +609,7 @@ impl Presented {
 /// What a frame is, for the log.
 fn kind(frame: &SeatFrame) -> &'static str {
     match frame {
-        SeatFrame::Start(_) => "a start",
+        SeatFrame::Start { .. } => "a start",
         SeatFrame::Whole(_) => "a whole message",
         SeatFrame::Change(_) => "a change",
         SeatFrame::End(_) => "an end",
@@ -1049,7 +1068,7 @@ impl GameInterface {
             SeatFrame::Whole(m) if self.server().is_some_and(|s| s.watching()) => {
                 self.follow(cx, m)
             }
-            other @ (SeatFrame::Start(_)
+            other @ (SeatFrame::Start { .. }
             | SeatFrame::Whole(_)
             | SeatFrame::Seated { .. }
             | SeatFrame::NotStarted(_)) => Err(format!("{} during the game", kind(&other))),

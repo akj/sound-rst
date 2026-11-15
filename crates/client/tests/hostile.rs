@@ -30,7 +30,7 @@ use soundrts::parameters::Parameters;
 use soundrts::sound_cache::{SoundCache, update_text_table};
 use soundrts::style::Style;
 use soundrts::testkit::{FakeStream, Harness, Script, TestGame, slot, upstream_root};
-use soundrts_protocol::game::{SeatFrame, encode_frame};
+use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
 use soundrts_protocol::{AiLevel, ClockChange, Login, SeatChange, Speed};
 use soundrts_world::msg::MsgPart;
 use soundrts_world::player::{Objective, StatEvent, StatTarget};
@@ -782,6 +782,9 @@ fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
             else {
                 panic!("a seat");
             };
+            let SeatFrame::Start { start, .. } = frame(&back, 1) else {
+                panic!("a start");
+            };
             let cases = [
                 (
                     "the seat of another slot",
@@ -800,6 +803,16 @@ fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
                 (
                     "the start of another game",
                     with(1, another_game[1].clone()),
+                ),
+                (
+                    "the start of the game with other rules",
+                    with(
+                        1,
+                        encoded(SeatFrame::Start {
+                            start,
+                            rules: RulesHash::of("other rules"),
+                        }),
+                    ),
                 ),
                 (
                     "the message of another player",

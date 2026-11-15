@@ -4,8 +4,10 @@
 //! - The game's set-up ([`GameSetup`]): the hosting client sends it, the
 //!   rules, scripts and map as text, and the host builds the game from it.
 //! - The start ([`StartMessage`]): the host sends it to every seat once.
-//!   It leaves out the rules: each client has loaded the same layers from
-//!   its own files, and supplies them with [`GameStart::from_message`].
+//!   It leaves out the rules: each client loads the same layers from its
+//!   own files, and supplies them with [`GameStart::from_message`]. The
+//!   start's [`RulesHash`] names the rules the game was built from, and a
+//!   client reads the stream only with rules of the same hash.
 //! - Each turn, a seat's [`TurnMessage`]: whole for the first message of
 //!   a game and to a seat that has just joined or returned, and after that
 //!   as the change since the seat's last message ([`TurnChange`]).
@@ -38,6 +40,7 @@
     clippy::arithmetic_side_effects
 )]
 
+use std::fmt;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -133,6 +136,31 @@ pub fn apply_change(
     Ok(message)
 }
 
+/// The SHA-256 of the rules text a game is built from: every layer's
+/// `rules.txt`, the map's included, joined in order, as
+/// [`GameSetup::rules`] holds it and as a client gives it to
+/// [`Rules::load`](soundrts_world::Rules::load). The stream names unit
+/// types, upgrades and factions by their place in the rules, so a seat
+/// reads it right only with rules of the same text.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RulesHash([u8; 32]);
+
+impl RulesHash {
+    pub fn of(rules: &str) -> RulesHash {
+        use sha2::Digest;
+        RulesHash(sha2::Sha256::digest(rules.as_bytes()).into())
+    }
+}
+
+impl fmt::Debug for RulesHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for b in self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// One binary frame of a seat's game stream, from the server: what a
 /// game sends a seat, in this order. That it has a seat, the start,
 /// then the whole message, when the seat joins the game or returns to it; a change from
@@ -156,7 +184,12 @@ pub fn apply_change(
 /// [`decode_start`], [`decode_turn`] and [`apply_change`] do.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SeatFrame {
-    Start(StartMessage),
+    /// The start of the game, and the hash of the rules the server built
+    /// it from: a seat reads the stream only with rules of that hash.
+    Start {
+        start: StartMessage,
+        rules: RulesHash,
+    },
     Whole(TurnMessage),
     Change(TurnChange),
     /// The game is over for the seat: its statistics and result. The

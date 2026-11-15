@@ -98,7 +98,7 @@ fn a_server_that_welcomes_with_more_players_than_a_client_keeps_is_refused() {
         tokio::time::sleep(Duration::from_secs(5)).await;
         drop(ws);
     });
-    let opened = conn::open(&addr.to_string(), hello(), Duration::from_secs(5));
+    let opened = conn::open(&addr.into(), hello(), Duration::from_secs(5));
     assert_eq!(
         opened.err(),
         Some(conn::ConnectError::NotAServer("too many players".into()))
@@ -122,7 +122,7 @@ fn a_server_that_floods_the_client_waits_for_it() {
             counter.store(i + 1, Ordering::SeqCst);
         }
     });
-    let (mut conn, _) = conn::open(&addr.to_string(), hello(), Duration::from_secs(5)).unwrap();
+    let (mut conn, _) = conn::open(&addr.into(), hello(), Duration::from_secs(5)).unwrap();
     // The client reads nothing for a while: the server cannot send it all
     // (about 40 MB), the socket's buffers and the queue being full.
     std::thread::sleep(Duration::from_secs(2));
@@ -158,7 +158,7 @@ fn a_connection_to_a_server_that_stops_reading_closes_in_time() {
         tokio::time::sleep(Duration::from_secs(60)).await;
         drop(ws);
     });
-    let (mut conn, _) = conn::open(&addr.to_string(), hello(), Duration::from_secs(5)).unwrap();
+    let (mut conn, _) = conn::open(&addr.into(), hello(), Duration::from_secs(5)).unwrap();
     // Far more than the socket's buffers hold.
     let text = ChatText::clean(&"y".repeat(400)).unwrap();
     for _ in 0..200_000 {
@@ -201,7 +201,8 @@ fn one_pass_of_the_menus_reads_a_bounded_number_of_messages() {
 /// gives it up after 2 s.
 fn quick_to_notice(addr: SocketAddr) -> conn::Connection {
     let dialer = conn::Dialer {
-        address: addr.to_string(),
+        address: addr.into(),
+        trust: conn::Trust::built_in(),
         hello: hello(),
         timeout: Duration::from_secs(5),
         liveness: conn::Liveness {
@@ -261,7 +262,8 @@ fn a_connection_given_up_while_it_opens_stops_at_once() {
     let addr = listener.local_addr().unwrap();
     let held = std::thread::spawn(move || listener.accept().map(|(s, _)| s));
     let dialer = conn::Dialer {
-        address: addr.to_string(),
+        address: addr.into(),
+        trust: conn::Trust::built_in(),
         hello: hello(),
         timeout: Duration::from_secs(60),
         liveness: conn::Liveness::default(),

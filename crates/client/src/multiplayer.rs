@@ -28,7 +28,7 @@ use crate::game::style_msg;
 use crate::mainmenu::modify_login;
 use crate::mapfile::{Map, title_of};
 use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, string_to_msg};
-use crate::net::conn::{self, ConnectError, Connection};
+use crate::net::conn::{self, BadCertificate, ConnectError, Connection, ServerAddress, Transport};
 use crate::net::lobby::{MapState, computer_name, player_name};
 use crate::net::servers::{self, ListedServer};
 use crate::net::words::{self, text};
@@ -106,7 +106,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
     let mut listed: Vec<(ListedServer, &[u64], &str)> = Vec::new();
     for f in discovery::discover(&config.discovery_targets, DISCOVERY_WAIT) {
         let s = ListedServer {
-            address: f.addr.to_string(),
+            address: ServerAddress::from(f.addr),
             name: Some(f.name),
         };
         listed.push((s, words::LOCAL, ""));
@@ -124,7 +124,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
         }
     }
     let mut menu = Menu::new(msg(mp::CHOOSE_SERVER_IN_LIST), Vec::new());
-    let mut seen: Vec<String> = Vec::new();
+    let mut seen: Vec<ServerAddress> = Vec::new();
     for (s, number, phrase) in listed {
         if seen.contains(&s.address) {
             continue;
@@ -135,7 +135,7 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
         } else {
             text(phrase)
         };
-        let label = vec![literal(s.label())];
+        let label = vec![literal(&s.label())];
         menu.append(
             label,
             Action::run(move |cx| connect(cx, &s.address, None).map(|()| Flow::Stay)),
@@ -153,19 +153,25 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
     menu.run(cx)
 }
 
-/// The characters of a server address.
+/// The characters of a server address, `wss://` included.
 fn address_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '-' | '[' | ']')
+    c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '-' | '[' | ']' | '/')
 }
 
 fn enter_address(cx: &mut Client) -> Result<(), Exit> {
-    if let Some(address) = input_string(cx, &msg(mp::ENTER_SERVER_IP), address_char, "", true)? {
-        let address = if address.is_empty() {
+    if let Some(typed) = input_string(cx, &msg(mp::ENTER_SERVER_IP), address_char, "", true)? {
+        let typed = if typed.is_empty() {
             "localhost".to_owned()
         } else {
-            address
+            typed
         };
-        connect(cx, &address, None)?;
+        match ServerAddress::parse(&typed) {
+            Some(address) => connect(cx, &address, None)?,
+            None => {
+                cx.log.warning(format!("not a server's address: {typed}"));
+                cx.voice.alert(&msg(mp::SERVER_UNREACHABLE));
+            }
+        }
     }
     Ok(())
 }
@@ -217,7 +223,7 @@ fn host(cx: &mut Client) -> Result<(), Exit> {
         },
         local.port(),
     );
-    connect(cx, &to.to_string(), Some(server))
+    connect(cx, &ServerAddress::from(to), Some(server))
 }
 
 /// The address the other players connect to: the router's if it forwards
@@ -244,7 +250,11 @@ fn lan_ip() -> Option<IpAddr> {
 /// Connects to a server and runs its menus until the player leaves it or
 /// the connection is lost. `hosted` is the player's own server, stopped
 /// at the end.
-pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> Result<(), Exit> {
+pub fn connect(
+    cx: &mut Client,
+    address: &ServerAddress,
+    hosted: Option<ServerHandle>,
+) -> Result<(), Exit> {
     let content = cx.res.content_hash();
     let login = Login::new(cx.config.login.as_str()).expect("a valid login");
     let hello = ClientMsg::Hello {
@@ -253,7 +263,8 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
         content: content.clone(),
     };
     let dialer = conn::Dialer {
-        address: address.to_owned(),
+        address: address.clone(),
+        trust: cx.net_config.trust.clone(),
         hello,
         timeout: CONNECT_TIMEOUT,
         liveness: cx.net_config.liveness,
@@ -268,7 +279,7 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
         }
     };
     let favorite = hosted.is_none().then(|| ListedServer {
-        address: address.to_owned(),
+        address: address.clone(),
         name: Some(snapshot.server_name.clone()),
     });
     if let Some(s) = &favorite
@@ -287,8 +298,13 @@ pub fn connect(cx: &mut Client, address: &str, hosted: Option<ServerHandle>) -> 
 
 fn connect_error_msg(e: &ConnectError) -> Msg {
     match e {
-        ConnectError::BadAddress | ConnectError::Unreachable(_) => msg(mp::SERVER_UNREACHABLE),
+        ConnectError::Unreachable(_) => msg(mp::SERVER_UNREACHABLE),
         ConnectError::NotAServer(_) => msg(mp::UNEXPECTED_REPLY),
+        ConnectError::Certificate(why) => text(match why {
+            BadCertificate::OtherName => words::CERTIFICATE_FOR_ANOTHER_NAME,
+            BadCertificate::OutOfDate => words::CERTIFICATE_OUT_OF_DATE,
+            BadCertificate::NotTrusted => words::CERTIFICATE_NOT_TRUSTED,
+        }),
         ConnectError::Rejected(Rejection::ProtocolMismatch { .. }) => msg(mp::VERSION_ERROR),
         ConnectError::Rejected(Rejection::ServerFull) => text(words::SERVER_FULL),
         ConnectError::Rejected(Rejection::NoHello) => {
@@ -298,7 +314,8 @@ fn connect_error_msg(e: &ConnectError) -> Msg {
 }
 
 /// The server's menus on an open connection, until the player leaves the
-/// server or the connection is lost. `favorite` is the server as the
+/// server or the connection is lost. The welcome says whether the
+/// connection is encrypted, only when it is. `favorite` is the server as the
 /// player can keep it among the favorites; `redial` opens the connection
 /// again for a game the connection was lost in.
 pub fn play_on(
@@ -309,13 +326,17 @@ pub fn play_on(
     favorite: Option<ListedServer>,
     redial: net::Redial,
 ) -> Result<(), Exit> {
-    let welcome = [
+    let mut welcome = [
         msg(mp::WELCOME),
         vec![literal(snapshot.you.as_str())],
         msg(mp::ON_THE_SERVER_OF),
         vec![literal(snapshot.server_name.as_str())],
     ]
     .concat();
+    if conn.transport() == Transport::Encrypted {
+        welcome.extend(msg(mp::COMMA));
+        welcome.extend(text(words::ENCRYPTED));
+    }
     cx.net = Some(Net::new(conn, snapshot, content, redial));
     cx.voice.important(&welcome);
     let result = lobby(cx, favorite.as_ref());

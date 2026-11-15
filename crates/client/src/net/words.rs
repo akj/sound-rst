@@ -53,6 +53,13 @@ pub const ON: &str = "on";
 pub const OFF: &str = "off";
 pub const SERVER_FULL: &str = "the server is full";
 pub const NO_SERVER_FOUND: &str = "no server found";
+/// After the server's name in the welcome: the connection is encrypted.
+pub const ENCRYPTED: &str = "encrypted";
+// Why an encrypted connection was refused.
+pub const CERTIFICATE_FOR_ANOTHER_NAME: &str =
+    "not connected: the server's certificate is for another name";
+pub const CERTIFICATE_OUT_OF_DATE: &str = "not connected: the server's certificate is out of date";
+pub const CERTIFICATE_NOT_TRUSTED: &str = "not connected: the server's certificate is not trusted";
 pub const MAP_REFUSED: &str = "the map of this game is too large once unpacked";
 pub const GAME_CANNOT_START: &str = "this game cannot start here";
 pub const NO_PORT_FORWARDING: &str =
@@ -143,6 +150,9 @@ pub const CANNOT_BUILD: &str = "the server cannot build it:";
 pub const TOOK_TOO_LONG_TO_BUILD: &str = "it took too long to build";
 pub const SERVER_BUSY: &str = "the server is busy, try again later";
 pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
+/// The game's rules are not the ones this client has, so its unit names
+/// would be wrong: the game is not played.
+pub const RULES_DIFFER: &str = "cannot play: your game data differs from this game's";
 pub const ONLY_THE_ORGANIZER_SETS_THE_SPEED: &str = "only the organizer can change the speed";
 /// The game menu's item that stops the clock of a game on a server.
 pub const PAUSE: &str = "pause";

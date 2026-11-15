@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::*;
-use soundrts_protocol::game::{Role, SeatFrame, decode_frame, encode_command};
+use soundrts_protocol::game::{Role, RulesHash, SeatFrame, decode_frame, encode_command};
 use soundrts_protocol::*;
 use soundrts_server::{ServerConfig, ServerHandle};
 use soundrts_world::{
@@ -251,7 +251,9 @@ impl Seat {
     fn take(&mut self, bytes: &[u8]) {
         let who = self.c.login.clone();
         match decode_frame(bytes).unwrap_or_else(|e| panic!("{who}: {e}")) {
-            SeatFrame::Start(s) => {
+            SeatFrame::Start { start: s, rules } => {
+                // The hash of exactly the text the game was built from.
+                assert_eq!(rules, RulesHash::of(&self.rules), "{who}");
                 s.check().unwrap();
                 let rules = Rules::load(&[self.rules.as_str()]);
                 self.start = Some(Arc::new(GameStart::from_message(s, rules)));

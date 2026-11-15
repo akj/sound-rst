@@ -56,6 +56,8 @@ pub struct NetConfig {
     pub public_list_url: Option<String>,
     /// How a connection notices a server that stopped answering.
     pub liveness: conn::Liveness,
+    /// What an encrypted connection trusts.
+    pub trust: conn::Trust,
 }
 
 impl Default for NetConfig {
@@ -67,6 +69,7 @@ impl Default for NetConfig {
             discovery_targets: vec![discovery::broadcast_target()],
             public_list_url: Some(servers::PUBLIC_LIST_URL.to_owned()),
             liveness: conn::Liveness::default(),
+            trust: conn::Trust::built_in(),
         }
     }
 }
