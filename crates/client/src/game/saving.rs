@@ -32,11 +32,19 @@ impl GameInterface {
 
     /// What the interface keeps beside the record in a save. A unit of
     /// the selection replaced in a turn not yet taken (an upgrade) is
-    /// saved as the unit that took its place, as the game has it.
+    /// saved as the unit that took its place, as the game has it. A game
+    /// loaded and saved again before its first end of turn keeps the
+    /// selection it has yet to take back.
     fn interface_state(&self) -> InterfaceState {
+        let selection = match &self.source {
+            Source::Local(l) if !l.selection_to_restore.is_empty() => {
+                l.selection_to_restore.clone()
+            }
+            _ => self.group_now().into_iter().map(|(_, now)| now).collect(),
+        };
         InterfaceState {
             cursor: self.place,
-            selection: self.group_now().into_iter().map(|(_, now)| now).collect(),
+            selection,
         }
     }
 

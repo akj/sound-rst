@@ -56,6 +56,9 @@ fn a_game_saved_and_loaded_tells_what_it_told_and_plays_on_the_same() {
     };
     assert_eq!(loaded.game.me, me);
     assert_eq!(loaded.game.place, Some(square));
+    // Saved again before its first turn, it keeps its selection.
+    let early = read_save(&save_new(&mut h, &mut loaded)).unwrap();
+    assert_eq!(early.header.selection, peasants);
     assert_eq!(
         loaded.game.host().message(me),
         g.game.host().message(me),
