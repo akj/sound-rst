@@ -179,12 +179,15 @@ In a game room, the host invites players and computers, sets the alliances and f
 | --- | --- | --- |
 | F7 | Write to the room, or to the lobby outside a room | Write to every player of the game |
 | Shift+F7 | | Write to your allies |
+| Ctrl+F7 | | Point your allies at the square under the cursor: a flare |
 | Ctrl+F5 | Read the previous chat message again | Read the previous chat message again |
 | Ctrl+F6 | Read the next chat message again | Read the next chat message again |
 | Ctrl+F12 | | While you watch: follow the next player |
 | Ctrl+Shift+F12 | | While you watch: follow the previous player |
 
 A chat message plays a short sound, then the game says who wrote it and what they wrote, after the message that is being said. In a game, the game goes on while you type. The multiplayer menu has an option that stops the game from saying when players arrive on the server or leave it.
+
+A flare points your allies at a square. Put the cursor on the square and press Ctrl+F7. You hear "flare sent" once the server has sent it. Each ally hears an alert sound from that square, then, as an alert, for example "andrew : flare at b 2"; Delete, the key that goes to the last alert, takes them there. Those who watch you or an ally hear it too, and nobody else. You can send at most 3 flares in 10 seconds; the server refuses more, and you hear "too fast: wait a moment". With no ally left in the game, Ctrl+F7 says "no ally in the game" and sends nothing; a computer ally counts as an ally. In a game against the computer, it says "nobody to tell". A watcher sends no flare.
 
 In a game on a server, the server runs the game and tells each player only what that player knows: the fog of war holds. The game does not wait for a slow player or a lost connection. When the host starts the game, their computer sends the server the rules, the computer players and the map, as the host's game has them with its mods; every player needs the same mods, as before.
 

@@ -535,7 +535,7 @@ impl Limits {
 }
 
 /// At most `most` events in any `period`.
-struct Window {
+pub(crate) struct Window {
     most: usize,
     period: Duration,
     /// The events of the last period, oldest first.
@@ -543,7 +543,7 @@ struct Window {
 }
 
 impl Window {
-    fn new(most: usize, period: Duration) -> Window {
+    pub(crate) fn new(most: usize, period: Duration) -> Window {
         Window {
             most,
             period,
@@ -552,7 +552,7 @@ impl Window {
     }
 
     /// Whether one more event is allowed now; if so, it counts.
-    fn allow(&mut self, now: Instant) -> bool {
+    pub(crate) fn allow(&mut self, now: Instant) -> bool {
         while self
             .events
             .front()

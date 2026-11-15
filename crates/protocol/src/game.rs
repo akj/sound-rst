@@ -43,7 +43,8 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use soundrts_world::{
-    Command, GameEnd, GameSetup, GameStart, StartMessage, TurnChange, TurnMessage,
+    Command, GameEnd, GameSetup, GameStart, PlayerId, SquareId, StartMessage, TurnChange,
+    TurnMessage,
 };
 
 use crate::{
@@ -189,6 +190,12 @@ pub enum SeatFrame {
     /// powers over the game: the host before them left it.
     Host {
         slot: SlotIndex,
+    },
+    /// `from`, an ally of the seat's side, points at `square`; to the
+    /// seat of `from`, that its flare was sent.
+    Flare {
+        from: PlayerId,
+        square: SquareId,
     },
     /// The server stopped the game. The lobby's
     /// [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded) follows.

@@ -39,7 +39,7 @@ pub const MAX_BINDING_LINE_BYTES: usize = 4096;
 pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
-/// chat to the allies, the news log (what did I miss, a category's
+/// chat to the allies and a flare that points them at a square, the news log (what did I miss, a category's
 /// messages and changing the category, copying the message under review on
 /// Control Shift C, the last alerts' squares), the
 /// questions: what is in production, the workers and the fight here
@@ -55,7 +55,7 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// Each key is one the original leaves free and that neither Windows nor a
 /// screen reader takes. Shift Z is left to maps, which bind it to a third
 /// resource.
-pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
+pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\nCTRL F7: flare\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
     CTRL SHIFT c: copy_message\n\
     DELETE: jump_to_alert\n\

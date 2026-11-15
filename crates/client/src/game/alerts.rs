@@ -3,11 +3,12 @@
 
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::{EntityId, KnownEntity, Place, SquareId};
+use soundrts_world::{EntityId, KnownEntity, Place, PlayerId, SquareId};
 
 use crate::audio::stereo;
 use crate::client::Client;
 use crate::message::{Category, News, Subject};
+use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 
 use super::entity::EntityView;
@@ -58,6 +59,10 @@ impl UnitsNews {
         }
     }
 }
+
+/// The sound of an ally's flare, from its square: the alert of holy
+/// vision, an ability that shows a place.
+const FLARE_SOUND: &str = "1339";
 
 /// Orders that do not make a menu richer.
 const IRRELEVANT_ORDERS: &[&str] = &[
@@ -296,6 +301,42 @@ impl GameInterface {
             cx.news(news.at(self.outer_square(Some(place))));
         }
         new
+    }
+
+    /// `from` points at `square`, as the server says: an ally's flare is
+    /// an alert sound from the square and alert news tied to it, which the
+    /// jump to the last alert goes to; the player's own is only confirmed.
+    /// A watcher, who sent nothing, hears the alert of the player it
+    /// follows as an ally's.
+    /// A square the map does not have, or a sender who is not an ally still
+    /// in the game, cannot be right: it is noted in the log, not said.
+    pub(crate) fn flare_alert(&mut self, cx: &mut Client, from: PlayerId, square: SquareId) {
+        let view = self.view();
+        if view.game_start().map.square(square).is_none() {
+            cx.log
+                .warning(format!("a flare at square {}, not on the map", square.0));
+            return;
+        }
+        if !view.players().contains(&from) || !view.is_ally(from) {
+            cx.log.warning(format!(
+                "a flare from player {}, no ally in the game",
+                from.0
+            ));
+            return;
+        }
+        if from == self.me && !self.is_watching() {
+            cx.voice.item(&text(words::FLARE_SENT));
+            return;
+        }
+        self.launch_alert(cx, Some(square), FLARE_SOUND);
+        let m = [
+            view.player_name(from),
+            text(":"),
+            text(words::FLARE_AT),
+            self.alert_place_title(cx, Place::Square(square)),
+        ]
+        .concat();
+        cx.news(News::new(Category::Alert, m).at(Some(square)));
     }
 
     /// Says what was found on newly seen squares with resources.

@@ -893,7 +893,25 @@ pub enum ClientMsg {
     Follow {
         step: Step,
     },
+    /// A player of a game points their allies at a square of its map,
+    /// beside the allies' chat: the game sends [`game::SeatFrame::Flare`]
+    /// to the seats of the player's allies, the player's own included, and
+    /// to those who watch them. Refused from a watcher, for a square the
+    /// game's map does not have, and beyond [`MAX_FLARES`] in
+    /// [`FLARE_WINDOW`].
+    Flare {
+        square: soundrts_world::SquareId,
+    },
 }
+
+/// The most flares one player sends in [`FLARE_WINDOW`]. Each makes every
+/// ally hear an alert sound and about two seconds of speech: three in ten
+/// seconds point at three places at once, and still leave most of the time
+/// to the game's own news.
+pub const MAX_FLARES: usize = 3;
+
+/// See [`MAX_FLARES`].
+pub const FLARE_WINDOW: Duration = Duration::from_secs(10);
 
 /// Which way [`ClientMsg::Follow`] goes along the players, in the room's
 /// order.
@@ -1073,6 +1091,21 @@ mod tests {
         assert!(ServerAnnouncement::from_json(json).is_err());
         let json = r#"{"protocol":1,"name":"ab","port":2501,"players":0}"#;
         assert!(ServerAnnouncement::from_json(json).is_ok());
+    }
+
+    #[test]
+    fn a_flare_names_its_square_by_number() {
+        let json = r#"{"type":"flare","square":12}"#;
+        assert_eq!(
+            ClientMsg::from_json(json),
+            Ok(ClientMsg::Flare {
+                square: soundrts_world::SquareId(12)
+            })
+        );
+        for bad in [-1_i64, 1 << 40] {
+            let json = format!(r#"{{"type":"flare","square":{bad}}}"#);
+            assert!(ClientMsg::from_json(&json).is_err(), "{json}");
+        }
     }
 
     #[test]

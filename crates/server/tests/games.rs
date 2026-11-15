@@ -972,6 +972,132 @@ async fn the_hosts_powers_pass_to_the_next_player_and_a_paused_game_is_never_stu
     after(&d, &news(1, SeatChange::GivenUp).into(), &host(2).into());
 }
 
+/// How many flares a seat was told of.
+fn flares(s: &Seat) -> Vec<(PlayerId, soundrts_world::SquareId)> {
+    s.told
+        .iter()
+        .filter_map(|h| match h {
+            Heard::Game(SeatFrame::Flare { from, square }) => Some((*from, *square)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_flare_reaches_the_allies_and_their_watchers_only_and_no_faster_than_the_limit() {
+    use soundrts_world::SquareId;
+    let server = hosting_server(|_| {});
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "carol", "dave", "erin"]).await;
+    let erin = clients.pop().unwrap();
+    let dave = clients.pop().unwrap();
+    let room = room(&mut clients, 0).await;
+    // Andrew and Bob are allies; Carol is on her own.
+    clients[0]
+        .send(ClientMsg::SetAlliance {
+            slot: 1,
+            alliance: 1,
+        })
+        .await;
+    let (mut dave, mut erin) = (dave, erin);
+    watch(&mut dave, room).await;
+    watch(&mut erin, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![dave, erin], &texts).await;
+    let mut e = watchers.pop().unwrap();
+    let mut d = watchers.pop().unwrap();
+    let mut c = players.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    // Dave follows Andrew, the first player; Erin goes back to Carol.
+    e.c.send(ClientMsg::Follow {
+        step: Step::Previous,
+    })
+    .await;
+    while wholes(&e) < 2 {
+        assert!(e.step(TIMEOUT).await);
+    }
+    assert_eq!(e.view().player(), c.player());
+    let (andrew, carol) = (a.player(), c.player());
+
+    // Andrew's flare reaches him, Bob and Dave.
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    let flare = |from, square| SeatFrame::Flare {
+        from,
+        square: SquareId(square),
+    };
+    for s in [&mut a, &mut b, &mut d] {
+        s.hear(flare(andrew, 0)).await;
+    }
+    // Carol's reaches her and Erin, after Andrew's would have.
+    c.c.send(ClientMsg::Flare {
+        square: SquareId(1),
+    })
+    .await;
+    for s in [&mut c, &mut e] {
+        s.hear(flare(carol, 1)).await;
+    }
+    for s in [&c, &e] {
+        assert_eq!(flares(s), [(carol, SquareId(1))], "{}", s.c.login);
+    }
+
+    // A square off the map, and a watcher, are refused.
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(u32::MAX),
+    })
+    .await;
+    a.hear(refused(Refusal::Invalid)).await;
+    d.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    d.hear(refused(Refusal::NotNow)).await;
+
+    // Andrew's third flare goes; his fourth in the window does not.
+    for square in [2, 3] {
+        a.c.send(ClientMsg::Flare {
+            square: SquareId(square),
+        })
+        .await;
+        a.hear(flare(andrew, square)).await;
+    }
+    a.c.send(ClientMsg::Flare {
+        square: SquareId(4),
+    })
+    .await;
+    a.hear(refused(Refusal::SlowDown)).await;
+    // Bob, who has his own allowance, is heard after it.
+    b.c.send(ClientMsg::Flare {
+        square: SquareId(5),
+    })
+    .await;
+    let bob = b.player();
+    let heard = [0, 2, 3]
+        .map(|i| (andrew, SquareId(i)))
+        .into_iter()
+        .chain([(bob, SquareId(5))])
+        .collect::<Vec<_>>();
+    for s in [&mut a, &mut b, &mut d] {
+        s.hear(flare(bob, 5)).await;
+        assert_eq!(flares(s), heard, "{}", s.c.login);
+    }
+
+    // Once out of the game, Carol sends none.
+    c.c.send(ClientMsg::LeaveGame).await;
+    while !c.left {
+        assert!(c.step(TIMEOUT).await);
+    }
+    c.c.send(ClientMsg::Flare {
+        square: SquareId(0),
+    })
+    .await;
+    c.c.skip_to(&refused(Refusal::NotNow)).await;
+    assert_eq!(flares(&e), [(carol, SquareId(1))]);
+}
+
 #[tokio::test]
 async fn a_game_that_cannot_be_built_is_refused_and_the_room_goes_on() {
     let server = hosting_server(|_| {});

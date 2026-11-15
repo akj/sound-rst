@@ -183,6 +183,19 @@ pub const NO_WATCHERS: &str = "this game takes no watchers";
 pub const WATCHERS_FULL: &str = "no room for another watcher";
 pub const ROOM_CLOSED: &str = "the room closed: no player is left";
 pub const WATCHING_NO_ORDERS: &str = "watching: you give no orders";
+
+// A flare that points the allies at a square.
+
+/// After an ally's name, before the square: "bob: flare at b 2".
+pub const FLARE_AT: &str = "flare at";
+/// To the player whose flare the server sent.
+pub const FLARE_SENT: &str = "flare sent";
+pub const NO_ALLY: &str = "no ally in the game";
+/// Off a server: a flare has nobody to reach.
+pub const NOBODY_TO_TELL: &str = "nobody to tell";
+/// The server refused a flare, a chat line or a command sent too soon
+/// after others.
+pub const TOO_FAST: &str = "too fast: wait a moment";
 pub const NOT_WATCHING: &str = "only a watcher follows another player";
 
 /// What happened to a player of the game, `who`.

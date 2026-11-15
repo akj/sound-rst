@@ -35,16 +35,17 @@ use std::time::Duration;
 
 use soundrts_protocol::game::{Role, SeatFrame, encode_frame};
 use soundrts_protocol::{
-    ChatText, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapInfo, Refusal, RoomId, SeatChange,
-    SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step, StopReason,
+    ChatText, ClockChange, FLARE_WINDOW, Login, MAX_FLARES, MAX_TURN_ORDER_BYTES, MapInfo, Refusal,
+    RoomId, SeatChange, SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step,
+    StopReason,
 };
-use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, TurnMessage};
+use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, SquareId, TurnMessage};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::Bytes;
 use tracing::{debug, info, warn};
 
-use crate::connection::{ConnId, Outbox, Queued};
+use crate::connection::{ConnId, Outbox, Queued, Window};
 use crate::lobby::{LobbyInput, LobbyTx};
 
 /// A seat whose connection has more messages than this waiting to be
@@ -221,6 +222,11 @@ pub(crate) enum GameInput {
         by: SlotIndex,
         slot: SlotIndex,
     },
+    /// A player points their allies at a square.
+    Flare {
+        slot: SlotIndex,
+        square: SquareId,
+    },
 }
 
 /// Where the lobby passes inputs to a game. An input from a client
@@ -352,6 +358,11 @@ struct Game {
     turn: u64,
     /// The players still in the game, as of the last turn a seat was sent.
     in_game: Vec<PlayerId>,
+    /// Each player's allies, the player among them, by player id, as of the
+    /// last turn a seat was sent.
+    allies: Vec<Vec<PlayerId>>,
+    /// The flares each player sent lately.
+    flares: BTreeMap<SlotIndex, Window>,
     /// The slot of the player who holds the room's host's powers: a player
     /// with a seat in the game, connected or held. `None` once no player
     /// is left to hold them.
@@ -442,6 +453,12 @@ async fn run(
         command_bytes: BTreeMap::new(),
         turn: 0,
         in_game: host.seats().to_vec(),
+        allies: host
+            .seats()
+            .first()
+            .map(|&p| host.message(p).state.allies)
+            .unwrap_or_default(),
+        flares: BTreeMap::new(),
     };
     for j in joining {
         game.seat(&host, j);
@@ -1043,6 +1060,9 @@ impl Game {
         let in_game = deliveries
             .first()
             .map(|d| d.turn.message.state.players.clone());
+        if let Some(d) = deliveries.first() {
+            self.allies.clone_from(&d.turn.message.state.allies);
+        }
         for d in deliveries {
             let Some(Seat {
                 link: Link::Connected {
@@ -1152,6 +1172,7 @@ impl Game {
                 self.clock_change(by, ClockChange::Speed { speed });
             }
             GameInput::Remove { by, slot } => self.remove(host, by, slot),
+            GameInput::Flare { slot, square } => self.flare(host, slot, square),
         }
     }
 
@@ -1306,6 +1327,52 @@ impl Game {
         });
         self.quit(player);
         self.end_seat(host, SeatId::Player(slot));
+    }
+
+    /// A player still in the game points their allies at a square of the
+    /// map: each seat whose side is one of them, the player's own seat
+    /// included, is told, and so are those who watch them. Refused for a
+    /// square the game's map does not have, and beyond [`MAX_FLARES`] in
+    /// [`FLARE_WINDOW`].
+    fn flare(&mut self, host: &Host, slot: SlotIndex, square: SquareId) {
+        let Some((_, outbox)) = self.connected(slot) else {
+            return;
+        };
+        let Some(from) = self.players.get(slot).copied() else {
+            return;
+        };
+        let refusal = if !self.in_game.contains(&from) {
+            Some(Refusal::NotNow)
+        } else if host.game_start().map.square(square).is_none() {
+            Some(Refusal::Invalid)
+        } else if !self
+            .flares
+            .entry(slot)
+            .or_insert_with(|| Window::new(MAX_FLARES, FLARE_WINDOW))
+            .allow(Instant::now())
+        {
+            Some(Refusal::SlowDown)
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
+            outbox.send(&ServerMsg::Refused { reason });
+            return;
+        }
+        let allies = usize::try_from(from.0)
+            .ok()
+            .and_then(|i| self.allies.get(i))
+            .map_or(&[][..], Vec::as_slice);
+        let Some(bytes) = encoded(&SeatFrame::Flare { from, square }) else {
+            return;
+        };
+        for seat in self.seats.values() {
+            if let Link::Connected { outbox, .. } = &seat.link
+                && allies.contains(&seat.side)
+            {
+                outbox.send_binary(bytes.clone());
+            }
+        }
     }
 
     // -- The host's powers ---------------------------------------------------

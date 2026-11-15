@@ -38,6 +38,8 @@ use soundrts_protocol::{
     ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, RoomState,
     SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
+use soundrts_world::msg::msg;
+use soundrts_world::msgparts as mp;
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
 use super::GameInterface;
@@ -580,6 +582,7 @@ fn kind(frame: &SeatFrame) -> &'static str {
         SeatFrame::Seat { .. } => "news of a seat",
         SeatFrame::Clock { .. } => "news of the clock",
         SeatFrame::Host { .. } => "news of the host",
+        SeatFrame::Flare { .. } => "a flare",
         SeatFrame::Stopped(_) => "a stop",
         SeatFrame::NotStarted(_) => "a refused start",
     }
@@ -726,6 +729,11 @@ impl GameInterface {
         self.srv_quit(cx);
         self.forced_quit = true;
         true
+    }
+
+    /// Whether the player watches a game on a server.
+    pub(crate) fn is_watching(&self) -> bool {
+        matches!(&self.source, super::Source::Server(s) if s.watching())
     }
 
     /// Leaves the game at once while the client returns to the seat.
@@ -968,6 +976,10 @@ impl GameInterface {
                 let m = words::new_host(host);
                 let topic = Subject::Room(RoomTopic::Host);
                 cx.news(News::new(Category::System, m).about(topic));
+                Ok(())
+            }
+            SeatFrame::Flare { from, square } => {
+                self.flare_alert(cx, from, square);
                 Ok(())
             }
             SeatFrame::Clock { by, change } => {
@@ -1228,6 +1240,29 @@ impl GameInterface {
             Category::System,
             [text(words::WATCHING), name].concat(),
         ));
+    }
+
+    /// Points the allies at the square under the cursor: the server tells
+    /// them, and tells the player once it has. Off a server, or with no ally
+    /// still in the game, says why and sends nothing.
+    pub(crate) fn flare(&mut self, cx: &mut Client) {
+        if !self.on_a_server() {
+            cx.voice.item(&text(words::NOBODY_TO_TELL));
+            return;
+        }
+        if self.refuse_while_watching() || self.refuse_while_returning() {
+            return;
+        }
+        let Some(square) = self.place else {
+            cx.voice.item(&msg(mp::BEEP));
+            return;
+        };
+        let (me, view) = (self.me, self.view());
+        if !view.players().iter().any(|&p| p != me && view.is_ally(p)) {
+            cx.voice.item(&text(words::NO_ALLY));
+            return;
+        }
+        crate::net::send(cx, ClientMsg::Flare { square });
     }
 
     /// Whether the game menu offers the speeds: in a game run here, to its

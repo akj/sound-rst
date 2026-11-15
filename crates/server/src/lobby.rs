@@ -414,6 +414,9 @@ impl Lobby {
             ClientMsg::RemovePlayer { slot } => {
                 self.pass_to_player(conn, queued, |by| GameInput::Remove { by, slot })
             }
+            ClientMsg::Flare { square } => {
+                self.pass_to_player(conn, queued, |slot| GameInput::Flare { slot, square })
+            }
             ClientMsg::Follow { step } => {
                 self.pass_to_watcher(conn, queued, |watcher| GameInput::Follow { watcher, step })
             }

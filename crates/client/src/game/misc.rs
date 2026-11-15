@@ -168,6 +168,7 @@ impl GameInterface {
             C::PlayersStatus => self.cmd_players_status(cx),
             C::Say => self.cmd_say(cx, Channel::Game),
             C::SayAllies => self.cmd_say(cx, Channel::Allies),
+            C::Flare => self.flare(cx),
             C::ChatPrevious => crate::net::chat_previous(cx),
             C::ChatNext => crate::net::chat_next(cx),
             C::Volume(incr) => cx.modify_volume(*incr as i32),

@@ -179,6 +179,10 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
             change: crate::SeatChange::Dropped,
         },
         SeatFrame::Host { slot: 3 },
+        SeatFrame::Flare {
+            from: soundrts_world::PlayerId(2),
+            square: soundrts_world::SquareId(14),
+        },
         SeatFrame::Clock {
             by: a(),
             change: crate::ClockChange::Speed {
