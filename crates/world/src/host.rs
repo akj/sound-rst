@@ -10,6 +10,7 @@ use crate::events::Event;
 use crate::message::{GameEnd, GameStart, TurnMessage};
 use crate::nofloat::PRECISION;
 use crate::player::ControllerKind;
+use crate::record::Record;
 use crate::setup::GameSetup;
 use crate::world::World;
 
@@ -28,6 +29,10 @@ use crate::world::World;
 /// Nothing steps the host on its own: the game loop and the tests call
 /// [`Host::step`] when a turn is due.
 ///
+/// The host keeps the record of its game ([`Host::record`]): every command
+/// it takes, where it took it, and every step. A cheat that acts at once is
+/// recorded where it took effect, among the commands of the next step.
+///
 /// What a seat is told is plain data, as a host over a network would send
 /// it: [`Host::game_start`] once, a [`TurnMessage`] with each step, and
 /// [`Host::game_end`] when the game is over for the seat.
@@ -36,6 +41,7 @@ pub struct Host {
     start: Arc<GameStart>,
     seats: Vec<PlayerId>,
     warnings: Vec<String>,
+    record: Record,
 }
 
 /// What a step gives back.
@@ -117,6 +123,7 @@ impl Host {
             world,
             seats,
             warnings: Vec::new(),
+            record: Record::new(setup.clone()),
         })
     }
 
@@ -130,7 +137,8 @@ impl Host {
     /// After such a cheat, returns what the seat is told of the game now:
     /// after [`Cheat::PlayAs`], the seat it plays as.
     /// A command naming a player or a square the game does not have is
-    /// refused, with a warning (see [`Host::check`]).
+    /// refused, with a warning (see [`Host::check`]). The record keeps
+    /// every command taken, in the order taken.
     #[must_use = "a cheat carried out at once changes what the seat is told now"]
     pub fn queue(&mut self, player: PlayerId, command: Command) -> Option<TurnMessage> {
         if let Err(r) = self.check(player, &command) {
@@ -142,9 +150,13 @@ impl Host {
             match self.cheat_at_once(player, cheat) {
                 AtOnce::No => {}
                 AtOnce::Refused => return None,
-                AtOnce::Done(seat) => return Some(self.message(seat)),
+                AtOnce::Done(seat) => {
+                    self.record.push(player, command);
+                    return Some(self.message(seat));
+                }
             }
         }
+        self.record.push(player, command.clone());
         self.world.queue(player, command);
         None
     }
@@ -161,13 +173,24 @@ impl Host {
     /// `truth` feature has it.
     #[cfg(feature = "truth")]
     pub fn queue_line(&mut self, player: PlayerId, line: &str) {
-        self.world.queue_command(player, line);
+        match Command::parse(line, &self.world) {
+            Ok((command, warning)) => {
+                if let Some(m) = warning {
+                    self.warnings.push(format!("command {line:?}: {m}"));
+                }
+                // As the scenarios have always given them: a cheat that
+                // acts at once is carried out, and nothing is told.
+                let _told = self.queue(player, command);
+            }
+            Err(m) => self.warnings.push(format!("command {line:?}: {m}")),
+        }
     }
 
     /// Runs one turn: the commands queued, then 300 ms of game time.
     /// Returns what `seat` was told and the warnings since the last step.
     pub fn step(&mut self, seat: PlayerId) -> TurnReport {
         self.world.update();
+        self.record.step();
         let SeatTurn {
             end_of_turn,
             then,
@@ -189,6 +212,7 @@ impl Host {
     /// The warnings wait for [`Host::drain_warnings`].
     pub fn step_seats(&mut self, seats: &[PlayerId]) -> Vec<SeatTurn> {
         self.world.update();
+        self.record.step();
         let mut turns = std::collections::BTreeMap::new();
         for seat in self.seats.clone() {
             if seats.contains(&seat) {
@@ -232,6 +256,12 @@ impl Host {
                 message: Arc::new(self.message(seat)),
             },
         }
+    }
+
+    /// The record of the game so far: what it was built from, every
+    /// command taken and every step.
+    pub fn record(&self) -> &Record {
+        &self.record
     }
 
     /// What every seat is sent once, when the game starts.

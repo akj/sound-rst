@@ -59,6 +59,13 @@
 //! - With the `truth` feature, `World::digest_u64` sums up the whole
 //!   state, to compare two runs.
 //!
+//! # Records
+//!
+//! A [`Host`] keeps the [`Record`] of its game: its set-up and every
+//! command it took, turn by turn. [`Host::replay`] builds the game again
+//! from a record; with the `serde` feature, a record is written and read
+//! as a file (see [`record`]).
+//!
 //! # Computer players
 //!
 //! A computer player is a [`Player`] of kind `Computer` (scripted by the
@@ -97,6 +104,7 @@ mod playerlogic;
 pub mod pyrandom;
 mod questions;
 mod received;
+pub mod record;
 pub mod rules;
 pub mod seat_view;
 pub mod setup;
@@ -130,6 +138,9 @@ pub use message::{
 };
 pub use player::{Controller, ControllerKind, Player, PlayerKind};
 pub use received::MAX_OBJECTIVES;
+#[cfg(feature = "serde")]
+pub use record::{Completeness, ReadError};
+pub use record::{Record, RecordedTurn, ReplayError};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;
