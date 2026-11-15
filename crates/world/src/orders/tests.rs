@@ -1176,3 +1176,27 @@ fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
     assert!(all(&w, me, "buildingsite").is_empty());
     assert!(w.pl(me).resources >= before);
 }
+
+#[test]
+fn a_trigger_order_with_an_unreadable_choice_gives_no_order() {
+    use crate::triggers::Expr;
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 townhall farm");
+    w.update();
+    let townhall = find(&w, a, "townhall");
+    let resources = w.pl(a).resources.clone();
+    let word = |s: &str| Expr::Word(s.to_owned());
+    // `(order (a1 townhall ()) ((train peasant)))`: the empty list comes
+    // after the town hall is chosen.
+    let select = Expr::List(vec![word("a1"), word("townhall"), Expr::List(vec![])]);
+    let orders = Expr::List(vec![Expr::List(vec![word("train"), word("peasant")])]);
+    let stopped = w.lang(a, "order", &[select, orders]);
+    assert_eq!(
+        stopped,
+        Err(crate::abort::Abort::Trigger(
+            crate::abort::TriggerError::ListForWord
+        ))
+    );
+    assert!(w.e(townhall).orders().is_empty());
+    assert_eq!(w.pl(a).resources, resources);
+}

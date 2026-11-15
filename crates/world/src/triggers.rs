@@ -3,7 +3,7 @@
 
 use crate::abort::{Res, TriggerError};
 use crate::command::{Cheat, Command, Order, Queue};
-use crate::entity::{EntityId, Place, PlayerId, Target};
+use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event};
 use crate::map::MAX_START_UNITS;
 use crate::msg::{Msg, MsgPart, msg};
@@ -323,6 +323,9 @@ impl World {
                 Err(m) => self.warn(format!("problem with order: {m}")),
             }
         }
+        // The whole choice is read before any unit receives an order: a
+        // trigger that stops is tried again, and would give them again.
+        let mut chosen: Vec<(SquareId, i64, &str)> = Vec::new();
         let mut default_square = "a1".to_owned();
         let mut n: i64 = 1;
         for x in select {
@@ -336,22 +339,25 @@ impl World {
                 let s = self
                     .square_by_name(&default_square)
                     .ok_or_else(|| TriggerError::NoSuchSquare(default_square.clone()))?;
-                // The list may change while orders are given, as in the
-                // original, which walks it by index.
-                let mut i = 0;
-                while let Some(&o) = self.square(s).objects.get(i) {
-                    if *self.e(o).type_name == *x && self.e(o).player() == Some(p) {
-                        for order in &orders {
-                            self.take_order(o, order.clone(), false, false, None)?;
-                        }
-                        n -= 1;
-                        if n == 0 {
-                            break;
-                        }
-                    }
-                    i += 1;
-                }
+                chosen.push((s, n, x));
                 n = 1;
+            }
+        }
+        for (s, mut n, x) in chosen {
+            // The list may change while orders are given, as in the
+            // original, which walks it by index.
+            let mut i = 0;
+            while let Some(&o) = self.square(s).objects.get(i) {
+                if *self.e(o).type_name == *x && self.e(o).player() == Some(p) {
+                    for order in &orders {
+                        self.take_order(o, order.clone(), false, false, None)?;
+                    }
+                    n -= 1;
+                    if n == 0 {
+                        break;
+                    }
+                }
+                i += 1;
             }
         }
         Ok(())
