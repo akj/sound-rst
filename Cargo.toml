@@ -16,6 +16,9 @@ all = { level = "warn", priority = -1 }
 
 [profile.dev]
 opt-level = 1
+# File and line numbers only: panics and backtraces are unchanged, a
+# debugger cannot show variables, and build folders are under half the size.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 3
