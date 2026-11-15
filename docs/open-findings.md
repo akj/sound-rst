@@ -2,27 +2,28 @@
 
 33 open findings from the design review of the Rust port of SoundRTS, grouped by what they affect: what you hear, multiplayer, gameplay, and code structure. The six multiplayer fixes, the game record and the recording cutover are merged and are not repeated here.
 
-Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54, and again the same day against `6506741`, after pull requests 6 to 63.
+Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54, again the same day against `6506741`, after pull requests 6 to 63, and a third time that day against `64ef866`, after pull requests 6 to 73.
 
 ## Status on 15 November 2026
 
-Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. The statuses changed by pull requests 57, 60, 62 and 63 (M1, M2, M4, M8, N2, N4 to N8, N10, and N18 to N21) were set by the agent that merged them, from their tests and descriptions, against `6506741`. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
+Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. The statuses changed by pull requests 57, 60, 62 and 63 (M1, M2, M4, M8, N2, N4 to N8, N10, and N18 to N21) were set by the agent that merged them, from their tests and descriptions, against `6506741`. The same holds for those changed by pull requests 65 to 73 (M10, G5, C1, C5, N9, N11, N12, N14 to N16, N21 and N22), against `64ef866`. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
 
 Two limits apply to every status.
 
 - **What you hear.** Every fix is proved on the recorded speech device only. You have not yet reported on a listening check of the game itself. So "fixed" for a finding about what you hear means fixed in the recorded speech tests, not yet heard through NVDA.
 - **Multiplayer.** Every fix is proved only by tests through a real server on 127.0.0.1, or against the client's fake server where a finding says so. Nobody has played over a real network.
 
-Fixed, 14 findings:
+Fixed, 15 findings:
 
 - H1, H2, H3, H4, H5, H8
 - M1, M2, M3, M4, M7, M8, M9
-- G3
+- G3, G5
 
 Partly fixed, 8 findings:
 
 - H6
-- G1, G5
+- M10
+- G1
 - C1, C2, C4, C6, C7
 
 Open, 6 findings:
@@ -32,15 +33,15 @@ Open, 6 findings:
 - G2, G4
 - C5
 
-Changed, 3 findings: the finding no longer describes the code, and something different is true now.
+Changed, 2 findings: the finding no longer describes the code, and something different is true now.
 
-- M10, M11, M12
+- M11, M12
 
 Decided against, or put off on purpose, 2 findings:
 
 - C3, C8
 
-That is 33. Twenty-one findings from the work since, N1 to N21, are at the end. Of those, N2, N4 to N8 and N10 are fixed, and N14 is being worked on.
+That is 33. Twenty-two findings from the work since, N1 to N22, are at the end. Of those, N2, N4 to N10 and N14 to N16 are fixed, and N11 and N21 partly.
 
 ## How far each finding was checked
 
@@ -332,7 +333,7 @@ Checked today for the square width; the timing point is from Sol's review of pul
 
 ### M10. Game records stop at out-of-sync reports
 
-**Changed.** The out-of-sync record and `--check-record` were deleted with lockstep in pull request 54, since a game on a server can no longer go out of sync. So no game is recorded at all now. There is still no way to listen to a game, save one or load one. The blocker named below is gone: since pull request 10 the four cheats go through the host as commands (`Cheat` in `crates/world/src/command.rs`, sent from `crates/client/src/game/misc.rs`), and a game on a server has no cheats. The server's own record of a game is not built. Pull requests 48 and 54 list it as later work, and the top of `crates/server/src/game.rs` says where it would attach.
+**Partly fixed** in pull request 73, in the recorded speech tests; not yet heard through NVDA. Every game keeps a record: what it was built from, then each turn's commands in the order they ran (`Record` in `crates/world/src/record.rs`; the host keeps it itself, so no caller can forget a command). A single-player game is saved from the game menu, and by itself when you quit one that is not over; "load a game" in the single-player menu replays the record without speech or sound and hands you the game at that point. An hour of a 4-player game loaded in 3.3 seconds in a release build. The server writes each game's record when given `--records`, and `soundrts --check-record` replays a record or a save. Tests: `a_recorded_game_replays_to_the_same_digest_at_every_turn` and `a_record_cut_short_reads_to_a_whole_earlier_turn` in `crates/world/src/record/tests.rs`; `a_game_saved_and_loaded_tells_what_it_told_and_plays_on_the_same` in `crates/client/src/saves/load/tests.rs`. Not built: listening to a recorded game. A save or record loads only on the version of the simulation that wrote it, as decided (`docs/refactor-design.md`, section 13). Loose ends are in N22.
 
 Checked today. Size: small for the first step, large for saved games.
 
@@ -471,7 +472,7 @@ Count checked today. Size: large in total. Do it alongside other work, not as a 
 
 ### G5. The client still carries code that only kept it in step with Python
 
-**Partly fixed.** The menu quirk is fixed in pull request 49: a remembered menu opens on the last choice and lists it once (`Menu::append` in `crates/client/src/menu.rs`). Test: `a_remembering_menu_opens_on_its_last_choice_and_lists_it_once` in `crates/client/tests/menus.rs`. The rest remains:
+**Fixed** in pull requests 49 and 65, in the recorded speech tests; not yet heard through NVDA. No error text in the client quotes Python, and the imitation error type is gone: each place became a case the types rule out, a deliberate sound, or a handled case. A seed is no longer drawn when a fixed one replaces it, and a footstep offset is drawn once when a unit first walks near you; this changed which sound of a set plays in the eight game transcripts, and no spoken line. The menu quirk went in pull request 49 (`a_remembering_menu_opens_on_its_last_choice_and_lists_it_once` in `crates/client/tests/menus.rs`). Left, on purpose: `sort_by_square_id` in `crates/client/src/game/alerts.rs`, because changing it would reorder spoken news; and the simulation's own errors, which still carry Python's text into the client's log (G4).
 
 - A seed is still drawn when a fixed seed replaces it, so that later sounds stay the same (`Session::new_seed` in `crates/client/src/session.rs`).
 - 13 errors in the game interface still carry Python's text, such as "'NoneType' object has no attribute 'title'", in `crates/client/src/game/entity.rs`, `selection.rs` and `squares.rs`.
@@ -494,10 +495,10 @@ None of these changes what a player hears. Each says what would make it worth do
 
 ### C1. Orders travel as text and are parsed again at every step
 
-**Partly fixed** in pull requests 10, 19, 53 and 54. The interface builds typed commands (`Command` in `crates/world/src/command.rs`). A game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`, so a misspelt keyword does not compile. An order in a unit's queue now holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
+**Partly fixed** in pull requests 10, 19, 53, 54 and 68. The interface builds typed commands (`Command` in `crates/world/src/command.rs`), and a game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`. An order in a unit's queue holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). The order menu is typed entries the client reads without parsing (`MenuEntry` in `crates/world/src/questions.rs`), and a rallying point is the target it was given. These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
 
-- The order menu is still a list of text entries such as `train footman`, which the interface parses again each time it builds the menu (`OrderTypeView::new` in `crates/client/src/game/order.rs`).
-- A rallying point is still stored as text and parsed again for each unit trained, and a zoom target keeps a text id; see N9.
+- The computer player still gives its orders by name.
+- A unit type's own lists (what it can train, build and research, and its requirements) are still names inside the rules.
 - Map triggers are text by nature, and the recorded traces read text orders behind the `truth` feature.
 
 From the review. Size: large.
@@ -557,7 +558,7 @@ First two checked today; the rest from the review. Nothing measured. Size: small
 
 ### C5. Two very large structures
 
-**Open.** The world still has 12 public fields, as at `612afd1`. But the interface can no longer reach the world (C2), so only the simulation and its tests can change them. The interface structure, `GameInterface` in `crates/client/src/game/mod.rs`, has 52 fields, against 55 at `612afd1` by the same count; the "about 70" below was an estimate. The long functions were not measured again.
+**Open**, with one part done. A thing on the map had 44 fields shared by every kind; since pull request 72 it has 10 and one enum of its kinds, each with its own state (`Kind` and `CreatureKind` in `crates/world/src/entity.rs`). The world still exposes its main fields, though only the simulation and its tests can reach them (C2). The interface structure, `GameInterface` in `crates/client/src/game/mod.rs`, is still one large structure. The long functions were not measured again.
 
 From the review. Size: medium each. Low priority.
 
@@ -690,7 +691,7 @@ From pull request 53, as a suspected bug. **Fixed** in pull request 62: the cost
 
 ### N9. Some game state is still text
 
-From pull request 53's scope notes. Open. Checked by reading.
+From pull request 53's scope notes. **Fixed** in pull request 68 for the three points below: a rallying point is the typed target it was given, a zoom target holds what it means, and the order menus are typed entries. Upgrades, forbidden technologies and factions became ids in the same pull request. What is still text is listed under C1.
 
 **Now.**
 
@@ -710,7 +711,7 @@ From the review of pull request 48. **Fixed** in pull request 62. The simulation
 
 ### N11. Nothing checks that players have the same sounds and names
 
-From pull request 54. Open.
+From pull request 54. **Partly fixed** in pull request 71. The game's start now names, by a hash, the exact rules text the server built the game from, the map's own rules included; a client whose rules differ does not play, and says "cannot play: your game data differs from this game's". That matters more since pull request 68, because the stream names unit types by their place in the rules. Test: `a_game_whose_rules_differ_from_the_players_is_not_played` in `crates/client/tests/multiplayer.rs`. Still open: sounds and spoken names come from each player's own files, and nothing checks those.
 
 **Now.** Joining a room needs the same content hash, which covers the simulation version, the rules and the computer players' scripts (`content_hash` in `crates/client/src/resource.rs`). Each client names units and plays sounds from its own files. Nothing checks that those match what the server's game uses.
 
@@ -730,7 +731,7 @@ From pull request 20, where it was named and kept. Open. Checked by reading.
 
 ### N14. Host powers are not handed on when the room's host leaves a game on a server
 
-From pull requests 48 and 54. Open; being worked on in another branch. Checked by reading, not run.
+From pull requests 48 and 54. **Fixed** in pull request 66, through a real server on 127.0.0.1. When the organizer leaves, is defeated or does not come back in time, the powers pass to the next player still in the game, never to a watcher, and everyone hears "<name> is now the organizer". A paused game cannot stay stuck. Test: `the_hosts_powers_pass_to_the_next_player_and_a_paused_game_is_never_stuck` in `crates/server/tests/games.rs`.
 
 **Now.** A room hands its host on to another player while the room is gathering. During a game it does not. Only the room's host can change the speed or remove a player, so after the host leaves, nobody can.
 
@@ -738,13 +739,13 @@ From pull requests 48 and 54. Open; being worked on in another branch. Checked b
 
 ### N15. Connections are not encrypted
 
-From pull request 54, which lists TLS as later work. Open.
+From pull request 54. **Fixed** in pull request 71 for a server behind a proxy. An address that starts with `wss://` is encrypted, with the certificate and the server's name checked against roots built into the game; nothing falls back to a plain connection, and a bad certificate is refused with its reason. The server program itself still speaks plainly: a public server sits behind a proxy that speaks TLS, and the README shows how. An address with no scheme, as a game hosted from a player's computer has, is not encrypted. Tests in `crates/client/tests/encrypted.rs`, among them `a_certificate_for_another_name_is_refused_with_the_reason` and `an_encrypted_address_of_a_plain_server_is_not_reached_plainly`. Not tried against a real public server.
 
 **Now.** The client connects with `ws://` (`crates/client/src/net/conn.rs`). Chat, logins and seat tokens cross the network as they are.
 
 ### N16. Escape does not skip a whole cut scene everywhere
 
-From pull request 50. Open.
+From pull request 50. **Fixed** in pull request 65, in the recorded speech tests; not yet heard through NVDA. Escape skips the rest of a cut scene between missions and in a game, and no skipped line makes a sound. Test: `escape_skips_the_rest_of_a_cut_scene_which_stays_in_the_log_unheard` in `crates/client/tests/voice.rs`.
 
 **Now.**
 
@@ -795,7 +796,7 @@ From pull request 63. Open.
 
 ### N21. Loose ends of returning after a lost connection
 
-From pull request 57. Open; the first two are being worked on in another branch.
+From pull request 57. **Partly fixed** in pull request 66: the first two points below. A chat line or a flare given while the connection is lost says "not sent: not connected", once (`chat_lines_and_flares_given_while_away_are_not_sent_and_the_player_hears_it_once` in `crates/client/tests/multiplayer.rs`). A seat taken back gets its login back if no other connection holds it, and the client decides who is the organizer by seat, not by name (`a_player_back_under_a_numbered_login_has_the_seats_login_again` in `crates/server/tests/games.rs`). The last two points are open.
 
 **Now.**
 
@@ -803,3 +804,31 @@ From pull request 57. Open; the first two are being worked on in another branch.
 - Rarely the returning connection is given a numbered login such as "andrew2", because the server has not yet dropped the old one. The room's host then does not get the host's menu items back.
 - When the network is still down at the end of the hold, the client can stop trying a few seconds before the server gives up the seat.
 - A test cannot show a connection that stalls half open, a hostname lookup that hangs, or Wi-Fi that comes back with a new address.
+
+### N22. Loose ends of the work of pull requests 65 to 73
+
+Each is from the pull request named, as its agent reported it. Open. None was reproduced for this list.
+
+**Saves and records (73).**
+
+- A training save loads with the mods you have now, not the ones it was saved with.
+- The server writes no record of a game stopped because a turn took too long, or cut off by shutting the server down.
+- Listening to a recorded game is not built.
+
+**Flares and the organizer (66).**
+
+- A newer flare from the same ally does not replace an older one you have not heard yet. The server's limit of 3 in 10 seconds bounds the queue.
+- If another connection still holds your login when your seat comes back, you keep the numbered one, with your seat and the organizer's items.
+
+**The interface (65).**
+
+- In the console, `s 0` and `s nan` are accepted as speeds.
+- A line of the bindings file that is refused leaves the key with its earlier binding.
+
+**Types in the simulation (68, 72).**
+
+- What a seat is told of a thing on the map (`KnownEntity` in `crates/world/src/known.rs`) is still one structure for every kind, so the interface tests the class before it reads a field. Making it an enum changes the wire.
+- An exit's blockers and each blocker's exit record the same link from both ends.
+- "No goal" for a unit is still a very large number, which a seat is sent.
+- Rules cannot declare which type plays the worker, farm, town hall, gate and wood roles; today's names are used.
+- The copied Python error stops did not fall with the new types (G4).
