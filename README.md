@@ -92,7 +92,7 @@ When you quit a game that is not over, or close the window during one, the game 
 
 To load a game, choose "load a game" in the single-player menu. The item is there once you have a save. The list starts with the newest save. For each save it says the map or mission, the game time, and how long ago you saved it. The last game starts with "last game". Delete removes the save you are on after you confirm.
 
-Loading plays the game again from its start, silently. You hear "loading", then every few seconds how far it has got. An hour of play takes about 5 seconds on a fast computer. Escape stops loading. When the game is ready, you hear "loaded" and the square under the cursor. The game goes on from where you saved it, with the same cursor and the same units selected. The game does not keep the log of messages, the news you have heard, the zoom, or an order you were choosing.
+Loading plays the game again from its start, silently. You hear "loading", then every few seconds how far it has got. An hour of play takes a few seconds on a fast computer. Escape stops loading. When the game is ready, you hear "loaded" and the square under the cursor. The game goes on from where you saved it, with the same cursor and the same units selected. The game does not keep the log of messages, the news you have heard, the zoom, or an order you were choosing.
 
 A save loads only in the version of the game that made it. After an update, an old save says "cannot load, made by another version of the game".
 
