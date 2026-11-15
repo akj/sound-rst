@@ -2152,7 +2152,7 @@ impl World {
             }
             Some(t) => {
                 let here = self.e(id).place;
-                if self.is_very_dangerous(p, &t)? {
+                if self.is_very_dangerous(p, &t) {
                     let here_dangerous = match here {
                         Some(Place::Square(s)) => self.square_is_very_dangerous(p, s),
                         _ => return Err(Invariant::ActingInside.into()),

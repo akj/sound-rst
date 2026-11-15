@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::abort::{Abort, Invariant, Res};
+use crate::abort::{Invariant, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
 use crate::msg::{Msg, msg};
@@ -156,15 +156,17 @@ impl World {
         self.pl(p).enemy_menace.contains_key(&s) && self.pl(p).enemy_presence.contains(&s)
     }
 
-    /// `is_very_dangerous` of a square or an exit.
-    pub fn is_very_dangerous(&self, p: PlayerId, t: &Target) -> Res<bool> {
+    /// `is_very_dangerous` of a square or an exit. Any other target, such
+    /// as a unit a moving explorer was sent to before, is not a way that
+    /// leads into danger.
+    pub fn is_very_dangerous(&self, p: PlayerId, t: &Target) -> bool {
         match t {
-            Target::Square(s) => Ok(self.square_is_very_dangerous(p, *s)),
-            Target::Entity(e) if self.e(*e).is_exit() => Ok(self.exit_is_very_dangerous(p, *e)),
+            Target::Square(s) => self.square_is_very_dangerous(p, *s),
+            Target::Entity(e) if self.e(*e).is_exit() => self.exit_is_very_dangerous(p, *e),
             Target::Memory(m) if m.snapshot.is_exit() => {
-                Ok(self.exit_is_very_dangerous(p, m.snapshot.id))
+                self.exit_is_very_dangerous(p, m.snapshot.id)
             }
-            _ => Err(Abort::new("object has no attribute 'other_side'")),
+            _ => false,
         }
     }
 
@@ -664,20 +666,20 @@ impl World {
         &self.pl(p).counterattack_places
     }
 
-    /// `time_has_come` of a computer player, for `wait` orders.
-    pub(crate) fn time_has_come(&mut self, p: PlayerId, target: Option<&Target>) -> Res<bool> {
+    /// `time_has_come` of a computer player, for `wait` orders. A player
+    /// without a script, to whom only a map's trigger can give `wait`,
+    /// never gives the signal: the unit waits.
+    pub(crate) fn time_has_come(&mut self, p: PlayerId, target: Option<&Target>) -> bool {
         if !matches!(self.pl(p).kind, PlayerKind::Computer { .. }) {
-            return Err(Abort::new(
-                "'Player' object has no attribute 'time_has_come'",
-            ));
+            return false;
         }
         let Some(Target::Square(s)) = target else {
-            return Ok(false);
+            return false;
         };
         if self.pl(p).cataclysmic_places.contains(s) {
-            return Ok(false);
+            return false;
         }
-        Ok(self.computer_time_has_come(p, *s))
+        self.computer_time_has_come(p, *s)
     }
 
     // lookups
@@ -855,16 +857,18 @@ impl World {
                             .contains(&resource_type)
                     });
                 if stores || site_stores {
-                    let d = match e.place {
-                        Some(Place::Square(s)) => self.shortest_path_distance_to(
-                            start,
-                            s,
-                            Some(p),
-                            AirGround::Ground,
-                            false,
-                        )?,
-                        _ => return Err(Abort::new("the warehouse is not on a square")),
+                    // A mod's unit that stores may be inside a transport,
+                    // where nobody can bring it anything.
+                    let Some(Place::Square(s)) = e.place else {
+                        continue;
                     };
+                    let d = self.shortest_path_distance_to(
+                        start,
+                        s,
+                        Some(p),
+                        AirGround::Ground,
+                        false,
+                    )?;
                     if d == 0 {
                         return Ok(Some(u));
                     }

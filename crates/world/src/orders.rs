@@ -1928,7 +1928,7 @@ impl World {
                 let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
-                if self.time_has_come(p, aim.target.as_ref())? {
+                if self.time_has_come(p, aim.target.as_ref()) {
                     self.mark_as_complete(unit, uid);
                 }
                 Ok(())

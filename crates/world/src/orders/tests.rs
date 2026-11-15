@@ -946,3 +946,29 @@ fn an_effect_the_rules_cannot_apply_is_dropped_when_they_load_and_its_research_h
     assert_eq!(w.e(footman).stats, stats);
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+#[test]
+fn danger_waiting_and_warehouses_have_answers_for_every_unit_and_player() {
+    // A mod whose footman stores gold.
+    let (mut w, a, _) = two_humans("def footman\nstorable_resource_types 0\n");
+    w.queue_command(a, "cmd add_units a1 footman new_flyingmachine");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    // A unit is not a way into danger.
+    assert!(!w.is_very_dangerous(a, &Target::Entity(footman)));
+    // A player without a script never gives the signal to stop waiting.
+    assert!(!w.time_has_come(a, Some(&Target::Square(a1))));
+    // A warehouse inside a transport is out of reach.
+    assert_eq!(
+        w.nearest_warehouse(a, Place::Square(a1), 0, false),
+        Ok(Some(footman))
+    );
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    assert_eq!(w.e(footman).place, Some(Place::Inside(machine)));
+    assert_eq!(
+        w.nearest_warehouse(a, Place::Square(a1), 0, false),
+        Ok(None)
+    );
+}
