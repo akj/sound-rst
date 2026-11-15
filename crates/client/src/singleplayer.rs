@@ -18,8 +18,9 @@ use crate::net::words::{self, text};
 use crate::session::Session;
 
 /// The campaigns, a training game, loading a saved game if there is one,
-/// and back. The menu is made again each time it comes back, so that a
-/// game saved meanwhile can be loaded.
+/// listening to a game if there is one to listen to, and back. The menu is
+/// made again each time it comes back, so that a game saved meanwhile can
+/// be loaded.
 pub fn single_player_menu(cx: &mut Client) -> Result<(), Exit> {
     loop {
         let mut menu = build_single_player_menu(cx);
@@ -48,6 +49,12 @@ pub(crate) fn build_single_player_menu(cx: &Client) -> Menu {
         choices.push(Choice::new(
             text(words::LOAD_A_GAME),
             Action::run(|cx| crate::saves::load::load_menu(cx).map(|()| Flow::Stay)),
+        ));
+    }
+    if crate::saves::listen::any_to_listen(cx) {
+        choices.push(Choice::new(
+            text(words::LISTEN_TO_A_GAME),
+            Action::run(|cx| crate::saves::listen::listen_menu(cx).map(|()| Flow::Stay)),
         ));
     }
     choices.push(Choice::new(msg(mp::BACK), Action::CloseMenu));

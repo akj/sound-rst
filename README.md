@@ -12,6 +12,7 @@ Single-player and multiplayer games work.
 - Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
 - The campaigns, with cut scenes, objectives, and the chapter bookmark.
 - Saving and loading a single-player game. See [Saved games](#saved-games).
+- Listening to a recorded game, yours or someone else's. See [Listen to a game](#listen-to-a-game).
 - Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.
 - Every in-game command in `res/ui/bindings.txt` except fullscreen.
 - The 13 languages of the original.
@@ -19,7 +20,6 @@ Single-player and multiplayer games work.
 The following parts of the original are not ported:
 
 - Games with players of the original game. The port has its own server and protocol.
-- Replays: listening to a recorded game.
 - The map editor.
 - The on-screen map. The window stays blank.
 - The Documentation menu item, the update check, and the statistics upload.
@@ -99,6 +99,31 @@ A save loads only in the version of the game that made it. After an update, an o
 A mission's save is separate from the campaign's bookmark. Winning a loaded mission unlocks the next chapter, as winning it from the campaign menu does.
 
 The saves are in the `saves` folder of the settings folder.
+
+### Listen to a game
+
+You can listen to a game again, yours or someone else's, to learn from it or to settle what happened. Choose "listen to a game" in the single-player menu. The list has your saves and the games of the `records` folder of the settings folder, newest first:
+
+- "last finished game": the game you played last to its end, won, lost or left. There is one for training and one for missions, and each new one replaces the old one.
+- The games you kept with "keep this game's record".
+- Any record you put in the `records` folder: a save someone sent you, or a record that a server wrote (see [Run a server](#run-a-server)). A record without a save's title is said by its file name and how long ago it was written.
+
+You listen as a watcher watches a game: from the side of one player at a time, as that player heard it. You hear "watching" and the player's name, then the game from its start. Every question key, the cursor, the log and the news work as in a game. You give no orders: a key that gives an order says "watching: you give no orders", once. Control F12 follows the next player still in the game, and Control Shift F12 the previous one. You can also follow a computer: you hear its units, what it sees and its resources, but not the events of a turn, such as an attack or a unit ready, because the game tells a computer none. When the player you follow leaves the game, you follow the next person still in it. When nobody is left, you hear the result and the score of the player you followed.
+
+The game plays at normal speed, as it was played, and you set the pace:
+
+| Key | Does |
+| --- | --- |
+| Equals | Faster: fast 2, 4 and 8, then fastest. At the fastest pace, speech and sounds stop, and you hear only how far the game has got, as when loading. |
+| Minus | Slower, down to slow. |
+| Shift Space | Pause, or resume. While paused, the keys still answer. |
+| Right bracket | Go forward a minute of game time. With Shift, five minutes. |
+| Left bracket | Go back a minute. With Shift, five minutes. |
+| F3 | Where you are, of the whole game, the pace, and whether it is paused: "3 minutes 20 seconds of 12 minutes 0 seconds , speed normal". |
+
+A jump forward plays the game again silently and fast; a jump back plays it again from its start. Then you hear where you are. Nothing of the stretch you skipped is said: the news that waited is kept in the log, unheard. An hour of play takes a few seconds at most on a fast computer. The game menu has the same choices, for the pace, the pause and the jumps, and "keep this game's record", which copies the game you listen to into the `records` folder, so that the next game does not replace it.
+
+When the game ends, you hear "end of the recording", then the result and the score of the player you follow. A player still in the game when the recording ends has a game "Not over". If a part of the file is damaged, you hear "the recording is damaged: it stops here". The game stays where it stopped, and you can still review what came before, go back, or leave from the game menu. A game made by another version of the game is refused, as loading refuses it.
 
 ### Sound and speech settings
 
@@ -244,7 +269,7 @@ The server listens on TCP port 2501 for players and answers on UDP port 2501 to 
 
 Add `--records <folder>` to keep a record of each game played on the server. The server writes the record when the game ends, or when it stops the game, and keeps the newest 100. A record holds what the game was built from and every player's commands, so it replays the whole game. It also holds the players' logins. It does not hold the chat. A game stopped because a turn took too long is not recorded.
 
-To replay a record, or a saved game, from the command line, run `soundrts --check-record <file>`. It says how many turns ran and who was still in the game at the end, or why the file cannot be replayed. Use it to reproduce a bug report that comes with a record or a save. It needs no game data.
+To listen to a record, put its file in the `records` folder of the settings folder, and choose "listen to a game" in the single-player menu. See [Listen to a game](#listen-to-a-game). To replay a record, or a saved game, from the command line, run `soundrts --check-record <file>`. It says how many turns ran and who was still in the game at the end, or why the file cannot be replayed. Use it to reproduce a bug report that comes with a record or a save. It needs no game data.
 
 ### A public server
 

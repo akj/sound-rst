@@ -1,5 +1,6 @@
 //! Saved games: a single-player game written to the player's `saves`
-//! folder, and read back.
+//! folder, and read back. The same file, written to the `records` folder,
+//! keeps a finished game to listen to ([`listen`]).
 //!
 //! A save is the game's record so far ([`Record`]), after one line of its
 //! own: what game it is and what the menus say of it, and the little of
@@ -426,9 +427,14 @@ pub fn played_seat(record: &Record, first: PlayerId) -> PlayerId {
 /// when the player quit, its title, its game time, and how long ago it was
 /// saved, as of `now` (seconds since 1970).
 pub fn spoken_entry(header: &SaveHeader, now: u64) -> Msg {
+    spoken_entry_with(header, now, words::LAST_GAME)
+}
+
+/// As [`spoken_entry`], with `last` for the game kept by itself.
+pub fn spoken_entry_with(header: &SaveHeader, now: u64, last: &str) -> Msg {
     let mut m = Vec::new();
     if header.last_game {
-        m.extend(text(words::LAST_GAME));
+        m.extend(text(last));
         m.extend(msg(mp::COMMA));
     }
     m.extend(header.title.iter().cloned());
@@ -533,6 +539,7 @@ fn how_it_ended(host: &soundrts_world::Host) -> String {
     out
 }
 
+pub mod listen;
 pub mod load;
 
 #[cfg(test)]

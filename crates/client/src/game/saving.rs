@@ -88,6 +88,34 @@ impl GameInterface {
         }
     }
 
+    /// Keeps the record of a game run here that has ended, won, lost or
+    /// left, silently, as the last finished game of its kind in the
+    /// records folder, where the player can listen to it.
+    pub fn keep_finished(&mut self, cx: &mut Client) {
+        let Source::Local(l) = &self.source else {
+            return;
+        };
+        let Some(info) = &l.save else {
+            return;
+        };
+        let written = saves::write_save(
+            &cx.paths.records(),
+            info,
+            l.host.record(),
+            &InterfaceState::default(),
+            saves::wall_now(),
+            Slot::LastGame,
+        );
+        match written {
+            Ok(path) => cx
+                .log
+                .info(format!("kept the finished game in {}", path.display())),
+            Err(e) => cx
+                .log
+                .warning(format!("cannot keep the finished game: {e}")),
+        }
+    }
+
     /// Saves the game as the last game, silently, if it can be saved and
     /// is not over: the player is leaving it.
     pub fn save_on_leaving(&mut self, cx: &mut Client) {

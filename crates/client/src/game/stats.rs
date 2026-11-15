@@ -15,19 +15,28 @@ use super::style_msg;
 /// buildings, each resource, then the score. None before the game is over
 /// for the player: the statistics come with its end.
 pub fn score_msgs(view: &SeatView, style: &Style) -> Vec<Msg> {
+    score_msgs_of(view, style, false)
+}
+
+/// As [`score_msgs`]; with `still_on`, the outcome is that the game was
+/// not over for the player: a recording that ends while the player is
+/// still in the game.
+pub fn score_msgs_of(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg> {
     let Some(stats) = view.stats() else {
         return Vec::new();
     };
     let resources = view.resources();
     let outcome = if view.has_victory() {
-        mp::VICTORY
+        msg(mp::VICTORY)
+    } else if still_on {
+        crate::net::words::text(crate::net::words::NOT_OVER)
     } else {
-        mp::DEFEAT
+        msg(mp::DEFEAT)
     };
     let (minutes, seconds) = stats.game_duration_in_minutes_seconds(view.time());
     let mut msgs = vec![
         [
-            msg(outcome),
+            outcome,
             msg(mp::AT),
             nb2msg(minutes),
             msg(mp::MINUTES),
