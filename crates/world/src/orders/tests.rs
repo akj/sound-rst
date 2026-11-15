@@ -836,3 +836,23 @@ fn an_order_without_its_target_is_impossible_at_once_and_one_aimed_off_its_squar
     assert_eq!(after_order(&mut w, a, footman, &far), (impossible, vec![]));
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+#[test]
+fn entering_a_square_or_a_deposit_is_impossible() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 footman");
+    w.update();
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let gold = w.rules.type_id("goldmine").unwrap();
+    let mine = w.create_deposit(gold, a1, 75_000).unwrap();
+    w.update();
+    let impossible = (vec![EntityEvent::OrderImpossible(None)], vec![]);
+    let square = format!("enter {}", w.square(a1).id);
+    assert_eq!(after_order(&mut w, a, footman, &square), impossible);
+    assert_eq!(
+        after_order(&mut w, a, footman, &format!("enter {mine}")),
+        impossible
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}

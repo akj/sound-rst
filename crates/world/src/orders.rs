@@ -1167,10 +1167,10 @@ impl World {
         imperative: bool,
         order_id: Option<u64>,
     ) -> Res {
+        // A unit without an owner takes no order. `enter` tells only a unit
+        // with an owner to load.
         let Some(p) = self.e(unit).player() else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'get_object_by_id'",
-            ));
+            return Ok(());
         };
         if imperative {
             self.imperative_go(p, &mut request);
@@ -1383,10 +1383,14 @@ impl World {
                 let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
-                let target = self.resolve_target(p, &transport);
-                let tid = match &target {
-                    Some(Target::Entity(t)) => *t,
-                    _ => return Err(Abort::new("the target cannot take orders")),
+                // Only a unit with an owner, perceived now, can be told to
+                // load: a square, a deposit or a memory cannot.
+                let tid = match self.resolve_target(p, &transport) {
+                    Some(Target::Entity(t)) if self.e(t).player().is_some() => t,
+                    _ => {
+                        self.notify(unit, EntityEvent::OrderImpossible(None), false);
+                        return Ok(());
+                    }
                 };
                 self.take_order(
                     tid,
