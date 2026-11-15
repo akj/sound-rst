@@ -86,6 +86,7 @@ pub(crate) fn spawn(config: &ServerConfig, player_count: Arc<AtomicU32>) -> Lobb
             grace: config.grace_period,
             load_budget: config.load_budget,
             turn_budget: config.turn_budget,
+            records: config.records.as_deref().map(Arc::from),
         },
         seed: config.seed,
         overruns: game::Overruns::default(),
@@ -136,6 +137,7 @@ struct GameConfig {
     grace: std::time::Duration,
     load_budget: std::time::Duration,
     turn_budget: std::time::Duration,
+    records: Option<Arc<std::path::Path>>,
 }
 
 struct NewRoom {
@@ -904,6 +906,7 @@ impl Lobby {
             load_budget: self.games.load_budget,
             turn_budget: self.games.turn_budget,
             overruns: self.overruns.clone(),
+            records: self.games.records.clone(),
         };
         info!(room = id.0, seed, players = slots.len(), "starting game");
         let humans: Vec<ConnId> = seats.iter().map(|s| s.conn).collect();

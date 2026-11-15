@@ -18,9 +18,13 @@
 //!
 //! The room's host's powers (the clock and removals) are the game's to
 //! check: they stay with one player still in the game, and pass on when
-//! that player's seat is gone ([`Game::hand_on_host`]). Where the
-//! record would attach: the clock's branch of `run` takes every command of
-//! a turn, in the order the host runs them, with the turn's number.
+//! that player's seat is gone ([`Game::hand_on_host`]).
+//!
+//! The host records every command it runs. When the game ends, or is
+//! stopped, the server writes its record to the folder its settings name,
+//! if they name one ([`keep_record`]). A turn that panics is recorded too,
+//! so that the record replays to the panic; a turn that runs past its
+//! budget runs on with the host, and its game is not recorded.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -29,6 +33,7 @@
 )]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::time::Duration;
@@ -39,7 +44,9 @@ use soundrts_protocol::{
     RoomId, SeatChange, SeatToken, ServerMsg, Slot, SlotIndex, Speed, StartRefusal, Step,
     StopReason,
 };
-use soundrts_world::{Command, Event, GameSetup, Host, PlayerId, SeatTurn, SquareId, TurnMessage};
+use soundrts_world::{
+    Command, Event, GameSetup, Host, PlayerId, Record, SeatTurn, SquareId, TurnMessage,
+};
 use tokio::sync::mpsc;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::Bytes;
@@ -74,7 +81,16 @@ pub(crate) struct Settings {
     pub host: SlotIndex,
     /// The server's count of work past its budget.
     pub overruns: Overruns,
+    /// Where the game's record goes; `None` keeps none.
+    pub records: Option<Arc<Path>>,
 }
+
+/// The most records of games the server keeps in its records folder: the
+/// oldest are removed.
+pub const RECORDS_KEPT: usize = 100;
+
+/// The extension of a record's file.
+pub const RECORD_EXTENSION: &str = "jsonl";
 
 /// While this many builds or turns of games run on past their
 /// budget, the server starts no game.
@@ -480,14 +496,22 @@ async fn run(
                 let plans = game.plans();
                 #[cfg(feature = "fault-injection")]
                 fault::before_turn(fault);
+                // A panic in the turn keeps the host, for its record.
                 let work = move || {
-                    #[cfg(feature = "fault-injection")]
-                    fault::in_turn(fault);
-                    let deliveries = play_turn(&mut host, commands, plans);
-                    (host, deliveries)
+                    let played = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        #[cfg(feature = "fault-injection")]
+                        fault::in_turn(fault);
+                        play_turn(&mut host, commands, plans)
+                    }));
+                    (host, played)
                 };
                 match within(budget, &game.settings.overruns, work).await {
-                    Ok((h, deliveries)) => {
+                    Ok((h, Err(_panic))) => {
+                        warn!(room = room.0, turn = game.turn, "the game failed in a turn");
+                        keep_record(room, game.settings.records.clone(), &h).await;
+                        return Ending::Stopped(StopReason::Crashed);
+                    }
+                    Ok((h, Ok(deliveries))) => {
                         host = h;
                         game.turn = game.turn.saturating_add(1);
                         for w in host.drain_warnings() {
@@ -518,7 +542,78 @@ async fn run(
         game.hand_on_host();
     }
     info!(room = room.0, turns = game.turn, "game over");
+    keep_record(room, game.settings.records.clone(), &host).await;
     Ending::Over
+}
+
+/// Writes the record of the game of `host` to `records`, on a blocking
+/// thread, and removes the oldest beyond [`RECORDS_KEPT`]. What goes wrong
+/// is logged.
+async fn keep_record(room: RoomId, records: Option<Arc<Path>>, host: &Host) {
+    let Some(dir) = records else {
+        return;
+    };
+    let record = host.record().clone();
+    let written = tokio::task::spawn_blocking(move || write_record(&dir, room, &record)).await;
+    match written {
+        Ok(Ok(path)) => info!(room = room.0, path = %path.display(), "game recorded"),
+        Ok(Err(e)) => warn!(room = room.0, error = %e, "cannot write the game's record"),
+        Err(e) => warn!(room = room.0, error = %e, "cannot write the game's record"),
+    }
+}
+
+/// Writes `record` to a new file of `dir`, named after the time and the
+/// room: written whole beside it first, then renamed. Then removes the
+/// oldest records beyond [`RECORDS_KEPT`].
+fn write_record(dir: &Path, room: RoomId, record: &Record) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir)?;
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let base = format!("game-{secs:012}-room{}", room.0);
+    let mut path = dir.join(format!("{base}.{RECORD_EXTENSION}"));
+    let mut n: u32 = 2;
+    while path.exists() && n < 1000 {
+        path = dir.join(format!("{base}-{n}.{RECORD_EXTENSION}"));
+        n = n.saturating_add(1);
+    }
+    let beside = path.with_extension(format!("{RECORD_EXTENSION}.tmp"));
+    let result = (|| {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&beside)?);
+        record.write(&mut file)?;
+        file.flush()?;
+        let file = file.into_inner().map_err(|e| e.into_error())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&beside, &path)
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&beside);
+        return Err(e);
+    }
+    remove_oldest_records(dir)?;
+    Ok(path)
+}
+
+/// Removes the oldest records of `dir` beyond [`RECORDS_KEPT`]: their
+/// names start with their time.
+fn remove_oldest_records(dir: &Path) -> std::io::Result<()> {
+    let suffix = format!(".{RECORD_EXTENSION}");
+    let mut names: Vec<std::ffi::OsString> = std::fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .map(|e| e.file_name())
+        .filter(|n| {
+            let n = n.to_string_lossy();
+            n.starts_with("game-") && n.ends_with(&suffix)
+        })
+        .collect();
+    names.sort();
+    let extra = names.len().saturating_sub(RECORDS_KEPT);
+    for name in names.iter().take(extra) {
+        std::fs::remove_file(dir.join(name))?;
+    }
+    Ok(())
 }
 
 /// A frame encoded, or `None`, said in the log, if it cannot be.
@@ -1665,5 +1760,23 @@ mod tests {
                 took / turns as u32
             );
         }
+    }
+
+    #[test]
+    fn only_the_newest_records_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = |i: usize| format!("game-{i:012}-room1.{RECORD_EXTENSION}");
+        for i in 0..RECORDS_KEPT + 3 {
+            std::fs::write(dir.path().join(name(i)), b"").unwrap();
+        }
+        std::fs::write(dir.path().join("notes.txt"), b"").unwrap();
+        remove_oldest_records(dir.path()).unwrap();
+        for i in 0..3 {
+            assert!(!dir.path().join(name(i)).exists(), "{i}");
+        }
+        for i in 3..RECORDS_KEPT + 3 {
+            assert!(dir.path().join(name(i)).exists(), "{i}");
+        }
+        assert!(dir.path().join("notes.txt").exists());
     }
 }

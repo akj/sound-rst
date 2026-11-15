@@ -32,3 +32,5 @@ tracing-subscriber = "0.3.23"
 [dev-dependencies]
 # The tests make games fail on purpose.
 soundrts-server = { path = ".", features = ["fault-injection"] }
+# The records of games go to a temporary folder.
+tempfile = "3"

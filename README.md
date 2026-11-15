@@ -242,6 +242,8 @@ cargo run -p soundrts-server -- --port 2501 --name "My server"
 
 The server listens on TCP port 2501 for players and answers on UDP port 2501 to players who look for servers on the local network. Add `--upnp` to ask the router to forward the port to players on the internet. Run `cargo run -p soundrts-server -- --help` for every option. Press Ctrl+C to stop the server.
 
+Add `--records <folder>` to keep a record of each game played on the server. The server writes the record when the game ends, or when it stops the game, and keeps the newest 100. A record holds what the game was built from and every player's commands, so it replays the whole game. It also holds the players' logins. It does not hold the chat. A game stopped because a turn took too long is not recorded.
+
 ### A public server
 
 A server on the Internet should encrypt its connections, so that logins, chat and games do not cross the Internet as they are. The server does not speak TLS itself. Put it behind a reverse proxy that does, such as Caddy or nginx, as web servers are run. With Caddy:
