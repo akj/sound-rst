@@ -355,22 +355,6 @@ pub struct Player {
     pub(crate) end_of_turn: Option<EndOfTurn>,
     /// The state of a scripted computer player.
     pub(crate) ai: Option<Box<Computer>>,
-    /// What the player knew before it left the game, which the digest
-    /// still hashes as if the player kept it.
-    pub(crate) digest_only: Option<Box<DigestOnly>>,
-}
-
-/// What a player forgets when it leaves the game, kept for the digest
-/// only.
-#[derive(Debug, Default)]
-pub(crate) struct DigestOnly {
-    perception: BTreeSet<EntityId>,
-    memory: BTreeMap<EntityId, Remembrance>,
-    budget: Vec<Order>,
-    detected_units: BTreeSet<EntityId>,
-    known_enemies: BTreeMap<SquareId, (i64, Vec<EntityId>)>,
-    group: Option<Vec<EntityId>>,
-    ai: Option<Box<Computer>>,
 }
 
 /// Every field but the events and the end of the turn, which only a
@@ -428,40 +412,7 @@ impl Hash for Player {
             events: _,
             end_of_turn: _,
             ai,
-            digest_only,
         } = self;
-        // A player who left hashes what it knew as it would have kept it:
-        // what it knew when it left, and what was added since.
-        let kept = digest_only.as_deref();
-        let union_set = |live: &BTreeSet<EntityId>, kept: Option<&BTreeSet<EntityId>>| {
-            let mut all = live.clone();
-            all.extend(kept.into_iter().flatten().copied());
-            all
-        };
-        let perception = &union_set(perception, kept.map(|k| &k.perception));
-        let detected_units = &union_set(detected_units, kept.map(|k| &k.detected_units));
-        let memory = &{
-            let mut all = kept.map(|k| k.memory.clone()).unwrap_or_default();
-            all.extend(memory.iter().map(|(k, v)| (*k, v.clone())));
-            all
-        };
-        let known_enemies = &{
-            let mut all = kept.map(|k| k.known_enemies.clone()).unwrap_or_default();
-            all.extend(known_enemies.iter().map(|(k, v)| (*k, v.clone())));
-            all
-        };
-        let budget = match kept {
-            Some(k) if budget.is_empty() => &k.budget,
-            _ => budget,
-        };
-        let group = match kept {
-            Some(k) if group.is_none() => &k.group,
-            _ => group,
-        };
-        let ai = match kept {
-            Some(k) if ai.is_none() => &k.ai,
-            _ => ai,
-        };
         obj_id.hash(state);
         kind.hash(state);
         controller.hash(state);
@@ -581,7 +532,6 @@ impl Player {
             events: Vec::new(),
             end_of_turn: None,
             ai: None,
-            digest_only: None,
         }
     }
 
@@ -644,7 +594,6 @@ impl Player {
             events: _,
             end_of_turn: _,
             ai,
-            digest_only: _,
         } = self;
         perception.iter().for_each(|&o| f(o));
         memory.keys().for_each(|&o| f(o));
@@ -676,20 +625,13 @@ impl Player {
     /// squares stay, for the score and its allies; so do its buckets and
     /// what its units revealed, which its allies still look through.
     pub(crate) fn forget_after_leaving(&mut self) {
-        let kept = self.digest_only.get_or_insert_default();
-        kept.perception.append(&mut self.perception);
-        kept.memory.append(&mut self.memory);
-        kept.detected_units.append(&mut self.detected_units);
-        kept.known_enemies.append(&mut self.known_enemies);
-        if !self.budget.is_empty() {
-            kept.budget = std::mem::take(&mut self.budget);
-        }
-        if self.group.is_some() {
-            kept.group = self.group.take();
-        }
-        if self.ai.is_some() {
-            kept.ai = self.ai.take();
-        }
+        self.perception.clear();
+        self.memory.clear();
+        self.budget.clear();
+        self.detected_units.clear();
+        self.known_enemies.clear();
+        self.group = None;
+        self.ai = None;
     }
 
     pub fn is_human(&self) -> bool {

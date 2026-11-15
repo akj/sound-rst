@@ -81,11 +81,6 @@ struct Entities {
     /// computers on js13 give about 4,600 ids in 20 minutes, some 55 kB an
     /// hour.
     index: Vec<u32>,
-    /// One more than the greatest id ever stored: the length of the list
-    /// that the digest hashes, which had a place for every id up to it.
-    digest_len: usize,
-    /// The entities freed, which the digest still hashes as they were.
-    digest_freed: BTreeMap<EntityId, Entity>,
 }
 
 /// The place in [`Entities::index`] of an id that names no entity stored.
@@ -110,7 +105,6 @@ impl Entities {
     /// given before, so the entity goes last.
     fn insert(&mut self, e: Entity) {
         let id = e.id;
-        self.digest_len = self.digest_len.max(id.0 as usize + 1);
         if let Some(i) = self.slot(id) {
             if let Some(slot) = self.slots.get_mut(i) {
                 *slot = e;
@@ -139,12 +133,7 @@ impl Entities {
         if gone.is_empty() {
             return;
         }
-        let (freed, kept) = std::mem::take(&mut self.slots)
-            .into_iter()
-            .partition::<Vec<Entity>, _>(|e| gone.contains(&e.id));
-        self.slots = kept;
-        self.digest_freed
-            .extend(freed.into_iter().map(|e| (e.id, e)));
+        self.slots.retain(|e| !gone.contains(&e.id));
         self.reindex();
     }
 
@@ -163,18 +152,10 @@ impl Entities {
     }
 }
 
-/// Hashed as the list it replaced: a place for every id below
-/// `digest_len`, empty for an id that names no entity stored.
+/// The entities stored, in id order; the index follows from them.
 impl Hash for Entities {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.digest_len.hash(state);
-        let mut stored = self.slots.iter().peekable();
-        for i in 0..self.digest_len {
-            let e = stored
-                .next_if(|e| e.id.0 as usize == i)
-                .or_else(|| self.digest_freed.get(&EntityId(i as u32)));
-            e.hash(state);
-        }
+        self.slots.hash(state);
     }
 }
 
