@@ -97,6 +97,13 @@ pub fn human(login: &Login) -> SlotPlayer {
     SlotPlayer::Human(login.clone())
 }
 
+/// A message from the server: JSON, or a binary frame of a hosted game.
+#[derive(Debug)]
+pub enum Frame {
+    Msg(ServerMsg),
+    Binary(Vec<u8>),
+}
+
 pub struct Client {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
     pub login: Login,
@@ -121,6 +128,45 @@ impl Client {
             login: login("nobody"),
             turns: Vec::new(),
             done: None,
+        }
+    }
+
+    /// Connects with a receive buffer of `bytes` in the kernel, so that a
+    /// client that stops reading soon stops the server's writes, and says
+    /// hello with `name`.
+    pub async fn hello_with_small_buffer(
+        addr: SocketAddr,
+        name: &str,
+        bytes: u32,
+    ) -> (Client, LobbySnapshot) {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.set_recv_buffer_size(bytes).unwrap();
+        let tcp = tokio::time::timeout(TIMEOUT, socket.connect(addr))
+            .await
+            .expect("connects in time")
+            .expect("connects");
+        let (ws, _) =
+            tokio_tungstenite::client_async(format!("ws://{addr}"), MaybeTlsStream::Plain(tcp))
+                .await
+                .expect("handshake");
+        let mut c = Client {
+            ws,
+            login: login("nobody"),
+            turns: Vec::new(),
+            done: None,
+        };
+        c.send(ClientMsg::Hello {
+            protocol: PROTOCOL_VERSION,
+            login: login(name),
+            content: content(),
+        })
+        .await;
+        match c.recv().await {
+            ServerMsg::Welcome { lobby } => {
+                c.login = lobby.you.clone();
+                (c, lobby)
+            }
+            other => panic!("expected a welcome, got {other:?}"),
         }
     }
 
@@ -183,10 +229,12 @@ impl Client {
             .expect("sends");
     }
 
-    /// The next message; fails the test if none comes in time.
+    /// The next message; fails the test if none comes in time. Pings and
+    /// binary frames do not count.
     pub async fn recv(&mut self) -> ServerMsg {
+        let deadline = tokio::time::Instant::now() + TIMEOUT;
         loop {
-            let msg = tokio::time::timeout(TIMEOUT, self.ws.next())
+            let msg = tokio::time::timeout_at(deadline, self.ws.next())
                 .await
                 .unwrap_or_else(|_| panic!("{}: no message in time", self.login))
                 .unwrap_or_else(|| panic!("{}: connection closed", self.login))
@@ -199,6 +247,37 @@ impl Client {
                 Message::Close(_) => panic!("{}: connection closed", self.login),
                 _ => {}
             }
+        }
+    }
+
+    /// The next message or binary frame, if one comes within `wait`.
+    /// `None` too if the connection is closed.
+    pub async fn frame_within(&mut self, wait: Duration) -> Option<Frame> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            let msg = tokio::time::timeout_at(deadline, self.ws.next())
+                .await
+                .ok()??;
+            match msg.ok()? {
+                Message::Text(text) => {
+                    return Some(Frame::Msg(
+                        ServerMsg::from_json(&text)
+                            .unwrap_or_else(|e| panic!("cannot read {text}: {e}")),
+                    ));
+                }
+                Message::Binary(bytes) => return Some(Frame::Binary(bytes.to_vec())),
+                Message::Close(_) => return None,
+                _ => {}
+            }
+        }
+    }
+
+    /// The next message or binary frame; fails the test if none comes in
+    /// time.
+    pub async fn frame(&mut self) -> Frame {
+        match self.frame_within(TIMEOUT).await {
+            Some(f) => f,
+            None => panic!("{}: no message in time, or closed", self.login),
         }
     }
 

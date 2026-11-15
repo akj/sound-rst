@@ -1,20 +1,26 @@
-//! The SoundRTS multiplayer server: a lobby, a chat and a turn clock.
+//! The SoundRTS multiplayer server: a lobby, a chat and a turn clock, and
+//! the host of games it runs itself.
 //!
-//! The server never runs the simulation. Clients run it from the seed the
-//! server gives them, and the server tells them which orders to queue at
-//! each turn. See `soundrts-protocol` for the messages.
+//! A game runs one of two ways, chosen by the room's host when it starts.
+//! In lockstep, clients run the simulation from the seed the server gives
+//! them, and the server tells them which orders to queue at each turn
+//! (`game`). In a hosted game the server runs the simulation, and sends
+//! each player only what that player knows (`hosted`). See
+//! `soundrts-protocol` for the messages.
 //!
 //! [`start`] runs a server on its own thread with its own runtime, so a
 //! program that is not async can embed it. The `soundrts-server` binary is
 //! a thin wrapper around it.
 //!
 //! Inside, each connection has one task, one lobby task owns the players,
-//! rooms, chat history and map cache, and each running game has one task
-//! that owns its turn clock, orders and digests.
+//! rooms, chat history and map cache, and each running game has one task:
+//! a lockstep game's owns its turn clock, orders and digests, a hosted
+//! game's owns the game itself.
 
 mod connection;
 mod discovery;
 mod game;
+mod hosted;
 mod lobby;
 mod room;
 mod upnp;
@@ -32,6 +38,8 @@ use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "fault-injection")]
+pub use hosted::fault;
 pub use upnp::UpnpOutcome;
 
 /// How a server runs. [`Default`] gives the values of a server players host.
@@ -57,6 +65,30 @@ pub struct ServerConfig {
     pub lag_timeout: Duration,
     /// How long a new connection has to say hello.
     pub hello_timeout: Duration,
+    /// How often the server pings each connection.
+    pub heartbeat_interval: Duration,
+    /// How long the server waits to hear anything from a connection, a
+    /// ping's answer included, before it closes it as dead.
+    pub heartbeat_timeout: Duration,
+    /// How long a hosted game holds the seat of a player whose connection
+    /// was lost, for them to return.
+    pub grace_period: Duration,
+    /// The longest a hosted game may take to build before its start is
+    /// refused.
+    pub load_budget: Duration,
+    /// The longest one turn of a hosted game may take, every seat's
+    /// message included, before the game is stopped.
+    pub turn_budget: Duration,
+    /// The bytes the system may hold for one client that it has not read
+    /// yet, before the server's writes to it wait. Small enough that a
+    /// hosted game soon sees a seat whose connection is not keeping up,
+    /// rather than queueing old turns for it in the system; large enough
+    /// for a map to download at 640 KB a second over a link with 100 ms
+    /// of round trip. `None` leaves the system's own, which grows.
+    pub send_buffer: Option<usize>,
+    /// Every game on this server is played from this seed, to reproduce a
+    /// game. `None` draws one for each game.
+    pub seed: Option<i64>,
     /// Ask the router to forward the port (UPnP).
     pub upnp: bool,
 }
@@ -72,6 +104,13 @@ impl Default for ServerConfig {
             max_lead: 10,
             lag_timeout: Duration::from_secs(60),
             hello_timeout: Duration::from_secs(10),
+            heartbeat_interval: Duration::from_secs(5),
+            heartbeat_timeout: Duration::from_secs(20),
+            grace_period: Duration::from_secs(90),
+            load_budget: Duration::from_secs(5),
+            turn_budget: Duration::from_secs(2),
+            send_buffer: Some(64 * 1024),
+            seed: None,
             upnp: false,
         }
     }
@@ -254,7 +293,12 @@ async fn run(config: ServerConfig, mut stop: watch::Receiver<bool>, ready: Ready
                         pending,
                         lobby.clone(),
                         stop.clone(),
-                        config.hello_timeout,
+                        connection::ConnSettings {
+                            hello: config.hello_timeout,
+                            ping: config.heartbeat_interval,
+                            silence: config.heartbeat_timeout,
+                            send_buffer: config.send_buffer,
+                        },
                     ));
                 }
                 Err(e) => {

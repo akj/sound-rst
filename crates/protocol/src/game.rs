@@ -12,6 +12,10 @@
 //! - The end ([`GameEnd`]), once.
 //! - A player's [`Command`], from its client.
 //!
+//! On a server, the start, each message, change and end travel as one
+//! binary WebSocket frame each, a [`SeatFrame`], beside the lobby's JSON
+//! text frames; a command travels as one binary frame from the client.
+//!
 //! Each is encoded with postcard, a compact binary form of serde's data
 //! model: field values in order, integers as variable-length numbers, no
 //! names. The same value gives the same bytes on every machine. The lobby
@@ -34,13 +38,16 @@
     clippy::arithmetic_side_effects
 )]
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use soundrts_world::{
     Command, GameEnd, GameSetup, GameStart, StartMessage, TurnChange, TurnMessage,
 };
 
-use crate::{Invalid, MAX_MESSAGE_BYTES};
+use crate::{
+    ClockChange, Invalid, Login, MAX_COMMAND_BYTES, MAX_MESSAGE_BYTES, MapInfo, SeatChange,
+    SeatToken, SlotIndex, Speed, StartRefusal, StopReason,
+};
 
 /// The largest message of the game stream either side reads: as large as
 /// the lobby's largest, which holds a map.
@@ -123,6 +130,66 @@ pub fn apply_change(
     Ok(message)
 }
 
+/// One binary frame of a seat's game stream, from the server: what a
+/// hosted game sends a seat, in this order. That it has a seat, the start,
+/// then the whole message, when the seat joins the game or returns to it; a change from
+/// the last message the seat was sent at each turn it is sent one; the end
+/// once.
+///
+/// A turn's change is the end of the seat's turn, with the turn's events.
+/// When something came after the end of the turn (the players leaving,
+/// when the turn ended the game), a second change of the same game time
+/// follows: what the seat knows after the turn, with those events. A seat
+/// that missed turns is told, in its next change, their events that are
+/// not about an entity, first. A decoded frame is not yet checked: check a start with
+/// [`StartMessage::check`], a whole message with [`GameStart::check`], and
+/// apply a change with [`TurnChange::apply`], then check its result, as
+/// [`decode_start`], [`decode_turn`] and [`apply_change`] do.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum SeatFrame {
+    Start(StartMessage),
+    Whole(TurnMessage),
+    Change(TurnChange),
+    /// The game is over for the seat: its statistics and result. The
+    /// lobby's [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded)
+    /// follows.
+    End(GameEnd),
+    /// You have a seat in a hosted game: when it starts, and when you
+    /// return to it. Keep `token` to return if your connection is lost.
+    /// The players' names and alliances come with the game.
+    Seated {
+        you: SlotIndex,
+        map: MapInfo,
+        speed: Speed,
+        paused: bool,
+        token: SeatToken,
+    },
+    /// Something happened to a seat of the game.
+    Seat {
+        slot: SlotIndex,
+        change: SeatChange,
+    },
+    /// The room's host changed the game's clock.
+    Clock {
+        by: Login,
+        change: ClockChange,
+    },
+    /// The server stopped the game. The lobby's
+    /// [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded) follows.
+    Stopped(StopReason),
+    /// To the room's host: the game did not start, and the room goes on.
+    NotStarted(StartRefusal),
+}
+
+pub fn encode_frame(frame: &SeatFrame) -> Result<Vec<u8>, Invalid> {
+    encode(frame)
+}
+
+/// A frame as sent, not yet checked against the game.
+pub fn decode_frame(bytes: &[u8]) -> Result<SeatFrame, Invalid> {
+    decode(bytes)
+}
+
 pub fn encode_end(end: &GameEnd) -> Result<Vec<u8>, Invalid> {
     encode(end)
 }
@@ -142,14 +209,29 @@ fn check_command(command: &Command) -> Result<(), Invalid> {
     }
 }
 
+/// A command as its player sends it: at most [`MAX_COMMAND_BYTES`].
 pub fn encode_command(command: &Command) -> Result<Vec<u8>, Invalid> {
     check_command(command)?;
-    encode(command)
+    let bytes = encode(command)?;
+    if bytes.len() > MAX_COMMAND_BYTES {
+        return Err(Invalid(format!(
+            "a command of {} bytes is too long",
+            bytes.len()
+        )));
+    }
+    Ok(bytes)
 }
 
-/// A player's command, as typed as the world takes it. Whether the player
-/// may give it is the world's to say when it runs.
+/// A player's command, as typed as the world takes it: refused beyond
+/// [`MAX_COMMAND_BYTES`]. Whether the player may give it is the world's to
+/// say when it runs.
 pub fn decode_command(bytes: &[u8]) -> Result<Command, Invalid> {
+    if bytes.len() > MAX_COMMAND_BYTES {
+        return Err(Invalid(format!(
+            "a command of {} bytes is too long",
+            bytes.len()
+        )));
+    }
     let command = decode(bytes)?;
     check_command(&command)?;
     Ok(command)
