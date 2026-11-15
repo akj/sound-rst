@@ -495,7 +495,11 @@ None of these changes what a player hears. Each says what would make it worth do
 
 ### C1. Orders travel as text and are parsed again at every step
 
-**Partly fixed** in pull requests 10, 19, 53 and 54. The interface builds typed commands (`Command` in `crates/world/src/command.rs`). A game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`, so a misspelt keyword does not compile. An order in a unit's queue now holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). Text is read only for map triggers and, behind the `truth` feature, for the recorded traces. These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet: a rallying point is still stored as text and parsed again for each unit trained, and a zoom target keeps a text id; see N9.
+**Partly fixed** in pull requests 10, 19, 53 and 54. The interface builds typed commands (`Command` in `crates/world/src/command.rs`). A game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`, so a misspelt keyword does not compile. An order in a unit's queue now holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
+
+- The order menu is still a list of text entries such as `train footman`, which the interface parses again each time it builds the menu (`OrderTypeView::new` in `crates/client/src/game/order.rs`).
+- A rallying point is still stored as text and parsed again for each unit trained, and a zoom target keeps a text id; see N9.
+- Map triggers are text by nature, and the recorded traces read text orders behind the `truth` feature.
 
 From the review. Size: large.
 
