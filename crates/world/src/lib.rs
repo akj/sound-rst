@@ -116,7 +116,7 @@ pub use change::{
     ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
     StateChange, TurnChange,
 };
-pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
+pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue, Refused};
 #[cfg(feature = "truth")]
 pub use entity::Entity;
 pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};

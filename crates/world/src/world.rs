@@ -393,6 +393,11 @@ impl World {
         self.entities.iter().filter_map(Option::as_ref)
     }
 
+    /// Whether the map has a square of this id.
+    pub fn has_square(&self, id: SquareId) -> bool {
+        (id.0 as usize) < self.squares.len()
+    }
+
     pub fn square(&self, id: SquareId) -> &Square {
         &self.squares[id.0 as usize]
     }
@@ -414,6 +419,11 @@ impl World {
     /// The square with this protocol id.
     pub fn square_by_obj_id(&self, id: u32) -> Option<SquareId> {
         self.square_by_obj.get(&id).copied()
+    }
+
+    /// Whether the game has, or had, a player of this id.
+    pub fn has_player(&self, id: PlayerId) -> bool {
+        (id.0 as usize) < self.players_arena.len()
     }
 
     pub fn player(&self, id: PlayerId) -> &Player {
@@ -915,9 +925,13 @@ impl World {
 
     /// Queues a command of a player. Commands run in order at the start of
     /// the next [`World::update`], unless the player has left the game by
-    /// then.
+    /// then. A command naming a player or a square the game does not have
+    /// is refused now, with a warning (see [`World::check_command`]).
     pub fn queue(&mut self, player: PlayerId, command: Command) {
-        self.pending_commands.push((player, command));
+        match self.check_command(player, &command) {
+            Ok(()) => self.pending_commands.push((player, command)),
+            Err(r) => self.warn(format!("command {command:?} refused: {r}")),
+        }
     }
 
     /// Queues a command of a player written as the original's line of text,
