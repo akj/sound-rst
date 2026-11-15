@@ -445,7 +445,7 @@ impl GameInterface {
         self.say_group(cx, &place_title)?;
         if !self.group.is_empty() {
             self.follow_mode = true;
-            self.follow_if_needed(cx)?;
+            self.follow_if_needed(cx);
         }
         Ok(())
     }

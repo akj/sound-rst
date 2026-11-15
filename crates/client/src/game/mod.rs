@@ -953,10 +953,7 @@ impl GameInterface {
         if now < self.previous_animation + cx.params.number("animation_delay", 0.1) {
             return;
         }
-        if let Err(Oops { message: e, .. }) = self.set_obs_pos(cx) {
-            cx.log
-                .error(format!("couldn't set user interface position: {e}"));
-        }
+        self.set_obs_pos(cx);
         let ids: Vec<EntityId> = self.dobjets.keys().copied().collect();
         for id in ids {
             self.animate(cx, id);
