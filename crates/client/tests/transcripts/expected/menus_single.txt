@@ -180,46 +180,46 @@ length 9999 208980
 @134304 voice menu "start a game on"
 @135804 sounds 1 937ce1022aa2014b
 @135804 step 49 key DOWN
-@135804 voice item "jl2 2"
-@136704 sounds 1 efb8d913af226b01
-@136704 step 50 key DOWN
-@136704 voice item "jl8 8 ,"
-@137804 sounds 1 057537409b275b4b
-@137804 step 51 key UP
-@137804 voice item "jl2 2"
-@138704 sounds 1 459e93ae8151a667
-@138704 step 52 key RETURN
-@138704 voice confirmation "jl2 2"
-@139614 voice menu "please make a selection"
-@141914 sounds 1 2588f6bec9f479b4
-@141914 step 53 key DOWN
-@141914 voice item "invite quiet computer ,"
-@144214 sounds 1 ca26477bc6d830da
-@144214 step 54 key DOWN
-@144214 voice item "invite aggressive computer ,"
-@147014 sounds 1 626bfe0a2d6cba8a
-@147014 step 55 key DOWN
-@147014 voice item "invite aggressive computer 2 ,"
-@150214 sounds 1 363fb555746e9d77
-@150214 step 56 key DOWN
-@150214 voice item "cancel , cancel this game"
-@152714 sounds 1 91a30e672a5e7e29
-@152714 step 57 key DOWN
-@152714 voice item "invite quiet computer ,"
-@155014 sounds 1 cc774244f7d7f190
-@155014 step 58 key RETURN
-@155014 voice confirmation "invite quiet computer"
-@157124 voice menu "please make a selection"
-@159424 sounds 1 8f1fc9008727228f
-@159424 step 59 key ESCAPE
-@159424 voice confirmation "cancel"
-@160034 voice menu "please make a selection"
-@162334 sounds 1 68e6fb0dbe24f004
-@162334 step 60 key ESCAPE
-@162334 voice confirmation "go back to the previous menu"
-@165144 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@170244 sounds 1 9b670ac6994a0976
-@170244 step 61 key ESCAPE
-@170244 voice confirmation "quit,"
-@170754 sounds 1 7334090eb9e6e8f7
-@170754 end
+@135804 voice item "jl2 2 ,"
+@136904 sounds 1 efb8d913af226b01
+@136904 step 50 key DOWN
+@136904 voice item "jl3 3 ,"
+@138004 sounds 1 af1747c29afc9e2d
+@138004 step 51 key UP
+@138004 voice item "jl2 2 ,"
+@139104 sounds 1 00b30aacb2ebb9f4
+@139104 step 52 key RETURN
+@139104 voice confirmation "jl2 2"
+@140014 voice menu "please make a selection"
+@142314 sounds 1 985a0d47c1615833
+@142314 step 53 key DOWN
+@142314 voice item "invite quiet computer ,"
+@144614 sounds 1 7cb23df41e9c285b
+@144614 step 54 key DOWN
+@144614 voice item "invite aggressive computer ,"
+@147414 sounds 1 7dff342f65c1c7ae
+@147414 step 55 key DOWN
+@147414 voice item "invite aggressive computer 2 ,"
+@150614 sounds 1 1acb439934321513
+@150614 step 56 key DOWN
+@150614 voice item "cancel , cancel this game"
+@153114 sounds 1 83a606006a9ac515
+@153114 step 57 key DOWN
+@153114 voice item "invite quiet computer ,"
+@155414 sounds 1 574e1943f869c8fb
+@155414 step 58 key RETURN
+@155414 voice confirmation "invite quiet computer"
+@157524 voice menu "please make a selection"
+@159824 sounds 1 b65b637056f74353
+@159824 step 59 key ESCAPE
+@159824 voice confirmation "cancel"
+@160434 voice menu "please make a selection"
+@162734 sounds 1 3f207d4af7954e70
+@162734 step 60 key ESCAPE
+@162734 voice confirmation "go back to the previous menu"
+@165544 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@170644 sounds 1 a6585e385ff9739a
+@170644 step 61 key ESCAPE
+@170644 voice confirmation "quit,"
+@171154 sounds 1 d87256dc9eab986b
+@171154 end

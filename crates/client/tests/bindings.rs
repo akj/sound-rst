@@ -46,14 +46,15 @@ fn without_a_players_file_the_games_bindings_stand() {
         ))
     );
     // 172 binding lines; "d" and "CTRL d" are each bound twice. Then the
-    // client's own fourteen: reading the chat again, chat to the allies,
-    // the news log, the questions, and key help.
-    assert_eq!(b.len(), 184);
+    // client's own fifteen: reading the chat again, chat to the allies,
+    // the news log and copying from it, the questions, and key help.
+    assert_eq!(b.len(), 185);
     let news = [
         ("F4", GameCommand::Unheard),
         ("COMMA", GameCommand::ReviewPrevious),
         ("PERIOD", GameCommand::ReviewNext),
         ("SLASH", GameCommand::ReviewCategory),
+        ("CTRL SHIFT c", GameCommand::CopyMessage),
         ("DELETE", GameCommand::JumpToAlert),
         ("b", GameCommand::ProductionStatus),
         ("n", GameCommand::WorkersStatus),

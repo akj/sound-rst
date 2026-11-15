@@ -3,7 +3,7 @@
 //! character (the default `wait_delay_per_character`).
 
 use soundrts::clock::Clock;
-use soundrts::input::Key;
+use soundrts::input::{Key, Mods};
 use soundrts::message::{Category, News, Policy, Subject};
 use soundrts::testkit::{Harness, Script, SpeechEvent};
 use soundrts::tts::{Progress, SpeechEnd};
@@ -598,5 +598,118 @@ fn giving_up_the_queue_keeps_its_news_unheard() {
             ("aaaaaaaaaa".to_owned(), Heard::No),
             ("bbbbb".to_owned(), Heard::No)
         ]
+    );
+}
+
+#[test]
+fn the_copy_key_copies_the_message_under_review_until_another_answer() {
+    let mut h = unheard_news();
+    assert_eq!(said(&mut h, Voice::review_previous), "a2");
+    assert_eq!(said(&mut h, Voice::review_previous), "a1");
+    // News said since does not take the place of the message under review.
+    info(&mut h.client.voice, "p3");
+    run(&mut h, 1.0);
+    let mut copied = None;
+    assert_eq!(said(&mut h, |v| copied = v.copy()), "copied");
+    assert_eq!(copied.as_deref(), Some("a1"));
+    // The review goes on after a copy.
+    assert_eq!(said(&mut h, |v| copied = v.copy()), "copied");
+    assert_eq!(copied.as_deref(), Some("a1"));
+    // An answer to another key ends it: the message said last is copied.
+    h.client.voice.item(&t("a square"));
+    assert_eq!(said(&mut h, |v| copied = v.copy()), "copied");
+    assert_eq!(copied.as_deref(), Some("p3"));
+}
+
+#[test]
+fn a_prompt_ends_a_review_for_the_copy_key() {
+    let mut h = unheard_news();
+    assert_eq!(said(&mut h, Voice::review_previous), "a2");
+    h.client.voice.menu(&t("enter a command"));
+    assert_eq!(h.client.voice.copy().as_deref(), Some("enter a command"));
+}
+
+#[test]
+fn the_copy_key_copies_the_words_said_even_once_newer_news_replaced_them() {
+    let mut h = Harness::new("en", Script::new());
+    let gold = |s: &str| News::new(Category::Economy, t(s)).about(Subject::Resource(0));
+    h.client.voice.news(gold("10 gold"), Policy::Speak);
+    run(&mut h, 0.3);
+    // Cut off, the count stays unheard, and the newer one takes its place.
+    h.client.voice.item(&t("x"));
+    h.client.voice.news(gold("20 gold"), Policy::Speak);
+    assert_eq!(h.client.voice.copy().as_deref(), Some("10 gold"));
+}
+
+#[test]
+fn the_copy_key_copies_what_the_history_and_what_did_i_miss_said() {
+    let mut h = unheard_news();
+    assert_eq!(
+        said(&mut h, Voice::unheard),
+        "alert 2 , production 2 , chat 1"
+    );
+    assert_eq!(said(&mut h, Voice::unheard), "a2");
+    assert_eq!(h.client.voice.copy().as_deref(), Some("a2"));
+    assert_eq!(said(&mut h, Voice::previous), "c1");
+    assert_eq!(h.client.voice.copy().as_deref(), Some("c1"));
+}
+
+#[test]
+fn the_copy_key_copies_the_words_said_without_the_recorded_sounds() {
+    let mut h = Harness::new("en", Script::new());
+    // 1000 is a recorded sound; 4031 is said as words.
+    let parts = vec![MsgPart::Num(1000), MsgPart::from("orc"), MsgPart::Num(4031)];
+    h.client.voice.important(&parts);
+    let expected = format!("orc {}", h.text(4031));
+    assert_eq!(h.client.voice.copy(), Some(expected));
+}
+
+#[test]
+fn with_nothing_said_the_copy_key_says_nothing() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.item(&t("an answer, not kept"));
+    let mut copied = Some(String::new());
+    assert_eq!(said(&mut h, |v| copied = v.copy()), "nothing!");
+    assert_eq!(copied, None);
+}
+
+#[test]
+fn in_a_game_control_shift_c_puts_the_reviewed_chat_line_on_the_clipboard() {
+    let script = Script::new().keep_open();
+    let mut h = Harness::new("en", script);
+    let mut g = h.start_training("jl1", &["easy"], 1);
+    h.run_until_turn(&mut g, 2);
+    g.game.execute_command(&mut h.client, "p").unwrap();
+    chat(&mut h.client.voice, "meet me at 203.0.113.7");
+    chat(&mut h.client.voice, "on my way");
+    h.run_until_voice_idle(&mut g);
+    for _ in 0..4 {
+        h.key(&mut g, Key::Slash, Mods::NONE);
+    }
+    assert_eq!(h.key(&mut g, Key::Comma, Mods::NONE), ["on my way"]);
+    assert_eq!(
+        h.key(&mut g, Key::Comma, Mods::NONE),
+        ["meet me at 203.0.113.7"]
+    );
+    assert_eq!(
+        h.key(
+            &mut g,
+            Key::C,
+            Mods {
+                ctrl: true,
+                shift: true,
+                alt: false
+            }
+        ),
+        ["copied"]
+    );
+    assert_eq!(
+        h.desktop
+            .clipboard
+            .lock()
+            .unwrap()
+            .last()
+            .map(String::as_str),
+        Some("meet me at 203.0.113.7")
     );
 }

@@ -357,6 +357,16 @@ impl Desktop for WindowDesktop {
                 .warning(format!("cannot copy to the clipboard: {e}"));
         }
     }
+
+    fn clipboard_text(&self) -> Option<String> {
+        crate::clipboard::get_text()
+            .inspect_err(|e| {
+                self.log
+                    .warning(format!("cannot paste from the clipboard: {e}"))
+            })
+            .ok()
+            .flatten()
+    }
 }
 
 /// What the game thread gets to talk to the window.

@@ -40,7 +40,8 @@ pub const MAX_DEFINITIONS: usize = 32;
 
 /// The bindings this client adds to the original's: reading the chat again,
 /// chat to the allies, the news log (what did I miss, a category's
-/// messages and changing the category, the last alerts' squares), the
+/// messages and changing the category, copying the message under review on
+/// Control Shift C, the last alerts' squares), the
 /// questions: what is in production, the workers and the fight here
 /// beside the original's status keys Z to V, every resource on Shift X,
 /// and the other players beside F11; and key help on Control F1, beside
@@ -49,6 +50,7 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// it to a third resource.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
+    CTRL SHIFT c: copy_message\n\
     DELETE: jump_to_alert\n\
     b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
     F12: players_status\nCTRL F1: key_help\n";

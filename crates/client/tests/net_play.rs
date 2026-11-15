@@ -120,7 +120,7 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         s = s.wait_for_exact("please make a selection");
         // start a game on > the private map > normal speed
         s = keys(s, &[Key::Down, Key::Return]);
-        // the private map is remembered, so first
+        // the private map is remembered: the menu opens on it
         s = s.at(1.2).tap(Key::Down).at(1.5).tap(Key::Return);
         // The map's sound plays before the speed menu.
         s = s.wait_for("start a game on <1097> zzmap 1");

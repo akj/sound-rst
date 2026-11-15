@@ -4,8 +4,11 @@
 
 use soundrts::input::{Key, Mods};
 use soundrts::mainmenu::main_menu;
-use soundrts::menu::{Action, Choice, Exit, first_letter_of};
-use soundrts::testkit::{Harness, Script, SpeechEvent};
+use soundrts::menu::{
+    Action, Choice, Exit, MAX_LINE_CHARS, Menu, TextEntry, Typed, first_letter_of, py_repr,
+};
+use soundrts::net::chat_char;
+use soundrts::testkit::{Harness, Script, SpeechEvent, press};
 use soundrts_world::msg::MsgPart;
 
 const TITLE: &str = "SoundRTS 1.3.8.1  , please make a selection";
@@ -370,4 +373,184 @@ fn the_window_title_follows_the_mods() {
                 .unwrap()
         )
     );
+}
+
+/// A menu remembering "bravo" as its last choice, with the items alpha,
+/// mike, bravo, mars and quit, run with `script`.
+fn remembering_menu_said(script: Script) -> Vec<String> {
+    let mut h = Harness::new("en", script);
+    std::fs::write(
+        h.client.paths.tmp().join("test_menu.txt"),
+        py_repr(&vec![MsgPart::from("bravo")]),
+    )
+    .unwrap();
+    let mut menu = Menu::remembering(&h.client, vec![MsgPart::from("pick")], "test_menu");
+    for label in ["alpha", "mike", "bravo", "mars", "quit"] {
+        menu.append(vec![MsgPart::from(label)], Action::Nothing, None);
+    }
+    assert_eq!(menu.run(&mut h.client), Ok(()));
+    h.spoken()
+}
+
+#[test]
+fn a_remembering_menu_opens_on_its_last_choice_and_lists_it_once() {
+    let script = Script::new()
+        .at(10.0)
+        .tap(Key::Down)
+        .at(20.0)
+        .tap(Key::Down)
+        .at(30.0)
+        .tap(Key::Down)
+        .at(40.0)
+        .tap(Key::Down)
+        .at(50.0)
+        .tap(Key::Down)
+        .at(60.0)
+        .tap(Key::Escape);
+    assert_eq!(
+        remembering_menu_said(script),
+        [
+            "pick", "bravo ,", "mars ,", "quit ,", "alpha ,", "mike ,", "quit"
+        ]
+    );
+}
+
+#[test]
+fn in_a_remembering_menu_a_letter_searches_on_from_the_cursor() {
+    let script = Script::new()
+        .at(10.0)
+        .type_text("m")
+        .at(20.0)
+        .type_text("m")
+        .at(30.0)
+        .type_text("m")
+        .at(40.0)
+        .type_text("b")
+        .at(50.0)
+        .tap(Key::Escape);
+    assert_eq!(
+        remembering_menu_said(script),
+        ["pick", "mars ,", "mike ,", "mars ,", "bravo ,", "quit"]
+    );
+}
+
+#[test]
+fn control_v_pastes_into_the_login_only_what_a_login_allows() {
+    let script = Script::new()
+        .at(5.0)
+        .tap(Key::Down)
+        .at(7.0)
+        .tap(Key::Down)
+        .at(10.0)
+        .tap(Key::Down)
+        .at(20.0)
+        .tap(Key::Return)
+        .at(30.0)
+        .tap(Key::Down)
+        .at(40.0)
+        .tap(Key::Return)
+        .at(50.0)
+        .tap_with(Key::V, Mods::CTRL)
+        .at(60.0)
+        .tap_with(Key::V, Mods::CTRL)
+        .at(70.0)
+        .tap(Key::Return)
+        .at(80.0)
+        .tap(Key::Left)
+        .at(90.0)
+        .tap(Key::Escape);
+    let mut h = Harness::new("en", script);
+    h.desktop
+        .clipboard
+        .lock()
+        .unwrap()
+        .push(" bo-b\r\n".to_owned());
+    assert_eq!(main_menu(&mut h.client), Ok(()));
+    assert_eq!(
+        h.spoken()[8..13],
+        [
+            "enter your new login name use letters and numbers only",
+            // What was pasted; then, the field having held text, all of it.
+            "b o b",
+            "b o b . b o b b o b",
+            "bobbob",
+            "new login bobbob",
+        ]
+    );
+    assert_eq!(h.client.config.login.as_str(), "bobbob");
+}
+
+/// A chat line being typed, as the game and the menus' chat key start one.
+fn chat_entry(h: &mut Harness) -> TextEntry {
+    TextEntry::start(
+        &mut h.client,
+        &vec![MsgPart::from("chat")],
+        chat_char,
+        "",
+        false,
+    )
+}
+
+fn paste(h: &mut Harness, entry: &mut TextEntry) -> Typed {
+    entry.key(&mut h.client, &press(Key::V, Mods::CTRL))
+}
+
+#[test]
+fn a_pasted_line_break_neither_sends_the_line_nor_stays_in_it() {
+    let mut h = Harness::new("en", Script::new());
+    let mut entry = chat_entry(&mut h);
+    h.desktop
+        .clipboard
+        .lock()
+        .unwrap()
+        .push("go\r\nnorth\t!\u{7}".to_owned());
+    assert_eq!(paste(&mut h, &mut entry), Typed::Typing);
+    assert_eq!(
+        entry.key(&mut h.client, &press(Key::Return, Mods::NONE)),
+        Typed::Done("gonorth!".to_owned())
+    );
+    assert_eq!(h.spoken(), ["chat", "gonorth!", "gonorth!"]);
+}
+
+#[test]
+fn a_paste_fills_the_line_up_to_its_longest_and_no_further() {
+    let mut h = Harness::new("en", Script::new());
+    let mut entry = chat_entry(&mut h);
+    h.desktop
+        .clipboard
+        .lock()
+        .unwrap()
+        .push("a".repeat(MAX_LINE_CHARS + 50));
+    paste(&mut h, &mut entry);
+    // The line is full: a typed letter and a second paste beep.
+    assert_eq!(
+        entry.key(&mut h.client, &press(Key::B, Mods::NONE)),
+        Typed::Typing
+    );
+    paste(&mut h, &mut entry);
+    assert_eq!(
+        entry.key(&mut h.client, &press(Key::Return, Mods::NONE)),
+        Typed::Done("a".repeat(MAX_LINE_CHARS))
+    );
+    let full = "a".repeat(MAX_LINE_CHARS);
+    assert_eq!(
+        h.said_since(0),
+        [
+            "chat".to_owned(),
+            full.clone(),
+            format!("<1029> . {full}"),
+            format!("<1029> . {full}"),
+            full
+        ]
+    );
+}
+
+#[test]
+fn pasting_an_empty_clipboard_beeps_and_says_the_line() {
+    let mut h = Harness::new("en", Script::new());
+    let mut entry = chat_entry(&mut h);
+    entry.key(&mut h.client, &press(Key::H, Mods::NONE));
+    assert_eq!(paste(&mut h, &mut entry), Typed::Typing);
+    // The beep is a recorded sound, then the line is said.
+    assert_eq!(h.said_since(0), ["chat", "h . h", "<1029> . h"]);
 }

@@ -96,6 +96,10 @@ pub const KEY_HELP_ON: &str = "key help on: press a key to hear what it does, Es
 pub const KEY_HELP_OFF: &str = "key help off";
 pub const NO_COMMAND: &str = "no command";
 
+// Copying a message of the log.
+
+pub const COPIED: &str = "copied";
+
 // The categories of news, as the log's review keys name them. An alert is
 // the original's own word.
 

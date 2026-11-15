@@ -151,6 +151,8 @@ pub enum GameCommand {
     ReviewNext,
     /// Reviews the next category.
     ReviewCategory,
+    /// Copies the message under review, or the one said last.
+    CopyMessage,
     /// Moves the cursor to the square of the last alert, then the one
     /// before.
     JumpToAlert,
@@ -227,6 +229,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "review_previous",
     "review_next",
     "review_category",
+    "copy_message",
     "jump_to_alert",
     "objectives",
     "gamemenu",
@@ -388,6 +391,7 @@ impl GameCommand {
             "review_previous" => none(C::ReviewPrevious)?,
             "review_next" => none(C::ReviewNext)?,
             "review_category" => none(C::ReviewCategory)?,
+            "copy_message" => none(C::CopyMessage)?,
             "jump_to_alert" => none(C::JumpToAlert)?,
             "objectives" => none(C::Objectives)?,
             "gamemenu" => none(C::GameMenu)?,
@@ -627,6 +631,7 @@ impl GameCommand {
             C::ReviewPrevious => "previous message of the category".into(),
             C::ReviewNext => "next message of the category".into(),
             C::ReviewCategory => "change the category of messages".into(),
+            C::CopyMessage => "copy the message you review, or the last one said".into(),
             C::Say => "write to every player".into(),
             C::SayAllies => "write to your allies".into(),
             C::ChatPrevious => "previous chat message".into(),
@@ -763,6 +768,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 158);
+        assert_eq!(seen.len(), 159);
     }
 }

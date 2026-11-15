@@ -190,14 +190,7 @@ impl VoiceChannel {
     /// recorded sounds, instead of what was being said.
     pub fn play(&mut self, parts: &Msg, (lv, rv): (f64, f64), kind: VoiceKind, which: Parts) {
         if self.debug_mode && which != Parts::Sounds {
-            let texts: Vec<String> = translate_and_collapse(parts, &self.sounds, Parts::Texts)
-                .into_iter()
-                .filter_map(|s| match s {
-                    Spoken::Text(t) => Some(t),
-                    Spoken::Sound(_) => None,
-                })
-                .collect();
-            self.log.said(&texts.join(" "));
+            self.log.said(&self.words(parts));
         }
         let spoken = translate_and_collapse(parts, &self.sounds, which);
         if let Some(record) = &self.record {
@@ -221,6 +214,19 @@ impl VoiceChannel {
             self.queue.push_back((part, lv, rv));
         }
         self.update();
+    }
+
+    /// The words of a message as the speech device gets them, without its
+    /// recorded sounds.
+    pub fn words(&self, parts: &Msg) -> String {
+        let texts: Vec<String> = translate_and_collapse(parts, &self.sounds, Parts::Texts)
+            .into_iter()
+            .filter_map(|s| match s {
+                Spoken::Text(t) => Some(t),
+                Spoken::Sound(_) => None,
+            })
+            .collect();
+        texts.join(" ")
     }
 
     /// Whether a message has recorded sounds among its parts.
@@ -400,6 +406,12 @@ pub struct Voice {
     current: usize,
     missed: Missed,
     review: Review,
+    /// The message of the log whose words were said last, as said (newer
+    /// news may replace it in the log).
+    said_last: Option<Msg>,
+    /// The message a review key said last, until an answer to another key
+    /// or a message said now.
+    reviewed: Option<Msg>,
     /// Inside the game loop: a message said now does not wait.
     in_game: bool,
     channel: VoiceChannel,
@@ -421,6 +433,8 @@ impl Voice {
                 category: Category::Alert,
                 at: None,
             },
+            said_last: None,
+            reviewed: None,
             in_game: false,
             channel,
             input,
@@ -655,6 +669,8 @@ impl Voice {
             }
         }
         self.push(content, Heard::Yes);
+        self.said_last = Some(msg.clone());
+        self.reviewed = None;
         self.go_to_next_unsaid();
         self.active = false;
     }
@@ -667,6 +683,7 @@ impl Voice {
 
     pub fn item_stereo(&mut self, msg: &Msg, lv: f64, rv: f64) {
         self.missed = Missed::Count;
+        self.reviewed = None;
         self.answer(msg, (lv, rv));
     }
 
@@ -686,6 +703,8 @@ impl Voice {
         let e = &mut self.log[i];
         e.heard = Heard::Yes;
         let parts = e.parts().clone();
+        self.said_last = Some(parts.clone());
+        self.reviewed = Some(parts.clone());
         self.go_to_next_unsaid();
         self.channel
             .play(&parts, CENTERED, VoiceKind::History, Parts::All);
@@ -792,6 +811,25 @@ impl Voice {
         self.answer(&category_title(self.review.category), CENTERED);
     }
 
+    /// The copy key: says "copied" and gives the words of the message a
+    /// review key said last, or, when the player is not reviewing, of the
+    /// message said last; says "nothing" when there are none. A review
+    /// goes on after it.
+    pub fn copy(&mut self) -> Option<String> {
+        let copied = self
+            .reviewed
+            .as_ref()
+            .or(self.said_last.as_ref())
+            .map(|m| self.channel.words(m))
+            .filter(|w| !w.is_empty());
+        let answer = match copied {
+            Some(_) => text(words::COPIED),
+            None => msg(mp::NOTHING),
+        };
+        self.answer(&answer, CENTERED);
+        copied
+    }
+
     /// A game starts: news from now on does not replace the news of the
     /// log so far. The place in the log of the game's first message.
     pub fn start_game(&mut self) -> EntryId {
@@ -841,6 +879,12 @@ impl Voice {
                     VoiceKind::Info
                 };
                 let parts = e.parts().clone();
+                if which == Parts::All {
+                    self.said_last = Some(parts.clone());
+                }
+                if self.history {
+                    self.reviewed = Some(parts.clone());
+                }
                 self.channel.play(&parts, CENTERED, kind, which);
                 self.active = true;
             }
