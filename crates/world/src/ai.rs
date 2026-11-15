@@ -559,7 +559,7 @@ impl Door<'_> {
                 .map(|t| self.rules().ty(t).can_use.clone())
                 .unwrap_or_default();
             for a in abilities {
-                if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
+                if !self.is_order_allowed(u, Keyword::Use, Some(&a)) {
                     continue;
                 }
                 let rules = self.rules();
@@ -656,7 +656,7 @@ impl Door<'_> {
     /// Stops a unit with the stop order, if it has something to stop: a
     /// human gives no stop order to a unit standing idle.
     fn stop(&mut self, u: EntityId) -> Res {
-        if self.is_order_allowed(u, Keyword::Stop, None)? {
+        if self.is_order_allowed(u, Keyword::Stop, None) {
             self.give(u, Request::stop(), true)?;
         }
         Ok(())

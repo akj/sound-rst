@@ -1127,18 +1127,15 @@ impl World {
 
     /// Whether a unit may receive an order now (`cls.is_allowed(unit,
     /// *args)`), with the name of its type for `train`, `build`... A
-    /// complex order without its type raises in the original; one whose
-    /// type the rules lack is not allowed.
+    /// complex order without its type, or with a type the rules lack, is
+    /// not allowed.
     pub(crate) fn is_order_allowed(
         &self,
         unit: EntityId,
         kw: Keyword,
         type_name: Option<&str>,
-    ) -> Res<bool> {
-        let t = match type_name.map(|n| self.rules.type_id(n)) {
-            Some(None) if kw.is_complex() => return Ok(false),
-            t => t.flatten(),
-        };
+    ) -> bool {
+        let t = type_name.and_then(|n| self.rules.type_id(n));
         questions::is_order_allowed(self, self.e(unit), kw, t)
     }
 
@@ -1182,7 +1179,7 @@ impl World {
             return Ok(());
         }
         let kw = request.keyword;
-        if !self.is_order_allowed(unit, kw, request.type_name())? {
+        if !self.is_order_allowed(unit, kw, request.type_name()) {
             self.notify(unit, EntityEvent::OrderImpossible(None), false);
             return Ok(());
         }

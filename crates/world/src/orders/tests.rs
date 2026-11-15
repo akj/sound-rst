@@ -660,7 +660,7 @@ fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
     w.update();
     let townhall = find(&w, a, "townhall");
     let peasant = find(&w, a, "peasant");
-    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t)).unwrap();
+    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t));
     assert!(allowed(&w, townhall, Keyword::Train, "peasant"));
     assert!(!allowed(&w, townhall, Keyword::Train, "goldmine"));
     assert!(allowed(&w, townhall, Keyword::UpgradeTo, "keep"));

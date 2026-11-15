@@ -351,11 +351,8 @@ impl Door<'_> {
         u: EntityId,
         kw: Keyword,
         type_name: Option<&str>,
-    ) -> Res<bool> {
-        if self.unit(u).is_none() {
-            return Ok(false);
-        }
-        self.world.is_order_allowed(u, kw, type_name)
+    ) -> bool {
+        self.unit(u).is_some() && self.world.is_order_allowed(u, kw, type_name)
     }
 
     /// Whether two orders of its units are the same order.

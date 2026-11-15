@@ -11,7 +11,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::abort::{Abort, Res};
+use crate::abort::Res;
 use crate::entity::{AiMode, Creature, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
@@ -663,20 +663,17 @@ fn complex_is_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t:
 
 /// Whether a unit may receive an order now (`cls.is_allowed(unit,
 /// *args)`), with its type for `train`, `build`... A complex order
-/// without its type raises in the original.
+/// without its type is not allowed.
 pub(crate) fn is_order_allowed<'a, K: Knowledge<'a>>(
     k: K,
     unit: K::Unit,
     kw: Keyword,
     t: Option<TypeId>,
-) -> Res<bool> {
+) -> bool {
     if kw.is_complex() {
-        let t = t.ok_or_else(|| {
-            Abort::new("is_allowed() missing 1 required positional argument: 'type_name'")
-        })?;
-        return Ok(complex_is_allowed(k, unit, kw, t));
+        return t.is_some_and(|t| complex_is_allowed(k, unit, kw, t));
     }
-    Ok(order_is_allowed(k, unit, kw))
+    order_is_allowed(k, unit, kw)
 }
 
 /// Whether a unit may receive an order without a type.
@@ -738,37 +735,12 @@ pub(crate) fn order_menu<'a, K: Knowledge<'a>>(
 
 // costs
 
-/// The type of a complex order: `footman` in `train footman`.
-pub(crate) fn complex_type(rules: &Rules, t: Option<TypeId>) -> Res<&UnitType> {
-    t.map(|t| rules.ty(t))
-        .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
-}
-
 /// The cost of a unit's type: zeros for building sites and others.
 pub(crate) fn entity_cost(rules: &Rules, unit: &impl EntityFacts) -> Vec<i64> {
     match unit.unit_type(rules) {
         Some(t) if !t.cost.is_empty() => t.cost.clone(),
         _ => vec![0; MAX_NB_OF_RESOURCE_TYPES],
     }
-}
-
-/// What an order of a unit costs in each resource. Upgrading to a type
-/// costs the difference with the unit's own type.
-pub(crate) fn order_cost(
-    rules: &Rules,
-    unit: &impl UnitFacts,
-    kw: Keyword,
-    type_id: Option<TypeId>,
-) -> Res<Vec<i64>> {
-    if !kw.is_complex() {
-        return Ok(priced_cost(rules, unit, None));
-    }
-    let t = complex_type(rules, type_id)?;
-    Ok(priced_cost(
-        rules,
-        unit,
-        Some((t, kw == Keyword::UpgradeTo)),
-    ))
 }
 
 /// What an order costs in each resource, from the type it pays for and
@@ -793,20 +765,6 @@ pub(crate) fn priced_cost(
     }
 }
 
-/// The food an order of a unit uses.
-pub(crate) fn order_food_cost(
-    rules: &Rules,
-    unit: &impl UnitFacts,
-    kw: Keyword,
-    type_id: Option<TypeId>,
-) -> Res<i64> {
-    if !kw.is_complex() {
-        return Ok(priced_food_cost(unit, None));
-    }
-    let t = complex_type(rules, type_id)?;
-    Ok(priced_food_cost(unit, Some((t, kw == Keyword::UpgradeTo))))
-}
-
 /// The food an order uses, as [`priced_cost`] reads its type.
 pub(crate) fn priced_food_cost(unit: &impl UnitFacts, priced: Option<(&UnitType, bool)>) -> i64 {
     match priced {
@@ -825,15 +783,19 @@ pub(crate) fn order_info(
     kw: Keyword,
     type_id: Option<TypeId>,
 ) -> Option<OrderInfo> {
-    let nb_args = if kw == Keyword::Use {
-        let t = complex_type(rules, type_id).ok()?;
-        usize::from(t.effect_target == ["ask"])
-    } else {
-        kw.nb_args()
+    // Upgrading to a type pays the difference with the unit's own type.
+    let priced = match (kw.is_complex(), type_id) {
+        (false, _) => None,
+        (true, Some(t)) => Some((rules.ty(t), kw == Keyword::UpgradeTo)),
+        (true, None) => return None,
+    };
+    let nb_args = match priced {
+        Some((t, _)) if kw == Keyword::Use => usize::from(t.effect_target == ["ask"]),
+        _ => kw.nb_args(),
     };
     Some(OrderInfo {
-        cost: order_cost(rules, unit, kw, type_id).ok()?,
-        food_cost: order_food_cost(rules, unit, kw, type_id).ok()?,
+        cost: priced_cost(rules, unit, priced),
+        food_cost: priced_food_cost(unit, priced),
         nb_args,
     })
 }
@@ -893,10 +855,9 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
     unit: K::Unit,
     target: &TargetRef,
 ) -> Res<Option<Keyword>> {
+    // A unit without an owner takes no order.
     let Some(p) = unit.owner() else {
-        return Err(Abort::new(
-            "'NoneType' object has no attribute 'get_object_by_id'",
-        ));
+        return Ok(None);
     };
     let Some(Resolved { target, entity: te }) = k.resolve(p, target)? else {
         return Ok(None);
