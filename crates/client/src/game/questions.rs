@@ -66,8 +66,9 @@ impl GameInterface {
                 continue;
             };
             let mut m = style_msg(style, o.keyword.as_str(), "title");
-            if let Some(t) = &o.type_name {
-                m = substitute_args(m, &style_msg(style, t, "title"));
+            if let Some(t) = o.type_id {
+                let name = &self.view().unit_type_by_id(t).name;
+                m = substitute_args(m, &style_msg(style, name, "title"));
             }
             if o.is_deferred {
                 m.extend(style_msg(style, "messages", "production_deferred"));
@@ -641,7 +642,7 @@ mod tests {
             .view()
             .players()
             .iter()
-            .map(|&p| g.game.host().world().player(p).faction.clone())
+            .map(|&p| g.game.host().world().faction_name(p))
             .collect();
         assert_eq!(factions, ["orc_faction", "human_faction"]);
         assert_eq!(

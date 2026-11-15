@@ -180,7 +180,7 @@ impl Keyword {
 /// A queued order keeps it as given. [`TargetRef::text`] writes it as the
 /// map language does, which [`TargetRef::parse`] reads back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum TargetRef {
+pub enum TargetRef {
     /// A square, written as its protocol id.
     Square(SquareId),
     /// A square, written as its name (`b1`), as the map language names
@@ -206,6 +206,15 @@ impl TargetRef {
             TargetRef::Point { square, x, y } => format!("zoom-{}-{x}-{y}", w.square(square).id),
             TargetRef::Entity(e) => e.to_string(),
             TargetRef::Nothing => "None".to_owned(),
+        }
+    }
+
+    /// The target as reading back its text gives it: an id that is a
+    /// square's names the square.
+    fn normalized(self, w: &World) -> TargetRef {
+        match self {
+            TargetRef::Entity(e) => w.square_by_obj_id(e.0).map_or(self, TargetRef::Square),
+            t => t,
         }
     }
 
@@ -281,6 +290,7 @@ impl Request {
     }
 
     /// An order of a keyword with a type. `None` if the keyword takes none.
+    #[cfg(test)]
     pub(crate) fn typed(keyword: Keyword, type_name: impl Into<String>) -> Option<Request> {
         keyword.is_complex().then(|| Request {
             keyword,
@@ -408,6 +418,12 @@ impl Request {
         }
     }
 
+    /// The order a menu entry lists, without its target.
+    pub(crate) fn listed(rules: &Rules, entry: &MenuEntry) -> Request {
+        let type_name = entry.type_id.map(|t| rules.ty(t).name.clone());
+        Request::of(entry.keyword, type_name, None)
+    }
+
     /// The order in words, as a computer player keeps track of it:
     /// `["build", "farm", "25"]`.
     pub(crate) fn words(&self, w: &World) -> Vec<String> {
@@ -415,14 +431,6 @@ impl Request {
         words.extend(self.type_name.iter().cloned());
         words.extend(self.args(w));
         words
-    }
-
-    /// The order as a menu lists it: `go`, `train footman`.
-    pub(crate) fn menu_entry(&self) -> String {
-        match &self.type_name {
-            Some(t) => format!("{} {t}", self.keyword.as_str()),
-            None => self.keyword.as_str().to_owned(),
-        }
     }
 
     /// The first argument as text: a target as [`TargetRef::text`] writes
@@ -456,6 +464,10 @@ impl Request {
                 .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))
         };
         let aim = || self.given(w).map(Aim::new);
+        let target = || -> Res<TargetRef> {
+            self.given(w)?
+                .ok_or_else(|| Abort::new("list index out of range"))
+        };
         let now = Taken::Now;
         let queued = Taken::Queued;
         Ok(match self.keyword {
@@ -468,12 +480,9 @@ impl Request {
             Keyword::DisableAutoRepair => now(Immediate::AutoRepair(false)),
             Keyword::ModeOffensive => now(Immediate::Stance(AiMode::Offensive)),
             Keyword::ModeDefensive => now(Immediate::Stance(AiMode::Defensive)),
-            Keyword::RallyingPoint => now(Immediate::RallyingPoint(self.first_arg(w)?)),
+            Keyword::RallyingPoint => now(Immediate::RallyingPoint(target()?.normalized(w))),
             Keyword::JoinGroup => now(Immediate::JoinGroup(self.first_arg(w)?)),
-            Keyword::Enter => now(Immediate::Enter(
-                self.given(w)?
-                    .ok_or_else(|| Abort::new("list index out of range"))?,
-            )),
+            Keyword::Enter => now(Immediate::Enter(target()?)),
             Keyword::Train => queued(OrderKind::Production(Production::new(Product::Train(
                 type_id()?,
             )))),
@@ -555,8 +564,7 @@ enum Immediate {
     AutoGather(bool),
     AutoRepair(bool),
     Stance(AiMode),
-    /// The rallying point, as the text of its target.
-    RallyingPoint(String),
+    RallyingPoint(TargetRef),
     /// The name of the group to join.
     JoinGroup(String),
     /// The transport to enter.
@@ -976,6 +984,46 @@ pub struct OrderInfo {
     pub nb_args: usize,
 }
 
+/// An order a unit may receive, as its order menu lists it: the kind of
+/// order and, for a kind that takes one, the type it makes or uses
+/// (`footman` in `train footman`) and what that type requires.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuEntry {
+    pub keyword: Keyword,
+    pub type_id: Option<TypeId>,
+    /// The requirements of the type, by the class names the rules give
+    /// them: a type, or a class that types derive from.
+    pub requirements: Vec<String>,
+}
+
+impl MenuEntry {
+    /// An order without a type: `None` for a kind that takes one.
+    pub fn plain(keyword: Keyword) -> Option<MenuEntry> {
+        (!keyword.is_complex()).then(|| MenuEntry {
+            keyword,
+            type_id: None,
+            requirements: Vec::new(),
+        })
+    }
+
+    /// An order of a kind that takes a type: `None` for another kind.
+    pub fn typed(rules: &Rules, keyword: Keyword, t: TypeId) -> Option<MenuEntry> {
+        keyword.is_complex().then(|| MenuEntry {
+            keyword,
+            type_id: Some(t),
+            requirements: rules.ty(t).requirements.clone(),
+        })
+    }
+
+    /// The entry as the original's menus wrote it: `go`, `train footman`.
+    pub fn text(&self, rules: &Rules) -> String {
+        match self.type_id {
+            Some(t) => format!("{} {}", self.keyword.as_str(), rules.ty(t).name),
+            None => self.keyword.as_str().to_owned(),
+        }
+    }
+}
+
 impl World {
     fn find_order(&self, unit: EntityId, uid: u64) -> Option<usize> {
         self.entity(unit)?.orders.iter().position(|o| o.uid == uid)
@@ -1003,9 +1051,8 @@ impl World {
     /// equal for the same target given at the same time, `build` orders for
     /// the same type, target and command; other orders are never equal.
     pub(crate) fn order_eq(&self, a: &Order, b: &Order) -> bool {
-        let same_target = || {
-            a.target().and_then(|t| self.t_id_text(t)) == b.target().and_then(|t| self.t_id_text(t))
-        };
+        let same_target =
+            || a.target().and_then(Target::identity) == b.target().and_then(Target::identity);
         match &a.kind {
             OrderKind::Go { creation_time, .. } => {
                 matches!(&b.kind, OrderKind::Go { creation_time: tb, .. } if same_target() && creation_time == tb)
@@ -1065,40 +1112,39 @@ impl World {
         &self,
         unit: EntityId,
         keyword: Keyword,
-        type_name: Option<&str>,
+        type_id: Option<TypeId>,
     ) -> Option<OrderInfo> {
-        questions::order_info(&self.rules, &self.entity(unit)?, keyword, type_name)
+        questions::order_info(&self.rules, &self.entity(unit)?, keyword, type_id)
     }
 
     // permissions and menus
 
     /// Whether a unit may receive an order now (`cls.is_allowed(unit,
-    /// *args)`), with its type for `train`, `build`... A complex order
-    /// without its type raises in the original.
+    /// *args)`), with the name of its type for `train`, `build`... A
+    /// complex order without its type raises in the original; one whose
+    /// type the rules lack is not allowed.
     pub(crate) fn is_order_allowed(
         &self,
         unit: EntityId,
         kw: Keyword,
         type_name: Option<&str>,
     ) -> Res<bool> {
-        questions::is_order_allowed(self, self.e(unit), kw, type_name)
+        let t = match type_name.map(|n| self.rules.type_id(n)) {
+            Some(None) if kw.is_complex() => return Ok(false),
+            t => t.flatten(),
+        };
+        questions::is_order_allowed(self, self.e(unit), kw, t)
     }
 
     /// The menu entries of one kind of order for a unit: `go`, or
     /// `train footman`, `train archer`... With `strict`, the requirements
     /// must be met too.
-    pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<String> {
+    pub fn order_menu(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<MenuEntry> {
         questions::order_menu(self, self.e(unit), kw, strict)
     }
 
-    /// The orders of one kind that [`World::order_menu`] lists, without
-    /// their target.
-    pub(crate) fn menu_requests(&self, unit: EntityId, kw: Keyword, strict: bool) -> Vec<Request> {
-        questions::menu_requests(self, self.e(unit), kw, strict)
-    }
-
     /// Every menu entry of a unit, in the original's order of order kinds.
-    pub fn full_order_menu(&self, unit: EntityId, strict: bool) -> Vec<String> {
+    pub fn full_order_menu(&self, unit: EntityId, strict: bool) -> Vec<MenuEntry> {
         Keyword::ALL
             .iter()
             .flat_map(|&k| self.order_menu(unit, k, strict))
@@ -2252,22 +2298,12 @@ impl World {
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
                     .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
                 self.notify(u, EntityEvent::Complete, false);
-                // The rallying point keeps the text of the target it was
-                // given, which reads back as that target.
-                let rp = self.e(unit).rallying_point.clone();
-                match rp {
-                    Some(rp) => {
-                        let t = TargetRef::parse(self, &rp)?;
-                        self.take_default_order(u, t, true, false, None)?;
-                    }
-                    None => {
-                        // `get_object_by_id(None)` finds nothing.
-                    }
+                if let Some(t) = self.e(unit).rallying_point {
+                    self.take_default_order(u, t, true, false, None)?;
                 }
             }
             Product::Research(type_id) => {
-                let name = self.rules.ty(type_id).name.clone();
-                self.upgrade_player(&name, p)?;
+                self.upgrade_player(type_id, p)?;
                 self.notify(unit, EntityEvent::ResearchComplete, false);
             }
             Product::UpgradeTo(type_id) => {
@@ -2540,8 +2576,7 @@ impl World {
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                 return Ok(());
             }
-            let name = self.rules.ty(building).name.clone();
-            if self.check_count_limit(p, &name) {
+            if self.check_count_limit(p, building) {
                 self.put_building_site(unit, uid, building, t)?;
             } else {
                 self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
@@ -2871,7 +2906,7 @@ impl World {
                     let Some(dead) = self.e(c).corpse_unit.clone() else {
                         continue;
                     };
-                    if !self.check_count_limit(p, &dead.type_name) {
+                    if !dead.type_id.is_some_and(|t| self.check_count_limit(p, t)) {
                         continue;
                     }
                     self.resurrect(c, *dead, p)?;

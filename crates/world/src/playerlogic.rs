@@ -12,7 +12,7 @@ use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
 use crate::orders::{Order, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES};
+use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
 use crate::world::{Abort, INF, Res, World};
 
 /// The side of the buckets used to find units near a point.
@@ -321,14 +321,16 @@ impl World {
 
     fn update_allied_upgrades(&mut self, p: PlayerId) -> Res {
         for a in self.pl(p).allied.clone() {
-            for name in self.pl(a).upgrades.clone() {
-                while self.pl(p).level(&name) < self.pl(a).level(&name) {
-                    if self.rules.unit_type(&name).is_none_or(|t| !t.is_upgrade()) {
+            for (upg, _) in self.pl(a).upgrades.clone().iter() {
+                while self.pl(p).upgrades.level(upg) < self.pl(a).upgrades.level(upg) {
+                    let t = self.rules.ty(upg);
+                    if !t.is_upgrade() {
                         return Err(Abort::new(format!(
-                            "{name} has no attribute 'upgrade_player'"
+                            "{} has no attribute 'upgrade_player'",
+                            t.name
                         )));
                     }
-                    self.upgrade_player(&name, p)?;
+                    self.upgrade_player(upg, p)?;
                 }
             }
         }
@@ -703,7 +705,7 @@ impl World {
                     place: square,
                     x,
                     y,
-                    id: Some(t.text(self)),
+                    given: true,
                 })))
             }
             TargetRef::Entity(id) => {
@@ -813,14 +815,14 @@ impl World {
 
     /// `future_count`: units of a type, building sites for it, and units
     /// being trained or upgraded to it.
-    pub fn future_count(&self, p: PlayerId, type_name: &str) -> i64 {
-        questions::future_count(self, self.facts(p), type_name)
+    pub fn future_count(&self, p: PlayerId, t: TypeId) -> i64 {
+        questions::future_count(self, self.facts(p), t)
     }
 
     /// `check_count_limit`: whether the player may have one more of the
     /// type.
-    pub fn check_count_limit(&self, p: PlayerId, type_name: &str) -> bool {
-        questions::check_count_limit(self, self.facts(p), type_name)
+    pub fn check_count_limit(&self, p: PlayerId, t: TypeId) -> bool {
+        questions::check_count_limit(self, self.facts(p), t)
     }
 
     /// `nearest_warehouse`: the allied unit storing the resource with the

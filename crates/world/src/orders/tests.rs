@@ -1,5 +1,5 @@
 use super::*;
-use crate::entity::ZoomTarget;
+use crate::entity::{TargetIdentity, ZoomTarget};
 use crate::player::Controller;
 use crate::{AiScripts, Rules};
 
@@ -142,12 +142,12 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     // A target has no equality but identity: compare what it shows.
     let resolve = |w: &World, t| format!("{:?}", w.resolve_target(me, &t));
     let ok = |t: Option<Target>| format!("{:?}", Ok::<_, Abort>(t));
-    let zoom = |w: &World, (x, y)| {
+    let zoom = |(x, y)| {
         Target::Zoom(ZoomTarget {
             place: s,
             x,
             y,
-            id: Some(format!("zoom-{}-{x}-{y}", w.square(s).id)),
+            given: true,
         })
     };
     let square = ok(Some(Target::Square(a1)));
@@ -155,7 +155,7 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     assert_eq!(resolve(&w, TargetRef::SquareNamed(a1)), square);
     let (x, y) = inside;
     let point = TargetRef::Point { square: s, x, y };
-    assert_eq!(resolve(&w, point), ok(Some(zoom(&w, inside))));
+    assert_eq!(resolve(&w, point), ok(Some(zoom(inside))));
     let (x, y) = outside;
     let point = TargetRef::Point { square: s, x, y };
     assert_eq!(
@@ -172,6 +172,25 @@ fn a_target_means_what_the_player_perceives_or_remembers_now() {
     }
     assert_eq!(resolve(&w, TargetRef::Entity(far_enemy)), ok(None));
     assert_eq!(resolve(&w, TargetRef::Entity(EntityId(999_999))), ok(None));
+    // Orders compare targets by identity: a remembered entity is the
+    // entity, a point the player gave is its square and coordinates, and a
+    // subsquare the simulation chose has none.
+    let remembered = w.resolve_target(me, &TargetRef::Entity(seen)).unwrap();
+    assert_eq!(
+        remembered.and_then(|t| t.identity()),
+        Some(TargetIdentity::Entity(seen))
+    );
+    assert_eq!(
+        zoom(inside).identity(),
+        Some(TargetIdentity::Point(s, inside.0, inside.1))
+    );
+    let subsquare = ZoomTarget {
+        place: s,
+        x: inside.0,
+        y: inside.1,
+        given: false,
+    };
+    assert_eq!(Target::Zoom(subsquare).identity(), None);
     // An id that is a square's names the square.
     let a1_id = EntityId(w.square(a1).id);
     assert_eq!(resolve(&w, TargetRef::Entity(a1_id)), square);
@@ -352,7 +371,7 @@ fn a_unit_trained_goes_to_the_rallying_point() {
     let rally = Request::plain(Keyword::RallyingPoint).unwrap();
     w.take_order(townhall, rally.at(TargetRef::Square(b2)), true, false, None)
         .unwrap();
-    assert_eq!(w.e(townhall).rallying_point, Some(b2_id.clone()));
+    assert_eq!(w.e(townhall).rallying_point, Some(TargetRef::Square(b2)));
     let before = w.pl(me).units.clone();
     w.take_order(townhall, Request::train("peasant"), false, false, None)
         .unwrap();
@@ -581,7 +600,7 @@ fn a_building_upgraded_keeps_its_rallying_point() {
         w.update();
     }
     let castle = find(&w, a, "castle");
-    assert_eq!(w.e(castle).rallying_point, Some(b1_id.clone()));
+    assert_eq!(w.e(castle).rallying_point, Some(TargetRef::Square(b1)));
     // A peasant trained in the castle goes there.
     order(&mut w, a, &[castle], "train peasant");
     update_until(&mut w, |w| !all(w, a, "peasant").is_empty());

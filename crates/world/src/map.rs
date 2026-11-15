@@ -21,7 +21,7 @@ use regex::Regex;
 use crate::defs::{MAX_NUMBER, bounded, check_size, preprocess_within_limits};
 use crate::entity::{Place, PlayerId, SquareId};
 use crate::nofloat::{PRECISION, floordiv, py_float, py_int, to_int};
-use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger};
+use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upgrades};
 use crate::rules::AirGround;
 use crate::square::Square;
 use crate::triggers::{Expr, list_to_tree};
@@ -1028,16 +1028,17 @@ impl World {
             },
         };
         let faction = if controller.faction == "random_faction" {
-            let factions = self.rules.factions();
-            self.random
-                .choice_index(factions.len())
-                .and_then(|i| factions.get(i))
-                .cloned()
+            let factions = self.rules.factions().len();
+            let f = self
+                .random
+                .choice_index(factions)
+                .and_then(|i| self.rules.faction_at(i))
                 .ok_or_else(|| {
                     MapError("Cannot choose from an empty sequence (no faction)".into())
-                })?
+                })?;
+            Some(f)
         } else {
-            controller.faction.clone()
+            self.rules.faction_id(&controller.faction)
         };
         let number = if controller.is_neutral() {
             None
@@ -1060,7 +1061,7 @@ impl World {
 
     /// `faction_ai_type`: the faction's own version of an AI type.
     pub(crate) fn faction_ai_type(&self, p: PlayerId, ai_type: &str) -> String {
-        self.rules.equivalent_type(ai_type, &self.pl(p).faction)
+        self.rules.equivalent_name(self.pl(p).faction, ai_type)
     }
 
     fn init_alliance(&mut self, p: PlayerId) {
@@ -1123,15 +1124,17 @@ impl World {
         start: &Start,
         equivalents: bool,
     ) -> Result<(), MapError> {
-        let faction = self.pl(p).faction.clone();
+        let faction = self.pl(p).faction;
         let resources = self.rules.normalized_cost_or_resources(&start.resources);
         let mut units: Vec<(SquareId, i64, String)> = Vec::new();
-        let mut upgrades = Vec::new();
-        let mut forbidden = Vec::new();
+        let mut upgrades = Upgrades::default();
+        let mut forbidden = BTreeSet::new();
         for item in &start.items {
             match item {
+                // A name of no type forbids nothing: no unit can be told to
+                // make what the rules do not have.
                 StartItem::Forbidden(t) => {
-                    forbidden.push(t.strip_prefix('-').unwrap_or(t).to_owned())
+                    forbidden.extend(self.rules.type_id(t.strip_prefix('-').unwrap_or(t)))
                 }
                 StartItem::Units {
                     square,
@@ -1139,11 +1142,11 @@ impl World {
                     count,
                 } => {
                     let mut t = type_name.clone();
-                    if equivalents && self.rules.unit_type(&t).is_some() {
-                        t = self.rules.equivalent_type(&t, &faction);
+                    if equivalents && let Some(id) = self.rules.type_id(&t) {
+                        t.clone_from(&self.rules.ty(self.rules.equivalent(faction, id)).name);
                     }
-                    match self.rules.unit_type(&t) {
-                        Some(ut) if ut.is_upgrade() => upgrades.push(t),
+                    match self.rules.type_id(&t) {
+                        Some(id) if self.rules.ty(id).is_upgrade() => upgrades.add(id),
                         None => self.warn("couldn't create an initial unit"),
                         Some(_) => {
                             let s = square

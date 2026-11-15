@@ -3,7 +3,8 @@
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::orders::Keyword;
+use soundrts_world::orders::{Keyword, MenuEntry};
+use soundrts_world::rules::TypeId;
 use soundrts_world::{EntityId, KeywordOrder, SeatView};
 
 use crate::style::Style;
@@ -75,7 +76,7 @@ pub fn orders_list(style: &Style, log: &crate::log::Log) -> Vec<Keyword> {
 #[derive(Clone, Debug)]
 pub struct OrderTypeView {
     pub keyword: Keyword,
-    pub type_name: Option<String>,
+    pub type_id: Option<TypeId>,
     /// The unit the order was listed for.
     pub unit: EntityId,
     pub requirements: Vec<String>,
@@ -92,55 +93,53 @@ impl PartialEq for OrderTypeView {
     /// Two entries are the same order if they have the same keyword and
     /// type, whatever unit they were listed for.
     fn eq(&self, other: &Self) -> bool {
-        self.keyword == other.keyword && self.type_name == other.type_name
+        self.keyword == other.keyword && self.type_id == other.type_id
     }
 }
 
 impl OrderTypeView {
-    /// The menu entry `order` ("train footman") of `unit`.
+    /// The menu entry `entry` of `unit`.
     pub fn new(
-        order: &str,
+        entry: &MenuEntry,
         unit: EntityId,
         view: &SeatView,
         style: &Style,
         log: &crate::log::Log,
-    ) -> Option<OrderTypeView> {
-        let mut words = order.split_whitespace();
-        let keyword = Keyword::parse(words.next()?)?;
-        let type_name = words.next().map(str::to_owned);
-        let requirements = type_name
-            .as_deref()
-            .and_then(|t| view.unit_type(t))
-            .map(|t| t.requirements.clone())
-            .unwrap_or_default();
+    ) -> OrderTypeView {
+        let rules = &view.game_start().rules;
+        let keyword = entry.keyword;
+        let type_name = entry.type_id.map(|t| rules.ty(t).name.as_str());
         let mut title = style_msg(style, keyword.as_str(), "title");
-        if let Some(t) = &type_name {
+        if let Some(t) = type_name {
             let t2 = style_msg(style, t, "title");
             title = substitute_args(title, &t2);
         }
         let shortcut = style_msg_quiet(style, keyword.as_str(), "shortcut")
             .first()
             .or(type_name
-                .as_deref()
                 .map(|t| style_msg_quiet(style, t, "shortcut"))
                 .unwrap_or_default()
                 .first())
             .map(|p| p.to_string());
         let comment = style_msg_quiet(style, keyword.as_str(), "comment");
-        let info = view.order_info(unit, keyword, type_name.as_deref());
+        let info = view.order_info(unit, keyword, entry.type_id);
         if info.is_none() {
-            log.error(format!("problem with the order {order} of {}", unit.0));
+            log.error(format!(
+                "problem with the order {} of {}",
+                entry.text(rules),
+                unit.0
+            ));
         }
         let info = info.unwrap_or(soundrts_world::orders::OrderInfo {
             cost: Vec::new(),
             food_cost: 0,
             nb_args: 0,
         });
-        Some(OrderTypeView {
+        OrderTypeView {
             keyword,
-            type_name,
+            type_id: entry.type_id,
             unit,
-            requirements,
+            requirements: entry.requirements.clone(),
             title,
             shortcut,
             index: ord_index(style, log, keyword.as_str()),
@@ -148,14 +147,14 @@ impl OrderTypeView {
             cost: info.cost,
             food_cost: info.food_cost,
             nb_args: info.nb_args,
-        })
+        }
     }
 
     /// The order to give, without its target. None if the menu paired a
     /// keyword and a type wrongly.
-    pub fn order(&self) -> Option<KeywordOrder> {
-        match &self.type_name {
-            Some(t) => KeywordOrder::typed(self.keyword, t.clone()),
+    pub fn order(&self, view: &SeatView) -> Option<KeywordOrder> {
+        match self.type_id {
+            Some(t) => KeywordOrder::typed(self.keyword, view.unit_type_by_id(t).name.clone()),
             None => KeywordOrder::new(self.keyword),
         }
     }
@@ -164,10 +163,8 @@ impl OrderTypeView {
     pub fn target_shouldnt_collide(&self, view: &SeatView) -> bool {
         self.keyword == Keyword::Use
             && self
-                .type_name
-                .as_deref()
-                .and_then(|t| view.unit_type(t))
-                .is_some_and(|t| t.stats.effect_range > 12 * PRECISION)
+                .type_id
+                .is_some_and(|t| view.unit_type_by_id(t).stats.effect_range > 12 * PRECISION)
     }
 
     /// The missing requirements, else the costs, after "requires". A
@@ -219,6 +216,19 @@ impl OrderTypeView {
         let mut m = self.comment.clone();
         m.extend(self.requirements_msg(view, style));
         m
+    }
+}
+
+/// A menu entry as the original's menus wrote it (`train footman`), for
+/// tests.
+#[cfg(test)]
+pub(crate) fn entry(view: &SeatView, text: &str) -> MenuEntry {
+    let rules = &view.game_start().rules;
+    let mut words = text.split_whitespace();
+    let keyword = words.next().and_then(Keyword::parse).unwrap();
+    match words.next() {
+        Some(t) => MenuEntry::typed(rules, keyword, rules.type_id(t).unwrap()).unwrap(),
+        None => MenuEntry::plain(keyword).unwrap(),
     }
 }
 

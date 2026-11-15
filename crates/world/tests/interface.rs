@@ -67,10 +67,15 @@ fn an_order_gives_order_ok_to_the_local_human_only() {
 fn the_menu_lists_what_the_townhall_can_do() {
     let (w, me, _) = game();
     let th = common::find_player_unit(&w, me, "townhall", 0).unwrap();
-    let menu = w.full_order_menu(th, false);
+    let menu: Vec<String> = w
+        .full_order_menu(th, false)
+        .iter()
+        .map(|e| e.text(&w.rules))
+        .collect();
     assert!(menu.contains(&"train peasant".to_owned()), "{menu:?}");
     assert!(menu.contains(&"upgrade_to keep".to_owned()), "{menu:?}");
-    let info = w.order_info(th, Keyword::Train, Some("peasant")).unwrap();
+    let peasant = w.rules.type_id("peasant");
+    let info = w.order_info(th, Keyword::Train, peasant).unwrap();
     assert_eq!(info.cost, [4000, 0]);
     assert_eq!(info.food_cost, 1);
 }

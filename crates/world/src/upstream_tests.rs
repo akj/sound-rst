@@ -80,6 +80,14 @@ fn nb(w: &World, p: PlayerId, t: &str) -> usize {
         .count()
 }
 
+/// Whether a unit's menu of one kind of order (not strict) lists
+/// `entry` as the original wrote it: `train peasant`.
+fn in_menu(w: &World, u: EntityId, kw: Keyword, entry: &str) -> bool {
+    w.order_menu(u, kw, false)
+        .iter()
+        .any(|e| e.text(&w.rules) == entry)
+}
+
 /// An order written in the map language: `go b1`, `build barracks a1`.
 fn request(w: &World, order: &str) -> Request {
     Request::parse(w, &words(order)).unwrap()
@@ -483,18 +491,12 @@ starting_resources 10 10
         set_rule(&mut w, "peasant", |s| s.count_limit = 1);
         w.update();
         let th = find(&w, cp, "townhall", 0).unwrap();
-        assert!(
-            !w.order_menu(th, Keyword::Train, false)
-                .contains(&"train peasant".to_owned())
-        );
+        assert!(!in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
         assert!(w.e(th).orders.is_empty());
         set_rule(&mut w, "peasant", |s| s.count_limit = 2);
         w.update();
-        assert!(
-            w.order_menu(th, Keyword::Train, false)
-                .contains(&"train peasant".to_owned())
-        );
+        assert!(in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
         assert!(!w.e(th).orders.is_empty());
     }
@@ -514,10 +516,7 @@ starting_resources 10 10
         for p in [p1, p2] {
             assert!(w.e(p).orders.is_empty());
         }
-        assert!(
-            w.order_menu(p1, Keyword::Build, false)
-                .contains(&"build barracks".to_owned())
-        );
+        assert!(in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert!(!w.e(p).orders.is_empty());
@@ -527,10 +526,7 @@ starting_resources 10 10
             assert!(w.e(p).orders.is_empty());
         }
         assert_eq!(nb(&w, cp, "barracks"), 1);
-        assert!(
-            !w.order_menu(p1, Keyword::Build, false)
-                .contains(&"build barracks".to_owned())
-        );
+        assert!(!in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert!(w.e(p).orders.is_empty());
@@ -538,18 +534,18 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "barracks"), 1);
         set_rule(&mut w, "barracks", |s| s.count_limit = 2);
         w.update();
-        assert_eq!(w.future_count(cp, "barracks"), 1);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
             assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
             assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("barracks"));
         }
-        assert_eq!(w.future_count(cp, "barracks"), 1);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         run_until_idle(&mut w, &[p1, p2], 50);
         for p in [p1, p2] {
             assert!(w.e(p).orders.is_empty());
         }
-        assert_eq!(w.future_count(cp, "barracks"), 2);
+        assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 2);
         assert_eq!(nb(&w, cp, "barracks"), 2);
         assert_eq!(nb(&w, cp, "farm"), 1);
         take(&mut w, p1, "build farm a1");
@@ -605,7 +601,8 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "dragon"), 1);
         set_rule(&mut w, "dragon", |s| s.count_limit = 2);
         add(&mut w, cp, "a1 mage");
-        w.plm(cp).upgrades.push("u_summon_dragon".into());
+        let upgrade = w.rules.type_id("u_summon_dragon").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         w.update();
         let m = find(&w, cp, "mage", 0).unwrap();
         take(&mut w, m, "use a_summon_dragon a1");
@@ -629,7 +626,6 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "zombie"), 0);
         set_rule(&mut w, "zombie", |s| s.count_limit = 1);
         add(&mut w, cp, "a1 necromancer");
-        w.plm(cp).upgrades.push("u_raise_dead".into());
         w.update();
         let n = find(&w, cp, "necromancer", 0).unwrap();
         take(&mut w, n, "use a_raise_dead a1");
@@ -647,7 +643,8 @@ starting_resources 10 10
         w.update();
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let p = find(&w, cp, "priest", 0).unwrap();
         take(&mut w, p, "use a_resurrection a1");
         w.update();
@@ -667,7 +664,8 @@ starting_resources 10 10
         take(&mut w, b, "train footman");
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let p = find(&w, cp, "priest", 0).unwrap();
         take(&mut w, p, "use a_resurrection a1");
         w.update();
@@ -688,7 +686,8 @@ starting_resources 10 10
         // After the first turn, each search for a free space starts afresh.
         w.update();
         add(&mut w, cp, "a1 priest");
-        w.plm(cp).upgrades.push("u_resurrection".into());
+        let upgrade = w.rules.type_id("u_resurrection").unwrap();
+        w.plm(cp).upgrades.add(upgrade);
         let a1 = sq(&w, "a1");
         let (x, y) = (w.square(a1).x, w.square(a1).y);
         let tid = w.rules.type_id("footman").unwrap();
@@ -1921,7 +1920,7 @@ starting_resources 100 100
                 place: a1,
                 x,
                 y,
-                id: None,
+                given: false,
             })
         };
         assert!(zoom(2000, 2000).same(&zoom(2000, 2000)));

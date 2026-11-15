@@ -14,6 +14,7 @@ use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::nofloat::PRECISION;
 use crate::orders::Order;
+use crate::rules::{FactionId, TypeId};
 use crate::triggers::Expr;
 
 /// Who controls a player.
@@ -232,6 +233,44 @@ impl PlayerStats {
     }
 }
 
+/// The upgrades a player has, each with its level: how many times it was
+/// researched or given. In the order the player first got them, which is
+/// the order a player's allies get them in.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Upgrades(Vec<(TypeId, u32)>);
+
+impl Upgrades {
+    /// How many times the player got `upgrade`: 0 if never.
+    pub fn level(&self, upgrade: TypeId) -> u32 {
+        self.0
+            .iter()
+            .find(|(t, _)| *t == upgrade)
+            .map_or(0, |&(_, n)| n)
+    }
+
+    pub fn has(&self, upgrade: TypeId) -> bool {
+        self.level(upgrade) > 0
+    }
+
+    /// Raises the level of `upgrade` by one.
+    pub(crate) fn add(&mut self, upgrade: TypeId) {
+        match self.0.iter_mut().find(|(t, _)| *t == upgrade) {
+            Some((_, n)) => *n = n.saturating_add(1),
+            None => self.0.push((upgrade, 1)),
+        }
+    }
+
+    /// Each upgrade and its level, in the order the player first got them.
+    pub fn iter(&self) -> impl Iterator<Item = (TypeId, u32)> + '_ {
+        self.0.iter().copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// The end of a local human's turn, as the world records it for the host.
 #[derive(Debug)]
 pub(crate) struct EndOfTurn {
@@ -248,7 +287,9 @@ pub struct Player {
     pub kind: PlayerKind,
     pub controller: Controller,
     pub neutral: bool,
-    pub faction: String,
+    /// `None` for a faction the rules do not define, which a controller
+    /// may name: the player then uses every type as it is.
+    pub faction: Option<FactionId>,
     /// The allies, the player included, each once.
     pub allied: Vec<super::entity::PlayerId>,
     /// 1 for the first non-neutral player, and so on.
@@ -261,9 +302,9 @@ pub struct Player {
     pub units: Vec<EntityId>,
     /// Build orders whose cost is reserved.
     pub budget: Vec<Order>,
-    /// Researched upgrades; an upgrade researched twice appears twice.
-    pub upgrades: Vec<String>,
-    pub forbidden_techs: Vec<String>,
+    pub upgrades: Upgrades,
+    /// The types the player may not build, train, research or use.
+    pub forbidden_techs: BTreeSet<TypeId>,
     pub observed_before_squares: BTreeSet<SquareId>,
     pub strictly_observed_before_squares: BTreeSet<SquareId>,
     pub observed_squares: BTreeSet<SquareId>,
@@ -431,7 +472,7 @@ impl Player {
         obj_id: u32,
         kind: PlayerKind,
         controller: Controller,
-        faction: String,
+        faction: Option<FactionId>,
     ) -> Player {
         Player {
             obj_id,
@@ -447,8 +488,8 @@ impl Player {
             objectives: Vec::new(),
             units: Vec::new(),
             budget: Vec::new(),
-            upgrades: Vec::new(),
-            forbidden_techs: Vec::new(),
+            upgrades: Upgrades::default(),
+            forbidden_techs: BTreeSet::new(),
             observed_before_squares: BTreeSet::new(),
             strictly_observed_before_squares: BTreeSet::new(),
             observed_squares: BTreeSet::new(),
@@ -538,11 +579,6 @@ impl Player {
             "ai_aggressive" => msg(mp::AGGRESSIVE_COMPUTER),
             _ => vec![MsgPart::Literal(login)],
         }
-    }
-
-    /// The number of times `type_name` was researched.
-    pub fn level(&self, type_name: &str) -> i64 {
-        self.upgrades.iter().filter(|u| *u == type_name).count() as i64
     }
 
     /// `min(food, food_limit)`.

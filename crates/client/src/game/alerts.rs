@@ -3,6 +3,7 @@
 
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
+use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::{EntityId, KnownEntity, Place, PlayerId, SquareId};
 
 use crate::audio::stereo;
@@ -65,23 +66,22 @@ impl UnitsNews {
 const FLARE_SOUND: &str = "1339";
 
 /// Orders that do not make a menu richer.
-const IRRELEVANT_ORDERS: &[&str] = &[
-    "stop",
-    "cancel_training",
-    "cancel_upgrading",
-    "cancel_building",
-    "mode_offensive",
-    "mode_defensive",
-    "load",
-    "load_all",
-    "unload",
-    "unload_all",
+const IRRELEVANT_ORDERS: &[Keyword] = &[
+    Keyword::Stop,
+    Keyword::CancelTraining,
+    Keyword::CancelUpgrading,
+    Keyword::CancelBuilding,
+    Keyword::ModeOffensive,
+    Keyword::ModeDefensive,
+    Keyword::Load,
+    Keyword::LoadAll,
+    Keyword::UnloadAll,
 ];
 
-fn relevant_menu(menu: &[String]) -> Vec<String> {
+fn relevant_menu(menu: &[MenuEntry]) -> Vec<MenuEntry> {
     let mut m = menu.to_vec();
-    for x in IRRELEVANT_ORDERS {
-        if let Some(i) = m.iter().position(|o| o == x) {
+    for &x in IRRELEVANT_ORDERS {
+        if let Some(i) = m.iter().position(|o| o.keyword == x) {
             m.remove(i);
         }
     }
@@ -706,17 +706,23 @@ mod tests {
 
     #[test]
     fn stop_cancel_modes_and_transport_orders_do_not_change_a_menu() {
-        let menu: Vec<String> = [
-            "go",
-            "stop",
-            "train footman",
-            "stop",
-            "mode_offensive",
-            "load",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        assert_eq!(relevant_menu(&menu), ["go", "train footman", "stop"]);
+        let plain = |k| MenuEntry::plain(k).unwrap();
+        let train_footman = MenuEntry {
+            keyword: Keyword::Train,
+            type_id: Some(soundrts_world::rules::TypeId(3)),
+            requirements: Vec::new(),
+        };
+        let menu = [
+            plain(Keyword::Go),
+            plain(Keyword::Stop),
+            train_footman.clone(),
+            plain(Keyword::Stop),
+            plain(Keyword::ModeOffensive),
+            plain(Keyword::Load),
+        ];
+        assert_eq!(
+            relevant_menu(&menu),
+            [plain(Keyword::Go), train_footman, plain(Keyword::Stop)]
+        );
     }
 }

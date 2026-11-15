@@ -271,11 +271,12 @@ impl World {
             e.stats = stats;
             e.damage_level = 0;
         }
-        for upg in self.can_use(id) {
-            if self.pl(p).upgrades.contains(&upg) {
-                for level in 0..self.pl(p).level(&upg) {
-                    self.apply_upgrade_effect(&upg, id, level)?;
-                }
+        for name in self.can_use(id) {
+            let Some(upg) = self.rules.type_id(&name) else {
+                continue;
+            };
+            for level in 0..self.pl(p).upgrades.level(upg) {
+                self.apply_upgrade_effect(upg, id, i64::from(level))?;
             }
         }
         let e = self.em(id);
@@ -286,22 +287,27 @@ impl World {
 
     /// `Upgrade.upgrade_player`: applies the upgrade to the player's units
     /// that can use it, then records it.
-    pub(crate) fn upgrade_player(&mut self, upgrade: &str, p: PlayerId) -> Res {
-        let level = self.pl(p).level(upgrade);
+    pub(crate) fn upgrade_player(&mut self, upgrade: TypeId, p: PlayerId) -> Res {
+        let level = i64::from(self.pl(p).upgrades.level(upgrade));
         for u in self.pl(p).units.clone() {
-            if self.can_use(u).iter().any(|c| c == upgrade) {
+            if self
+                .can_use(u)
+                .iter()
+                .any(|c| *c == self.rules.ty(upgrade).name)
+            {
                 self.apply_upgrade_effect(upgrade, u, level)?;
             }
         }
-        self.plm(p).upgrades.push(upgrade.to_owned());
+        self.plm(p).upgrades.add(upgrade);
         Ok(())
     }
 
-    fn apply_upgrade_effect(&mut self, upgrade: &str, unit: EntityId, start_level: i64) -> Res {
-        let effect = self
-            .rules
-            .unit_type(upgrade)
-            .and_then(|t| t.effect.clone())
+    fn apply_upgrade_effect(&mut self, upgrade: TypeId, unit: EntityId, start_level: i64) -> Res {
+        let t = self.rules.ty(upgrade);
+        let upgrade = &t.name;
+        let effect = t
+            .effect
+            .clone()
             .ok_or_else(|| Abort::new(format!("{upgrade} has no effect")))?;
         let arg = |i: usize| -> Res<&String> {
             effect
@@ -403,7 +409,7 @@ impl World {
         let Some(p) = e.player else {
             return Vec::new();
         };
-        questions::upgrades_applying(self.type_of(id), &self.pl(p).upgrades)
+        questions::upgrades_applying(&self.rules, self.type_of(id), &self.pl(p).upgrades)
     }
 
     // geometry

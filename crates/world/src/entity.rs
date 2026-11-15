@@ -15,7 +15,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::nofloat::PRECISION;
-use crate::orders::Order;
+use crate::orders::{Order, TargetRef};
 use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 
 /// The identifier of an entity, also used for squares and players in the
@@ -66,8 +66,19 @@ pub struct ZoomTarget {
     pub place: SquareId,
     pub x: i64,
     pub y: i64,
-    /// The text id it was given with, if any.
-    pub id: Option<String>,
+    /// Given by the player, rather than a subsquare the simulation chose:
+    /// only a given point has an identity (see [`Target::identity`]).
+    pub given: bool,
+}
+
+/// What tells two targets apart when orders are compared: the same
+/// square, the same entity (perceived or remembered), or the same point
+/// given by the player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TargetIdentity {
+    Square(SquareId),
+    Entity(EntityId),
+    Point(SquareId, i64, i64),
 }
 
 /// A remembered entity: a copy of the entity made when it went out of
@@ -103,13 +114,14 @@ impl Target {
         }
     }
 
-    /// `getattr(target, "id", None)` as text.
-    pub fn id_text(&self, square_ids: impl Fn(SquareId) -> u32) -> Option<String> {
+    /// What tells the target apart when orders are compared (the
+    /// original's `id`): a subsquare and a point have none.
+    pub(crate) fn identity(&self) -> Option<TargetIdentity> {
         match self {
-            Target::Square(s) => Some(square_ids(*s).to_string()),
-            Target::Zoom(z) => z.id.clone(),
-            Target::Entity(e) => Some(e.0.to_string()),
-            Target::Memory(m) => Some(m.snapshot.id.0.to_string()),
+            Target::Square(s) => Some(TargetIdentity::Square(*s)),
+            Target::Zoom(z) => z.given.then_some(TargetIdentity::Point(z.place, z.x, z.y)),
+            Target::Entity(e) => Some(TargetIdentity::Entity(*e)),
+            Target::Memory(m) => Some(TargetIdentity::Entity(m.snapshot.id)),
             Target::Xy(..) => None,
         }
     }
@@ -221,8 +233,8 @@ pub struct Entity {
     pub damage_level: i64,
     /// `float("inf")` is [`crate::INF`].
     pub distance_to_goal: i64,
-    /// The id given to the `rallying_point` order.
-    pub rallying_point: Option<String>,
+    /// Where the units it trains go, as the `rallying_point` order gave it.
+    pub rallying_point: Option<TargetRef>,
     /// The name of the group the unit joined.
     pub group: Option<String>,
     pub ai_mode: Option<AiMode>,

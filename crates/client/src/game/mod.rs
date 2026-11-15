@@ -54,7 +54,7 @@ use indexmap::{IndexMap, IndexSet};
 use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Msg, MsgPart, msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::orders::Keyword;
+use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::player::Objective;
 use soundrts_world::{
     Command, EntityId, Host, KnownEntity, Place, PlayerId, SeatView, SquareId, TurnMessage,
@@ -279,7 +279,7 @@ pub struct GameInterface {
     pub(crate) previous_order: Option<OrderTypeView>,
     pub(crate) previous_group: Option<Vec<EntityId>>,
     pub(crate) previous_compass: Option<Msg>,
-    pub(crate) previous_menus: IndexMap<String, Vec<String>>,
+    pub(crate) previous_menus: IndexMap<String, Vec<MenuEntry>>,
     /// When the player's units were last attacked at each place.
     pub(crate) attacks: HashMap<Place, f64>,
     pub(crate) lost_units: Vec<(Msg, Option<Place>)>,

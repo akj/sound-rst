@@ -5,7 +5,7 @@
 use soundrts_world::events::{EntityEvent, Reason};
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::orders::Keyword;
+use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::rules::AirGround;
 use soundrts_world::{EntityId, KnownEntity, KnownOrder, KnownTarget, Place, PlayerId, SquareId};
 
@@ -182,7 +182,7 @@ impl GameInterface {
 
     pub fn short_title(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
-        if v.type_name() == "buildingsite" {
+        if v.model.is_building_site() {
             let t = self.site_type_name(&v.model).unwrap_or_default();
             [
                 compute_title(style, &t),
@@ -357,8 +357,8 @@ impl GameInterface {
             Vec::new()
         };
         result.extend(style_msg(style, order.keyword.as_str(), "title"));
-        if let Some(t) = &order.type_name {
-            let mut tt = style_msg(style, t, "title");
+        if let Some(t) = order.type_id {
+            let mut tt = style_msg(style, &self.view().unit_type_by_id(t).name, "title");
             if nb != 1 {
                 tt = [nb2msg(nb), tt].concat();
             }
@@ -432,7 +432,7 @@ impl GameInterface {
         let mut nb = 0;
         for o in v.orders() {
             if let Some(p) = prev {
-                if o.keyword == Keyword::Train && p.type_name == o.type_name {
+                if o.keyword == Keyword::Train && p.type_id == o.type_id {
                     nb += 1;
                 } else {
                     t.extend(self.order_title_msg(cx, p, nb));
@@ -462,7 +462,7 @@ impl GameInterface {
     }
 
     /// The order menu of a unit: the menu kinds it may receive.
-    pub fn view_menu(&self, id: EntityId, strict: bool) -> Vec<String> {
+    pub fn view_menu(&self, id: EntityId, strict: bool) -> Vec<MenuEntry> {
         let view = self.view();
         self.orders_list
             .iter()

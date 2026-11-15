@@ -291,8 +291,8 @@ impl World {
             "faction" => {
                 let f = args.first().map(Expr::word).transpose()?;
                 match f {
-                    Some(f) if self.rules.factions().iter().any(|x| x == f) => {
-                        self.plm(p).faction = f.to_owned();
+                    Some(f) if let Some(id) = self.rules.faction_id(f) => {
+                        self.plm(p).faction = Some(id);
                     }
                     _ => {
                         let words: Vec<String> = args
@@ -392,22 +392,24 @@ impl World {
             } else if is_digits(i) {
                 nb = py_int(i).unwrap_or(1).min(MAX_START_UNITS);
             } else {
-                match self
-                    .rules
-                    .unit_type(i)
-                    .map(|t| (t.is_upgrade(), t.is_ability()))
-                {
-                    Some((true, _)) => {
-                        self.plm(p).upgrades.push(i.clone());
+                match self.rules.type_id(i).map(|t| {
+                    (
+                        t,
+                        self.rules.ty(t).is_upgrade(),
+                        self.rules.ty(t).is_ability(),
+                    )
+                }) {
+                    Some((t, true, _)) => {
+                        self.plm(p).upgrades.add(t);
                         self.send_voice_important(p, msg(mp::OK));
                     }
-                    Some((_, true)) => {
+                    Some((_, _, true)) => {
                         self.send_voice_important(p, msg(mp::BEEP));
                         self.warn("cannot add an ability");
                     }
-                    Some(_) => {
+                    Some((t, _, _)) => {
                         for _ in 0..nb {
-                            if !self.check_count_limit(p, i) {
+                            if !self.check_count_limit(p, t) {
                                 break;
                             }
                             match self.add_unit_for_lang(

@@ -3,7 +3,7 @@
 
 use crate::entity::{Entity, EntityId, ExitData, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::nofloat::{floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000};
-use crate::rules::{AirGround, EntityClass};
+use crate::rules::{AirGround, EntityClass, Role};
 use crate::square::{SPACE_LIMIT, Spiral, spiral_index};
 use crate::world::World;
 
@@ -117,7 +117,7 @@ impl World {
                 place: s,
                 x,
                 y,
-                id: None,
+                given: false,
             })
             .collect()
     }
@@ -271,11 +271,12 @@ impl World {
         let objects = &self.square(s).objects;
         let meadows = objects
             .iter()
-            .filter(|&&o| &*self.e(o).type_name == "meadow")
+            .filter(|&&o| self.e(o).class == EntityClass::Meadow)
             .count();
+        let wood = self.rules.roles.get(Role::Wood);
         let woods = objects
             .iter()
-            .filter(|&&o| &*self.e(o).type_name == "wood")
+            .filter(|&&o| wood.is_some() && self.e(o).type_id == wood)
             .count();
         let t = if woods >= 7 {
             "_dense_forest"

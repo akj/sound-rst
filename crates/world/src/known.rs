@@ -171,8 +171,7 @@ pub struct OwnPart {
     pub inside: Option<Vec<EntityId>>,
     /// Whether it fights (offensive) or flees (defensive) when attacked.
     pub stance: Option<AiMode>,
-    /// The id given to its `rallying_point` order.
-    pub rallying_point: Option<String>,
+
     /// The name of the group it joined.
     pub group: Option<String>,
     /// Whether it is doing nothing: it has no target for an action. A unit
@@ -199,7 +198,7 @@ pub struct OwnPart {
 pub struct KnownOrder {
     pub keyword: Keyword,
     /// The type of an order that takes one: `footman` in `train footman`.
-    pub type_name: Option<String>,
+    pub type_id: Option<TypeId>,
     /// Production waiting for food.
     pub is_deferred: bool,
     /// Given as imperative: the unit carries it out whatever it meets.
@@ -283,6 +282,7 @@ impl KnownEntity {
             },
             upgrades: match (last_seen, e.player) {
                 (None, Some(p)) => questions::upgrades_applying(
+                    &w.rules,
                     e.type_id.map(|t| w.rules.ty(t)),
                     &w.player(p).upgrades,
                 ),
@@ -335,7 +335,7 @@ impl OwnPart {
             cargo: e.cargo,
             inside: e.inside.clone(),
             stance: e.ai_mode,
-            rallying_point: e.rallying_point.clone(),
+
             group: e.group.clone(),
             is_idle: e.is_idle(),
             auto_gather: e.auto_gather,
@@ -369,7 +369,7 @@ impl KnownOrder {
         };
         KnownOrder {
             keyword: o.keyword(),
-            type_name: o.kind.type_id().map(|t| w.rules.ty(t).name.clone()),
+            type_id: o.kind.type_id(),
             is_deferred: o.is_deferred(),
             is_imperative: o.is_imperative,
             time_left,

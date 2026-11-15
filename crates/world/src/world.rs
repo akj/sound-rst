@@ -430,6 +430,16 @@ impl World {
         &self.players_arena[id.0 as usize]
     }
 
+    /// The name of a player's faction: as the rules name it, or as its
+    /// controller named one the rules do not define.
+    pub fn faction_name(&self, id: PlayerId) -> String {
+        let p = self.player(id);
+        match p.faction {
+            Some(f) => self.rules.faction(f).name.clone(),
+            None => p.controller.faction.clone(),
+        }
+    }
+
     /// The player, to change it. Tests use this; a game does not.
     pub fn player_mut(&mut self, id: PlayerId) -> &mut Player {
         &mut self.players_arena[id.0 as usize]
@@ -555,11 +565,6 @@ impl World {
     /// `target.radius`: squares have none.
     pub(crate) fn t_radius(&self, t: &Target) -> i64 {
         self.t_entity(t).map_or(0, Entity::radius)
-    }
-
-    /// `getattr(target, "id", None)` as text.
-    pub(crate) fn t_id_text(&self, t: &Target) -> Option<String> {
-        t.id_text(|s| self.square(s).id)
     }
 
     // entity lifecycle

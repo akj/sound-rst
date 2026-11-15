@@ -249,7 +249,8 @@ fn only_a_perceived_unit_has_upgrades() {
             .name
             .clone();
         command(&mut w, p, &[format!("cmd add_units {square} footman")]);
-        w.player_mut(p).upgrades.push("melee_weapon".into());
+        let melee = w.rules.type_id("melee_weapon").unwrap();
+        w.player_mut(p).upgrades.add(melee);
     }
     let theirs = unit(&w, them, "footman");
     let mine = unit(&w, me, "footman");
@@ -367,17 +368,19 @@ fn the_order_menus_are_the_worlds() {
         }
     }
     let peasant = unit(&w, me, "peasant");
-    assert_eq!(v.order_menu(peasant, Keyword::Go, true), ["go"]);
-    assert!(
-        v.order_menu(peasant, Keyword::Build, false)
-            .contains(&"build farm".to_owned())
-    );
+    let farm = w.rules.type_id("farm");
     assert_eq!(
-        v.order_menu(EntityId(99_999), Keyword::Go, true),
-        Vec::<String>::new()
+        v.order_menu(peasant, Keyword::Go, true),
+        [MenuEntry::plain(Keyword::Go).unwrap()]
     );
-    let info = v.order_info(peasant, Keyword::Build, Some("farm")).unwrap();
-    let old = w.order_info(peasant, Keyword::Build, Some("farm")).unwrap();
+    let build = v.order_menu(peasant, Keyword::Build, false);
+    let build_farm = build.iter().find(|e| e.type_id == farm).unwrap();
+    assert_eq!(build_farm.text(&w.rules), "build farm");
+    // A farm requires a town hall.
+    assert_eq!(build_farm.requirements, ["townhall"]);
+    assert_eq!(v.order_menu(EntityId(99_999), Keyword::Go, true), []);
+    let info = v.order_info(peasant, Keyword::Build, farm).unwrap();
+    let old = w.order_info(peasant, Keyword::Build, farm).unwrap();
     assert_eq!(
         (info.cost, info.food_cost, info.nb_args),
         (old.cost, old.food_cost, old.nb_args)
@@ -488,7 +491,8 @@ fn a_seat_takes_note_of_what_it_sees_only_when_told_to() {
     // The square's terrain and the footman's upgrades change. A new
     // message tells them; what the seat remembers of them changes only
     // once it takes note.
-    w.player_mut(me).upgrades.push("melee_weapon".into());
+    let melee = w.rules.type_id("melee_weapon").unwrap();
+    w.player_mut(me).upgrades.add(melee);
     w.squares[home.0 as usize].type_name = "_forest".into();
     s.install(w.turn_message(me, Vec::new()));
     assert_eq!(s.terrain(home), "_meadows");

@@ -323,7 +323,7 @@ changed_fields! {
         pub auto_gather: Option<bool>,
         pub auto_repair: Option<bool>,
         pub stance: Option<AiMode>,
-        pub rallying_point: Option<String>,
+
         pub group: Option<String>,
         pub transport_capacity: i64,
         pub transport_volume: i64,
@@ -413,7 +413,7 @@ impl OwnFields {
         let mut f = OwnFields::default();
         diff_fields!(OwnPart { orders } a, b, f;
             distance_to_goal, is_idle, cargo, inside, has_basic_abilities,
-            auto_gather, auto_repair, stance, rallying_point, group, transport_capacity,
+            auto_gather, auto_repair, stance, group, transport_capacity,
             transport_volume, food_cost,
         );
         if a.orders != b.orders {
@@ -444,7 +444,7 @@ impl OwnFields {
         }
         set_fields!(self, o;
             distance_to_goal, orders, is_idle, cargo, inside, has_basic_abilities,
-            auto_gather, auto_repair, stance, rallying_point, group, transport_capacity,
+            auto_gather, auto_repair, stance, group, transport_capacity,
             transport_volume, food_cost,
         );
         Ok(())

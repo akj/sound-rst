@@ -5,7 +5,8 @@ use std::num::NonZeroU32;
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::orders::Keyword;
+use soundrts_world::orders::{Keyword, MenuEntry};
+use soundrts_world::rules::TypeId;
 use soundrts_world::{Command, EntityId, Event, Order, OrderTarget, TurnMessage};
 
 use crate::audio::stereo;
@@ -496,7 +497,7 @@ impl GameInterface {
     /// The orders of the group's units, in menu order.
     pub fn orders(&self, cx: &Client, menu: OrderMenu) -> Vec<OrderTypeView> {
         let mut result: Vec<OrderTypeView> = Vec::new();
-        let mut done: Vec<String> = Vec::new();
+        let mut done: Vec<MenuEntry> = Vec::new();
         for (u, id) in self.group_now() {
             if !self.dobjets.contains_key(&u) {
                 continue;
@@ -514,11 +515,13 @@ impl GameInterface {
             };
             for o in entries {
                 if !done.contains(&o) {
-                    if let Some(v) =
-                        OrderTypeView::new(&o, id, self.view(), cx.res.style(), &cx.log)
-                    {
-                        result.push(v);
-                    }
+                    result.push(OrderTypeView::new(
+                        &o,
+                        id,
+                        self.view(),
+                        cx.res.style(),
+                        &cx.log,
+                    ));
                     done.push(o);
                 }
             }
@@ -647,12 +650,12 @@ impl GameInterface {
             // In no unit's menu: no unit receives it, as in the original.
             Order::ResetGroup(_) => Vec::new(),
             Order::Keyword(o) => {
-                // As the world's menus list it: `train footman`.
-                let entry = match o.type_name() {
-                    Some(t) => format!("{} {t}", o.keyword().as_str()),
-                    None => o.keyword().as_str().to_owned(),
-                };
-                self.units_offering(&entry)
+                // As the menus list it: a type the rules lack is in none.
+                let rules = &self.view().game_start().rules;
+                match o.type_name().map(|t| rules.type_id(t)) {
+                    Some(None) => Vec::new(),
+                    t => self.units_offering(o.keyword(), t.flatten()),
+                }
             }
         };
         let mut command = Command::Order {
@@ -702,13 +705,17 @@ impl GameInterface {
         }
     }
 
-    /// The units of the group whose menu has the order `entry`, by the ids
-    /// the game gives them now.
-    fn units_offering(&self, entry: &str) -> Vec<EntityId> {
+    /// The units of the group whose menu has the order of `keyword` and
+    /// type `t`, by the ids the game gives them now.
+    fn units_offering(&self, keyword: Keyword, t: Option<TypeId>) -> Vec<EntityId> {
         self.group_now()
             .into_iter()
             .map(|(_, id)| id)
-            .filter(|&id| self.view_menu(id, false).iter().any(|o| o == entry))
+            .filter(|&id| {
+                self.view_menu(id, false)
+                    .iter()
+                    .any(|o| o.keyword == keyword && o.type_id == t)
+            })
             .collect()
     }
 
@@ -751,7 +758,7 @@ impl GameInterface {
             self.cmd_command_unit(cx);
         } else if self.an_order_not_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
-            match o.order() {
+            match o.order(self.view()) {
                 Some(order) => {
                     self.send_order(cx, Order::Keyword(order), flags);
                     cx.voice.item(&o.title);
@@ -761,7 +768,7 @@ impl GameInterface {
             }
         } else if self.an_order_requiring_a_target_is_selected() {
             let o = self.order.clone().expect("checked");
-            match (o.order(), self.ui_order_target(cx)) {
+            match (o.order(self.view()), self.ui_order_target(cx)) {
                 (Some(order), Some((target, title)))
                     if self.orders(cx, OrderMenu::Active).contains(&o) =>
                 {
@@ -799,10 +806,10 @@ impl GameInterface {
                     None
                 }
             };
-            // Every keyword's name is a menu entry.
-            if let Some(o) = keyword.and_then(|k| {
-                OrderTypeView::new(k.as_str(), id, self.view(), cx.res.style(), &cx.log)
-            }) {
+            // Every keyword the default order gives is an order without a
+            // type.
+            if let Some(entry) = keyword.and_then(MenuEntry::plain) {
+                let o = OrderTypeView::new(&entry, id, self.view(), cx.res.style(), &cx.log);
                 let m = [o.title, title.clone()].concat();
                 if !msgs.contains(&m) {
                     msgs.push(m);
@@ -887,6 +894,7 @@ fn follow_in_command(c: &mut Command, old: EntityId, new: EntityId) {
 mod tests {
     use super::super::testing::{cheat, enemy, go, run_until, training, unit};
     use super::*;
+    use crate::game::order::entry;
     use crate::input::{Key, Mods};
 
     #[test]
@@ -992,7 +1000,12 @@ mod tests {
             let entry = Some(entry);
             listed
                 .filter(|o| o.keyword == Keyword::UpgradeTo)
-                .find(|o| o.type_name.as_deref() == entry)
+                .find(|o| {
+                    let name = o
+                        .type_id
+                        .map(|t| g.game.view().unit_type_by_id(t).name.as_str());
+                    name == entry
+                })
                 .unwrap()
         };
         let o = pick(&g, &h.client, OrderMenu::Active, "guardtower");
@@ -1146,14 +1159,15 @@ mod tests {
         let mut t = UpgradeOnAServer::new();
         let (old, new) = (t.old, t.new);
         let style = t.h.client.res.style();
+        let view = t.g.game.view();
         let train = OrderTypeView::new(
-            "train peasant",
+            &entry(view, "train peasant"),
             old,
-            t.g.game.view(),
+            view,
             style,
             &t.h.client.log,
         );
-        t.g.game.order = train;
+        t.g.game.order = Some(train);
         // Enter, pressed when the turn has come and before it is taken.
         t.h.press(Key::Return, Mods::NONE);
         assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
@@ -1171,16 +1185,25 @@ mod tests {
         let (old, new) = (t.old, t.new);
         let style = t.h.client.res.style();
         let view = t.g.game.view();
-        let rally = OrderTypeView::new("rallying_point", old, view, style, &t.h.client.log);
+        let rally = entry(view, "rallying_point");
+        let rally = Some(OrderTypeView::new(
+            &rally,
+            old,
+            view,
+            style,
+            &t.h.client.log,
+        ));
         let b1 = view.square_at(1, 0).unwrap();
-        let b1_id = view.square(b1).protocol_id();
         t.g.game.order = rally;
         (t.g.game.place, t.g.game.target, t.g.game.zoom) = (Some(b1), None, None);
         // Enter, pressed when the turn has come and before it is taken.
         t.h.press(Key::Return, Mods::NONE);
         assert_eq!(t.send_the_upgrade_and_play(), Some(vec![new]));
-        let rallying_point = t.host.world().entity(new).unwrap().rallying_point.clone();
-        assert_eq!(rallying_point, Some(b1_id.to_string()));
+        let rallying_point = t.host.world().entity(new).unwrap().rallying_point;
+        assert_eq!(
+            rallying_point,
+            Some(soundrts_world::orders::TargetRef::Square(b1))
+        );
     }
 
     #[test]
@@ -1198,8 +1221,9 @@ mod tests {
         // then a peasant's default order aimed at the town hall.
         let style = t.h.client.res.style();
         let view = t.g.game.view();
+        let keep = entry(view, "upgrade_to keep");
         t.g.game.previous_order =
-            OrderTypeView::new("upgrade_to keep", old, view, style, &t.h.client.log);
+            Some(OrderTypeView::new(&keep, old, view, style, &t.h.client.log));
         t.g.game.group = vec![other];
         let from = t.h.utterances().len();
         t.h.press(Key::R, Mods::ALT);
@@ -1296,7 +1320,8 @@ mod tests {
         }
         let style = h.client.res.style();
         let listed = |order: &str, unit: EntityId| {
-            OrderTypeView::new(order, unit, g.game.view(), style, &h.client.log).unwrap()
+            let view = g.game.view();
+            OrderTypeView::new(&entry(view, order), unit, view, style, &h.client.log)
         };
         let recruit = listed("train peasant", townhall);
         let stables = listed("build stables", theirs);
