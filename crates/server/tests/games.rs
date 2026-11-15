@@ -872,6 +872,106 @@ async fn the_host_pauses_resumes_sets_the_speed_and_removes_a_player() {
     assert!(a.view().players().contains(&b.player()));
 }
 
+/// How many times a seat was told that the player of `slot` is now the
+/// room's host.
+fn told_host(s: &Seat, slot: SlotIndex) -> usize {
+    let host = Heard::Game(SeatFrame::Host { slot });
+    s.told.iter().filter(|h| **h == host).count()
+}
+
+#[tokio::test]
+async fn the_hosts_powers_pass_to_the_next_player_and_a_paused_game_is_never_stuck() {
+    let server = hosting_server(|c| c.grace_period = Duration::from_secs(1));
+    let addr = server.local_addr();
+    let mut clients = clients(addr, &["andrew", "bob", "carol", "dave"]).await;
+    let dave = clients.pop().unwrap();
+    let room = room(&mut clients, 1).await;
+    let mut dave = dave;
+    watch(&mut dave, room).await;
+    let texts = texts();
+    let (mut players, mut watchers) = start_watched(clients, vec![dave], &texts).await;
+    let mut d = watchers.pop().unwrap();
+    let mut c = players.pop().unwrap();
+    let mut b = players.pop().unwrap();
+    let mut a = players.pop().unwrap();
+    let (bob, carol) = (login("bob"), login("carol"));
+    let host = |slot| SeatFrame::Host { slot };
+    let clock = |by: &Login, change| SeatFrame::Clock {
+        by: by.clone(),
+        change,
+    };
+
+    // The host pauses and leaves: Bob, next in the room, holds the powers,
+    // and the game waits for him.
+    a.c.send(ClientMsg::PauseGame).await;
+    let paused = clock(&a.c.login, ClockChange::Paused);
+    for s in [&mut a, &mut b, &mut c, &mut d] {
+        s.hear(paused.clone()).await;
+    }
+    a.c.send(ClientMsg::LeaveGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(news(0, SeatChange::Left)).await;
+        s.hear(host(1)).await;
+    }
+    assert_eq!(b.read_for(Duration::from_millis(500)).await, 0, "paused");
+    c.c.send(ClientMsg::ResumeGame).await;
+    c.hear(refused(Refusal::NotNow)).await;
+    d.c.send(ClientMsg::ResumeGame).await;
+    d.hear(refused(Refusal::NotNow)).await;
+    b.c.send(ClientMsg::ResumeGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(clock(&bob, ClockChange::Resumed)).await;
+    }
+
+    // Bob pauses and drops: he keeps the powers while his seat is held,
+    // then Carol has them, and the game waits for her.
+    b.c.send(ClientMsg::PauseGame).await;
+    for s in [&mut b, &mut c, &mut d] {
+        s.hear(clock(&bob, ClockChange::Paused)).await;
+    }
+    b.c.close().await;
+    c.hear(news(1, SeatChange::Dropped)).await;
+    c.c.send(ClientMsg::ResumeGame).await;
+    c.hear(refused(Refusal::NotNow)).await;
+    assert_eq!(told_host(&c, 2), 0);
+    for s in [&mut c, &mut d] {
+        s.hear(news(1, SeatChange::GivenUp)).await;
+        s.hear(host(2)).await;
+    }
+    // The lobby names her the room's host.
+    let (_, lobby) = Client::hello(addr, "erin").await;
+    let summary = lobby.rooms.iter().find(|r| r.id == room).unwrap();
+    assert_eq!(summary.host, carol);
+    assert_eq!(c.read_for(Duration::from_millis(500)).await, 0, "paused");
+    c.c.send(ClientMsg::ResumeGame).await;
+    for s in [&mut c, &mut d] {
+        s.hear(clock(&carol, ClockChange::Resumed)).await;
+    }
+
+    // Carol, the last player, pauses and leaves: nobody can resume, so the
+    // game runs on, and her watcher has the end of her game.
+    c.c.send(ClientMsg::PauseGame).await;
+    for s in [&mut c, &mut d] {
+        s.hear(clock(&carol, ClockChange::Paused)).await;
+    }
+    c.c.send(ClientMsg::LeaveGame).await;
+    d.hear(news(2, SeatChange::Left)).await;
+    while d.end.is_none() {
+        assert!(d.step(TIMEOUT).await, "the watcher's end did not come");
+    }
+    // Each new host was told once, after the news of the seat, and the
+    // room names them.
+    for slot in [1, 2] {
+        assert_eq!(told_host(&d, slot), 1, "{:?}", d.told);
+    }
+    let after = |s: &Seat, first: &Heard, then: &Heard| {
+        let at = |h: &Heard| s.told.iter().position(|t| t == h);
+        assert!(at(first) < at(then), "{:?}", s.told);
+    };
+    after(&d, &news(0, SeatChange::Left).into(), &host(1).into());
+    after(&d, &news(1, SeatChange::GivenUp).into(), &host(2).into());
+}
+
 #[tokio::test]
 async fn a_game_that_cannot_be_built_is_refused_and_the_room_goes_on() {
     let server = hosting_server(|_| {});

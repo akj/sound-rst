@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -873,7 +873,9 @@ pub enum ClientMsg {
         room: RoomId,
         token: SeatToken,
     },
-    /// The room's host stops the clock of a game.
+    /// The room's host stops the clock of a game. When the host leaves
+    /// the game, their powers pass to the first player still in it, in
+    /// the room's order: everyone hears [`game::SeatFrame::Host`].
     PauseGame,
     /// The room's host starts the clock again.
     ResumeGame,

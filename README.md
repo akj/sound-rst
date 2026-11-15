@@ -192,6 +192,8 @@ If your connection is lost during a game on a server, the game does not end. You
 
 The game says, in the system news, when a player loses the connection, comes back, does not come back in time, leaves the game or is removed from it, and when the server stops a game or cannot start it. In the game menu, the speeds change the speed of the game for everyone, and only the room's host can change it: the others hear "only the host can change the speed". Everyone hears the new speed and who set it. The room's host also has an item that reads "pause", or "resume" while the game is paused: everyone hears "paused by" or "resumed by" and the host's login. A game on a server has no console and no cheats.
 
+When the room's host leaves the game, is defeated, or does not come back in time, the next player still in the game, in the room's order, becomes the host, never a watcher. Everyone hears it once, for example "bob is now the organizer", and Bob's game menu now has the pause item; he alone can change the speed or remove a player. A host whose connection is lost stays the host while the server holds the seat. A game the host paused stays paused for the next host to resume. While a game on a server is paused, cancel game in the game menu leaves it at once. When no player is left in the game, a paused game runs on to its end.
+
 Your favorite and recent servers are in `favorite_servers.txt` and `recent_servers.txt` in the settings folder: one server a line, its address, then optionally a space and its name. To add the server you are on to your favorites, use the item in the server's menu. The public list is [`servers.txt`](servers.txt) in this repository.
 
 ### Watch a game

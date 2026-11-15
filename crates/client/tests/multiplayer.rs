@@ -1643,6 +1643,91 @@ fn the_rooms_host_pauses_and_resumes_a_game_on_a_server() {
     assert!(said.contains(&"resume ,".to_owned()), "{said:#?}");
 }
 
+/// A player on a real server, on real time, whose speech lasts a tenth of
+/// its usual time.
+fn real_player(login: &str) -> Harness {
+    let h = Harness::with_config(
+        "en",
+        Script::new().keep_open(),
+        Config {
+            wait_delay_per_character: 0.01,
+            ..config(login)
+        },
+    );
+    h.clock.follow_real_time();
+    h
+}
+
+/// Opens the game menu and goes down its items: what was heard.
+fn menu_items(h: &mut Harness, g: &mut TestGame) -> Vec<String> {
+    let from = h.utterances().len();
+    h.key(g, Key::F10, Mods::NONE);
+    for _ in 0..7 {
+        h.key(g, Key::Down, Mods::NONE);
+    }
+    let said = h.said_since(from);
+    h.key(g, Key::Escape, Mods::NONE);
+    said
+}
+
+#[test]
+fn when_the_host_leaves_a_game_on_a_server_the_next_player_hosts_it() {
+    let server = soundrts::testkit::test_server(1, |_| {});
+    let addr = server.local_addr().to_string();
+    let (mut andrew, mut bob) = (real_player("andrew"), real_player("bob"));
+    andrew.connect_to(&addr, |c| c);
+    bob.connect_to(&addr, |c| c);
+    let room = andrew.open_room("jl2", &[AiLevel::Easy], Speed::Fast4);
+    andrew.invite("bob");
+    bob.join_room(room);
+    andrew.wait_for_ready(3);
+    let mut a = andrew.start_room_game("jl2");
+    let mut b = bob.join_room_game("jl2");
+    bob.run_until_turn(&mut b, 3);
+    assert!(!menu_items(&mut bob, &mut b).contains(&"pause ,".to_owned()));
+    // Andrew pauses, then chooses "cancel game" once.
+    soundrts::net::send(&mut andrew.client, ClientMsg::PauseGame);
+    let (a_from, from) = (andrew.utterances().len(), bob.utterances().len());
+    let start = std::time::Instant::now();
+    let paused = "paused by andrew".to_owned();
+    while !(andrew.said_since(a_from).contains(&paused) && bob.said_since(from).contains(&paused)) {
+        assert!(start.elapsed() < soundrts::testkit::WAIT_LIMIT);
+        andrew.step(&mut a);
+        bob.step(&mut b);
+    }
+    andrew.key(&mut a, Key::F10, Mods::NONE);
+    andrew.key(&mut a, Key::Down, Mods::NONE);
+    andrew.key(&mut a, Key::Return, Mods::NONE);
+    assert!(a.game.end_loop, "Andrew left the paused game");
+    soundrts::session::leave_server_game(&mut andrew.client);
+    let start = std::time::Instant::now();
+    while !bob
+        .said_since(from)
+        .contains(&"bob is now the organizer".to_owned())
+    {
+        assert!(
+            start.elapsed() < soundrts::testkit::WAIT_LIMIT,
+            "{:#?}",
+            bob.said_since(from)
+        );
+        bob.step(&mut b);
+    }
+    bob.run_until_voice_idle(&mut b);
+    let said = bob.said_since(from);
+    assert_eq!(
+        said,
+        [
+            "paused by andrew",
+            "andrew left the game",
+            "bob is now the organizer"
+        ],
+        "{said:#?}"
+    );
+    // The game waits for Bob, who can resume it.
+    assert!(menu_items(&mut bob, &mut b).contains(&"resume ,".to_owned()));
+    server.shutdown();
+}
+
 #[test]
 fn the_hold_starts_again_while_the_server_has_not_noticed_the_loss() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));

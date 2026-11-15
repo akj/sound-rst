@@ -14,7 +14,11 @@
 //! the very stream that player's seat is sent, and the world never hears
 //! of it. [`Link`], [`Pace`] and [`Game::deliver`] serve both alike. A
 //! watcher joins a game that runs as a player returns to it: it is sent
-//! the start and the whole message of the player it follows. Where the
+//! the start and the whole message of the player it follows.
+//!
+//! The room's host's powers (the clock and removals) are the game's to
+//! check: they stay with one player still in the game, and pass on when
+//! that player's seat is gone ([`Game::hand_on_host`]). Where the
 //! record would attach: the clock's branch of `run` takes every command of
 //! a turn, in the order the host runs them, with the turn's number.
 #![deny(
@@ -65,6 +69,8 @@ pub(crate) struct Settings {
     /// The longest one turn may take: the world's step and every seat's
     /// message.
     pub turn_budget: Duration,
+    /// The slot of the room's host when the game starts.
+    pub host: SlotIndex,
     /// The server's count of work past its budget.
     pub overruns: Overruns,
 }
@@ -170,9 +176,10 @@ pub(crate) struct Joining {
     pub outbox: Outbox,
 }
 
-/// What the lobby passes to a game. The lobby has checked who may
-/// send it: a seat's own player for a command, the room's host for the
-/// clock and removals, a watcher to follow another player.
+/// What the lobby passes to a game. The lobby has checked whose seat
+/// sends it: a player's for a command, the clock and removals, a watcher's
+/// to follow another player. The game checks that the clock and removals
+/// come from the player who holds the host's powers.
 pub(crate) enum GameInput {
     Command {
         slot: SlotIndex,
@@ -345,6 +352,10 @@ struct Game {
     turn: u64,
     /// The players still in the game, as of the last turn a seat was sent.
     in_game: Vec<PlayerId>,
+    /// The slot of the player who holds the room's host's powers: a player
+    /// with a seat in the game, connected or held. `None` once no player
+    /// is left to hold them.
+    host: Option<SlotIndex>,
 }
 
 /// What a connected seat is sent of the coming turn.
@@ -416,6 +427,7 @@ async fn run(
     let players = host.seats().to_vec();
     let mut game = Game {
         room,
+        host: Some(settings.host),
         clock: Clock::running(settings.speed),
         settings,
         lobby,
@@ -481,6 +493,7 @@ async fn run(
                 None => break,
             },
         }
+        game.hand_on_host();
     }
     info!(room = room.0, turns = game.turn, "game over");
     Ending::Over
@@ -1232,7 +1245,7 @@ impl Game {
     }
 
     fn clock_change(&mut self, by: SlotIndex, change: ClockChange) {
-        let Some((login, outbox)) = self.connected(by) else {
+        let Some((login, outbox)) = self.hosting(by) else {
             return;
         };
         let changed = match (change, &self.clock) {
@@ -1265,7 +1278,7 @@ impl Game {
 
     /// The room's host removes a player: a human seat, or a computer.
     fn remove(&mut self, host: &Host, by: SlotIndex, slot: SlotIndex) {
-        let Some((login, outbox)) = self.connected(by) else {
+        let Some((login, outbox)) = self.hosting(by) else {
             return;
         };
         let Some(&player) = self.players.get(slot) else {
@@ -1293,6 +1306,60 @@ impl Game {
         });
         self.quit(player);
         self.end_seat(host, SeatId::Player(slot));
+    }
+
+    // -- The host's powers ---------------------------------------------------
+
+    /// The login and outbox of the player of `slot` if they hold the
+    /// host's powers and are connected. Anyone else who asks is refused.
+    fn hosting(&self, slot: SlotIndex) -> Option<(Login, Outbox)> {
+        let (login, outbox) = self.connected(slot)?;
+        if self.host != Some(slot) {
+            outbox.send(&ServerMsg::Refused {
+                reason: Refusal::NotNow,
+            });
+            return None;
+        }
+        Some((login, outbox))
+    }
+
+    /// Keeps the host's powers with a player still in the game. When the
+    /// seat of the player who holds them is gone (they left, lost, were
+    /// given up), the powers pass to the first player still in the game in
+    /// the room's order, as a room passes its host on, never to a watcher.
+    /// Everyone in the game hears who, after what happened to the seat; the
+    /// lobby makes that player the room's host.
+    /// A player away whose seat is held keeps them, and a paused game stays
+    /// paused for the next holder. When no player is left to take them, a
+    /// paused game runs again: its watchers then have their end at the next
+    /// turn, as when the last player leaves a running game.
+    fn hand_on_host(&mut self) {
+        let Some(slot) = self.host else {
+            return;
+        };
+        if self.seats.contains_key(&SeatId::Player(slot)) {
+            return;
+        }
+        self.host = self.seats.keys().find_map(|seat| match seat {
+            SeatId::Player(slot) => Some(*slot),
+            SeatId::Watcher(_) => None,
+        });
+        match self.host {
+            Some(slot) => {
+                info!(room = self.room.0, slot, "host's powers handed on");
+                self.tell_all(&SeatFrame::Host { slot });
+                let _ = self.lobby.send(LobbyInput::HostChanged {
+                    room: self.room,
+                    slot,
+                });
+            }
+            None => {
+                info!(room = self.room.0, "no player left to host");
+                if let Clock::Paused = self.clock {
+                    self.clock = Clock::running(self.settings.speed);
+                }
+            }
+        }
     }
 
     // -- Helpers -------------------------------------------------------------

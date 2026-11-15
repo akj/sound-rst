@@ -63,6 +63,8 @@ pub(crate) enum LobbyInput {
     WatcherLeft { room: RoomId, watcher: WatcherId },
     /// A game had no seat for this player's token.
     ReturnRefused { room: RoomId, conn: ConnId },
+    /// The host's powers in a game passed to the player of this slot.
+    HostChanged { room: RoomId, slot: SlotIndex },
     /// A game's task ended.
     GameEnded { room: RoomId, ending: Ending },
 }
@@ -241,6 +243,7 @@ impl Lobby {
                 LobbyInput::Returned { room, conn, seat } => self.returned(room, conn, seat),
                 LobbyInput::WatcherLeft { room, watcher } => self.watcher_left(room, watcher),
                 LobbyInput::ReturnRefused { room, conn } => self.return_refused(room, conn),
+                LobbyInput::HostChanged { room, slot } => self.host_changed(room, slot),
                 LobbyInput::GameEnded { room, ending } => self.game_ended(room, ending),
             }
         }
@@ -400,13 +403,16 @@ impl Lobby {
             }
             ClientMsg::Start { texts } => self.start(conn, texts),
             ClientMsg::ReturnToGame { room, token } => self.return_to_game(conn, room, token),
-            ClientMsg::PauseGame => self.host_control(conn, queued, |by| GameInput::Pause { by }),
-            ClientMsg::ResumeGame => self.host_control(conn, queued, |by| GameInput::Resume { by }),
+            // The game checks that the player holds the host's powers.
+            ClientMsg::PauseGame => self.pass_to_player(conn, queued, |by| GameInput::Pause { by }),
+            ClientMsg::ResumeGame => {
+                self.pass_to_player(conn, queued, |by| GameInput::Resume { by })
+            }
             ClientMsg::SetGameSpeed { speed } => {
-                self.host_control(conn, queued, |by| GameInput::Speed { by, speed })
+                self.pass_to_player(conn, queued, |by| GameInput::Speed { by, speed })
             }
             ClientMsg::RemovePlayer { slot } => {
-                self.host_control(conn, queued, |by| GameInput::Remove { by, slot })
+                self.pass_to_player(conn, queued, |by| GameInput::Remove { by, slot })
             }
             ClientMsg::Follow { step } => {
                 self.pass_to_watcher(conn, queued, |watcher| GameInput::Follow { watcher, step })
@@ -889,6 +895,7 @@ impl Lobby {
         });
         let seats: Vec<Joining> = players.chain(watchers).collect();
         let settings = game::Settings {
+            host: room.slot_of(room.host).expect("the host is a member"),
             speed: room.speed,
             grace: self.games.grace,
             load_budget: self.games.load_budget,
@@ -965,22 +972,6 @@ impl Lobby {
             }
             (_, SeatId::Player(_)) => Err(Refusal::NotNow),
         }
-    }
-
-    /// Passes the room's host's input to the game they play.
-    fn host_control(
-        &mut self,
-        conn: ConnId,
-        queued: Queued,
-        input: impl FnOnce(SlotIndex) -> GameInput,
-    ) -> Answer {
-        let Place::Playing(id) = self.players[&conn].place else {
-            return Err(Refusal::NotNow);
-        };
-        if self.rooms[&id].host != conn {
-            return Err(Refusal::NotNow);
-        }
-        self.pass_to_player(conn, queued, input)
     }
 
     /// Asks a game for the seat of `token`. The player waits in the
@@ -1069,6 +1060,20 @@ impl Lobby {
             login: w.login.clone(),
         });
         self.left_game(id, w.conn);
+    }
+
+    /// The game of room `id` passed the host's powers to the player of
+    /// `slot`, and told everyone in it: they are the room's host.
+    fn host_changed(&mut self, id: RoomId, slot: SlotIndex) {
+        let Some(room) = self.rooms.get_mut(&id) else {
+            return;
+        };
+        let Some(Occupant::Human(member)) = room.slots.get(slot).map(|s| &s.occupant) else {
+            return;
+        };
+        room.host = member.conn;
+        info!(room = id.0, host = %member.login, "host handed on in the game");
+        self.room_changed(id);
     }
 
     fn return_refused(&mut self, id: RoomId, conn: ConnId) {

@@ -36,13 +36,13 @@ use std::time::Duration;
 use soundrts_protocol::game::{Role, SeatFrame, encode_command, encode_turn};
 use soundrts_protocol::{
     ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId, RoomState,
-    SeatToken, ServerMsg, Speed, Step, StopReason, Whereabouts,
+    SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
 use super::GameInterface;
 use crate::client::Client;
-use crate::message::{Category, News, Subject};
+use crate::message::{Category, News, RoomTopic, Subject};
 use crate::net::conn::{Connection, NetEvent, Opening};
 use crate::net::lobby::{LobbyModel, check_watchers, player_name};
 use crate::net::words::{self, text};
@@ -579,6 +579,7 @@ fn kind(frame: &SeatFrame) -> &'static str {
         SeatFrame::Seated { .. } => "a seat",
         SeatFrame::Seat { .. } => "news of a seat",
         SeatFrame::Clock { .. } => "news of the clock",
+        SeatFrame::Host { .. } => "news of the host",
         SeatFrame::Stopped(_) => "a stop",
         SeatFrame::NotStarted(_) => "a refused start",
     }
@@ -710,6 +711,18 @@ impl GameInterface {
             return false;
         }
         cx.log.info("stopped watching the game");
+        self.srv_quit(cx);
+        self.forced_quit = true;
+        true
+    }
+
+    /// Leaves the game at once while it is paused on a server: the world
+    /// takes a quit only at a turn, and none comes. Whether it is paused.
+    pub(crate) fn leave_while_paused(&mut self, cx: &mut Client) -> bool {
+        if !self.server().is_some_and(|s| s.paused) {
+            return false;
+        }
+        cx.log.info("left the game while it was paused");
         self.srv_quit(cx);
         self.forced_quit = true;
         true
@@ -939,6 +952,22 @@ impl GameInterface {
                     .map(|s| player_name(&s.player))
                     .ok_or_else(|| format!("news of slot {slot}, not in the room"))?;
                 cx.news(News::new(Category::System, words::seat_news(who, &change)));
+                Ok(())
+            }
+            SeatFrame::Host { slot } => {
+                let room = cx
+                    .net
+                    .as_mut()
+                    .and_then(|n| n.room.as_mut())
+                    .ok_or("news of the host, not in a room")?;
+                let Some(SlotPlayer::Human(host)) = room.state.slots.get(slot).map(|s| &s.player)
+                else {
+                    return Err(format!("the host's powers to slot {slot}, no player's"));
+                };
+                room.state.host = host.clone();
+                let m = words::new_host(host);
+                let topic = Subject::Room(RoomTopic::Host);
+                cx.news(News::new(Category::System, m).about(topic));
                 Ok(())
             }
             SeatFrame::Clock { by, change } => {

@@ -354,14 +354,7 @@ impl RoomModel {
                     RoomTopic::Ready(*slot),
                 )
             }
-            RoomChange::Host { host } => (
-                [
-                    vec![literal(host.as_str())],
-                    text(words::IS_NOW_THE_ORGANIZER),
-                ]
-                .concat(),
-                RoomTopic::Host,
-            ),
+            RoomChange::Host { host } => (words::new_host(host), RoomTopic::Host),
             RoomChange::Watching { login } => (
                 [vec![literal(login.as_str())], text(words::IS_WATCHING)].concat(),
                 RoomTopic::Watcher(login.clone()),

@@ -217,6 +217,11 @@ pub fn clock_news(by: &Login, change: ClockChange) -> Msg {
     [what, vec![literal(by.as_str())]].concat()
 }
 
+/// Who is the room's host from now on.
+pub fn new_host(host: &Login) -> Msg {
+    [vec![literal(host.as_str())], text(IS_NOW_THE_ORGANIZER)].concat()
+}
+
 /// Why the server stopped the game.
 pub fn stopped(reason: StopReason) -> Msg {
     let why = match reason {

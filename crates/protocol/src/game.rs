@@ -185,6 +185,11 @@ pub enum SeatFrame {
         by: Login,
         change: ClockChange,
     },
+    /// The player of this slot is the room's host from now on, with its
+    /// powers over the game: the host before them left it.
+    Host {
+        slot: SlotIndex,
+    },
     /// The server stopped the game. The lobby's
     /// [`ServerMsg::GameEnded`](crate::ServerMsg::GameEnded) follows.
     Stopped(StopReason),

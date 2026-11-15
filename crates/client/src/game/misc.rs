@@ -542,10 +542,13 @@ impl GameInterface {
         }
     }
 
-    /// Asks the world to quit; asked again, or while the connection is
-    /// lost, quits at once.
+    /// Asks the world to quit; asked again, while the connection is lost,
+    /// or while a game on a server is paused, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
-        if self.leave_while_returning(cx) || self.leave_while_watching(cx) {
+        if self.leave_while_returning(cx)
+            || self.leave_while_watching(cx)
+            || self.leave_while_paused(cx)
+        {
             return;
         }
         if !self.already_asked_to_quit {

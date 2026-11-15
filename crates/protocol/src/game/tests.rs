@@ -178,6 +178,7 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
             slot: 2,
             change: crate::SeatChange::Dropped,
         },
+        SeatFrame::Host { slot: 3 },
         SeatFrame::Clock {
             by: a(),
             change: crate::ClockChange::Speed {
