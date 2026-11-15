@@ -252,3 +252,27 @@ fn a_connection_to_a_server_that_answers_pings_stays_open() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn a_connection_given_up_while_it_opens_stops_at_once() {
+    // Takes the connection and never answers the WebSocket handshake.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let held = std::thread::spawn(move || listener.accept().map(|(s, _)| s));
+    let dialer = conn::Dialer {
+        address: addr.to_string(),
+        hello: hello(),
+        timeout: Duration::from_secs(60),
+        liveness: conn::Liveness::default(),
+    };
+    let mut opening = dialer.start();
+    let _socket = held.join().unwrap().unwrap();
+    assert!(opening.poll().is_none());
+    let start = Instant::now();
+    drop(opening);
+    assert!(
+        start.elapsed() < Duration::from_secs(30),
+        "giving up took {:?}",
+        start.elapsed()
+    );
+}

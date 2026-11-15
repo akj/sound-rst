@@ -348,10 +348,10 @@ impl Returning {
 
     /// A new connection is open: presents the token, unless the game is
     /// over, or the server still has the player playing and has not
-    /// noticed the old connection is lost: then the next attempt follows a
-    /// pause.
+    /// noticed the old connection is lost: then the server's hold has not
+    /// started yet, and the next attempt follows a pause.
     fn welcomed(
-        &self,
+        &mut self,
         key: &SeatKey,
         mut conn: Connection,
         snapshot: &soundrts_protocol::LobbySnapshot,
@@ -372,6 +372,7 @@ impl Returning {
             .iter()
             .any(|p| p.login == self.login && p.whereabouts == Whereabouts::Playing(self.room));
         if still_playing {
+            self.until = now + key.hold;
             let retry = Attempt::Pause {
                 at: now + RETRY_PAUSE,
             };

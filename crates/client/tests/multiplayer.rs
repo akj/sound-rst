@@ -1603,3 +1603,27 @@ fn the_rooms_host_pauses_and_resumes_a_game_on_a_server() {
     assert!(said.contains(&"pause ,".to_owned()), "{said:#?}");
     assert!(said.contains(&"resume ,".to_owned()), "{said:#?}");
 }
+
+#[test]
+fn the_hold_starts_again_while_the_server_has_not_noticed_the_loss() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, stream, mut g, room) = game_in_room(&mut h);
+    server.close_at(h.clock.now());
+    // For longer than the hold, the server still has Andrew playing on the
+    // old connection; then it gives the seat back.
+    let hold = soundrts::testkit::FAKE_HOLD.as_secs_f64();
+    for _ in 0..(hold as usize + 10) {
+        server.dial_to(soundrts::testkit::welcome_back(
+            "andrew2",
+            &room,
+            &["andrew"],
+        ));
+    }
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(0.0, frame);
+    }
+    h.run_for(&mut g, hold + 20.0);
+    assert!(!g.game.end_loop, "the client gave up");
+    assert!(!g.game.returning(), "the seat is not back");
+}

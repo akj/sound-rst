@@ -391,7 +391,13 @@ fn serve(url: String, hello: ClientMsg, timeout: Duration, liveness: Liveness, c
             .max_message_size(Some(MAX_MESSAGE_BYTES))
             .max_frame_size(Some(MAX_MESSAGE_BYTES));
         let connect = tokio_tungstenite::connect_async_with_config(url, Some(config), true);
-        let mut ws = match tokio::time::timeout(timeout, connect).await {
+        // A client that gives the connection up meanwhile waits for none of
+        // it.
+        let connecting = tokio::select! {
+            c = tokio::time::timeout(timeout, connect) => c,
+            _ = events.closed() => return,
+        };
+        let mut ws = match connecting {
             Ok(Ok((ws, _))) => ws,
             Ok(Err(e)) => {
                 let error = match e {
@@ -409,7 +415,11 @@ fn serve(url: String, hello: ClientMsg, timeout: Duration, liveness: Liveness, c
             }
         };
         let hello = Message::Text(hello.to_json().into());
-        match tokio::time::timeout(timeout, ws.send(hello)).await {
+        let said = tokio::select! {
+            s = tokio::time::timeout(timeout, ws.send(hello)) => s,
+            _ = events.closed() => return,
+        };
+        match said {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 let _ = connected.send(Err(ConnectError::NotAServer(e.to_string())));
@@ -513,6 +523,9 @@ fn serve(url: String, hello: ClientMsg, timeout: Duration, liveness: Liveness, c
             End::Abandoned => {}
         }
     });
+    // A host name still being looked up, on the runtime's blocking pool,
+    // is not waited for.
+    runtime.shutdown_background();
 }
 
 #[cfg(test)]
