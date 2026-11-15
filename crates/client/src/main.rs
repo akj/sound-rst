@@ -13,10 +13,11 @@ use soundrts::config::Config;
 use soundrts::log::Log;
 use soundrts::options::Options;
 use soundrts::parameters::Parameters;
-use soundrts::paths::Paths;
+use soundrts::paths::{self, Paths};
 use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
 use soundrts::tts::screen_reader_speech;
+use soundrts::upstream::{self, MissingData};
 use soundrts::window::{self, WindowCommand, WindowLink};
 use soundrts::{mainmenu, notice, probe};
 
@@ -40,12 +41,16 @@ fn main() -> ExitCode {
             }
         };
     }
-    let paths = match Paths::from_environment(options.root.as_deref()) {
+    if options.fetch_data {
+        return if upstream::fetch_data(options.root.as_deref()) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+    let paths = match find_or_fetch_data(&options) {
         Ok(p) => p,
-        Err(e) => {
-            notice::fatal(&e.to_string());
-            return ExitCode::FAILURE;
-        }
+        Err(code) => return code,
     };
     paths.create_user_folders(&Log::stderr());
     let log = Log::to_file(&paths.client_log());
@@ -143,5 +148,33 @@ fn main() -> ExitCode {
             notice::fatal(&reason);
             ExitCode::FAILURE
         }
+    }
+}
+
+/// The game's folders. Without game data, a game started from the desktop
+/// offers to download it; any other start fails with the message that says
+/// how to get it.
+fn find_or_fetch_data(options: &Options) -> Result<Paths, ExitCode> {
+    let cli_root = options.root.as_deref();
+    let error = match Paths::from_environment(cli_root) {
+        Ok(p) => return Ok(p),
+        Err(e) => e,
+    };
+    let fail = |e: &dyn std::fmt::Display| {
+        notice::fatal(&e.to_string());
+        ExitCode::FAILURE
+    };
+    let missing = upstream::on_missing_data(
+        paths::root_is_explicit(cli_root),
+        paths::player_dir_from_environment(),
+        notice::can_ask(),
+    );
+    match missing {
+        MissingData::Fail => Err(fail(&error)),
+        MissingData::Ask(player) => match upstream::ask_and_fetch(&player) {
+            Some(_) => Paths::from_environment(cli_root).map_err(|e| fail(&e)),
+            // The player said no: nothing went wrong.
+            None => Err(ExitCode::SUCCESS),
+        },
     }
 }

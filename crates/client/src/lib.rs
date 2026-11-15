@@ -45,5 +45,6 @@ pub mod style;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 pub mod tts;
+pub mod upstream;
 pub mod voice;
 pub mod window;
