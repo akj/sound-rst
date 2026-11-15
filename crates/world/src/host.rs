@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crate::change::TurnChange;
-use crate::command::{Cheat, Command};
+use crate::command::{Cheat, Command, Refused};
 use crate::entity::PlayerId;
 use crate::events::Event;
 use crate::message::{GameEnd, GameStart, TurnMessage};
@@ -129,8 +129,15 @@ impl Host {
     /// once a cheat that changes the game between turns (see [`Host`]).
     /// After such a cheat, returns what the seat is told of the game now:
     /// after [`Cheat::PlayAs`], the seat it plays as.
+    /// A command naming a player or a square the game does not have is
+    /// refused, with a warning (see [`Host::check`]).
     #[must_use = "a cheat carried out at once changes what the seat is told now"]
     pub fn queue(&mut self, player: PlayerId, command: Command) -> Option<TurnMessage> {
+        if let Err(r) = self.check(player, &command) {
+            self.warnings
+                .push(format!("command {command:?} refused: {r}"));
+            return None;
+        }
         if let Command::Cheat(cheat) = &command {
             match self.cheat_at_once(player, cheat) {
                 AtOnce::No => {}
@@ -140,6 +147,13 @@ impl Host {
         }
         self.world.queue(player, command);
         None
+    }
+
+    /// Whether [`Host::queue`] takes a command of `player`, or refuses it
+    /// at once because it names a player or a square the game does not
+    /// have: what no player's interface sends.
+    pub fn check(&self, player: PlayerId, command: &Command) -> Result<(), Refused> {
+        self.world.check_command(player, command)
     }
 
     /// Queues a command of `player` written as the original's line of

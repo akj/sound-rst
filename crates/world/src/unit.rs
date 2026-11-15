@@ -257,8 +257,9 @@ impl World {
 
     /// Gives a unit its type's stats with its player's upgrades. A unit
     /// that changes hands, resurrected or converted, keeps no bonus of
-    /// before. Collision stays: it says whether the unit holds the space
-    /// where it stands.
+    /// before, and no more hit points or mana than its new maximum.
+    /// Collision stays: it says whether the unit holds the space where it
+    /// stands.
     fn upgrade_to_player_level(&mut self, id: EntityId) -> Res {
         let Some(p) = self.e(id).player else {
             return Ok(());
@@ -277,6 +278,9 @@ impl World {
                 }
             }
         }
+        let e = self.em(id);
+        e.hp = e.hp.min(e.stats.hp_max);
+        e.mana = e.mana.min(e.stats.mana_max);
         Ok(())
     }
 

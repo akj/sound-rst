@@ -845,8 +845,8 @@ pub(crate) enum BuildStep {
 }
 
 /// How far an order is. `Deferred` and `Started` are production's
-/// alone. `Complete`, `Impossible` and `ImpossibleAndComplete` are final:
-/// the order leaves the queue at the unit's next update.
+/// alone. `Complete` and `Impossible` are final: the order leaves the
+/// queue at the unit's next update.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Progress {
     /// Queued and not done; production that has not started.
@@ -857,57 +857,29 @@ pub enum Progress {
     Started,
     /// Done.
     Complete,
-    /// Failed.
+    /// Failed. Production in this state has cost nothing: it was never
+    /// paid for, or it was refunded.
     Impossible,
-    /// Failed and then marked done in the same update: a `use` with no
-    /// room where its units would go, or a trained unit with no room to
-    /// appear, refunded.
-    ImpossibleAndComplete,
 }
 
 impl Progress {
-    fn is_complete(self) -> bool {
-        match self {
-            Progress::Complete | Progress::ImpossibleAndComplete => true,
-            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Impossible => {
-                false
-            }
-        }
-    }
-
-    fn is_impossible(self) -> bool {
-        match self {
-            Progress::Impossible | Progress::ImpossibleAndComplete => true,
-            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Complete => {
-                false
-            }
-        }
-    }
-
     /// Whether it waits only to leave the queue.
     fn is_final(self) -> bool {
-        self.is_complete() || self.is_impossible()
-    }
-
-    fn completed(self) -> Progress {
         match self {
-            Progress::Impossible | Progress::ImpossibleAndComplete => {
-                Progress::ImpossibleAndComplete
-            }
-            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Complete => {
-                Progress::Complete
-            }
+            Progress::Complete | Progress::Impossible => true,
+            Progress::Pending | Progress::Deferred | Progress::Started => false,
         }
     }
+}
 
-    fn made_impossible(self) -> Progress {
-        match self {
-            Progress::Complete | Progress::ImpossibleAndComplete => Progress::ImpossibleAndComplete,
-            Progress::Pending | Progress::Deferred | Progress::Started | Progress::Impossible => {
-                Progress::Impossible
-            }
-        }
-    }
+/// What a `use` order found before its effect.
+enum UseNeed {
+    /// The effect is to be done.
+    Effect,
+    /// Nothing to do: the order is complete.
+    Nothing,
+    /// No room where its units would go: the order is impossible.
+    NoRoom,
 }
 
 /// An order in a unit's queue.
@@ -950,11 +922,11 @@ impl Order {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.progress.is_complete()
+        self.progress == Progress::Complete
     }
 
     pub fn is_impossible(&self) -> bool {
-        self.progress.is_impossible()
+        self.progress == Progress::Impossible
     }
 
     /// Whether it waits only to leave the queue at the unit's next update.
@@ -969,7 +941,7 @@ impl Order {
 
     /// Marks it complete: it leaves the queue at the unit's next update.
     pub(crate) fn complete(&mut self) {
-        self.progress = self.progress.completed();
+        self.progress = Progress::Complete;
     }
 
     /// The type of a complex order, by its name in `rules`.
@@ -1378,7 +1350,7 @@ impl World {
 
     fn mark_as_impossible(&mut self, unit: EntityId, uid: u64, reason: Option<Reason>) {
         if let Some(o) = self.ordm(unit, uid) {
-            o.progress = o.progress.made_impossible();
+            o.progress = Progress::Impossible;
         }
         self.notify(unit, EntityEvent::OrderImpossible(reason), false);
         self.em(unit).distance_to_goal = crate::world::INF;
@@ -2194,15 +2166,14 @@ impl World {
                         p.time_left -= VIRTUAL_TIME_INTERVAL;
                     }
                     self.notify_completeness(unit, uid);
-                } else {
-                    self.production_complete(unit, o, production.product)?;
-                    if let Some(o) = self.ordm(unit, uid) {
-                        o.complete();
-                    }
+                } else if self.production_complete(unit, o, production.product)?
+                    && let Some(o) = self.ordm(unit, uid)
+                {
+                    o.complete();
                 }
             }
             // A final order leaves the queue before it would run again.
-            Progress::Complete | Progress::Impossible | Progress::ImpossibleAndComplete => {}
+            Progress::Complete | Progress::Impossible => {}
         }
         Ok(())
     }
@@ -2237,10 +2208,12 @@ impl World {
         }
     }
 
-    fn production_complete(&mut self, unit: EntityId, o: &Order, product: Product) -> Res {
+    /// Delivers what a production order makes. False when it could not: the
+    /// order is then refunded and impossible.
+    fn production_complete(&mut self, unit: EntityId, o: &Order, product: Product) -> Res<bool> {
         let uid = o.uid;
         let Some(p) = self.e(unit).player else {
-            return Ok(());
+            return Ok(true);
         };
         match product {
             Product::Train(type_id) => {
@@ -2271,7 +2244,7 @@ impl World {
                 let Some((place, Some((x, y)))) = found else {
                     self.order_cancel(unit, o, true);
                     self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                    return Ok(());
+                    return Ok(false);
                 };
                 let food = self.order_food_cost(unit, o);
                 self.plm(p).used_food -= food;
@@ -2300,7 +2273,9 @@ impl World {
             Product::UpgradeTo(type_id) => {
                 let t = self.rules.ty(type_id).clone();
                 let e = self.e(unit).clone();
-                let Some(place) = e.place else { return Ok(()) };
+                let Some(place) = e.place else {
+                    return Ok(true);
+                };
                 let (mut x, mut y) = (e.x, e.y);
                 let (hp, hp_max) = (e.hp, e.stats.hp_max);
                 let leave_meadow =
@@ -2320,8 +2295,9 @@ impl World {
                             self.delete(m);
                         }
                         None => {
-                            self.notify(unit, EntityEvent::OrderImpossible(None), false);
-                            return Ok(());
+                            self.order_cancel(unit, o, true);
+                            self.mark_as_impossible(unit, uid, Some(Reason::CannotBuildHere));
+                            return Ok(false);
                         }
                     }
                 }
@@ -2338,6 +2314,7 @@ impl World {
                 if hp != hp_max {
                     self.em(nu).hp = hp;
                 }
+                self.em(nu).rallying_point = e.rallying_point;
                 // They go into the new building, or out beside it if they no
                 // longer fit: without collision if the square is full, as
                 // from a building destroyed.
@@ -2360,7 +2337,7 @@ impl World {
                 }
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Makes what named `old`, in the recallable group `group`, name `new`,
@@ -2658,9 +2635,16 @@ impl World {
             .clone()
             .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
         let kind = effect.first().cloned().unwrap_or_default();
-        if self.use_is_not_necessary(unit, uid, &kind, &t)? {
-            self.mark_as_complete(unit, uid);
-            return Ok(());
+        match self.use_need(unit, uid, &kind, &t)? {
+            UseNeed::Effect => {}
+            UseNeed::Nothing => {
+                self.mark_as_complete(unit, uid);
+                return Ok(());
+            }
+            UseNeed::NoRoom => {
+                self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
+                return Ok(());
+            }
         }
         let target = self.target_of(unit, uid).expect("checked");
         let (tx, ty) = self.t_xy(&target);
@@ -2723,13 +2707,15 @@ impl World {
         }
     }
 
-    fn use_is_not_necessary(
+    /// Whether a `use` order has its effect to do. A teleportation aimed
+    /// at a unit is aimed at its square from then on.
+    fn use_need(
         &mut self,
         unit: EntityId,
         uid: u64,
         kind: &str,
         t: &crate::rules::UnitType,
-    ) -> Res<bool> {
+    ) -> Res<UseNeed> {
         let target = self.target_of(unit, uid).expect("checked");
         match kind {
             "teleportation" => {
@@ -2756,22 +2742,21 @@ impl World {
                     unreachable!("a square")
                 };
                 if self.e(unit).place == Some(Place::Square(s)) {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 if !types.iter().any(|&a| self.can_receive(s, a, None)) {
-                    self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                    return Ok(true);
+                    return Ok(UseNeed::NoRoom);
                 }
-                Ok(false)
+                Ok(UseNeed::Effect)
             }
             "recall" => {
                 let units = self.effect_targets(unit, kind, t, &target);
                 if units.is_empty() {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 if matches!(target, Target::Square(s) if self.e(unit).place == Some(Place::Square(s)))
                 {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 let mut types: Vec<AirGround> = Vec::new();
                 for u in &units {
@@ -2784,15 +2769,19 @@ impl World {
                     return Err(Abort::new("'Inside' object has no attribute 'can_receive'"));
                 };
                 if !types.iter().any(|&a| self.can_receive(here, a, None)) {
-                    self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                    return Ok(true);
+                    return Ok(UseNeed::NoRoom);
                 }
-                Ok(false)
+                Ok(UseNeed::Effect)
             }
-            "conversion" => Ok(!self.is_an_enemy(unit, &target)),
-            "summon" => Ok(false),
+            "conversion" if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
+            "conversion" => Ok(UseNeed::Nothing),
+            "summon" => Ok(UseNeed::Effect),
             "raise_dead" | "resurrection" => {
-                Ok(self.effect_targets(unit, kind, t, &target).is_empty())
+                if self.effect_targets(unit, kind, t, &target).is_empty() {
+                    Ok(UseNeed::Nothing)
+                } else {
+                    Ok(UseNeed::Effect)
+                }
             }
             other => Err(Abort::new(format!(
                 "'UseOrder' object has no attribute '{other}_is_not_necessary'"

@@ -498,3 +498,180 @@ fn stepping_every_seat_tells_each_how_the_game_ended() {
     assert!(matches!(lost.then[..], [Event::Quit]), "{:?}", lost.then);
     assert_eq!(lost.message.state.defeated, [seats[1]]);
 }
+
+// Commands naming nothing, as a broken or hostile client may send them.
+
+/// An order with this keyword, type and target.
+fn order(kw: Keyword, type_name: Option<&str>, target: Option<OrderTarget>) -> Command {
+    let o = match type_name {
+        Some(t) => KeywordOrder::typed(kw, t).unwrap(),
+        None => KeywordOrder::new(kw).unwrap(),
+    };
+    let o = match target {
+        Some(t) => o.at(t),
+        None => o,
+    };
+    Command::Order {
+        order: Order::Keyword(o),
+        queue: Queue::Replace,
+        imperative: false,
+    }
+}
+
+fn default_order(target: OrderTarget) -> Command {
+    Command::Order {
+        order: Order::Default(target),
+        queue: Queue::Replace,
+        imperative: true,
+    }
+}
+
+/// A training game whose human controls all its units.
+fn controlling_all() -> (Host, PlayerId) {
+    let (mut host, me) = game();
+    let own = host.world.player(me).units.clone();
+    assert!(host.queue(me, Command::Control(own)).is_none());
+    host.step(me);
+    host.drain_warnings();
+    (host, me)
+}
+
+#[test]
+fn a_command_naming_a_square_off_the_map_is_refused_when_it_is_queued() {
+    let (mut host, me) = controlling_all();
+    let off = crate::entity::SquareId(u32::MAX);
+    let point = OrderTarget::Point {
+        square: off,
+        x: 0,
+        y: 0,
+    };
+    let mut commands = Vec::new();
+    for t in [OrderTarget::Square(off), point] {
+        for kw in [
+            Keyword::Go,
+            Keyword::Attack,
+            Keyword::Patrol,
+            Keyword::Gather,
+            Keyword::Block,
+            Keyword::Repair,
+            Keyword::RallyingPoint,
+            Keyword::Enter,
+        ] {
+            commands.push(order(kw, None, Some(t)));
+        }
+        commands.push(order(Keyword::Build, Some("farm"), Some(t)));
+        commands.push(order(Keyword::Use, Some("a_holy_vision"), Some(t)));
+        commands.push(default_order(t));
+    }
+    commands.push(Command::Cheat(Cheat::AddUnits {
+        square: Some(off),
+        units: "footman".into(),
+    }));
+    let before = host.world.digest_u64();
+    for c in &commands {
+        assert_eq!(host.check(me, c), Err(Refused::NoSuchSquare(off)));
+        assert!(host.queue(me, c.clone()).is_none());
+    }
+    assert_eq!(host.world.digest_u64(), before);
+    let warnings = host.drain_warnings();
+    let expected: Vec<String> = commands
+        .iter()
+        .map(|c| format!("command {c:?} refused: no square 4294967295"))
+        .collect();
+    assert_eq!(warnings, expected);
+    for _ in 0..3 {
+        host.step(me);
+    }
+    // The world refuses it too, for a caller without a host.
+    host.drain_warnings();
+    let c = default_order(OrderTarget::Square(off));
+    host.world.queue(me, c.clone());
+    let refused = format!("command {c:?} refused: no square 4294967295");
+    assert_eq!(host.step(me).warnings, [refused]);
+}
+
+#[test]
+fn a_command_of_a_player_the_game_never_had_is_refused_when_it_is_queued() {
+    let (mut host, me) = controlling_all();
+    let nobody = PlayerId(99);
+    let commands = [
+        Command::Control(Vec::new()),
+        order(Keyword::Stop, None, None),
+        Command::Speed(1.0),
+        Command::Quit,
+        Command::Cheat(Cheat::Resources),
+        Command::Cheat(Cheat::AllTechs),
+        Command::Cheat(Cheat::InfiniteMana),
+        Command::Cheat(Cheat::PlayAs(me)),
+        Command::Cheat(Cheat::Victory),
+    ];
+    let before = host.world.digest_u64();
+    for c in &commands {
+        assert_eq!(host.check(nobody, c), Err(Refused::NoSuchPlayer(nobody)));
+        assert!(host.queue(nobody, c.clone()).is_none());
+    }
+    assert_eq!(host.world.digest_u64(), before);
+    let warnings = host.drain_warnings();
+    let expected: Vec<String> = commands
+        .iter()
+        .map(|c| format!("command {c:?} refused: no player 99"))
+        .collect();
+    assert_eq!(warnings, expected);
+    host.step(me);
+    assert_eq!(host.world.players.len(), 2);
+}
+
+#[test]
+fn a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_nothing() {
+    let (mut host, me) = controlling_all();
+    let a1 = host.world.square_by_name("a1").unwrap();
+    let nothing = EntityId(u32::MAX);
+    let own = host.world.player(me).units.clone();
+    // Taken, as an entity may have died since the player named it, and it
+    // chooses no unit.
+    let control = Command::Control(vec![nothing]);
+    assert_eq!(host.check(me, &control), Ok(()));
+    assert!(host.queue(me, control).is_none());
+    host.step(me);
+    assert_eq!(host.world.player(me).group, Some(Vec::new()));
+    assert!(host.queue(me, Command::Control(own.clone())).is_none());
+    let far = |x, y| OrderTarget::Point { square: a1, x, y };
+    let group = |order| Command::Order {
+        order,
+        queue: Queue::Replace,
+        imperative: false,
+    };
+    // Any name is a group's: joining one makes it.
+    let long = "é".repeat(1000);
+    let mut warnings = Vec::new();
+    for c in [
+        order(Keyword::Go, None, Some(OrderTarget::Entity(nothing))),
+        default_order(OrderTarget::Entity(nothing)),
+        order(Keyword::Train, Some("nothing"), None),
+        order(Keyword::Use, Some("footman"), None),
+        order(Keyword::Go, None, Some(far(i64::MAX, i64::MIN))),
+        order(Keyword::Go, None, Some(far(i64::MIN, i64::MAX))),
+        group(Order::ResetGroup("never".into())),
+        group(Order::JoinGroup(long.clone())),
+    ] {
+        assert_eq!(host.check(me, &c), Ok(()));
+        assert!(host.queue(me, c).is_none());
+        warnings.extend(host.step(me).warnings);
+    }
+    // A point off its square leaves the order without a target: it leaves
+    // the queue at the next turn.
+    warnings.extend(host.step(me).warnings);
+    assert_eq!(host.world.player(me).group, Some(own.clone()));
+    assert!(own.iter().all(|&u| host.world.e(u).orders.is_empty()));
+    let names: Vec<&str> = host.world.groups.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, [long.as_str()]);
+    let zoom = |at: &str| {
+        format!("problem with order: [\"go\", \"zoom-2-{at}\"]: the zoom is outside its square")
+    };
+    let (a, b) = (
+        zoom("9223372036854775807--9223372036854775808"),
+        zoom("-9223372036854775808-9223372036854775807"),
+    );
+    // Once for each of the three units that can go.
+    assert_eq!(warnings, [&a, &a, &a, &b, &b, &b].map(String::as_str));
+}

@@ -733,6 +733,7 @@ impl GameInterface {
     ) {
         self.seat.install(message);
         if let Some(end) = end_of_turn {
+            self.follow_replaced_in_commands(&end);
             let events = end.events.iter().cloned().filter_map(SrvEvent::of);
             self.srv_queue.extend(events);
             self.srv_queue.push_back(SrvEvent::EndOfTurn(end));
