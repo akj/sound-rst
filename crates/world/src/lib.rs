@@ -123,7 +123,7 @@ pub use command::{Cheat, Command, KeywordOrder, Order, OrderTarget, Queue};
 pub use entity::Entity;
 pub use entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
 pub use events::{EntityEvent, Event, Reason};
-pub use host::{Host, TurnReport};
+pub use host::{Host, SeatTurn, TurnReport};
 pub use known::{Activity, KnownEntity, KnownExit, KnownOrder, KnownTarget, OwnPart};
 pub use map::MapError;
 pub use message::{

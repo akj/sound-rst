@@ -137,7 +137,83 @@ fn bytes_left_over_and_too_many_bytes_are_refused() {
     bytes.push(0);
     assert!(decode_command(&bytes).unwrap_err().0.contains("left over"));
     let long = vec![0; MAX_GAME_MESSAGE_BYTES + 1];
-    assert!(decode_command(&long).unwrap_err().0.contains("too long"));
+    assert!(decode_end(&long).unwrap_err().0.contains("too long"));
+    assert!(decode_frame(&long).unwrap_err().0.contains("too long"));
+}
+
+#[test]
+fn a_command_is_no_longer_than_an_order() {
+    let most = crate::MAX_COMMAND_BYTES;
+    assert!(
+        decode_command(&vec![0; most + 1])
+            .unwrap_err()
+            .0
+            .contains("too long")
+    );
+    // A list of ids: one byte of length, then three bytes for each id.
+    let ids = |n: u32| Command::Control((0..n).map(|i| EntityId(20_000 + i)).collect());
+    let fits = encode_command(&ids(1300)).unwrap();
+    assert_eq!(decode_command(&fits), Ok(ids(1300)));
+    assert!(fits.len() <= most);
+    assert!(encode_command(&ids(1400)).is_err());
+}
+
+#[test]
+fn a_seat_frame_comes_back_as_it_was_sent() {
+    let end = GameEnd {
+        stats: Default::default(),
+    };
+    // The kind of frame comes first: the end is the fourth.
+    let frame = SeatFrame::End(end);
+    let bytes = encode_frame(&frame).unwrap();
+    assert_eq!(bytes[0], 3);
+    assert_eq!(decode_frame(&bytes), Ok(frame));
+    let a = || crate::Login::new("a").unwrap();
+    for frame in [
+        SeatFrame::Seat {
+            slot: 1,
+            change: crate::SeatChange::Removed { by: a() },
+        },
+        SeatFrame::Seat {
+            slot: 2,
+            change: crate::SeatChange::Dropped,
+        },
+        SeatFrame::Clock {
+            by: a(),
+            change: crate::ClockChange::Speed {
+                speed: crate::Speed::Fast2,
+            },
+        },
+        SeatFrame::NotStarted(crate::StartRefusal::CannotBuild {
+            error: crate::ChatText::clean("no square a1").unwrap(),
+        }),
+        SeatFrame::Stopped(crate::StopReason::Crashed),
+    ] {
+        let bytes = encode_frame(&frame).unwrap();
+        assert_eq!(decode_frame(&bytes), Ok(frame));
+    }
+    // A token that is not one is refused.
+    let seated = |token: &str| {
+        let mut bytes = encode_frame(&SeatFrame::Seated {
+            you: 0,
+            map: crate::MapInfo {
+                file_name: crate::MapFileName::new("jl1.txt").unwrap(),
+                hash: crate::MapHash::of(b""),
+                title_sounds: Vec::new(),
+                nb_players_min: 2,
+                nb_players_max: 2,
+            },
+            speed: crate::Speed::Normal,
+            paused: false,
+            token: crate::SeatToken::from_bits(7),
+        })
+        .unwrap();
+        let at = bytes.len() - 32;
+        bytes[at..].copy_from_slice(token.as_bytes());
+        decode_frame(&bytes)
+    };
+    assert!(seated(&"0".repeat(32)).is_ok());
+    assert!(seated(&"G".repeat(32)).is_err());
 }
 
 fn entity(id: u32, type_name: &str) -> KnownEntity {

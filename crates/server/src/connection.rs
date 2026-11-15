@@ -1,6 +1,6 @@
 //! One task per connection: the WebSocket handshake, the hello, the rate
-//! limits and decoding, then messages to the lobby and from the
-//! connection's [`Outbox`] to the socket.
+//! limits and decoding, the heartbeat, then messages to the lobby and from
+//! the connection's [`Outbox`] to the socket.
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -11,7 +11,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use soundrts_protocol::{
     ClientMsg, ContentHash, Login, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, Refusal, Rejection,
-    ServerMsg, Wire,
+    ServerMsg, Wire, game::decode_command,
 };
 use tokio::net::TcpStream;
 use tokio::sync::{Notify, OwnedSemaphorePermit, mpsc, watch};
@@ -19,7 +19,7 @@ use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Role, WebSocketConfig};
-use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
+use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tracing::{debug, warn};
 
 use crate::lobby::{LobbyInput, LobbyTx};
@@ -73,8 +73,25 @@ const MAX_QUEUED_MAP_BYTES: usize = MAX_MESSAGE_BYTES;
 /// How long to wait for the peer to answer a close.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// How long a connection may take, how often it is pinged, and its
+/// socket's send buffer.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ConnSettings {
+    /// To say hello.
+    pub hello: Duration,
+    /// Between two pings.
+    pub ping: Duration,
+    /// To be heard from at all, a ping's answer included, before the
+    /// connection counts as dead.
+    pub silence: Duration,
+    /// The bytes the system may hold for the client before writes wait.
+    pub send_buffer: Option<usize>,
+}
+
 pub(crate) enum Outbound {
     Text(Utf8Bytes),
+    /// A frame of a hosted game's stream.
+    Binary(Bytes),
     /// Close the connection after what came before.
     Close,
 }
@@ -97,9 +114,19 @@ impl Outbox {
         self.push(Outbound::Text(text));
     }
 
+    /// Sends a frame of a hosted game's stream.
+    pub(crate) fn send_binary(&self, bytes: Bytes) {
+        self.push(Outbound::Binary(bytes));
+    }
+
     /// Closes the connection once the messages before are sent.
     pub(crate) fn close(&self) {
         self.push(Outbound::Close);
+    }
+
+    /// How many messages wait to be written to the socket.
+    pub(crate) fn queued(&self) -> usize {
+        self.tx.max_capacity().saturating_sub(self.tx.capacity())
     }
 
     fn push(&self, out: Outbound) {
@@ -125,12 +152,17 @@ pub(crate) async fn serve(
     pending: OwnedSemaphorePermit,
     lobby: LobbyTx,
     mut stop: watch::Receiver<bool>,
-    hello_timeout: Duration,
+    timeouts: ConnSettings,
 ) {
     if let Err(e) = stream.set_nodelay(true) {
         debug!(%peer, error = %e, "cannot set TCP_NODELAY");
     }
-    let deadline = Instant::now() + hello_timeout;
+    if let Some(bytes) = timeouts.send_buffer
+        && let Err(e) = socket2::SockRef::from(&stream).set_send_buffer_size(bytes)
+    {
+        debug!(%peer, error = %e, "cannot set the send buffer");
+    }
+    let deadline = crate::hosted::after(timeouts.hello);
     // The WebSocket reserves room for a whole frame as soon as its header
     // comes, so the hello is read with frames no larger than a hello.
     let hello_config = WebSocketConfig::default()
@@ -201,12 +233,21 @@ pub(crate) async fn serve(
     let maps = Allowance::new(MAX_QUEUED_MAP_BYTES);
     let others = Allowance::new(MAX_QUEUED_BYTES);
     let mut invalid_in_a_row = 0;
+    let mut heard = Instant::now();
+    let mut ping = tokio::time::interval_at(crate::hosted::after(timeouts.ping), timeouts.ping);
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        let silent = heard.checked_add(timeouts.silence).unwrap_or(heard);
         tokio::select! {
             incoming = ws.next() => {
-                let text = match incoming {
-                    Some(Ok(Message::Text(text))) => Some(text),
-                    Some(Ok(Message::Binary(_))) => None,
+                heard = Instant::now();
+                let (bytes, incoming) = match incoming {
+                    Some(Ok(Message::Text(text))) => {
+                        (text.len(), ClientMsg::from_json(&text).ok().map(Incoming::Msg))
+                    }
+                    Some(Ok(Message::Binary(bytes))) => {
+                        (bytes.len(), decode_command(&bytes).ok().map(Incoming::Command))
+                    }
                     Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => continue,
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Err(e)) => {
@@ -219,15 +260,20 @@ pub(crate) async fn serve(
                     outbox.send(&ServerMsg::Refused { reason: Refusal::SlowDown });
                     continue;
                 }
-                let bytes = text.as_ref().map_or(0, |t| t.len());
-                match text.and_then(|t| ClientMsg::from_json(&t).ok()) {
-                    Some(msg) => {
+                match incoming {
+                    Some(incoming) => {
                         invalid_in_a_row = 0;
-                        if !limits.kind(&msg, now) {
+                        if let Incoming::Msg(msg) = &incoming
+                            && !limits.kind(msg, now)
+                        {
                             outbox.send(&ServerMsg::Refused { reason: Refusal::SlowDown });
                             continue;
                         }
-                        let allowance = if matches!(msg, ClientMsg::Map { .. }) { &maps } else { &others };
+                        let large = matches!(
+                            incoming,
+                            Incoming::Msg(ClientMsg::Map { .. } | ClientMsg::StartHosted { .. })
+                        );
+                        let allowance = if large { &maps } else { &others };
                         let Some(queued) = allowance.take(bytes) else {
                             warn!(conn, bytes, "client sent more than the server can hold; disconnecting");
                             close_with(&mut ws, Some(CloseFrame {
@@ -237,7 +283,16 @@ pub(crate) async fn serve(
                             .await;
                             break;
                         };
-                        let _ = lobby.send(LobbyInput::Msg { conn, msg, queued });
+                        let input = match incoming {
+                            Incoming::Msg(msg) => LobbyInput::Msg { conn, msg, queued },
+                            Incoming::Command(command) => LobbyInput::Command {
+                                conn,
+                                command,
+                                bytes,
+                                queued,
+                            },
+                        };
+                        let _ = lobby.send(input);
                     }
                     None => {
                         invalid_in_a_row += 1;
@@ -249,24 +304,35 @@ pub(crate) async fn serve(
                     }
                 }
             }
-            out = rx.recv() => match out {
-                Some(Outbound::Text(text)) => {
-                    // A peer that stops reading blocks the write; a kick or a
-                    // shutdown must still end the connection.
-                    tokio::select! {
-                        sent = ws.send(Message::Text(text)) => if sent.is_err() { break },
-                        _ = kick.notified() => {
-                            warn!(conn, "client too slow to read its messages; disconnecting");
-                            break;
-                        }
-                        _ = stop.changed() => break,
+            out = rx.recv() => {
+                let msg = match out {
+                    Some(Outbound::Text(text)) => Message::Text(text),
+                    Some(Outbound::Binary(bytes)) => Message::Binary(bytes),
+                    Some(Outbound::Close) | None => {
+                        close(&mut ws).await;
+                        break;
                     }
-                }
-                Some(Outbound::Close) | None => {
-                    close(&mut ws).await;
+                };
+                if write(&mut ws, msg, &kick, &mut stop, silent, conn).await.is_err() {
                     break;
                 }
-            },
+            }
+            _ = ping.tick() => {
+                if Instant::now() >= silent {
+                    debug!(conn, "heard nothing in time; the connection is dead");
+                    break;
+                }
+                if write(&mut ws, Message::Ping(Bytes::new()), &kick, &mut stop, silent, conn)
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            _ = tokio::time::sleep_until(silent) => {
+                debug!(conn, "heard nothing in time; the connection is dead");
+                break;
+            }
             _ = kick.notified() => {
                 warn!(conn, "client too slow to read its messages; disconnecting");
                 break;
@@ -278,6 +344,37 @@ pub(crate) async fn serve(
         }
     }
     let _ = lobby.send(LobbyInput::Gone { conn });
+}
+
+/// What a client sent, decoded: a JSON message, or a hosted game's
+/// command as a binary frame.
+enum Incoming {
+    Msg(ClientMsg),
+    Command(soundrts_world::Command),
+}
+
+/// Writes one message. A peer that stops reading blocks the write; a kick,
+/// a shutdown or the heartbeat's deadline still ends the connection.
+async fn write(
+    ws: &mut Ws,
+    msg: Message,
+    kick: &Notify,
+    stop: &mut watch::Receiver<bool>,
+    silent: Instant,
+    conn: ConnId,
+) -> Result<(), ()> {
+    tokio::select! {
+        sent = ws.send(msg) => sent.map_err(drop),
+        _ = kick.notified() => {
+            warn!(conn, "client too slow to read its messages; disconnecting");
+            Err(())
+        }
+        _ = tokio::time::sleep_until(silent) => {
+            debug!(conn, "heard nothing in time while writing; the connection is dead");
+            Err(())
+        }
+        _ = stop.changed() => Err(()),
+    }
 }
 
 /// The first text message, or `None` if the connection ends first. Any
@@ -418,7 +515,9 @@ impl Limits {
         let window = match msg {
             ClientMsg::Chat { .. } => &mut self.chat,
             ClientMsg::Invite { .. } => &mut self.invitations,
-            ClientMsg::Map { .. } | ClientMsg::GetMap { .. } => &mut self.maps,
+            ClientMsg::Map { .. } | ClientMsg::GetMap { .. } | ClientMsg::StartHosted { .. } => {
+                &mut self.maps
+            }
             _ => return true,
         };
         window.allow(now)

@@ -57,6 +57,15 @@ pub struct TurnReport {
     pub warnings: Vec<String>,
 }
 
+/// What one seat was told of a step: as [`TurnReport`], without the
+/// warnings, which are the game's.
+#[derive(Clone, Debug)]
+pub struct SeatTurn {
+    pub end_of_turn: Option<Arc<TurnMessage>>,
+    pub then: Vec<Event>,
+    pub message: Arc<TurnMessage>,
+}
+
 /// Whether a cheat changes the game at once.
 enum AtOnce {
     /// It waits for the next step.
@@ -114,9 +123,45 @@ impl Host {
     /// Returns what `seat` was told and the warnings since the last step.
     pub fn step(&mut self, seat: PlayerId) -> TurnReport {
         self.world.update();
+        let SeatTurn {
+            end_of_turn,
+            then,
+            message,
+        } = self.seat_turn(seat);
+        TurnReport {
+            end_of_turn,
+            then,
+            message,
+            warnings: self.drain_warnings(),
+        }
+    }
+
+    /// Runs one turn, as [`Host::step`] does, and gives each of `seats`
+    /// what [`Host::step`] gives one seat, in the order of `seats`: what a
+    /// host serving several seats sends each of them. Every seat's events
+    /// and end of turn are taken, asked for or not, so nothing piles up for
+    /// a seat left out. Each of `seats` is one of [`Host::seats`], once.
+    /// The warnings wait for [`Host::drain_warnings`].
+    pub fn step_seats(&mut self, seats: &[PlayerId]) -> Vec<SeatTurn> {
+        self.world.update();
+        let mut turns = std::collections::BTreeMap::new();
+        for seat in self.seats.clone() {
+            if seats.contains(&seat) {
+                turns.insert(seat, self.seat_turn(seat));
+            } else {
+                self.world.drain_events(seat);
+                self.world.player_mut(seat).end_of_turn = None;
+            }
+        }
+        seats.iter().filter_map(|s| turns.remove(s)).collect()
+    }
+
+    /// What `seat` was told of the turn just run: its events split at the
+    /// end of its turn, and what it knows after.
+    fn seat_turn(&mut self, seat: PlayerId) -> SeatTurn {
         let mut events = self.world.drain_events(seat);
         let end = self.world.player_mut(seat).end_of_turn.take();
-        let (end_of_turn, then, message) = match end {
+        match end {
             Some(end) => {
                 let then = events.split_off(end.after_events);
                 let end = Arc::new(TurnMessage {
@@ -130,15 +175,17 @@ impl Host {
                 } else {
                     Arc::new(self.message(seat))
                 };
-                (Some(end), then, message)
+                SeatTurn {
+                    end_of_turn: Some(end),
+                    then,
+                    message,
+                }
             }
-            None => (None, events, Arc::new(self.message(seat))),
-        };
-        TurnReport {
-            end_of_turn,
-            then,
-            message,
-            warnings: self.drain_warnings(),
+            None => SeatTurn {
+                end_of_turn: None,
+                then: events,
+                message: Arc::new(self.message(seat)),
+            },
         }
     }
 

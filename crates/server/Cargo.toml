@@ -9,13 +9,26 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Faults a game can be made to have on purpose, for the tests that prove a
+# failing game ends only itself: see `hosted::fault`.
+fault-injection = []
+
 [dependencies]
 futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
 igd-next = { version = "0.18.0", features = ["aio_tokio"] }
 rand = "0.10.3"
 serde_json = "1.0.154"
+# The size of a connection's send buffer.
+socket2 = "0.6.5"
 soundrts-protocol = { path = "../protocol" }
+# The game a hosted game runs.
+soundrts-world = { path = "../world", features = ["serde"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "signal"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+
+[dev-dependencies]
+# The tests make games fail on purpose.
+soundrts-server = { path = ".", features = ["fault-injection"] }

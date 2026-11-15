@@ -1,17 +1,21 @@
 //! The messages between a SoundRTS client and a SoundRTS server.
 //!
-//! A server is a lobby, a chat and a turn clock. It never runs the game:
-//! every client runs the same simulation from the same seed, and the server
-//! tells them which orders to apply at each turn (lockstep). The server
-//! knows nothing about rules or maps beyond what a host tells it, so it
-//! needs no game data.
+//! A server is a lobby, a chat and a turn clock. In a lockstep game every
+//! client runs the same simulation from the same seed, and the server
+//! tells them which orders to apply at each turn. The server knows nothing
+//! about rules or maps beyond what a host tells it, so it needs no game
+//! data.
 //!
 //! Each message is one WebSocket text frame holding one JSON object. Every
 //! type that crosses the wire checks its own limits when it is read, so a
 //! value of these types is always valid.
 //!
-//! The [`game`] module is the encoding of a game that a host runs and
-//! streams to each seat, in place of lockstep. Nothing sends it yet.
+//! A server can also run a game itself (a hosted game) and send each
+//! seat only what that player knows, in place of lockstep: the room's host
+//! starts it with [`ClientMsg::StartHosted`]. What a player asks of it is
+//! JSON like the rest; everything a seat is told of it, and a player's
+//! commands, are binary frames encoded by the [`game`] module, so that a
+//! client that plays lockstep games never sees them.
 
 use std::fmt;
 use std::time::Duration;
@@ -58,6 +62,13 @@ pub const MAX_ORDERS_PER_MESSAGE: usize = 64;
 /// server refuses orders beyond it with [`Refusal::SlowDown`], which keeps
 /// every [`ServerMsg::Turn`] far below [`MAX_MESSAGE_BYTES`].
 pub const MAX_TURN_ORDER_BYTES: usize = 32 * 1024;
+
+/// The largest command a player sends in a hosted game, encoded: as
+/// large as the longest order.
+pub const MAX_COMMAND_BYTES: usize = MAX_ORDER_BYTES;
+
+/// The length of a [`SeatToken`], in hex digits: 128 random bits.
+pub const SEAT_TOKEN_CHARS: usize = 32;
 
 /// The most sounds in [`MapInfo::title_sounds`].
 pub const MAX_TITLE_SOUNDS: usize = 16;
@@ -436,6 +447,112 @@ impl From<MapBytes> for String {
     }
 }
 
+/// One of the texts a hosted game is built from: at most
+/// [`MAX_TEXT_BYTES`](soundrts_world::defs::MAX_TEXT_BYTES), the limit the
+/// world's loaders hold every text to.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct GameText(String);
+
+impl GameText {
+    pub fn new(s: impl Into<String>) -> Result<GameText, Invalid> {
+        let s = s.into();
+        soundrts_world::defs::check_size(s.len()).map_err(Invalid)?;
+        Ok(GameText(s))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl fmt::Debug for GameText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "GameText({} bytes)", self.0.len())
+    }
+}
+
+impl TryFrom<String> for GameText {
+    type Error = Invalid;
+    fn try_from(s: String) -> Result<GameText, Invalid> {
+        GameText::new(s)
+    }
+}
+
+impl From<GameText> for String {
+    fn from(t: GameText) -> String {
+        t.0
+    }
+}
+
+/// What the server lacks to build a hosted game, as the hosting client
+/// loaded it: the layers' rules and computer-player scripts, each joined
+/// in layer order, and the map's definition. The server has the rest.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GameTexts {
+    pub rules: GameText,
+    pub ai: GameText,
+    pub map: GameText,
+}
+
+/// What proves a returning player held a seat of a hosted game: given to
+/// that player alone when the game starts. [`SEAT_TOKEN_CHARS`] lower
+/// case hex digits.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct SeatToken(String);
+
+impl SeatToken {
+    pub fn new(s: impl Into<String>) -> Result<SeatToken, Invalid> {
+        let s = s.into();
+        let ok = s.len() == SEAT_TOKEN_CHARS
+            && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        if ok {
+            Ok(SeatToken(s))
+        } else {
+            Err(Invalid("bad seat token".into()))
+        }
+    }
+
+    /// The token of 128 random bits.
+    pub fn from_bits(bits: u128) -> SeatToken {
+        SeatToken(format!("{bits:032x}"))
+    }
+
+    /// Whether `other` is this token, in a time that does not depend on
+    /// where they differ.
+    pub fn matches(&self, other: &SeatToken) -> bool {
+        self.0
+            .bytes()
+            .zip(other.0.bytes())
+            .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+            == 0
+    }
+}
+
+impl fmt::Debug for SeatToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SeatToken(..)")
+    }
+}
+
+impl TryFrom<String> for SeatToken {
+    type Error = Invalid;
+    fn try_from(s: String) -> Result<SeatToken, Invalid> {
+        SeatToken::new(s)
+    }
+}
+
+impl From<SeatToken> for String {
+    fn from(t: SeatToken) -> String {
+        t.0
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Game settings
 // ---------------------------------------------------------------------------
@@ -693,6 +810,52 @@ pub struct SlotOrders {
 /// Clients in step have the same digest after the same turn.
 pub type Digest = u64;
 
+/// What happened to a seat of a hosted game, told to every player in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SeatChange {
+    /// The player's connection was lost. Their units keep their last
+    /// orders while the seat is held for them.
+    Dropped,
+    /// The player came back to the seat.
+    Returned,
+    /// The player did not come back in time: they have quit the game.
+    GivenUp,
+    /// The player left the game, or their game is over.
+    Left,
+    /// The room's host removed the player from the game.
+    Removed { by: Login },
+}
+
+/// What the room's host did to the clock of a hosted game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClockChange {
+    Paused,
+    Resumed,
+    Speed { speed: Speed },
+}
+
+/// Why a hosted game could not start. The room stays as it was.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StartRefusal {
+    /// The rules, scripts or map cannot make a game: the world's error.
+    CannotBuild { error: ChatText },
+    /// Building the game took longer than the server allows.
+    TooSlow,
+    /// Building the game failed inside the server.
+    Crashed,
+    /// The server is still busy with games that were too slow: try later.
+    Busy,
+}
+
+/// Why the server stopped a hosted game for everyone in it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StopReason {
+    /// The game failed inside the server.
+    Crashed,
+    /// A turn took longer than the server allows.
+    TooSlow,
+}
+
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
@@ -776,8 +939,37 @@ pub enum ClientMsg {
         digest: Digest,
     },
     /// You leave the game: the others get a `quit` order for you, and you
-    /// return to the lobby.
+    /// return to the lobby. In a hosted game as well.
     LeaveGame,
+
+    // Hosted games.
+    /// Starts a game the server runs, built from `texts` and the room. As
+    /// [`ClientMsg::Start`]: the host only, every human ready. Answered,
+    /// as binary frames, by [`game::SeatFrame::Seated`] and the stream to
+    /// every human, or [`game::SeatFrame::NotStarted`] to the host. Once it
+    /// runs, a player sends their commands as binary frames
+    /// ([`game::encode_command`]).
+    StartHosted {
+        texts: GameTexts,
+    },
+    /// Takes back your seat of a hosted game after your connection was
+    /// lost: from the lobby, with the token the game gave you.
+    ReturnToGame {
+        room: RoomId,
+        token: SeatToken,
+    },
+    /// The room's host stops the clock of a hosted game.
+    PauseGame,
+    /// The room's host starts the clock again.
+    ResumeGame,
+    /// The room's host changes the speed of a hosted game.
+    SetGameSpeed {
+        speed: Speed,
+    },
+    /// The room's host takes a player out of a hosted game.
+    RemovePlayer {
+        slot: SlotIndex,
+    },
 }
 
 /// From the server to a client.
@@ -1025,6 +1217,31 @@ mod tests {
             MapHash::of(b"").as_str(),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    #[test]
+    fn a_game_text_is_held_to_the_loaders_limit() {
+        let most = soundrts_world::defs::MAX_TEXT_BYTES;
+        assert!(GameText::new("x".repeat(most)).is_ok());
+        assert!(GameText::new("x".repeat(most + 1)).is_err());
+        let json = format!(
+            r#"{{"type":"start_hosted","texts":{{"rules":"{}","ai":"","map":""}}}}"#,
+            "x".repeat(most + 1)
+        );
+        assert!(ClientMsg::from_json(&json).is_err());
+    }
+
+    #[test]
+    fn a_seat_token_is_32_hex_digits() {
+        let t = SeatToken::from_bits(0xabc);
+        assert_eq!(String::from(t.clone()), "00000000000000000000000000000abc");
+        assert!(SeatToken::new(String::from(t.clone())).is_ok());
+        assert!(SeatToken::new("ABC").is_err());
+        assert!(SeatToken::new("g".repeat(32)).is_err());
+        assert!(SeatToken::new("a".repeat(33)).is_err());
+        assert!(t.matches(&SeatToken::from_bits(0xabc)));
+        assert!(!t.matches(&SeatToken::from_bits(0xabd)));
+        assert_eq!(format!("{t:?}"), "SeatToken(..)");
     }
 
     #[test]

@@ -358,3 +358,143 @@ fn a_turn_ends_with_what_the_seat_knows_then_and_the_game_may_end_after() {
     let report = host.step(me);
     assert!(report.end_of_turn.is_none());
 }
+
+/// Two humans on jl1, each told the events, as a host on a server plays it.
+fn two_humans() -> Host {
+    let mut a = Controller::human("a", true);
+    a.alliance = Some("1".into());
+    let mut b = Controller::human("b", true);
+    b.alliance = Some("2".into());
+    let setup = GameSetup::multiplayer(
+        read("res/rules.txt"),
+        read("res/ai.txt"),
+        read("res/multi/jl1.txt"),
+        4,
+        vec![a, b],
+    );
+    Host::new(&setup).unwrap()
+}
+
+/// The entities of the order-ok events among `events`.
+fn ordered(events: &[Event]) -> Vec<EntityId> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Entity {
+                entity,
+                event: crate::EntityEvent::OrderOk,
+            } => Some(entity.id),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn stepping_every_seat_tells_each_its_own_events() {
+    let mut host = two_humans();
+    let seats = host.seats().to_vec();
+    let (a, b) = (seats[0], seats[1]);
+    let peasants = |host: &Host, p: PlayerId| -> Vec<EntityId> {
+        let w = &host.world;
+        let mut ids: Vec<EntityId> = w
+            .player(p)
+            .units
+            .iter()
+            .copied()
+            .filter(|&u| &*w.entity(u).unwrap().type_name == "peasant")
+            .collect();
+        ids.sort();
+        ids
+    };
+    let (mine, theirs) = (peasants(&host, a), peasants(&host, b));
+    assert!(!mine.is_empty() && !theirs.is_empty());
+    let b2 = host.world.square_by_name("b2").unwrap();
+    let go = |units: Vec<EntityId>| {
+        [
+            Command::Control(units),
+            Command::Order {
+                order: Order::Keyword(
+                    KeywordOrder::new(Keyword::Go)
+                        .unwrap()
+                        .at(OrderTarget::Square(b2)),
+                ),
+                queue: Queue::Replace,
+                imperative: false,
+            },
+        ]
+    };
+    for c in go(mine.clone()) {
+        assert!(host.queue(a, c).is_none());
+    }
+    let turns = host.step_seats(&seats);
+    assert_eq!(turns.len(), 2);
+    assert_eq!((turns[0].message.seat, turns[1].message.seat), (a, b));
+    let ends: Vec<&TurnMessage> = turns
+        .iter()
+        .map(|t| &**t.end_of_turn.as_ref().unwrap())
+        .collect();
+    let mut told = ordered(&ends[0].events);
+    told.sort();
+    assert_eq!(told, mine, "a hears its own peasants obey");
+    assert_eq!(ordered(&ends[1].events), [], "b hears nothing of it");
+    for t in &turns {
+        assert!(t.then.is_empty());
+        assert!(Arc::ptr_eq(t.end_of_turn.as_ref().unwrap(), &t.message));
+    }
+
+    // Now b orders, and only a is asked for: b's events are drained all
+    // the same, and are not told to a.
+    for c in go(theirs.clone()) {
+        assert!(host.queue(b, c).is_none());
+    }
+    let turns = host.step_seats(&[a]);
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].message.seat, a);
+    assert_eq!(ordered(&turns[0].message.events), []);
+    let nothing_left = |host: &Host| {
+        for &p in &seats {
+            assert_eq!(host.world.player(p).events, [], "player {}", p.0);
+            assert!(host.world.player(p).end_of_turn.is_none(), "player {}", p.0);
+        }
+    };
+    for _ in 0..20 {
+        nothing_left(&host);
+        host.step_seats(&[b]);
+    }
+    nothing_left(&host);
+}
+
+#[test]
+fn stepping_every_seat_tells_each_how_the_game_ended() {
+    let mut a = Controller::human("a", true);
+    a.alliance = Some("1".into());
+    let mut b = Controller::human("b", true);
+    b.alliance = Some("2".into());
+    let mut setup = GameSetup::multiplayer(
+        read("res/rules.txt"),
+        read("res/ai.txt"),
+        read("res/multi/jl1.txt"),
+        4,
+        vec![a, b],
+    );
+    setup.allow_cheatmode = true;
+    let mut host = Host::new(&setup).unwrap();
+    let seats = host.seats().to_vec();
+    host.step_seats(&seats);
+    // A victory ends the game at the end of the turn: the winner is told
+    // the turn, then that everyone left.
+    let _ = host.queue(seats[0], Command::Cheat(Cheat::Victory));
+    let turns = host.step_seats(&seats);
+    let (won, lost) = (&turns[0], &turns[1]);
+    let end = won.end_of_turn.as_ref().unwrap();
+    assert!(end.state.players.contains(&seats[0]));
+    assert!(end.state.has_victory);
+    assert!(matches!(won.then[..], [Event::Quit]), "{:?}", won.then);
+    assert!(won.message.state.players.is_empty());
+    assert_eq!(won.message.time, end.time);
+    // The loser left during the turn: no end of turn, and every event of
+    // the step after.
+    assert!(lost.end_of_turn.is_none());
+    assert!(matches!(lost.then[..], [Event::Quit]), "{:?}", lost.then);
+    assert_eq!(lost.message.state.defeated, [seats[1]]);
+}
