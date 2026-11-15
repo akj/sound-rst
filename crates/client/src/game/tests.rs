@@ -235,6 +235,54 @@ fn escape_during_a_story_still_lets_the_news_waiting_with_it_be_said() {
 }
 
 #[test]
+fn escape_after_walking_the_history_during_a_story_says_no_line_of_it() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "there was", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.client
+        .news(News::new(Category::Production, t("news waiting")));
+    h.press(Key::F5, Mods::NONE);
+    h.step(&mut g);
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Playing));
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(said[0], "once upon a time");
+    assert_eq!(said.last().map(String::as_str), Some("news waiting"));
+    assert!(
+        !said.iter().any(|s| s == "there was" || s == "the end"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn escape_during_a_story_stops_an_answer_being_said() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.press(Key::F1, Mods::NONE);
+    h.step(&mut g);
+    assert!(h.client.voice.is_busy(), "the help is said");
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    assert!(!h.client.voice.is_busy(), "Escape stops it");
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(h.said_since(from).len(), 2, "{:?}", h.said_since(from));
+}
+
+#[test]
 fn the_game_menu_and_the_console_do_not_stop_the_loop_and_the_world_waits_while_they_are_open() {
     // Were the loop held in a menu, the window would close at the
     // deadline and the step fail.

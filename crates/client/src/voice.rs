@@ -568,16 +568,21 @@ impl Voice {
         }
     }
 
-    /// Skips the message being said, as [`Voice::say_next`] does, and gives
-    /// up the messages `ids` that wait: they are kept in the log unheard,
-    /// and none of them starts.
+    /// Gives up the messages `ids` that wait, which are kept in the log
+    /// unheard, and stops what is being said: news from the queue is
+    /// skipped as a key skips it, and a walk through the log ends. The next
+    /// message waiting starts; none of `ids` does.
     pub fn skip_with(&mut self, ids: &[EntryId]) {
         for e in &mut self.log {
             if e.is_waiting() && ids.contains(&e.id) {
                 e.heard = Heard::No;
             }
         }
-        self.say_next(false);
+        if self.active && self.current_message_is_waiting() {
+            self.mark_current_as_said();
+        }
+        self.history = false;
+        self.start_current();
     }
 
     /// Says now, and waits until the end; a key press does not interrupt.
