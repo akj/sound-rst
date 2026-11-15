@@ -1,7 +1,7 @@
 //! What units, buildings, deposits and corpses do (`worldunit.py`,
 //! `worldaction.py`, `worldresource.py`, `worldupgrade.py`).
 
-use crate::abort::{Abort, Invariant, Res};
+use crate::abort::{Invariant, Res};
 use crate::entity::{
     Action, ActionKind, AiMode, Corpse, Creature, CreatureKind, Deposit, Entity, EntityId, Kind,
     Place, PlayerId, SiteData, SquareId, Target,
@@ -1049,9 +1049,8 @@ impl World {
         if same_place {
             self.action_reach_and_stop(id)
         } else if matches!(self.e(id).airground_type, AirGround::Air | AirGround::Water) {
-            if let Target::Xy(..) = target {
-                return Err(Abort::new("'tuple' object has no attribute 'x'"));
-            }
+            // A point is the center of a portal's other side where the unit
+            // could not go through.
             let (x, y) = self.t_xy(&target);
             self.go_to_xy(id, x, y)?;
             Ok(())
@@ -2162,23 +2161,12 @@ impl World {
                     }
                 } else if let Some(Place::Square(s)) = here
                     && self.square_is_very_dangerous(p, s)
-                    && let Some(prev) = self.e(id).previous_place
+                    // A unit just out of a transport has no square to go
+                    // back to.
+                    && let Some(Place::Square(ps)) = self.e(id).previous_place
+                    && !self.square_is_very_dangerous(p, ps)
                 {
-                    let prev_dangerous = match prev {
-                        Place::Square(ps) => self.square_is_very_dangerous(p, ps),
-                        Place::Inside(_) => {
-                            return Err(Abort::new(
-                                "'Inside' object has no attribute 'other_side'",
-                            ));
-                        }
-                    };
-                    if !prev_dangerous {
-                        let t = match prev {
-                            Place::Square(ps) => Target::Square(ps),
-                            Place::Inside(_) => unreachable!("handled above"),
-                        };
-                        self.start_moving_to(id, Some(&t), false)?;
-                    }
+                    self.start_moving_to(id, Some(&Target::Square(ps)), false)?;
                 }
             }
         }

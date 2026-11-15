@@ -972,3 +972,78 @@ fn danger_waiting_and_warehouses_have_answers_for_every_unit_and_player() {
         Ok(None)
     );
 }
+
+#[test]
+fn a_block_whose_exit_is_lost_and_a_teleport_at_a_unit_inside_are_impossible() {
+    let (mut w, me, _) = game();
+    let s = home(&w, me);
+    let footman = add(&mut w, "footman", me, s);
+    w.update();
+    let exit = w.square(s).exits[0];
+    w.queue(me, crate::Command::Control(vec![footman]));
+    w.queue_command(me, &format!("order 0 0 block {exit}"));
+    w.update();
+    let uid = w.e(footman).orders()[0].uid;
+    // The exit is no longer perceived nor remembered.
+    w.set_target(footman, uid, None);
+    entity_events(&mut w, me);
+    w.update();
+    assert_eq!(w.e(footman).orders()[0].progress(), Progress::Impossible);
+    let events = entity_events(&mut w, me);
+    assert!(
+        events.contains(&EntityEvent::OrderImpossible(None)),
+        "{events:?}"
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+
+    let extra = "def mage\ncan_use a_tp\n\
+                 def a_tp\nclass ability\neffect teleportation\neffect_target ask\neffect_range 100\n";
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 mage");
+    w.queue_command(a, "cmd add_units b1 footman new_flyingmachine");
+    w.update();
+    let (mage, footman) = (find(&w, a, "mage"), find(&w, a, "footman"));
+    // The footman is in the machine when the teleport is given.
+    let machine = find(&w, a, "new_flyingmachine");
+    w.load(machine, footman);
+    entity_events(&mut w, a);
+    order(&mut w, a, &[mage], &format!("use a_tp {footman}"));
+    w.update();
+    let events = entity_events(&mut w, a);
+    assert!(
+        events.contains(&EntityEvent::OrderImpossible(None)),
+        "{events:?}"
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
+    w.update();
+    let machine = find(&w, a, "new_flyingmachine");
+    let b1 = w.square(w.square_by_name("b1").unwrap());
+    let (bx, by) = (b1.x, b1.y);
+    // A move toward a point of another square, as a portal leaves it.
+    w.cm(machine).unwrap().action = Some(crate::entity::Action {
+        kind: crate::entity::ActionKind::Move,
+        target: Some(Target::Xy(bx, by)),
+    });
+    let x = w.e(machine).x;
+    assert_eq!(w.action_update(machine), Ok(()));
+    assert!(w.e(machine).x > x);
+    // A footman just out of the machine, on a very dangerous square, still
+    // moving toward a safe one.
+    let footman = find(&w, a, "footman");
+    let (a1, b1) = (
+        w.square_by_name("a1").unwrap(),
+        w.square_by_name("b1").unwrap(),
+    );
+    w.em(footman).previous_place = Some(Place::Inside(machine));
+    w.set_action_target(footman, Some(Target::Square(b1)));
+    w.plm(a).enemy_menace.insert(a1, 1);
+    w.plm(a).enemy_presence.push(a1);
+    assert_eq!(w.auto_explore(footman), Ok(()));
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == b1));
+}

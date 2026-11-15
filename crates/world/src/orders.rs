@@ -892,6 +892,9 @@ enum UseNeed {
     Nothing,
     /// No room where its units would go: the order is impossible.
     NoRoom,
+    /// The target is on no square, as a unit inside another: the order is
+    /// impossible.
+    Nowhere,
 }
 
 /// An order in a unit's queue.
@@ -1936,13 +1939,10 @@ impl World {
             OrderKind::Block { step, .. } => {
                 self.update_target(unit, uid)?;
                 let t = self.target_of(unit, uid);
+                // An exit the player no longer perceives nor remembers.
                 let Some(t) = t else {
-                    if *step == BlockStep::Going {
-                        return Err(Abort::new("'NoneType' object has no attribute 'place'"));
-                    }
-                    return Err(Abort::new(
-                        "'NoneType' object has no attribute 'add_blocker'",
-                    ));
+                    self.mark_as_impossible(unit, uid, None);
+                    return Ok(());
                 };
                 let exit = t.entity_id().expect("an exit");
                 match *step {
@@ -2733,6 +2733,10 @@ impl World {
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                 return Ok(());
             }
+            UseNeed::Nowhere => {
+                self.mark_as_impossible(unit, uid, None);
+                return Ok(());
+            }
         }
         let target = self.target_of(unit, uid).expect("checked");
         let (tx, ty) = self.t_xy(&target);
@@ -2825,7 +2829,7 @@ impl World {
                     other => {
                         let np = match self.t_place(&other) {
                             TPlace::At(Place::Square(s)) => Target::Square(s),
-                            _ => return Err(Abort::new("the target has no square")),
+                            _ => return Ok(UseNeed::Nowhere),
                         };
                         self.set_target(unit, uid, Some(np.clone()));
                         np
