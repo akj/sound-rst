@@ -138,10 +138,18 @@ impl GameInterface {
             C::SayPlayers => {
                 let mut m = Vec::new();
                 let view = self.view();
+                let factions = self.has_factions();
                 for &p in view.players() {
                     m.extend(view.player_name(p));
+                    if factions {
+                        m.extend(self.faction_title(cx, p));
+                    }
                     m.extend(msg(mp::COMMA));
                 }
+                cx.voice.item(&m);
+            }
+            C::SayFaction => {
+                let m = self.faction_title(cx, self.me);
                 cx.voice.item(&m);
             }
             C::PlayersStatus => self.cmd_players_status(cx),

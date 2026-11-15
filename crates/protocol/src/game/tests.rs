@@ -284,6 +284,30 @@ fn remembered_entities_nest_only_so_deep() {
     }
 }
 
+/// Each player's faction is sent with the start, by player id.
+#[test]
+fn the_start_carries_each_players_faction() {
+    let start = StartMessage {
+        map: soundrts_world::GameMap {
+            square_width: 12_000,
+            squares: Vec::new(),
+            exits: Vec::new(),
+            objective: Vec::new(),
+            intro: Vec::new(),
+        },
+        player_names: vec![Vec::new(), Vec::new()],
+        player_factions: vec!["orc_faction".into(), "human_faction".into()],
+        cheats_allowed: false,
+    };
+    let sent = decode_start(&encode_start(&start).unwrap()).unwrap();
+    assert_eq!(sent.player_factions, ["orc_faction", "human_faction"]);
+    let start = GameStart::from_message(sent, soundrts_world::Rules::default());
+    assert_eq!(
+        start.message().player_factions,
+        ["orc_faction", "human_faction"]
+    );
+}
+
 /// A cost the order menus subtract from: one out of range would overflow
 /// there, so it is refused before a seat's view sees it.
 #[test]
@@ -298,6 +322,7 @@ fn an_own_number_out_of_range_is_refused() {
                 intro: Vec::new(),
             },
             player_names: Vec::new(),
+            player_factions: Vec::new(),
             cheats_allowed: false,
         },
         soundrts_world::Rules::default(),

@@ -45,7 +45,8 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// questions: what is in production, the workers and the fight here
 /// beside the original's status keys Z to V, every resource on Shift X,
 /// how the controlled unit fights on Shift V, beside its hit points on V,
-/// and the other players beside F11; the previous objective on Shift F9,
+/// and the other players on F12 and the player's faction on Shift F11,
+/// beside the players' names on F11; the previous objective on Shift F9,
 /// beside the next on F9; the idle soldiers of a type here with Shift and
 /// the original's key that selects that type here (F to Semicolon), and
 /// all over the map with Control Shift; and key help on Control F1, beside
@@ -58,6 +59,7 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     DELETE: jump_to_alert\n\
     b: production_status\nn: workers_status\nm: fight_status\nSHIFT x: all_resources_status\n\
     F12: players_status\nCTRL F1: key_help\nSHIFT F9: objectives -1\nSHIFT v: combat_status\n\
+    SHIFT F11: say_faction\n\
     SHIFT f: select_units local idle soldier1\nSHIFT g: select_units local idle soldier2\n\
     SHIFT h: select_units local idle soldier3\nSHIFT j: select_units local idle soldier4\n\
     SHIFT k: select_units local idle soldier5\nSHIFT l: select_units local idle soldier6\n\

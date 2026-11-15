@@ -1,7 +1,7 @@
 //! The questions a player asks to learn what a sighted player reads off
 //! the edge of the screen: what is in production, what the workers do,
-//! the other players, every resource, how the fight on a square goes, and
-//! how a unit fights.
+//! the other players and their factions, every resource, how the fight on
+//! a square goes, and how a unit fights.
 //! Each is answered in one sentence, the most important word first, from
 //! what the player knows.
 
@@ -10,7 +10,7 @@ use soundrts_world::msgparts as mp;
 use soundrts_world::nofloat::py_int;
 use soundrts_world::orders::Keyword;
 use soundrts_world::rules::Stats;
-use soundrts_world::{KnownEntity, KnownTarget, SeatView};
+use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
 use crate::net::words::{self, text};
@@ -177,6 +177,27 @@ impl GameInterface {
             players.push(m);
         }
         cx.voice.item(&join(players.into_iter()));
+    }
+
+    /// Whether the rules of the game have more than one faction, so that
+    /// the players' factions are worth saying.
+    pub(crate) fn has_factions(&self) -> bool {
+        self.view().game_start().rules.factions().len() > 1
+    }
+
+    /// The title of a player's faction: "orc". Its name in the rules if
+    /// the style gives it no title; nothing for a player without one.
+    pub(crate) fn faction_title(&self, cx: &Client, p: PlayerId) -> Msg {
+        let factions = &self.view().game_start().player_factions;
+        let Some(faction) = factions.get(p.0 as usize) else {
+            return Msg::new();
+        };
+        let title = compute_title(cx.res.style(), faction);
+        if title.is_empty() {
+            vec![MsgPart::Literal(faction.clone())]
+        } else {
+            title
+        }
     }
 
     /// Every resource the rules define: "120 gold , 80 wood , 10 stone".
@@ -593,6 +614,35 @@ mod tests {
             ask(&mut h, &mut g, Key::V, Mods::SHIFT),
             "town hall , no attack , armor 0 . 400 hit points"
         );
+    }
+
+    #[test]
+    fn the_factions_are_said_when_the_rules_have_more_than_one() {
+        // The original's rules have one faction: the list is the names.
+        let (mut h, mut g) = training();
+        assert_eq!(
+            ask(&mut h, &mut g, Key::F11, Mods::NONE),
+            "player , ai_quiet ,"
+        );
+        assert_eq!(ask(&mut h, &mut g, Key::F11, Mods::SHIFT), "human");
+        // The orc mod adds a faction; each random choice was drawn.
+        let mut h = Harness::new("en", Script::new().keep_open());
+        h.client.res.set_mods("orc");
+        let mut g = h.start_training("jl1", &["quiet"], 1);
+        h.run_until_turn(&mut g, 3);
+        let factions: Vec<String> = g
+            .game
+            .view()
+            .players()
+            .iter()
+            .map(|&p| g.game.host.world().player(p).faction.clone())
+            .collect();
+        assert_eq!(factions, ["orc_faction", "human_faction"]);
+        assert_eq!(
+            ask(&mut h, &mut g, Key::F11, Mods::NONE),
+            "player orc , ai_quiet human ,"
+        );
+        assert_eq!(ask(&mut h, &mut g, Key::F11, Mods::SHIFT), "orc");
     }
 
     #[test]

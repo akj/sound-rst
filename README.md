@@ -115,7 +115,9 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 | Shift+V | How the first unit you control fights, with the upgrades that apply to it: its damage and how often it strikes, its range and armor, then its most hit points and its speed, for example "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5". |
 | M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
 | Shift+X | Every resource, also those that a map adds. |
-| F12 | The other players: each an ally or an enemy, and whether defeated. F11 still says the names only. |
+| F12 | The other players: each an ally or an enemy, and whether defeated. |
+| F11 | The players' names, as before. When the rules have more than one faction, as with the orc mod, each name is followed by the player's faction. |
+| Shift+F11 | Your faction, also the one a random choice gave you. |
 | F9, Shift+F9 | The next or the previous objective, one at a time: its description, whether it is done, and its place, such as "build 1 farm , done , 1 of 2". The map's own objective comes first, without whether it is done. After the last objective, F9 goes back to the first. |
 
 The score is said only at the end of the game: during the game it would tell you about enemy units you have not seen, for example how many units a transport that you destroyed carried.

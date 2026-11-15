@@ -162,6 +162,8 @@ pub enum GameCommand {
     Objectives(i64),
     GameMenu,
     SayPlayers,
+    /// The player's own faction.
+    SayFaction,
     /// The other players: ally or enemy, and defeated.
     PlayersStatus,
     Say,
@@ -238,6 +240,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "objectives",
     "gamemenu",
     "say_players",
+    "say_faction",
     "players_status",
     "say",
     "say_allies",
@@ -407,6 +410,7 @@ impl GameCommand {
             }
             "gamemenu" => none(C::GameMenu)?,
             "say_players" => none(C::SayPlayers)?,
+            "say_faction" => none(C::SayFaction)?,
             "players_status" => none(C::PlayersStatus)?,
             "say" => none(C::Say)?,
             "say_allies" => none(C::SayAllies)?,
@@ -559,6 +563,7 @@ impl GameCommand {
             C::SayTime => "say the time".into(),
             C::Objectives(i) => format!("{} objective", direction(*i)),
             C::SayPlayers => "say the names of the players".into(),
+            C::SayFaction => "say your faction".into(),
             C::PlayersStatus => "say who is an ally or an enemy".into(),
             C::SelectSquare {
                 dx,
@@ -782,6 +787,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 175);
+        assert_eq!(seen.len(), 176);
     }
 }
