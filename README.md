@@ -302,6 +302,42 @@ A change to the traces also needs a new simulation version. The traces README ex
 
 These tests show what text the port sends to the speech device. They cannot show what a screen reader does with that text. Test that part by ear.
 
+## Release
+
+A release has three downloads, with their SHA-256 checksums in `SHA256SUMS`:
+
+- `soundrts-<version>-windows-x64.zip`: the game, the server, the DLLs they load, and the licenses. Unzip it anywhere and start `soundrts.exe`. `soundrts.pdb` holds the file and line numbers of the game: with it beside the program, a crash writes its call stack to `tmp/client.log` with the place of every step.
+- `soundrts-<version>-windows-x64-setup.exe`: an installer of the same files. It installs for the current user, asks for no administrator password, and adds a Start menu entry. Its uninstaller leaves the settings folder.
+- `soundrts-server-<version>-linux-x64.tar.gz`: the server for Linux.
+
+No download holds the original game's data. The game fetches it the first time it starts. The downloads are not signed, so Windows SmartScreen warns about them.
+
+To make a release:
+
+1. Set the version in `Cargo.toml`, under `[workspace.package]`, and merge that change. Use a commit of `main` whose checks passed.
+2. Tag the commit `v` and the version, for example `v0.1.0`, and push the tag. For a build to test, add a hyphen and a name, for example `v0.1.0-test.1`. A tag that does not start with the version in `Cargo.toml` is refused.
+
+   ```powershell
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+3. The Release workflow builds the downloads and checks them: a crash in a release build names its file and line, the game in the zip fetches the data and finds it, the installer installs and uninstalls. Then it makes a draft release with the downloads. A tag with a hyphen is marked as a pre-release.
+4. Read the draft on the Releases page of the repository, edit its notes, and publish it. Nobody else sees the draft before that.
+
+A pull request that changes the workflow, `packaging/`, or the scripts it runs builds and checks the same downloads, and keeps them with the run, without a release. To get a build of any branch the same way, start the Release workflow by hand on the Actions page.
+
+To make the Windows folder on your machine:
+
+```powershell
+pwsh scripts/fetch-nvda-controller.ps1
+cargo build --release --locked -p soundrts -p soundrts-server
+pwsh scripts/stage-release.ps1 -Name soundrts-test
+pwsh scripts/check-release.ps1 -Folder dist/soundrts-test
+```
+
+The check speaks nothing and opens no window. It fetches the data into a temporary folder, not into your settings folder.
+
 ## Layout
 
 - `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world. After a seat's first message, what changed since its last one is enough to make the next.
@@ -311,6 +347,7 @@ These tests show what text the port sends to the speech device. They cannot show
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game. `scripts/upstream-commit.txt` names its pinned commit, which the game also downloads when it has no data.
 - `scripts/fetch-nvda-controller.ps1` fetches NVDA's controller client, for the `nvda_direct` setting.
+- `scripts/stage-release.ps1` gathers the files of the Windows download, `scripts/check-release.ps1` checks them, and `packaging/` holds the installer's script and the download's README.
 
 ## Licenses
 

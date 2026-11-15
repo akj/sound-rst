@@ -54,10 +54,7 @@ fn main() -> ExitCode {
     };
     paths.create_user_folders(&Log::stderr());
     let log = Log::to_file(&paths.client_log());
-    let panic_log = log.clone();
-    std::panic::set_hook(Box::new(move |info| {
-        panic_log.error(format!("error: {info}"))
-    }));
+    log.record_panics();
 
     let config = Config::load(&paths.config_file(), &log);
     let params = match Parameters::load(&paths.parameters_file(), &log) {

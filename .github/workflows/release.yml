@@ -1,0 +1,175 @@
+name: Release
+
+# Builds what players download: a zip and an installer of the game for
+# Windows, and the server for Linux.
+#
+# A tag makes a draft release: v0.1.0 for the version in Cargo.toml, or
+# v0.1.0-something for a build to test, which is marked as a pre-release.
+# The draft is public only when someone publishes it.
+#
+# A pull request that changes how the download is made, and a run started by
+# hand, build and check the same files and keep them with the run. They make
+# no release.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - packaging/**
+      - scripts/stage-release.ps1
+      - scripts/check-release.ps1
+      - scripts/fetch-nvda-controller.ps1
+      - scripts/upstream-commit.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Names the build, and stops a tag that is not the version in Cargo.toml
+  # before anything is built.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      name: ${{ steps.name.outputs.name }}
+      prerelease: ${{ steps.name.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Name the build
+        id: name
+        run: |
+          version=$(cargo metadata --no-deps --locked --format-version 1 |
+            jq -r '.packages[] | select(.name == "soundrts") | .version')
+          test -n "$version"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            case "$GITHUB_REF_NAME" in
+              "v$version") prerelease=false ;;
+              "v$version"-?*) prerelease=true ;;
+              *)
+                echo "::error::The tag $GITHUB_REF_NAME is not v$version, the version in Cargo.toml, or v$version-something."
+                exit 1
+                ;;
+            esac
+            name=${GITHUB_REF_NAME#v}
+          else
+            name=$version-$(git rev-parse --short=7 HEAD)
+            prerelease=true
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "This build is $name."
+
+  windows:
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      NAME: soundrts-${{ needs.plan.outputs.name }}-windows-x64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch NVDA's controller client
+        run: ./scripts/fetch-nvda-controller.ps1
+      - name: Build the game and the server
+        run: cargo build --release --locked -p soundrts -p soundrts-server
+      # The other tests run on debug builds, which always have line numbers.
+      # Players get this profile: a crash in their log must name its place.
+      - name: Check that a crash names its file and line in a release build
+        run: cargo test --release --locked -p soundrts --test panic_log
+      - name: Gather the files of the download
+        run: ./scripts/stage-release.ps1 -Name $env:NAME
+      - name: Make the zip
+        run: Compress-Archive -Path "dist/${env:NAME}" -DestinationPath "dist/${env:NAME}.zip"
+      # Inno Setup comes with the runner.
+      - name: Make the installer
+        run: |
+          $dist = (Resolve-Path dist).Path
+          iscc "/DVersion=${{ needs.plan.outputs.name }}" "/DSource=$dist\${env:NAME}" "/DOutputDir=$dist" "/DOutputName=${env:NAME}-setup" packaging/soundrts.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit code $LASTEXITCODE" }
+      # The check compares the data the game fetches with this checkout.
+      - name: Fetch the original game
+        run: ./scripts/fetch-upstream.ps1
+      - name: Check the download as a player gets it
+        run: ./scripts/check-release.ps1 -Folder "dist/${env:NAME}" -Installer "dist/${env:NAME}-setup.exe" -Work (Join-Path $env:RUNNER_TEMP check)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: |
+            dist/${{ env.NAME }}.zip
+            dist/${{ env.NAME }}-setup.exe
+          if-no-files-found: error
+
+  # The server for a computer that stays on. Built on the oldest Ubuntu the
+  # runners have, so that it also starts on systems older than the newest:
+  # the program needs the C library of the system it was built on, or a
+  # newer one.
+  linux:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      NAME: soundrts-server-${{ needs.plan.outputs.name }}-linux-x64
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the server
+        run: cargo build --release --locked -p soundrts-server
+      - name: Gather the files of the download
+        run: |
+          mkdir -p "dist/$NAME"
+          cp target/release/soundrts-server LICENSE.txt "dist/$NAME/"
+      - name: Check that the server starts
+        run: |
+          "dist/$NAME/soundrts-server" --help | grep -e --port
+          ldd "dist/$NAME/soundrts-server"
+      # tar keeps the mark that makes the server a program.
+      - name: Make the archive
+        run: tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/${{ env.NAME }}.tar.gz
+          if-no-files-found: error
+
+  draft:
+    name: draft release
+    if: github.ref_type == 'tag'
+    needs: [plan, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write the checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      # A run made again replaces the draft of the run before. A release
+      # that someone published is never touched.
+      - name: Make the draft release
+        run: |
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::The release $TAG is published. Give the next build a new tag."
+              exit 1
+            fi
+            gh release delete "$TAG" --yes
+          fi
+          gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes \
+            ${{ needs.plan.outputs.prerelease == 'true' && '--prerelease' || '' }} dist/*

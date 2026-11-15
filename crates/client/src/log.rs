@@ -89,6 +89,19 @@ impl Log {
             .unwrap_or_default()
     }
 
+    /// From now on, a panic anywhere in the program is written to this log
+    /// as an error, with the call stack that led to it. The stack names
+    /// files and lines only where the program carries line tables: the
+    /// release profile keeps them, and on Windows they are read from the
+    /// `.pdb` beside the program.
+    pub fn record_panics(&self) {
+        let log = self.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            let stack = std::backtrace::Backtrace::force_capture();
+            log.error(format!("error: {info}\nstack backtrace:\n{stack}"));
+        }));
+    }
+
     /// Information for a developer at the console; not written to the file.
     pub fn info(&self, message: impl Display) {
         if self.lock().to_stderr {
