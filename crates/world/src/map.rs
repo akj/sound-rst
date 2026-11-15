@@ -1023,7 +1023,9 @@ impl World {
     pub(crate) fn new_player(&mut self, controller: &Controller) -> Result<PlayerId, MapError> {
         let kind = match &controller.kind {
             ControllerKind::Human { .. } => PlayerKind::Human,
-            ControllerKind::Computer { ai_type } if ai_type == "ai2" => PlayerKind::Computer2,
+            ControllerKind::Computer { ai_type } if ai_type == crate::ai::RANDOM_AI_TYPE => {
+                PlayerKind::Computer2
+            }
             ControllerKind::Computer { ai_type } => PlayerKind::Computer {
                 ai_type: ai_type.clone(),
             },

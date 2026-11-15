@@ -6,12 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use crate::ai::Computer;
+use crate::ai::{Computer, Handicap, handicapped_name};
 use crate::entity::{Entity, EntityId, SquareId, StatType};
 use crate::events::Event;
 use crate::message::TurnMessage;
-use crate::msg::{Msg, MsgPart, msg};
-use crate::msgparts as mp;
+use crate::msg::{Msg, MsgPart};
 use crate::nofloat::PRECISION;
 use crate::orders::Order;
 use crate::rules::{FactionId, TypeId};
@@ -345,8 +344,11 @@ pub struct Player {
     pub(crate) buckets: BTreeMap<(i64, i64), Vec<EntityId>>,
     /// The squares an exploring unit will visit, shuffled once.
     pub places_to_explore: Option<Vec<SquareId>>,
-    /// The random computer player has everything it requires.
+    /// Every requirement is met: a computer's handicap, or a cheat.
     pub cheat_has_all: bool,
+    /// What this computer may do that a human may not: nothing for a
+    /// human or a fair computer.
+    pub handicap: Handicap,
     pub(crate) events: Vec<Event>,
     /// The end of the last turn, for a local human, until the host takes
     /// it.
@@ -405,6 +407,8 @@ impl Hash for Player {
             buckets,
             places_to_explore,
             cheat_has_all,
+            // It follows from the controller.
+            handicap: _,
             events: _,
             end_of_turn: _,
             ai,
@@ -474,6 +478,10 @@ impl Player {
         controller: Controller,
         faction: Option<FactionId>,
     ) -> Player {
+        let handicap = match &controller.kind {
+            ControllerKind::Computer { ai_type } => Handicap::of(ai_type),
+            ControllerKind::Human { .. } | ControllerKind::Neutral => Handicap::NONE,
+        };
         Player {
             obj_id,
             neutral: controller.is_neutral(),
@@ -520,6 +528,7 @@ impl Player {
             buckets: BTreeMap::new(),
             places_to_explore: None,
             cheat_has_all: false,
+            handicap,
             events: Vec::new(),
             end_of_turn: None,
             ai: None,
@@ -565,19 +574,13 @@ impl Player {
         !(self.has_victory || self.has_been_defeated)
     }
 
-    /// The name said to the other players.
+    /// The name said to the other players: a person's login, or the name
+    /// of a computer's type, which says its handicap.
     pub fn name(&self) -> Msg {
-        if self.kind == PlayerKind::Computer2 {
-            return vec![MsgPart::from("ai2")];
-        }
-        if self.neutral {
-            return Vec::new();
-        }
-        let login = self.controller.login();
-        match login.as_str() {
-            "ai_easy" => msg(mp::QUIET_COMPUTER),
-            "ai_aggressive" => msg(mp::AGGRESSIVE_COMPUTER),
-            _ => vec![MsgPart::Literal(login)],
+        match &self.controller.kind {
+            ControllerKind::Neutral => Vec::new(),
+            ControllerKind::Computer { ai_type } => handicapped_name(ai_type, self.handicap),
+            ControllerKind::Human { login, .. } => vec![MsgPart::Literal(login.clone())],
         }
     }
 

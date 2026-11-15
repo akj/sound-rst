@@ -568,13 +568,17 @@ impl Door<'_> {
         self.world.take_order(u, r, forget_previous, false, None)
     }
 
-    /// The handicap of the random computer: 1000 of each resource each
-    /// time it plays, and every requirement met.
+    /// Grants the privileges of its handicap, which its name announces:
+    /// nothing for a fair computer.
     pub(super) fn grant_handicap(&mut self) {
         let pl = self.world.plm(self.me);
-        let n = pl.resources.len();
-        pl.cheat_has_all = true;
-        pl.resources = vec![1000 * crate::nofloat::PRECISION; n];
+        let h = pl.handicap;
+        if h.ignores_requirements {
+            pl.cheat_has_all = true;
+        }
+        if let Some(r) = h.resources_with_precision() {
+            pl.resources = vec![r; pl.resources.len()];
+        }
     }
 
     /// An index drawn at random below `len`, from the game's draws.

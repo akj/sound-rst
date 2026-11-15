@@ -28,8 +28,11 @@ use crate::rules::{AirGround, EntityClass, Role};
 use crate::world::{Abort, Res, TPlace};
 
 mod door;
+mod handicap;
 
 use door::{Door, Seen};
+pub(crate) use handicap::handicapped_name;
+pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
@@ -216,6 +219,7 @@ impl Door<'_> {
 
     /// `play`: what a computer player does during its update.
     fn play(&mut self) -> Res {
+        self.grant_handicap();
         match self.kind().clone() {
             PlayerKind::Human => Ok(()),
             PlayerKind::Computer2 => self.computer2_play(),
@@ -260,7 +264,6 @@ impl Door<'_> {
     // Computer2
 
     fn computer2_play(&mut self) -> Res {
-        self.grant_handicap();
         let mut targets: Vec<EntityId> = self.perceived().map(Seen::id).collect();
         targets.extend(self.remembered().map(|(r, _)| r.id()));
         // Every id is perceived or remembered: the entity it shows is known.

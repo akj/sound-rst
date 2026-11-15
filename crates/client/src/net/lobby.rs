@@ -197,11 +197,7 @@ pub fn player_name(p: &SlotPlayer) -> Msg {
 }
 
 pub fn computer_name(level: AiLevel) -> Msg {
-    match level {
-        AiLevel::Easy => msg(mp::QUIET_COMPUTER),
-        AiLevel::Aggressive => msg(mp::AGGRESSIVE_COMPUTER),
-        AiLevel::Ai2 => [msg(mp::AGGRESSIVE_COMPUTER), nb2msg(2)].concat(),
-    }
+    soundrts_world::computer_name(level.ai_type())
 }
 
 /// Names separated by short silences (`insert_silences`).

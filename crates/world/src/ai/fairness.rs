@@ -6,6 +6,8 @@ use std::sync::Arc;
 use super::tests::world;
 use super::*;
 use crate::entity::{MemoryRef, PlayerId};
+use crate::msg::{Msg, MsgPart, msg};
+use crate::msgparts as mp;
 use crate::player::{Controller, Remembrance};
 use crate::world::World;
 
@@ -174,4 +176,40 @@ fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
     w.door(p).update_time_has_come().unwrap();
     assert!(orders(&w, f).is_empty());
     assert!(w.e(f).is_idle());
+}
+
+#[test]
+fn a_computer_is_named_for_its_handicap() {
+    let words = |m: Msg| m.iter().map(MsgPart::to_string).collect::<Vec<_>>();
+    assert_eq!(
+        words(computer_name("ai2")),
+        [
+            "random computer",
+            "with unlimited resources and no requirements"
+        ]
+    );
+    assert_eq!(computer_name("aggressive"), msg(mp::AGGRESSIVE_COMPUTER));
+    assert_eq!(computer_name("easy"), msg(mp::QUIET_COMPUTER));
+}
+
+#[test]
+fn a_handicap_is_granted_as_its_settings_say() {
+    let (mut w, p) = three_squares();
+    let fair = w.pl(p).resources.clone();
+    w.door(p).grant_handicap();
+    assert_eq!(w.pl(p).resources, fair);
+    assert!(!w.pl(p).cheat_has_all);
+    // A quiet computer with unlimited resources, and the requirements.
+    w.plm(p).handicap = Handicap {
+        resources: Some(5),
+        ignores_requirements: false,
+    };
+    w.door(p).grant_handicap();
+    assert_eq!(w.pl(p).resources, vec![5000; fair.len()]);
+    assert!(!w.pl(p).cheat_has_all);
+    let name: Vec<String> = w.pl(p).name().iter().map(MsgPart::to_string).collect();
+    assert_eq!(
+        name.last().map(String::as_str),
+        Some("with unlimited resources")
+    );
 }

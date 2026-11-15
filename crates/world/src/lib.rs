@@ -120,6 +120,7 @@ mod upstream_tests;
 mod wire;
 pub mod world;
 
+pub use ai::{Handicap, computer_name};
 pub use change::{
     ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
     StateChange, TurnChange,

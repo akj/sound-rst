@@ -5,9 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::Rules;
-use soundrts_world::msg::{MsgPart, msg, nb2msg};
+use soundrts_world::msg::{MsgPart, msg};
 use soundrts_world::msgparts as mp;
+use soundrts_world::{Rules, computer_name};
 
 use crate::campaign::run_campaign;
 use crate::client::Client;
@@ -128,21 +128,13 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
         )
     };
     if n < map.nb_players_max {
-        menu.append(
-            [msg(mp::INVITE), msg(mp::QUIET_COMPUTER)].concat(),
-            add_ai(t, "easy"),
-            None,
-        );
-        menu.append(
-            [msg(mp::INVITE), msg(mp::AGGRESSIVE_COMPUTER)].concat(),
-            add_ai(t, "aggressive"),
-            None,
-        );
-        menu.append(
-            [msg(mp::INVITE), msg(mp::AGGRESSIVE_COMPUTER), nb2msg(2)].concat(),
-            add_ai(t, "ai2"),
-            None,
-        );
+        for ai_type in ["easy", "aggressive", "ai2"] {
+            menu.append(
+                [msg(mp::INVITE), computer_name(ai_type)].concat(),
+                add_ai(t, ai_type),
+                None,
+            );
+        }
     }
     if n >= map.nb_players_min {
         menu.append(msg(mp::START), run_game(t), None);
