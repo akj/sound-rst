@@ -155,6 +155,10 @@ pub enum Invariant {
     /// The effect of an upgrade or an ability cannot be read. The rules
     /// drop such an effect when they load, with a warning.
     EffectUnread,
+    /// A building site is put on land that is gone. The builder stands on
+    /// the land's square, which its player sees: land that is gone is
+    /// forgotten, and the builder's target brought up to date, first.
+    LandGone,
 }
 
 impl fmt::Display for Invariant {
@@ -189,6 +193,7 @@ impl fmt::Display for Invariant {
             Invariant::UnknownAbility => "an ability without a known effect is used (use)",
             Invariant::OrderWithoutItsTarget => "an order was taken without its target",
             Invariant::EffectUnread => "an effect the rules should have dropped is applied",
+            Invariant::LandGone => "a building site is put on land that is gone",
         })
     }
 }

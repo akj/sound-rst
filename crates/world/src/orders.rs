@@ -4,7 +4,7 @@
 //! that take one, and a target (`go 12`, `train footman`, `build farm
 //! 25`). A unit keeps a queue of orders and executes the first one.
 
-use crate::abort::{Abort, Invariant, Res};
+use crate::abort::{Invariant, Res};
 use crate::command::{KeywordOrder, OrderTarget};
 use crate::entity::{AiMode, Creature, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
@@ -2652,9 +2652,7 @@ impl World {
         let (x, y) = self.t_xy(&target);
         let place = match &target {
             Target::Square(s) => Place::Square(*s),
-            _ => self
-                .t_place_of(&target)
-                .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'place'"))?,
+            _ => self.t_place_of(&target).ok_or(Invariant::LandGone)?,
         };
         let is_exit = target.entity_id().is_some_and(|e| self.e(e).is_exit());
         let remember_land = !(is_exit || bt.stats.is_buildable_anywhere != 0);
