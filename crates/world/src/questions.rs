@@ -506,7 +506,14 @@ pub(crate) fn basic_abilities(class: EntityClass, upgrading: bool) -> &'static [
         }
         EntityClass::Soldier if !upgrading => &["go", "attack", "patrol", "block", "join_group"],
         EntityClass::BuildingSite => &["cancel_building"],
-        _ => &[],
+        EntityClass::Worker
+        | EntityClass::Soldier
+        | EntityClass::Effect
+        | EntityClass::Building
+        | EntityClass::Deposit
+        | EntityClass::Meadow
+        | EntityClass::Corpse
+        | EntityClass::Exit => &[],
     }
 }
 

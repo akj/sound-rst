@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{CreatureKind, Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::pathfinding::Viewer;
@@ -81,12 +81,11 @@ enum Kind {
 impl Kind {
     fn matches(self, rules: &crate::Rules, e: &Entity) -> bool {
         match self {
-            Kind::Meadow => e.class() == EntityClass::Meadow,
-            Kind::Deposit => e.class() == EntityClass::Deposit,
-            Kind::DepositOf(rt) => {
-                e.class() == EntityClass::Deposit
-                    && e.type_id().and_then(|t| rules.ty(t).resource_type) == Some(rt)
-            }
+            Kind::Meadow => e.is_meadow(),
+            Kind::Deposit => e.is_deposit(),
+            Kind::DepositOf(rt) => e
+                .deposit()
+                .is_some_and(|d| rules.ty(d.type_id).resource_type == Some(rt)),
         }
     }
 }
@@ -556,8 +555,8 @@ impl World {
         let mut summon = Vec::new();
         for u in self.pl(p).units.clone() {
             let e = self.e(u);
-            match e.class() {
-                EntityClass::Worker => {
+            match e.creature().map(|c| &c.kind) {
+                Some(CreatureKind::Worker { .. }) => {
                     workers.push(u);
                     if let Some(Order {
                         kind: OrderKind::Gather { aim, .. },
@@ -567,8 +566,13 @@ impl World {
                         add_count(&mut gathered, &aim.target, 1);
                     }
                 }
-                EntityClass::BuildingSite => sites.push(u),
-                _ => {}
+                Some(CreatureKind::BuildingSite(_)) => sites.push(u),
+                Some(
+                    CreatureKind::Soldier { .. }
+                    | CreatureKind::Effect { .. }
+                    | CreatureKind::Building { .. },
+                )
+                | None => {}
             }
             for a in self.can_use(u) {
                 if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
@@ -1309,8 +1313,8 @@ impl World {
             return false;
         }
         known.iter().any(|e| {
-            e.class() == EntityClass::Deposit
-                && e.type_id().and_then(|t| self.rules.ty(t).resource_type) == Some(resource_type)
+            e.deposit()
+                .is_some_and(|d| self.rules.ty(d.type_id).resource_type == Some(resource_type))
         })
     }
 
