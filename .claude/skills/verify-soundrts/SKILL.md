@@ -48,7 +48,7 @@ Run `doctor` first whenever something looks off. It checks four things and stops
 
 Each feature has a file in [features](features/README.md) with its exact commands. Read the index first. There are three ways to drive:
 
-- **harness.** `verify.ps1 test <feature> <test-file> [<test-name>...]` runs `cargo test -p soundrts --test <test-file>` and keeps the output. `<feature>` is the name of a feature file, and `<test-file>` is a file of `crates/client/tests`. With test names, only those tests run. The command fails when a name matches no test, because `cargo test` alone would pass.
+- **harness.** `verify.ps1 test <feature> <test-file> [<test-name>...]` runs `cargo test -p soundrts --test <test-file>` and keeps the output. `<feature>` is the name of a feature file, and `<test-file>` is a file of `crates/client/tests`. With test names, only those tests run. The command fails when a name matches no test, because `cargo test` alone would pass. It also fails when `UPDATE_EXPECTED` is set, because the transcript tests would then record instead of compare.
 - **program.** `verify.ps1 first-start` runs the built program from an empty data folder. `verify.ps1 release-check` builds a release folder and runs `scripts/check-release.ps1` on it. The release build takes minutes.
 - **ears.** The `By ear` script of the feature file, for Andrew.
 

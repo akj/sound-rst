@@ -100,24 +100,20 @@ function Get-Game {
     Join-Path $metadata.target_directory 'debug\soundrts.exe'
 }
 
-# Runs the game to its end, in $Folder, with $AppData as %APPDATA% and
-# without SOUNDRTS_ROOT, and returns its exit code and what it printed. The
-# game is a windowed program: it prints only to a stream it is given, and a
-# shell does not wait for it unless told to. A game that still runs after
-# $Seconds is stopped.
+# Runs the game to its end, in $Folder, with $AppData as %APPDATA%, and
+# returns its exit code and what it printed. The game is a windowed program:
+# it prints only to a stream it is given, and a shell does not wait for it
+# unless told to. A game that still runs after $Seconds is stopped.
 function Invoke-Game([string] $Game, [string[]] $Arguments, [string] $AppData, [string] $Folder, [int] $Seconds) {
     $out = Join-Path $Folder 'out.txt'
     $err = Join-Path $Folder 'err.txt'
-    $saved = @{ APPDATA = $env:APPDATA; SOUNDRTS_ROOT = $env:SOUNDRTS_ROOT }
+    $saved = $env:APPDATA
     $env:APPDATA = $AppData
-    $env:SOUNDRTS_ROOT = $null
     try {
         $process = Start-Process -FilePath $Game -ArgumentList $Arguments -PassThru -NoNewWindow `
             -WorkingDirectory $Folder -RedirectStandardOutput $out -RedirectStandardError $err
     }
-    finally {
-        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
-    }
+    finally { $env:APPDATA = $saved }
     # Without the handle, the exit code of a process that was not waited for with -Wait is lost.
     $null = $process.Handle
     if (-not $process.WaitForExit($Seconds * 1000)) {
@@ -189,6 +185,9 @@ function Invoke-Test {
     }
     if (-not (Test-Path (Join-Path $Repo "crates/client/tests/$testFile.rs"))) {
         throw "No test file crates/client/tests/$testFile.rs."
+    }
+    if ($env:UPDATE_EXPECTED) {
+        throw 'UPDATE_EXPECTED is set, so the transcript tests would record instead of compare. Remove it, then run the test again.'
     }
     New-Log (Join-Path $Evidence "$feature\$testFile.log") $HarnessLayer "feature: $feature"
 
@@ -296,6 +295,9 @@ function Invoke-Cleanup {
 # Cargo and the tests print UTF-8.
 $encoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+# SOUNDRTS_ROOT would send every program started here to the caller's data folder.
+$callersRoot = $env:SOUNDRTS_ROOT
+$env:SOUNDRTS_ROOT = $null
 Push-Location $Repo
 try {
     switch ($Command) {
@@ -313,5 +315,6 @@ catch {
 }
 finally {
     Pop-Location
+    $env:SOUNDRTS_ROOT = $callersRoot
     [Console]::OutputEncoding = $encoding
 }

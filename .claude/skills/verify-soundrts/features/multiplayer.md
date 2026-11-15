@@ -44,12 +44,14 @@ For Andrew, with NVDA running. Steps 1 to 5 need one computer. Steps 6 to 9 need
 6. Ask the second player to choose "enter the IP address of the server" and to type the address from step 3. You hear their login and "has just logged in".
 7. Leave the game, create a new one, and invite the second player. When they accept, you hear their login and "has just joined".
 8. Press F7, type a line, and press Enter. The second player hears a short sound, your login, "says", and the line.
-9. Ask the second player to pull their network cable for 5 seconds during a game. They hear "connection lost, trying to return", then "back in the game".
+9. Start the game. Ask the second player to pull their network cable and to wait. After about 15 seconds without the server, they hear "connection lost, trying to return".
+10. Ask them to plug the cable back in at once. Within a few seconds they hear "back in the game".
 
 ## Gotchas
 
 - Every harness proof here stays on 127.0.0.1. `docs/open-findings.md` states the limit: nobody has played over a real network.
 - `multiplayer.rs` uses a fake server for the lobby and the room, so those tests prove what the client says and sends, not what the server does with it. The server's own rules have tests in `crates/server/tests`, which this map does not drive.
 - The `returning` and `watching` tests put the players in a room through harness calls, not through the menus. The menu path to a room is proved by `net_play` only.
+- The `returning` and `watching` tests notice a lost connection after a second and a half, a tenth of the 15 seconds that a real game waits. The server holds a seat for 90 seconds with its usual settings.
 - The `net_play`, `returning`, and `watching` tests run on real time, so they take seconds and can fail on a machine under heavy load. Rerun once before you report a failure, and report both runs.
 - No test asks a router to forward a port, and no test reads the public server list.
