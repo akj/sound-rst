@@ -16,7 +16,7 @@ The fog of war applies to everything the game says and plays. The interface answ
 
 ### 3. The original's files, as they are
 
-The port reads the original's rules, maps, sounds, translations, and key bindings unchanged. Rules, maps, and computer players are text files, so a modder needs only a text editor. The keys are those of the original.
+The port reads the original's rules, maps, sounds, translations, and key bindings unchanged. Rules, maps, and computer players are text files, so a modder needs only a text editor. The original's keys keep their meaning. The port adds commands only on keys that the original leaves free.
 
 ### 4. The same input gives the same game
 
@@ -31,7 +31,7 @@ The rest of this file helps you find your way and change the game without breaki
 - **the developer** means the person you work for.
 - **the player** means a person who plays the game.
 - **the original** means the Python SoundRTS at the commit in `scripts/upstream-commit.txt`. It supplies the game data, and its source is the reference for the port.
-- **said** means the game sent the text to its speech device. A test can show that.
+- **said** means the game's voice started the message, or a recorded speech device received its text. A test can show that.
 - **heard** means a person listened through a screen reader and reported the result. No test can show that.
 - **recording** means a file in an `expected/` folder. A _trace_ records the simulation, and a _transcript_ records what the interface says and plays.
 - **seat** means one player's or one watcher's place in a game.
@@ -46,10 +46,10 @@ The rest of this file helps you find your way and change the game without breaki
 
 Most features reach several of the places below. Before you call a change to the game done, walk this list and say which entries applied:
 
-- **Single-player and a game on a server.** In single-player the client runs the game, and the game waits while a story is told or while the game menu or the console is open. On a server the server runs the game, nothing waits, and there is no console and no cheats.
+- **Single-player and a game on a server.** In single-player the client runs the game, and the game waits while a story is told or while the game menu or the console is open. On a server the server runs the game, and there is no console and no cheats. A story or an open menu does not stop a game on a server. Only the organizer's pause does.
 - **Seats.** A player, a watcher, and a player who returns after a lost connection. A watcher hears one player's side and gives no orders.
 - **Input from strangers.** A map, a network message, and a command can come from someone hostile. Refuse a bad one. It must never crash the game or the server. Add the case to the `hostile` tests of the crate that reads the input.
-- **Keys.** A new command takes a key that is free in the original's `res/ui/bindings.txt`, in Windows, and in NVDA.
+- **Keys.** A new command takes a key that the original's `res/ui/bindings.txt` leaves free, and that neither Windows nor a screen reader takes.
 - **The README.** The README is the player's manual. When a change alters what a key does or what the player hears, change the sentence that describes it.
 
 ## Verifying
@@ -73,9 +73,9 @@ Most features reach several of the places below. Before you call a change to the
 
 ## Said is not heard
 
-The tests show what the game said: the text it sent to the speech device, the order of the messages, and the sounds it started, on a clock that the test moves. They cannot show what a screen reader does with that text. No test shows how NVDA or JAWS pronounces a message, whether speech is cut off or late at a real speech rate, whether a key reaches the game while a screen reader runs, or what a sound is like to the ear.
+The tests show what the game said: each message that the voice started, in order, and each sound that the game started, on a clock that the test moves. A transcript records a message when the voice starts it. A later key can cut that message before all of its parts reach the speech device. The tests cannot show what a screen reader does with the text. No test shows how NVDA or JAWS pronounces a message, whether speech is cut off or late at a real speech rate, whether a key reaches the game while a screen reader runs, or what a sound is like to the ear.
 
-- Claim the layer that you ran. Write "fixed in the recorded speech tests, not yet heard through NVDA". Never write that a change works with NVDA, sounds right, or was checked by ear.
+- Claim the layer that you ran. Write "fixed in the recorded speech tests, not yet heard through NVDA". From the tests alone, never write that a change works with NVDA, sounds right, or was checked by ear. Only a listener's report supports those words, so name the listener.
 - A test on the audio output's samples shows the arithmetic of a sound. It does not show what a person hears.
 - The multiplayer tests show a real server on 127.0.0.1. They do not show a real network.
 - When a change alters what the player hears, put a short numbered listening script in the pull request. Each step is one action and the exact words that the listener should hear. Until a listener reports pass or fail on each step, the change is built and not yet heard. Do not call it done. Record the listener's report in the pull request.
@@ -87,7 +87,7 @@ The tests show what the game said: the text it sent to the speech device, the or
 
 ## How it works
 
-The _simulation_ (`crates/world`) runs the game in _turns_. A _host_ owns one game. It takes each seat's _commands_, runs one turn, and gives each seat a _message_ of what that seat's player knows. In single-player the client runs the host. In a game on a server, the server (`crates/server`) runs the host and sends each seat its message in the binary form of `crates/protocol`. The _interface_ (`crates/client`) answers every key from those messages. What the interface says goes through the _voice_, which queues news by category, to the speech device. On Windows the speech device is Tolk, which reaches NVDA and JAWS and falls back to the system voice.
+The _simulation_ (`crates/world`) runs the game in _turns_. A _host_ owns one game. It takes each seat's _commands_, runs one turn, and gives each seat a _message_ of what that seat's player knows. In single-player the client runs the host. In a game on a server, the server (`crates/server`) runs the host and sends each seat its message in the binary form of `crates/protocol`. The _interface_ (`crates/client`) answers every key from those messages. What the interface says goes through the _voice_, which queues news by category, to the speech device. On Windows the speech device is Tolk by default. Tolk reaches NVDA and JAWS, and falls back to the system voice. With the `nvda_direct` setting, speech goes to NVDA's own controller client first.
 
 ## Where to read more
 
