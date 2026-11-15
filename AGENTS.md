@@ -36,12 +36,6 @@ The rest of this file helps you find your way and change the game without breaki
 - **recording** means a file in an `expected/` folder. A _trace_ records the simulation, and a _transcript_ records what the interface says and plays.
 - **seat** means one player's or one watcher's place in a game.
 
-## The three ways to do damage
-
-1. **Starting the game.** `cargo run -p soundrts -- --root vendor/soundrts-upstream` opens a window that takes the keyboard, and the game speaks through the screen reader that is running. For a developer who works with a screen reader, that takes their interface away in the middle of a task. Run the tests instead, or add `--probe`, which prints what the game found and exits. Start the game only when the developer asks for that run. The listening room plays sound too. To make it write WAV files and play nothing, pass `--render-to <folder>`. Never change audio devices, the screen reader, or speech settings.
-2. **Recording over a failure.** With `UPDATE_EXPECTED=1`, the trace and transcript tests write what the port produces now, and pass. A comparison that fails has found a change in behaviour. Find the cause before you record. Record again only for a change in behaviour that you intended. Then read the whole diff of `expected/`, and remove the variable from your shell. The `sim_version` test fails after the traces change. The traces README gives the steps that follow.
-3. **Publishing the original's data.** The original states no license for its rules, maps, sounds, and translations, so its data files stay out of this repository. Git ignores `vendor/`. Never commit map text, a sound file, or a full dump from `target/traces-actual/`, and never paste one into a pull request or an issue.
-
 ## Walk every way to play
 
 Most features reach several of the places below. Before you call a change to the game done, walk this list and say which entries applied:
@@ -67,6 +61,7 @@ Most features reach several of the places below. Before you call a change to the
   The third command builds the interface without the simulation's `truth` feature. It fails when the interface reads the whole world.
 - While you iterate, run one test, for example `cargo test -p soundrts --test transcripts menus_main`. The package of `crates/client` is `soundrts`. The other packages are `soundrts-world`, `soundrts-protocol`, `soundrts-server`, and `listening-room`.
 - No test speaks, plays a sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests run real servers on 127.0.0.1 only.
+- The game itself does all three. `cargo run -p soundrts -- --root vendor/soundrts-upstream` opens a window that takes the keyboard, and the game speaks through the screen reader that is running. Add `--probe` to print what the game found and exit. Start the game only when the developer asks for that run.
 - CI runs every test in its own process, several at a time. A test must pass alone and beside any other test. CI also runs the tests of `soundrts-world`, `soundrts-protocol`, and `soundrts-server` on Linux. The client needs Windows.
 - A change to what the game says ships with a test that expects the literal words and fails without the change.
 - A change that is meant to keep the behaviour leaves `expected/` as it is. If only the way the simulation stores its state changed, only the `*.digest.txt` files may change.
