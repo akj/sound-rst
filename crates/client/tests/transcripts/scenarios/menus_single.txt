@@ -2,8 +2,8 @@
 # the start-a-game map list (several items, first-letter search both ways,
 # a key that interrupts the menu title), the players menu (invite quiet,
 # aggressive and aggressive 2 until the map is full; start; cancel), a
-# short game cancelled at once, then the map list again with the last map
-# remembered first, and back to the main menu.
+# short game cancelled at once, then the map list again, opening on the last
+# map played, and back to the main menu.
 language en
 login player
 seed 7

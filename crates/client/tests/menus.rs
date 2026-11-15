@@ -4,7 +4,7 @@
 
 use soundrts::input::{Key, Mods};
 use soundrts::mainmenu::main_menu;
-use soundrts::menu::{Action, Choice, Exit, first_letter_of};
+use soundrts::menu::{Action, Choice, Exit, Menu, first_letter_of, py_repr};
 use soundrts::testkit::{Harness, Script, SpeechEvent};
 use soundrts_world::msg::MsgPart;
 
@@ -369,5 +369,64 @@ fn the_window_title_follows_the_mods() {
             &std::fs::read_to_string(soundrts::testkit::upstream_root().join("mods/orc/rules.txt"))
                 .unwrap()
         )
+    );
+}
+
+/// A menu remembering "bravo" as its last choice, with the items alpha,
+/// mike, bravo, mars and quit, run with `script`.
+fn remembering_menu_said(script: Script) -> Vec<String> {
+    let mut h = Harness::new("en", script);
+    std::fs::write(
+        h.client.paths.tmp().join("test_menu.txt"),
+        py_repr(&vec![MsgPart::from("bravo")]),
+    )
+    .unwrap();
+    let mut menu = Menu::remembering(&h.client, vec![MsgPart::from("pick")], "test_menu");
+    for label in ["alpha", "mike", "bravo", "mars", "quit"] {
+        menu.append(vec![MsgPart::from(label)], Action::Nothing, None);
+    }
+    assert_eq!(menu.run(&mut h.client), Ok(()));
+    h.spoken()
+}
+
+#[test]
+fn a_remembering_menu_opens_on_its_last_choice_and_lists_it_once() {
+    let script = Script::new()
+        .at(10.0)
+        .tap(Key::Down)
+        .at(20.0)
+        .tap(Key::Down)
+        .at(30.0)
+        .tap(Key::Down)
+        .at(40.0)
+        .tap(Key::Down)
+        .at(50.0)
+        .tap(Key::Down)
+        .at(60.0)
+        .tap(Key::Escape);
+    assert_eq!(
+        remembering_menu_said(script),
+        [
+            "pick", "bravo ,", "mars ,", "quit ,", "alpha ,", "mike ,", "quit"
+        ]
+    );
+}
+
+#[test]
+fn in_a_remembering_menu_a_letter_searches_on_from_the_cursor() {
+    let script = Script::new()
+        .at(10.0)
+        .type_text("m")
+        .at(20.0)
+        .type_text("m")
+        .at(30.0)
+        .type_text("m")
+        .at(40.0)
+        .type_text("b")
+        .at(50.0)
+        .tap(Key::Escape);
+    assert_eq!(
+        remembering_menu_said(script),
+        ["pick", "mars ,", "mike ,", "mars ,", "bravo ,", "quit"]
     );
 }

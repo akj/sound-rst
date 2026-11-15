@@ -176,8 +176,8 @@ impl Menu {
         }
     }
 
-    /// A menu that remembers its last choice under `name`, and offers it
-    /// first next time.
+    /// A menu that remembers its last choice under `name`, and opens on it
+    /// next time.
     pub fn remembering(cx: &Client, title: Msg, name: &str) -> Menu {
         let mut m = Menu::new(title, Vec::new());
         m.remembered_choice = std::fs::read_to_string(remember_path(cx, name)).unwrap_or_default();
@@ -185,17 +185,20 @@ impl Menu {
         m
     }
 
-    /// Adds an item (with an empty explanation if none).
+    /// Adds an item (with an empty explanation if none). The first item
+    /// that was the remembered choice is where the menu opens.
     pub fn append(&mut self, label: Msg, action: Action, explanation: Option<Msg>) {
-        let remembered = self.remember.is_some() && self.remembered_choice == py_repr(&label);
+        let remembered = self.remember.is_some()
+            && self.remembered_choice == py_repr(&label)
+            && !self.choices.iter().any(|c| c.label == label);
+        if remembered {
+            self.default_choice_index = self.choices.len() as i64;
+        }
         self.choices.push(Choice::explained(
-            label.clone(),
-            action.clone(),
+            label,
+            action,
             explanation.unwrap_or_default(),
         ));
-        if remembered {
-            self.choices.insert(0, Choice::new(label, action));
-        }
     }
 
     fn index(&self, i: i64) -> usize {

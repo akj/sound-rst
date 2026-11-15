@@ -65,6 +65,8 @@ Home and End, or the keypad's plus and minus, raise and lower the volume of the 
 
 The speed you choose in the game menu of a single-player game is also the speed of your next single-player game.
 
+The map lists remember the map you chose last and open on it: press Down to hear it. A letter goes to the next item that starts with it, from where you are, and wraps around.
+
 ### Sound and speech settings
 
 In the options menu, Sound and speech has these items. Each item says its name, then its value. Press Enter to change the value. The game saves the change at once.
