@@ -169,6 +169,42 @@ fn escape_skips_the_rest_of_a_story_which_stays_in_the_story_log() {
 }
 
 #[test]
+fn control_shift_c_copies_during_a_story_without_skipping_a_line() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    h.press(
+        Key::C,
+        Mods {
+            shift: true,
+            ..Mods::CTRL
+        },
+    );
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Story(_)));
+    h.run_until_voice_idle(&mut g);
+    // The line cut off by the answer is said again.
+    assert_eq!(
+        h.said_since(from),
+        ["once upon a time", "copied", "once upon a time", "the end"]
+    );
+    assert_eq!(
+        h.desktop
+            .clipboard
+            .lock()
+            .unwrap()
+            .last()
+            .map(String::as_str),
+        Some("once upon a time")
+    );
+}
+
+#[test]
 fn escape_during_a_story_still_lets_the_news_waiting_with_it_be_said() {
     let (mut h, mut g) = training();
     h.run_until_voice_idle(&mut g);
