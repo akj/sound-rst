@@ -71,8 +71,8 @@ mod imp {
         STD_OUTPUT_HANDLE,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        IDRETRY, IDYES, MB_ICONERROR, MB_ICONQUESTION, MB_OK, MB_RETRYCANCEL, MB_YESNO,
-        MESSAGEBOX_RESULT, MESSAGEBOX_STYLE, MessageBoxW,
+        IDRETRY, IDYES, MB_ICONERROR, MB_ICONQUESTION, MB_OK, MB_RETRYCANCEL, MB_SETFOREGROUND,
+        MB_YESNO, MESSAGEBOX_RESULT, MESSAGEBOX_STYLE, MessageBoxW,
     };
 
     pub fn print(text: &str) {
@@ -125,6 +125,9 @@ mod imp {
     fn message_box(text: &str, style: MESSAGEBOX_STYLE) -> MESSAGEBOX_RESULT {
         let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
         let (text, title) = (wide(text), wide("SoundRTS"));
+        // The game has no window yet to own the box: ask Windows to bring
+        // it to the front, where a screen reader reads it.
+        let style = style | MB_SETFOREGROUND;
         // SAFETY: both pointers are NUL-terminated UTF-16 buffers that live
         // until the call returns; a null owner window is allowed.
         unsafe { MessageBoxW(0, text.as_ptr(), title.as_ptr(), style) }

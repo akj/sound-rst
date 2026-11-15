@@ -362,9 +362,12 @@ fn fetch_speaking(player: &Path) -> Result<PathBuf, String> {
             say(&spoken_progress(bytes));
         }
     });
-    if result.is_ok() {
-        say("The game data is ready.");
-    }
+    // The failure is also said: its message box can open behind the
+    // program the player went to while waiting.
+    say(match result {
+        Ok(_) => "The game data is ready.",
+        Err(_) => "The game data could not be downloaded.",
+    });
     result
 }
 
