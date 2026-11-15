@@ -2,11 +2,11 @@
 
 33 open findings from the design review of the Rust port of SoundRTS, grouped by what they affect: what you hear, multiplayer, gameplay, and code structure. The six multiplayer fixes, the game record and the recording cutover are merged and are not repeated here.
 
-Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `8bdae7b`, after pull requests 6 to 54. Pull request 53 was still open; where it would change a status, the finding says so.
+Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54.
 
 ## Status on 15 November 2026
 
-Each status below was checked by reading the code at `8bdae7b`, not from pull request titles. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
+Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
 
 Two limits apply to every status.
 
@@ -460,7 +460,7 @@ The port copied these on purpose so that it matched the Python game turn for tur
 
 ### G4. The simulation imitates Python's errors
 
-**Open.** By the same count as before, `Abort::new` in `crates/world/src`, there are 106 such stops outside tests, against 114 at `612afd1`. Three of them are now in `crates/world/src/questions.rs`, which the interface shares.
+**Open.** By the same count as before, `Abort::new` in `crates/world/src`, there are 109 such stops outside tests, against 114 at `612afd1`. Three of them are now in `crates/world/src/questions.rs`, which the interface shares.
 
 Count checked today. Size: large in total. Do it alongside other work, not as a project.
 
@@ -495,7 +495,7 @@ None of these changes what a player hears. Each says what would make it worth do
 
 ### C1. Orders travel as text and are parsed again at every step
 
-**Partly fixed** in pull requests 10, 19 and 54. The interface builds typed commands (`Command` in `crates/world/src/command.rs`). A game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`, so a misspelt keyword does not compile. Text is now read only for map triggers and, behind the `truth` feature, for the recorded traces. Not yet: an order stored in a unit's queue still keeps its type and arguments as text (`args` and `type_name` on `Order` in `crates/world/src/orders.rs`). Pull request 53, open on 15 November, replaces them with typed state. Rallying points and zoom targets also keep text; see N9.
+**Partly fixed** in pull requests 10, 19, 53 and 54. The interface builds typed commands (`Command` in `crates/world/src/command.rs`). A game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`, so a misspelt keyword does not compile. An order in a unit's queue now holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). Text is read only for map triggers and, behind the `truth` feature, for the recorded traces. These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet: a rallying point is still stored as text and parsed again for each unit trained, and a zoom target keeps a text id; see N9.
 
 From the review. Size: large.
 
@@ -651,7 +651,7 @@ From the review of pull request 51. Open. Checked by reading, not reproduced.
 
 **Now.** An upgrade replaces the building with a new one. The new building keeps the old one's hit points, blocked exit, groups and the units inside, but not its rallying point. Units trained after the upgrade do not go to the point that was set.
 
-**Where.** `crates/world/src/orders.rs`, `production_complete`, the `UpgradeTo` branch.
+**Where.** `crates/world/src/orders.rs`, `production_complete`, the `Product::UpgradeTo` branch.
 
 ### N5. An order picked but not yet aimed still names the old unit after an upgrade
 
@@ -683,7 +683,7 @@ From pull request 53, as a suspected bug. Checked by reading, not reproduced.
 
 **Now.** When an upgrade into a building that needs a meadow finds no meadow, the player hears that the order is impossible. The order is then marked complete, and nothing is refunded.
 
-**Where.** `crates/world/src/orders.rs`, `production_complete`, the `UpgradeTo` branch, and its caller, which marks the order complete.
+**Where.** `crates/world/src/orders.rs`, `production_complete`, the `Product::UpgradeTo` branch, and its caller, which marks the order complete.
 
 ### N9. Some game state is still text
 
@@ -695,7 +695,7 @@ From pull request 53's scope notes. Open. Checked by reading.
 - A zoom target keeps the text id it was given (`ZoomTarget` in `entity.rs`).
 - The order menus list types and requirements as strings (`OrderTypeView` in `crates/client/src/game/order.rs`).
 
-Pull request 53 types the rest of an order's state but leaves these.
+Pull request 53 typed the rest of an order's state and left these.
 
 ### N10. The simulation does not check that a square in a command is on the map
 
