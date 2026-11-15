@@ -494,7 +494,7 @@ impl Request {
             }),
             Keyword::Gather => queued(OrderKind::Gather {
                 aim: aim()?,
-                gathering: Gathering::default(),
+                step: GatherStep::Start,
             }),
             Keyword::AutoAttack => queued(OrderKind::AutoAttack),
             Keyword::AutoExplore => queued(OrderKind::AutoExplore),
@@ -564,7 +564,7 @@ enum Immediate {
 }
 
 /// A queued order's kind, with the state that only this kind has.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) enum OrderKind {
     /// `train`, `research` or `upgrade_to`.
     Production(Production),
@@ -585,7 +585,7 @@ pub(crate) enum OrderKind {
     },
     Gather {
         aim: Aim,
-        gathering: Gathering,
+        step: GatherStep,
     },
     AutoAttack,
     AutoExplore,
@@ -740,7 +740,7 @@ impl OrderKind {
 }
 
 /// What an order was given to aim at, and what that means now.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) struct Aim {
     /// The target as given; `None` for an order given without one, which
     /// fails when it is queued.
@@ -760,7 +760,7 @@ impl Aim {
 }
 
 /// What a production order makes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Product {
     Train(TypeId),
     Research(TypeId),
@@ -777,7 +777,7 @@ impl Product {
 
 /// A `train`, `research` or `upgrade_to` order: what it makes and how far
 /// it is.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) struct Production {
     pub(crate) product: Product,
     /// The time left, set when the order is queued and paid for.
@@ -797,7 +797,7 @@ impl Production {
 }
 
 /// The route of a patrol.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(crate) struct Route {
     /// The places patrolled, in order: `None` for a place that is not a
     /// square.
@@ -806,35 +806,24 @@ pub(crate) struct Route {
     index: usize,
 }
 
-/// A `gather` order's progress.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Gathering {
-    pub(crate) step: GatherStep,
-    /// The warehouse it carries its cargo to, once chosen.
-    storage: Option<EntityId>,
-    /// When the storing or the extracting ends.
-    delay: i64,
-}
-
 /// The steps of a `gather` order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GatherStep {
     /// Queued: its first update chooses between going to the deposit and
     /// bringing back the cargo it carries.
-    #[default]
     Start,
-    /// Carrying the cargo to a warehouse.
-    BringBack,
-    /// Storing the cargo.
-    Store,
+    /// Carrying the cargo to a warehouse: the one chosen, once chosen.
+    BringBack { storage: Option<EntityId> },
+    /// Storing the cargo, until a time.
+    Store { until: i64 },
     /// Going to the deposit.
     GoGather,
-    /// Extracting.
-    Extract,
+    /// Extracting, until a time.
+    Extract { until: i64 },
 }
 
 /// The steps of a `block` order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum BlockStep {
     /// Queued, its target not yet accepted as an exit.
     Waiting,
@@ -845,7 +834,7 @@ pub(crate) enum BlockStep {
 }
 
 /// The steps of a `repair` or `build_phase_two` order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum BuildStep {
     /// Queued, its target not yet accepted as repairable.
     Waiting,
@@ -858,7 +847,7 @@ pub(crate) enum BuildStep {
 /// How far an order is. `Deferred` and `Started` are production's
 /// alone. `Complete`, `Impossible` and `ImpossibleAndComplete` are final:
 /// the order leaves the queue at the unit's next update.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Progress {
     /// Queued and not done; production that has not started.
     Pending,
@@ -922,7 +911,7 @@ impl Progress {
 }
 
 /// An order in a unit's queue.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct Order {
     /// Unique in the world; tells two orders apart.
     pub uid: u64,
@@ -1004,181 +993,6 @@ impl Order {
         words.extend(self.type_name(&w.rules).map(str::to_owned));
         words.extend(self.args(w));
         words
-    }
-}
-
-/// The texts an order's hash reads: its type's name and its target as the
-/// order used to store them. Set by [`World::digest_u64`] while it hashes.
-pub(crate) struct HashTexts {
-    square_ids: Vec<u32>,
-    square_names: Vec<String>,
-    type_names: Vec<String>,
-}
-
-thread_local! {
-    static HASH_TEXTS: std::cell::RefCell<Option<HashTexts>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-impl HashTexts {
-    /// Makes the texts of `w` available to the hashes of orders until the
-    /// guard is dropped.
-    pub(crate) fn set(w: &World) -> HashTextsGuard {
-        let texts = HashTexts {
-            square_ids: w.squares.iter().map(|s| s.id).collect(),
-            square_names: w.squares.iter().map(|s| s.name.clone()).collect(),
-            type_names: w.rules.types().iter().map(|t| t.name.clone()).collect(),
-        };
-        HASH_TEXTS.with(|h| *h.borrow_mut() = Some(texts));
-        HashTextsGuard
-    }
-
-    fn target_text(&self, t: TargetRef) -> String {
-        let id = |s: SquareId| self.square_ids[s.0 as usize];
-        match t {
-            TargetRef::Square(s) => id(s).to_string(),
-            TargetRef::SquareNamed(s) => self.square_names[s.0 as usize].clone(),
-            TargetRef::Point { square, x, y } => format!("zoom-{}-{x}-{y}", id(square)),
-            TargetRef::Entity(e) => e.to_string(),
-            TargetRef::Nothing => "None".to_owned(),
-        }
-    }
-}
-
-pub(crate) struct HashTextsGuard;
-
-impl Drop for HashTextsGuard {
-    fn drop(&mut self) {
-        HASH_TEXTS.with(|h| *h.borrow_mut() = None);
-    }
-}
-
-impl std::hash::Hash for Order {
-    /// Feeds what the order's former single structure fed, field by field.
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        #[derive(Hash)]
-        enum Mode {
-            None,
-            BringBack,
-            Store,
-            GoGather,
-            Gather,
-            GoBlock,
-            Block,
-            GoBuild,
-            Build,
-        }
-        #[derive(Hash)]
-        struct Former<'a> {
-            uid: u64,
-            keyword: Keyword,
-            args: Vec<String>,
-            type_name: Option<String>,
-            id: Option<u64>,
-            target: Option<&'a Target>,
-            is_impossible: bool,
-            is_complete: bool,
-            is_imperative: bool,
-            is_deferred: bool,
-            first_update: bool,
-            mode: Mode,
-            delay: i64,
-            storage: Option<EntityId>,
-            time: i64,
-            has_started: bool,
-            previous_completeness: Option<i64>,
-            creation_time: Option<i64>,
-            patrol_targets: Option<&'a Vec<Option<Place>>>,
-            patrol_index: usize,
-            must_deploy: bool,
-        }
-        HASH_TEXTS.with(|texts| {
-            let texts = texts.borrow();
-            let texts = texts
-                .as_ref()
-                .expect("orders are hashed by World::digest_u64");
-            let mode = match &self.kind {
-                OrderKind::Gather { gathering, .. } => match gathering.step {
-                    GatherStep::Start => Mode::None,
-                    GatherStep::BringBack => Mode::BringBack,
-                    GatherStep::Store => Mode::Store,
-                    GatherStep::GoGather => Mode::GoGather,
-                    GatherStep::Extract => Mode::Gather,
-                },
-                OrderKind::Block { step, .. } => match step {
-                    BlockStep::Waiting => Mode::None,
-                    BlockStep::Going => Mode::GoBlock,
-                    BlockStep::Blocking => Mode::Block,
-                },
-                OrderKind::Repair { step, .. } | OrderKind::BuildPhaseTwo { step, .. } => {
-                    match step {
-                        BuildStep::Waiting => Mode::None,
-                        BuildStep::Going => Mode::GoBuild,
-                        BuildStep::Working => Mode::Build,
-                    }
-                }
-                _ => Mode::None,
-            };
-            let (delay, storage) = match &self.kind {
-                OrderKind::Gather { gathering, .. } => (gathering.delay, gathering.storage),
-                _ => (0, None),
-            };
-            let (time, previous_completeness) = match &self.kind {
-                OrderKind::Production(p) => (p.time_left, p.previous_completeness),
-                _ => (0, None),
-            };
-            let (patrol_targets, patrol_index) = match &self.kind {
-                OrderKind::Patrol { route: Some(r), .. } => (Some(&r.places), r.index),
-                _ => (None, 0),
-            };
-            Former {
-                uid: self.uid,
-                keyword: self.keyword(),
-                args: self
-                    .kind
-                    .aim()
-                    .and_then(|a| a.given)
-                    .map(|t| texts.target_text(t))
-                    .into_iter()
-                    .collect(),
-                type_name: self
-                    .kind
-                    .type_id()
-                    .map(|t| texts.type_names[t.0 as usize].clone()),
-                id: self.id,
-                target: self.target(),
-                is_impossible: self.progress.is_impossible(),
-                is_complete: self.progress.is_complete(),
-                is_imperative: self.is_imperative,
-                is_deferred: self.progress == Progress::Deferred,
-                first_update: self.first_update,
-                mode,
-                delay,
-                storage,
-                time,
-                // Only production starts, and it ends only once started.
-                has_started: matches!(self.kind, OrderKind::Production(_))
-                    && matches!(
-                        self.progress,
-                        Progress::Started | Progress::Complete | Progress::ImpossibleAndComplete
-                    ),
-                previous_completeness,
-                creation_time: match &self.kind {
-                    OrderKind::Go { creation_time, .. } => *creation_time,
-                    _ => None,
-                },
-                patrol_targets,
-                patrol_index,
-                must_deploy: matches!(
-                    self.kind,
-                    OrderKind::Wait {
-                        must_deploy: true,
-                        ..
-                    }
-                ),
-            }
-            .hash(state);
-        });
     }
 }
 
@@ -1732,9 +1546,7 @@ impl World {
                     return Ok(());
                 }
                 self.notify(unit, ok, false);
-                if let Some(OrderKind::Gather { gathering, .. }) = self.kind_mut(unit, uid) {
-                    gathering.step = GatherStep::Start;
-                }
+                self.set_gather_step(unit, uid, GatherStep::Start);
             }
             OrderKind::AutoAttack => {}
             OrderKind::AutoExplore => {
@@ -2055,7 +1867,7 @@ impl World {
                 }
                 Ok(())
             }
-            OrderKind::Gather { gathering, .. } => self.gather_execute(unit, uid, gathering.step),
+            OrderKind::Gather { step, .. } => self.gather_execute(unit, uid, *step),
             OrderKind::AutoAttack => {
                 if self.e(unit).is_idle() {
                     self.start_moving_to_enemy(unit)?;
@@ -2601,11 +2413,9 @@ impl World {
         Ok(())
     }
 
-    /// The gathering state of a gather order, to change it.
-    fn gathering_mut(&mut self, unit: EntityId, uid: u64) -> Option<&mut Gathering> {
-        match self.kind_mut(unit, uid) {
-            Some(OrderKind::Gather { gathering, .. }) => Some(gathering),
-            _ => None,
+    fn set_gather_step(&mut self, unit: EntityId, uid: u64, new: GatherStep) {
+        if let Some(OrderKind::Gather { step, .. }) = self.kind_mut(unit, uid) {
+            *step = new;
         }
     }
 
@@ -2615,76 +2425,65 @@ impl World {
         };
         if step == GatherStep::Start {
             let s = if self.e(unit).cargo.is_some() {
-                GatherStep::BringBack
+                GatherStep::BringBack { storage: None }
             } else {
                 GatherStep::GoGather
             };
-            if let Some(g) = self.gathering_mut(unit, uid) {
-                g.step = s;
-            }
+            self.set_gather_step(unit, uid, s);
         }
         self.update_target(unit, uid)?;
         // Read again after the target's update; the order may have left the
         // queue.
         let Some(Order {
-            kind: OrderKind::Gather { aim, gathering },
+            kind: OrderKind::Gather { aim, step },
             ..
         }) = self.ord(unit, uid).cloned()
         else {
             return Ok(());
         };
-        match gathering.step {
-            GatherStep::BringBack => match gathering.storage {
-                None => {
-                    let cargo = self
-                        .e(unit)
-                        .cargo
-                        .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
-                    let Some(here) = self.e(unit).place else {
-                        return Ok(());
-                    };
-                    let storage = self.nearest_warehouse(p, here, cargo.0, false)?;
-                    if let Some(g) = self.gathering_mut(unit, uid) {
-                        g.storage = storage;
+        match step {
+            GatherStep::BringBack { storage: None } => {
+                let cargo = self
+                    .e(unit)
+                    .cargo
+                    .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
+                let Some(here) = self.e(unit).place else {
+                    return Ok(());
+                };
+                let storage = self.nearest_warehouse(p, here, cargo.0, false)?;
+                self.set_gather_step(unit, uid, GatherStep::BringBack { storage });
+                match storage {
+                    None => {
+                        self.em(unit).cargo = None;
+                        self.mark_as_impossible(unit, uid, None);
                     }
-                    match storage {
-                        None => {
-                            self.em(unit).cargo = None;
-                            self.mark_as_impossible(unit, uid, None);
-                        }
-                        Some(s) => self.start_moving_to(unit, Some(&Target::Entity(s)), false)?,
+                    Some(s) => self.start_moving_to(unit, Some(&Target::Entity(s)), false)?,
+                }
+            }
+            GatherStep::BringBack {
+                storage: Some(storage),
+            } => {
+                let st = Target::Entity(storage);
+                if self.near_enough(unit, &st) {
+                    let until = self.time + 1000;
+                    self.set_gather_step(unit, uid, GatherStep::Store { until });
+                    let r = self.e(unit).cargo.map_or(0, |c| c.0);
+                    self.notify(unit, EntityEvent::Store(r), false);
+                    self.stop(unit);
+                } else if self.e(unit).is_idle() {
+                    self.start_moving_to(unit, Some(&st), false)?;
+                    if self.e(unit).is_idle() {
+                        self.set_gather_step(unit, uid, GatherStep::BringBack { storage: None });
                     }
                 }
-                Some(storage) => {
-                    let st = Target::Entity(storage);
-                    if self.near_enough(unit, &st) {
-                        let delay = self.time + 1000;
-                        if let Some(g) = self.gathering_mut(unit, uid) {
-                            g.step = GatherStep::Store;
-                            g.delay = delay;
-                        }
-                        let r = self.e(unit).cargo.map_or(0, |c| c.0);
-                        self.notify(unit, EntityEvent::Store(r), false);
-                        self.stop(unit);
-                    } else if self.e(unit).is_idle() {
-                        self.start_moving_to(unit, Some(&st), false)?;
-                        if self.e(unit).is_idle()
-                            && let Some(g) = self.gathering_mut(unit, uid)
-                        {
-                            g.storage = None;
-                        }
-                    }
-                }
-            },
-            GatherStep::Store => {
-                if self.time > gathering.delay {
+            }
+            GatherStep::Store { until } => {
+                if self.time > until {
                     if let Some((r, q)) = self.e(unit).cargo {
                         self.store(p, r, q);
                     }
                     self.em(unit).cargo = None;
-                    if let Some(g) = self.gathering_mut(unit, uid) {
-                        g.step = GatherStep::GoGather;
-                    }
+                    self.set_gather_step(unit, uid, GatherStep::GoGather);
                 }
             }
             GatherStep::GoGather => match aim.target {
@@ -2698,26 +2497,21 @@ impl World {
                             .t_entity(&t)
                             .and_then(|e| e.type_id)
                             .map_or(0, |ty| self.rules.ty(ty).stats.extraction_time);
-                        let delay = self.time + et;
-                        if let Some(g) = self.gathering_mut(unit, uid) {
-                            g.step = GatherStep::Extract;
-                            g.delay = delay;
-                        }
+                        let until = self.time + et;
+                        self.set_gather_step(unit, uid, GatherStep::Extract { until });
                         self.stop(unit);
                     } else if self.e(unit).is_idle() {
                         self.move_to_or_fail(unit, uid, Some(t))?;
                     }
                 }
             },
-            GatherStep::Extract => match aim.target {
+            GatherStep::Extract { until } => match aim.target {
                 None => self.mark_as_impossible(unit, uid, None),
                 Some(t) => {
                     if !self.near_enough(unit, &t) {
-                        if let Some(g) = self.gathering_mut(unit, uid) {
-                            g.step = GatherStep::GoGather;
-                        }
+                        self.set_gather_step(unit, uid, GatherStep::GoGather);
                         self.stop(unit);
-                    } else if self.time > gathering.delay {
+                    } else if self.time > until {
                         let dep = self.t_entity(&t).cloned().expect("a deposit");
                         let ty = dep.type_id.map(|ty| self.rules.ty(ty));
                         let cargo = (
@@ -2728,10 +2522,7 @@ impl World {
                         if let Some(id) = t.entity_id() {
                             self.extract_resource(id)?;
                         }
-                        if let Some(g) = self.gathering_mut(unit, uid) {
-                            g.step = GatherStep::BringBack;
-                            g.storage = None;
-                        }
+                        self.set_gather_step(unit, uid, GatherStep::BringBack { storage: None });
                     }
                 }
             },

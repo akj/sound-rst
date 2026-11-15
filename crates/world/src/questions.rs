@@ -1021,13 +1021,13 @@ pub(crate) fn activity<'n>(
             BuildStep::Working => Some(Activity::Building),
             BuildStep::Waiting | BuildStep::Going => None,
         },
-        OrderKind::Gather { aim, gathering } => match gathering.step {
-            GatherStep::Extract => Some(Activity::Exploiting(
+        OrderKind::Gather { aim, step } => match step {
+            GatherStep::Extract { .. } => Some(Activity::Exploiting(
                 name_of(aim.target.as_ref()?)?.to_owned(),
             )),
             GatherStep::Start
-            | GatherStep::BringBack
-            | GatherStep::Store
+            | GatherStep::BringBack { .. }
+            | GatherStep::Store { .. }
             | GatherStep::GoGather => None,
         },
         OrderKind::Production(_)
