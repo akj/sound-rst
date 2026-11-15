@@ -18,7 +18,7 @@ length 1062 578571
 length 1063 578571
 length 1064 1551043
 length 1065 3132608
-length 1350 188322
+length 1067 175147
 length 6115 6871
 length 6116 3719
 length 9999 208980
@@ -115,41 +115,41 @@ length 9999 208980
 @83451 voice info ", 1 mine d'or et 2 bois en a 3"
 @87051 voice info ", 1 bois en a 4"
 @88951 voice info ", 1 mine d'or en c 4"
-@91352 sounds 101 4d58e56a7cee91cb
+@91352 sounds 101 fdb2c167d2dfd2ce
 @91352 step 29 key x
 @91352 voice item "10 bois"
-@92452 sounds 7 f79e7d84853167f6
+@92452 sounds 6 9b4f577a63803ed0
 @92452 step 30 key c
 @92452 voice item "9 rations pour 1"
-@94452 sounds 12 407475373732705b
+@94452 sounds 16 74591e3881aa7b01
 @94452 step 31 key e
 @94452 voice item "paysan 1 en b 4 , à vos ordres"
-@97852 sounds 24 dd0c4e121283ba31
+@97852 sounds 23 5fe3cb9a3d6c9d14
 @97852 step 32 key SPACE
 @97852 voice item "b 4 Vous dirigez paysan 1 en b 4 ,"
-@101852 sounds 29 b03279adfb882d8d
+@101852 sounds 26 ba70ae882d0fe3d9
 @101852 step 33 key a
 @101852 voice item "aller vers , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
 @111652 voice info "1 paysan ennemi en a 3"
-@114253 sounds 97 4dd53bec6e0ef7f1
+@114253 sounds 102 7a350a2753da80b9
 @114253 step 34 key a
 @114253 voice item "exploiter , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
-@123953 sounds 65 b79eb357778d01a2
+@123953 sounds 68 be07b0d1ca512d6f
 @123953 step 35 key a
 @123953 voice item "construire ferme sur , nécessite 5 or et 5 bois , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
-@137653 sounds 100 1dd5f1d0ec6f0ec7
+@137653 sounds 97 2d1b8361beb15c48
 @137653 step 36 key ESCAPE
 @137653 voice item "annuler"
-@138353 sounds 4 60c756a45ed1fb9a
+@138353 sounds 3 ac3057eb4e3afe1a
 @138353 step 37 key TAB
 @138353 voice item [1003] "une prairie au sud-èst" vol=0.129,0.992
-@140572 sounds 17 d7060f8a90f19573
+@140572 sounds 19 8a4db5b94492b727
 @140572 step 38 key TAB
 @140572 voice item [1003] "un passage a l'est" vol=0.156,0.988
-@142391 sounds 11 d731f223004c59ba
+@142391 sounds 11 5bd2ec57a93dd6cc
 @142391 step 39 key UP
 @142391 voice item [1027] "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
-@148885 sounds 43 089c6d02275e1da1
+@148885 sounds 47 6d5faaaa98180b47
 @148885 step 40 key CTRL UP
 @148885 voice item "b 1 , inconnue"
 @150485 step 41 key F3
