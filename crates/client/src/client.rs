@@ -37,6 +37,9 @@ pub trait Desktop {
     fn open_folder(&self, path: &Path);
     /// Puts text on the clipboard, for the player to paste elsewhere.
     fn set_clipboard(&self, text: &str);
+    /// The clipboard's text, for the player to paste here; `None` when it
+    /// holds none. At most [`crate::clipboard::MAX_READ_UNITS`] long.
+    fn clipboard_text(&self) -> Option<String>;
 }
 
 /// The devices the client talks through: real ones, or recording fakes.

@@ -741,7 +741,8 @@ impl InputSource for ScriptedInput {
 }
 
 /// A desktop that records titles, opened folders and the clipboard. The
-/// clipboard record can be shared with another thread.
+/// clipboard record can be shared with another thread; its last text is
+/// what a paste gets.
 #[derive(Default)]
 pub struct RecordingDesktop {
     pub titles: RefCell<Vec<String>>,
@@ -763,6 +764,14 @@ impl Desktop for RecordingDesktop {
             .lock()
             .expect("clipboard record")
             .push(text.to_owned());
+    }
+
+    fn clipboard_text(&self) -> Option<String> {
+        self.clipboard
+            .lock()
+            .expect("clipboard record")
+            .last()
+            .cloned()
     }
 }
 

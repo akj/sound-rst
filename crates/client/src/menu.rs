@@ -516,6 +516,10 @@ pub enum Typed {
     Cancelled,
 }
 
+/// The longest line a text entry holds, typed or pasted: that of a chat
+/// line, the longest line the game sends.
+pub const MAX_LINE_CHARS: usize = soundrts_protocol::MAX_CHAT_CHARS;
+
 /// A line of text being typed: each key press is handled as it comes, so
 /// that a caller that must not block (the game) can go on meanwhile.
 pub struct TextEntry {
@@ -543,10 +547,12 @@ impl TextEntry {
     }
 
     /// Handles a key press: Enter accepts, Escape cancels, Backspace
-    /// erases, and a character is added if allowed (else a beep).
+    /// erases, Control V pastes, and a character is added if allowed (else
+    /// a beep). The line holds at most [`MAX_LINE_CHARS`] characters.
     pub fn key(&mut self, cx: &mut Client, e: &KeyDown) -> Typed {
         let spell = self.spell;
         let s = &mut self.text;
+        let room = MAX_LINE_CHARS.saturating_sub(s.chars().count());
         match e.key {
             Key::LShift | Key::RShift => Typed::Ignored,
             Key::Return | Key::KpEnter => {
@@ -559,10 +565,36 @@ impl TextEntry {
                 cx.voice.item(&string_to_msg(s, spell));
                 Typed::Typing
             }
+            // Control Alt is AltGr, which types characters.
+            Key::V if e.mods.ctrl && !e.mods.alt => {
+                // The clipboard's text is only text: what the line does not
+                // allow is dropped, line breaks and Enter included.
+                let pasted: String = cx
+                    .desktop
+                    .clipboard_text()
+                    .unwrap_or_default()
+                    .chars()
+                    .filter(|&c| !c.is_control() && (self.allowed)(c))
+                    .take(room)
+                    .collect();
+                let mut m = if pasted.is_empty() {
+                    msg(mp::BEEP)
+                } else {
+                    string_to_msg(&pasted, spell)
+                };
+                let was_empty = s.is_empty();
+                s.push_str(&pasted);
+                if pasted.is_empty() || !was_empty {
+                    m.extend(msg(mp::PERIOD));
+                    m.extend(string_to_msg(s, spell));
+                }
+                cx.voice.item(&m);
+                Typed::Typing
+            }
             _ => {
                 let mut chars = e.unicode.chars();
                 let mut m = match (chars.next(), chars.next()) {
-                    (Some(c), None) if (self.allowed)(c) => {
+                    (Some(c), None) if (self.allowed)(c) && room > 0 => {
                         s.push(c);
                         string_to_msg(&c.to_string(), true)
                     }
@@ -577,10 +609,10 @@ impl TextEntry {
     }
 }
 
-/// Asks for a line of text. Each typed character must match `allowed`;
-/// Enter accepts, Escape gives `None`, Backspace erases. A server event
-/// that interrupts the menus (a game starting, the connection lost) gives
-/// `None` too.
+/// Asks for a line of text. Each typed or pasted character must match
+/// `allowed`; Enter accepts, Escape gives `None`, Backspace erases,
+/// Control V pastes. A server event that interrupts the menus (a game
+/// starting, the connection lost) gives `None` too.
 pub fn input_string(
     cx: &mut Client,
     prompt: &Msg,

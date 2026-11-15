@@ -63,6 +63,8 @@ To play in another language, write its code, for example `fr`, in `cfg/language.
 
 Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is said again after it, and the sounds go on playing.
 
+In a text field, such as your login, a server's address, a chat message or the console, Control V pastes the text of the clipboard. The field keeps only the characters it allows, drops line breaks, and holds at most 400 characters. It says what it pasted, then the whole line if the line already had text. Enter still sends the line.
+
 The speed you choose in the game menu of a single-player game is also the speed of your next single-player game.
 
 The map lists remember the map you chose last and open on it: press Down to hear it. A letter goes to the next item that starts with it, from where you are, and wraps around.
@@ -142,7 +144,7 @@ To host a game, choose Server. The game starts a server on your computer, says t
 To join a game, choose one of these:
 
 - Choose a server in a list: the servers on your local network, the public list, your favorite servers, and the servers you used recently.
-- Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`.
+- Enter the IP address of the server: type the address that the host gave you, for example `203.0.113.7` or `203.0.113.7:2502`, or paste it with Control V.
 
 On a server, the menu lists the invitations you received and the open games you can join. To create a game, choose a map and a speed. Only you and the players you invite can join a game that you start with Start a game on. Anyone can join a game that you start with Start a public game on. A player who does not have the map of a game gets it from the server, and the game keeps it in the `downloaded\multi` folder of the settings folder.
 
