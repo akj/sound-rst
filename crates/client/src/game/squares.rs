@@ -274,7 +274,7 @@ impl GameInterface {
         {
             return Ok(false);
         }
-        if !self.is_in(v, self.place) || self.title(cx, v)?.is_empty() {
+        if !self.is_in(v, self.place) || self.title(cx, v).is_empty() {
             return Ok(false);
         }
         if self.immersion {

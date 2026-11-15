@@ -19,7 +19,7 @@ use crate::style::{Noise, StyleValue};
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::news::must_be_said;
 use super::order::{PRECISION, substitute_args};
-use super::{GameInterface, Oops, R, Timing, compute_title, style_msg};
+use super::{GameInterface, Timing, compute_title, style_msg};
 
 /// The same footstep sound does not start again within this many seconds.
 pub const FOOTSTEP_LIMIT: f64 = 0.1;
@@ -200,7 +200,10 @@ impl GameInterface {
         }
     }
 
-    pub fn title(&self, cx: &Client, v: &EntityView) -> R<Msg> {
+    /// The title: the type, a unit of the player's with its number, another
+    /// player's with whose it is, and for a memory, how long ago it was
+    /// seen.
+    pub fn title(&self, cx: &Client, v: &EntityView) -> Msg {
         let style = cx.res.style();
         let mut title = if v.model.is_building_site() {
             let t = self.site_type_name(&v.model).unwrap_or_default();
@@ -214,11 +217,10 @@ impl GameInterface {
         };
         if let Some(p) = v.player() {
             if p == self.me {
-                let n = v
-                    .model
-                    .number
-                    .ok_or_else(|| Oops::new("int() argument must be a number, not 'NoneType'"))?;
-                title.extend(nb2msg(n));
+                // The world numbers every unit a player has.
+                if let Some(n) = v.model.number {
+                    title.extend(nb2msg(n));
+                }
             } else {
                 if self.view().is_ally(p) {
                     title.extend(msg(mp::ALLY));
@@ -246,15 +248,18 @@ impl GameInterface {
                 title.extend(msg(mp::COMMA));
             }
         }
-        Ok(title)
+        title
     }
 
-    /// The title and where it is: "footman 1 at a 2".
-    pub fn ext_title(&self, cx: &Client, v: &EntityView) -> R<Msg> {
-        let place = v
-            .place()
-            .ok_or_else(|| Oops::new(format!("problem with {}.ext_title", v.type_name())))?;
-        Ok([self.title(cx, v)?, msg(mp::AT), self.place_title(cx, place)].concat())
+    /// The title and where it is: "footman 1 at a 2". Only the title for
+    /// an entity that has left the map.
+    pub fn ext_title(&self, cx: &Client, v: &EntityView) -> Msg {
+        let mut t = self.title(cx, v);
+        if let Some(place) = v.place() {
+            t.extend(msg(mp::AT));
+            t.extend(self.place_title(cx, place));
+        }
+        t
     }
 
     /// The upgrades of a creature's player that apply to it: for a
@@ -321,13 +326,11 @@ impl GameInterface {
         d
     }
 
-    /// The center of the selected square, in meters.
-    pub fn place_xy(&self) -> R<(f64, f64)> {
-        let p = self
-            .place
-            .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'x'"))?;
-        let (x, y) = self.view().square(p).center();
-        Ok((x as f64 / 1000.0, y as f64 / 1000.0))
+    /// The center of the selected square, in meters; none before a square
+    /// is selected.
+    pub fn place_xy(&self) -> Option<(f64, f64)> {
+        let (x, y) = self.view().square(self.place?).center();
+        Some((x as f64 / 1000.0, y as f64 / 1000.0))
     }
 
     /// The distance from the listener, in meters.
@@ -336,26 +339,23 @@ impl GameInterface {
     }
 
     /// The title, the distance in first person mode, the direction from
-    /// the square's center and the description.
-    pub fn positional_description(&self, cx: &Client, v: &EntityView) -> R<Msg> {
-        let mut d = self.title(cx, v)?;
+    /// the selected square's center and the description.
+    pub fn positional_description(&self, cx: &Client, v: &EntityView) -> Msg {
+        let mut d = self.title(cx, v);
         if self.immersion {
             d.extend(msg(mp::AT2));
             d.extend(nb2msg(self.distance_to(v) as i64));
             d.extend(msg(mp::METERS));
         }
-        d.extend(direction_msg(
-            self.place_xy()?,
-            self.square_width(),
-            v.x(),
-            v.y(),
-        ));
+        if let Some(center) = self.place_xy() {
+            d.extend(direction_msg(center, self.square_width(), v.x(), v.y()));
+        }
         d.extend(self.description(cx, v));
-        Ok(d)
+        d
     }
 
     /// The title of an order in a unit's list of orders.
-    fn order_title_msg(&self, cx: &Client, order: &KnownOrder, nb: i64) -> R<Msg> {
+    fn order_title_msg(&self, cx: &Client, order: &KnownOrder, nb: i64) -> Msg {
         let style = cx.res.style();
         let mut result = if order.is_deferred {
             style_msg(style, "messages", "production_deferred")
@@ -372,25 +372,21 @@ impl GameInterface {
         }
         if let Some(targets) = &order.patrol {
             for place in targets {
-                result.extend(self.place_view_title(cx, *place)?);
+                result.extend(self.place_view_title(cx, *place));
                 result.extend(msg(mp::COMMA));
             }
         } else if let Some(t) = &order.target {
             if order.keyword == Keyword::BuildPhaseTwo {
-                match self.target_entity(t) {
-                    Some(e) => {
-                        let tn = self.site_type_name(&e).unwrap_or_default();
-                        result.extend(style_msg(style, &tn, "title"));
-                    }
-                    // A site the player does not know: no building said.
-                    None if matches!(t, KnownTarget::Entity(_)) => {}
-                    None => return Err(Oops::new("'Square' object has no attribute 'type'")),
+                // A site the player does not know: no building said.
+                if let Some(e) = self.target_entity(t) {
+                    let tn = self.site_type_name(&e).unwrap_or_default();
+                    result.extend(style_msg(style, &tn, "title"));
                 }
             } else {
-                result.extend(self.target_title(cx, t)?);
+                result.extend(self.target_title(cx, t));
             }
         }
-        Ok([msg(mp::COMMA), result].concat())
+        [msg(mp::COMMA), result].concat()
     }
 
     /// The entity an order's target shows: as the player perceives or
@@ -407,12 +403,9 @@ impl GameInterface {
     /// place: the view's own title needs a player, which a place has not,
     /// so Python falls back to the place's `title` (the container's for an
     /// inside). The view draws its footstep offset first.
-    fn place_view_title(&self, cx: &Client, place: Option<Place>) -> R<Msg> {
+    fn place_view_title(&self, cx: &Client, place: Option<Place>) -> Msg {
         EntityView::footstep_offset(&cx.rng);
-        match place {
-            Some(p) => Ok(self.place_title(cx, p)),
-            None => Err(Oops::new("'NoneType' object has no attribute 'title'")),
-        }
+        place.map_or_else(Vec::new, |p| self.place_title(cx, p))
     }
 
     /// The title of an order's target, made as the original makes a view
@@ -422,7 +415,7 @@ impl GameInterface {
     /// player's own order is its own memory, said as old as the player's
     /// memory of the entity is now. A square gives the square's title (see
     /// [`GameInterface::place_view_title`]); a point has no title.
-    fn target_title(&self, cx: &Client, t: &KnownTarget) -> R<Msg> {
+    fn target_title(&self, cx: &Client, t: &KnownTarget) -> Msg {
         match t {
             KnownTarget::Entity(id) => match self.view().known(*id) {
                 Some(e) => {
@@ -431,7 +424,7 @@ impl GameInterface {
                 }
                 None => {
                     EntityView::footstep_offset(&cx.rng);
-                    Ok(Vec::new())
+                    Vec::new()
                 }
             },
             KnownTarget::Remembered(e) => {
@@ -447,14 +440,14 @@ impl GameInterface {
             KnownTarget::Square(s) => self.place_view_title(cx, Some(Place::Square(*s))),
             KnownTarget::Point => {
                 EntityView::footstep_offset(&cx.rng);
-                Err(Oops::new("'tuple' object has no attribute 'title'"))
+                Vec::new()
             }
         }
     }
 
     /// The orders of a unit, trainings of the same type counted together,
     /// up to the first patrol.
-    pub fn orders_txt(&self, cx: &Client, v: &EntityView) -> R<Msg> {
+    pub fn orders_txt(&self, cx: &Client, v: &EntityView) -> Msg {
         let mut t = Vec::new();
         let mut prev: Option<&KnownOrder> = None;
         let mut nb = 0;
@@ -463,12 +456,12 @@ impl GameInterface {
                 if o.keyword == Keyword::Train && p.type_name == o.type_name {
                     nb += 1;
                 } else {
-                    t.extend(self.order_title_msg(cx, p, nb)?);
+                    t.extend(self.order_title_msg(cx, p, nb));
                     if o.keyword == Keyword::Train {
                         prev = Some(o);
                         nb = 1;
                     } else {
-                        t.extend(self.order_title_msg(cx, o, 1)?);
+                        t.extend(self.order_title_msg(cx, o, 1));
                         prev = None;
                     }
                 }
@@ -476,17 +469,17 @@ impl GameInterface {
                 prev = Some(o);
                 nb = 1;
             } else {
-                t.extend(self.order_title_msg(cx, o, 1)?);
+                t.extend(self.order_title_msg(cx, o, 1));
             }
             if o.keyword == Keyword::Patrol {
                 break;
             }
         }
         if let Some(p) = prev {
-            t.extend(self.order_title_msg(cx, p, nb)?);
+            t.extend(self.order_title_msg(cx, p, nb));
         }
         t.extend(msg(mp::COMMA));
-        Ok(t)
+        t
     }
 
     /// The order menu of a unit: the menu kinds it may receive.
@@ -665,13 +658,7 @@ impl GameInterface {
 
     /// Reacts to an event of the entity. A late event plays no sound, but
     /// its news is told.
-    pub fn notify(
-        &mut self,
-        cx: &mut Client,
-        v: &EntityView,
-        event: &EntityEvent,
-        timing: Timing,
-    ) -> R {
+    pub fn notify(&mut self, cx: &mut Client, v: &EntityView, event: &EntityEvent, timing: Timing) {
         match event {
             EntityEvent::Wounded {
                 attacker_type,
@@ -685,7 +672,7 @@ impl GameInterface {
                 *attacker_damage_level,
                 timing,
             ),
-            EntityEvent::DeathBy(a) => self.on_death_by(cx, v, *a, timing)?,
+            EntityEvent::DeathBy(a) => self.on_death_by(cx, v, *a, timing),
             EntityEvent::OrderOk => {
                 if v.player() == Some(self.me) {
                     self.event_sound(cx, v, "order_ok", true, timing);
@@ -702,7 +689,7 @@ impl GameInterface {
             EntityEvent::Attack => self.event_sound(cx, v, "attack", true, timing),
             EntityEvent::Collision => self.event_sound(cx, v, "blocked", false, timing),
             EntityEvent::Flee => self.event_sound(cx, v, "flee", true, timing),
-            EntityEvent::Complete => self.on_complete(cx, v, timing)?,
+            EntityEvent::Complete => self.on_complete(cx, v, timing),
             EntityEvent::Completeness(s) => {
                 self.event_sound(cx, v, "production", false, timing);
                 self.event_sound(cx, v, &format!("proportion_{s}"), false, timing);
@@ -731,16 +718,16 @@ impl GameInterface {
                 if cx.cue(Category::Economy) {
                     self.event_sound(cx, v, "exhausted", false, timing);
                 }
-                let m = [self.title(cx, v)?, msg(mp::EXHAUSTED)].concat();
+                let m = [self.title(cx, v), msg(mp::EXHAUSTED)].concat();
                 cx.news(News::new(Category::Economy, m));
             }
             EntityEvent::Added => {
                 if cx.cue(Category::Production) {
                     self.event_sound(cx, v, "added", true, timing);
                 }
-                if self.number_must_be_said(v)? {
+                if self.number_must_be_said(v) {
                     let t = self.style_text(cx, v, "added_msg");
-                    let m = substitute_args(t, &self.ext_title(cx, v)?);
+                    let m = substitute_args(t, &self.ext_title(cx, v));
                     cx.news(News::new(Category::Production, m));
                 }
             }
@@ -749,7 +736,6 @@ impl GameInterface {
                 self.event_sound(cx, v, &name, false, timing);
             }
         }
-        Ok(())
     }
 
     fn say_reason(&self, cx: &mut Client, r: &Reason) {
@@ -758,27 +744,25 @@ impl GameInterface {
         cx.news(news.about(Subject::Refusal(r.clone())));
     }
 
-    fn number_must_be_said(&self, v: &EntityView) -> R<bool> {
-        v.model
-            .number
-            .map(must_be_said)
-            .ok_or_else(|| Oops::new("'<=' not supported between 'NoneType' and 'int'"))
+    /// Whether the arrival of a unit with this number is worth telling.
+    /// One of no player's has no number, and is not told.
+    fn number_must_be_said(&self, v: &EntityView) -> bool {
+        v.model.number.is_some_and(must_be_said)
     }
 
-    fn on_complete(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) -> R {
+    fn on_complete(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
         if v.player() != Some(self.me) {
-            return Ok(());
+            return;
         }
         if cx.cue(Category::Production) {
             self.event_sound(cx, v, "complete", true, timing);
         }
-        if self.number_must_be_said(v)? {
+        if self.number_must_be_said(v) {
             let t = self.style_text(cx, v, "complete_msg");
-            let m = substitute_args(t, &self.title(cx, v)?);
+            let m = substitute_args(t, &self.title(cx, v));
             cx.news(News::new(Category::Production, m));
         }
         self.send_menu_alerts_if_needed(cx);
-        Ok(())
     }
 
     fn on_wounded(
@@ -834,7 +818,7 @@ impl GameInterface {
         v: &EntityView,
         attacker_id: EntityId,
         timing: Timing,
-    ) -> R {
+    ) {
         let attacker = self.dobjets.get(&attacker_id).map(|a| a.model.clone());
         let attacker_player = attacker.as_ref().and_then(|a| a.player);
         if v.player() == Some(self.me) {
@@ -845,9 +829,10 @@ impl GameInterface {
             let t = self.short_title(cx, v);
             self.neutralized_units.push((t, v.place()));
         }
-        let owner = v
-            .player()
-            .ok_or_else(|| Oops::new("'NoneType' object has no attribute 'units'"))?;
+        // A fight is lost or won only by players.
+        let Some(owner) = v.player() else {
+            return;
+        };
         let friends = self.view().comrades(owner, v.place(), v.id());
         let friend_soldiers = friends.soldiers > 0;
         if !friend_soldiers && v.model.is_a_threat || friends.units == 0 {
@@ -866,30 +851,26 @@ impl GameInterface {
                 self.on_win_fight(cx, &av, timing);
             }
         }
-        Ok(())
     }
 
     // animation
 
     /// Plays the noise, footsteps and health of an object near the
     /// listener.
-    pub(crate) fn animate(&mut self, cx: &mut Client, id: EntityId) -> R {
+    pub(crate) fn animate(&mut self, cx: &mut Client, id: EntityId) {
         let Some(v) = self.dobjets.get_mut(&id) else {
-            return Ok(());
+            return;
         };
         let mut anim = std::mem::take(&mut v.anim);
         let v = &self.dobjets[&id];
-        let r = if self.is_local(cx, v) {
+        if self.is_local(cx, v) {
             self.footstep(cx, v, &mut anim);
             self.update_noise(cx, v, &mut anim);
-            self.render_hp(cx, v, &mut anim)
-        } else {
-            Ok(())
-        };
+            self.render_hp(cx, v, &mut anim);
+        }
         if let Some(v) = self.dobjets.get_mut(&id) {
             v.anim = anim;
         }
-        r
     }
 
     fn footstep_interval(&self, v: &EntityView) -> f64 {
@@ -1054,20 +1035,21 @@ impl GameInterface {
         }
     }
 
-    fn render_hp(&self, cx: &Client, v: &EntityView, anim: &mut AnimState) -> R {
+    /// Plays the proportion of hit points left when it changes, and the
+    /// sound of healing. A creature without hit points to lose has no
+    /// proportion to tell.
+    fn render_hp(&self, cx: &Client, v: &EntityView, anim: &mut AnimState) {
         if !v.is_creature() || v.hp() < 0 {
-            return Ok(());
+            return;
         }
         let hp = v.hp();
         if Some(hp) == anim.previous_hp {
-            return Ok(());
+            return;
         }
-        if let Some(previous) = anim.previous_hp {
-            let hp_max = v.hp_max();
-            if hp_max == 0 {
-                anim.previous_hp = Some(hp);
-                return Err(Oops::new("division by zero"));
-            }
+        let hp_max = v.hp_max();
+        if let Some(previous) = anim.previous_hp
+            && hp_max != 0
+        {
             let noise = |h: i64| (h as f64 * 10.0 / hp_max as f64).trunc() as i64;
             if hp < previous || noise(hp) != noise(previous) {
                 self.launch_event_style(cx, v, &format!("proportion_{}", noise(hp)), false, 0);
@@ -1077,7 +1059,6 @@ impl GameInterface {
             }
         }
         anim.previous_hp = Some(hp);
-        Ok(())
     }
 }
 
@@ -1169,7 +1150,7 @@ mod tests {
         // The computer's town hall is there, unseen: the order has no
         // target title.
         assert!(g.game.view().known(townhall).is_none());
-        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        let m = g.game.orders_txt(&h.client, &v);
         assert_eq!(said(&mut h, &m), ", go to ,");
     }
 
@@ -1205,7 +1186,7 @@ mod tests {
         remembered.id = EntityId(999_999);
         let remembered = KnownTarget::Remembered(Box::new(remembered));
         let mut v = peasant_aiming_at(&mut g, remembered);
-        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        let m = g.game.orders_txt(&h.client, &v);
         assert_eq!(
             said(&mut h, &m),
             ", go to farm at building 1 in the fog of war , ,"
@@ -1214,11 +1195,11 @@ mod tests {
         // the site, or nothing for a site the player knows nothing of.
         let order = &mut v.model.own.as_mut().unwrap().orders[0];
         order.keyword = Keyword::BuildPhaseTwo;
-        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        let m = g.game.orders_txt(&h.client, &v);
         assert_eq!(said(&mut h, &m), ", build farm ,");
         let order = &mut v.model.own.as_mut().unwrap().orders[0];
         order.target = Some(KnownTarget::Entity(EntityId(999_999)));
-        let m = g.game.orders_txt(&h.client, &v).unwrap();
+        let m = g.game.orders_txt(&h.client, &v);
         assert_eq!(said(&mut h, &m), ", build ,");
     }
 

@@ -904,9 +904,7 @@ impl GameInterface {
             Timing::OnTime
         };
         let view = EntityView::new(entity, &cx.rng);
-        if let Err(Oops { message: e, .. }) = self.notify(cx, &view, event, timing) {
-            cx.log.error(format!("problem during srv_event: {e}"));
-        }
+        self.notify(cx, &view, event, timing);
     }
 
     /// The game is over for the player: the sounds stop, and of the news
@@ -961,9 +959,7 @@ impl GameInterface {
         }
         let ids: Vec<EntityId> = self.dobjets.keys().copied().collect();
         for id in ids {
-            if let Err(Oops { message: e, .. }) = self.animate(cx, id) {
-                cx.log.error(format!("couldn't animate object: {e}"));
-            }
+            self.animate(cx, id);
         }
         self.animate_terrain(cx);
         self.previous_animation = cx.clock.now();

@@ -76,7 +76,7 @@ impl GameInterface {
                 m.extend(msg(mp::SECONDS));
             }
             m.extend(msg(mp::AT));
-            m.extend(self.title(cx, v)?);
+            m.extend(self.title(cx, v));
             productions.push(((o.is_deferred, left), m));
         }
         productions.sort_by_key(|(k, _)| *k);

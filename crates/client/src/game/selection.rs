@@ -83,7 +83,7 @@ impl GameInterface {
         } else if v.model.is_exit() {
             p = 4.0;
         }
-        Ok((p, self.title(cx, v)?.len(), self.distance_to(v)))
+        Ok((p, self.title(cx, v).len(), self.distance_to(v)))
     }
 
     fn object_choices(&self, cx: &Client, inc: i64, types: &[String]) -> R<Vec<EntityId>> {
@@ -117,7 +117,7 @@ impl GameInterface {
             .dobjets
             .get(&t)
             .ok_or_else(|| Oops::missing("target"))?;
-        let mut d = self.positional_description(cx, v)?;
+        let mut d = self.positional_description(cx, v);
         if self.an_order_requiring_a_target_is_selected()
             && let Some(o) = &self.order
         {
@@ -334,8 +334,8 @@ impl GameInterface {
         if !silent {
             let v = &self.dobjets[&unit];
             let m = [
-                self.ext_title(cx, v)?,
-                self.orders_txt(cx, v)?,
+                self.ext_title(cx, v),
+                self.orders_txt(cx, v),
                 msg(mp::AWAITING_YOUR_ORDERS),
             ]
             .concat();
@@ -408,8 +408,8 @@ impl GameInterface {
             let m = [
                 prefix.clone(),
                 msg(mp::YOU_CONTROL),
-                self.ext_title(cx, v)?,
-                self.orders_txt(cx, v)?,
+                self.ext_title(cx, v),
+                self.orders_txt(cx, v),
             ]
             .concat();
             cx.voice.item(&m);
@@ -418,7 +418,7 @@ impl GameInterface {
             let mut titles = Vec::new();
             for x in &self.group {
                 if let Some(v) = self.dobjets.get(x) {
-                    orders.push(self.orders_txt(cx, v)?);
+                    orders.push(self.orders_txt(cx, v));
                     titles.push(self.short_title(cx, v));
                 }
             }
@@ -786,7 +786,7 @@ impl GameInterface {
                     .dobjets
                     .get(&t)
                     .ok_or_else(|| Oops::missing("target"))?;
-                self.title(cx, v)
+                Ok(self.title(cx, v))
             }
             UiTarget::Zoom => {
                 let (Some(z), Some(p)) = (&self.zoom, self.place) else {
