@@ -28,7 +28,7 @@ fn peasant_orders(g: &soundrts::game::GameInterface) -> String {
         .filter_map(|&u| g.host().world().entity(u))
         .filter(|e| &*e.type_name == "peasant")
         .map(|e| {
-            e.orders
+            e.orders()
                 .iter()
                 .map(|o| o.keyword().as_str())
                 .collect::<Vec<_>>()

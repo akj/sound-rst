@@ -99,7 +99,11 @@ fn take(w: &mut World, u: EntityId, order: &str) {
 }
 
 fn keywords(w: &World, u: EntityId) -> Vec<&'static str> {
-    w.e(u).orders.iter().map(|o| o.keyword().as_str()).collect()
+    w.e(u)
+        .orders()
+        .iter()
+        .map(|o| o.keyword().as_str())
+        .collect()
 }
 
 /// `is_perceiving_method` of the original tests.
@@ -171,10 +175,10 @@ mod test_worldunit {
         w.counterattack(unit, place).unwrap();
         let e = w.e(unit);
         assert_eq!(keywords(&w, unit), ["go", "go"]);
-        assert_eq!(e.orders[0].args(&w), [w.square(place).id.to_string()]);
+        assert_eq!(e.orders()[0].args(&w), [w.square(place).id.to_string()]);
         let here = w.square(place_of(&w, unit)).id;
         assert_eq!(
-            e.orders[1].args(&w),
+            e.orders()[1].args(&w),
             [format!("zoom-{here}-{}-{}", e.x, e.y)]
         );
     }
@@ -185,16 +189,18 @@ mod test_worldunit {
         // No path leads from b1 to b2 through one square.
         let place = sq(&w, "b2");
         w.counterattack(unit, place).unwrap();
-        assert!(w.e(unit).orders.is_empty());
+        assert!(w.e(unit).orders().is_empty());
     }
 
     #[test]
     fn test_counterattack_if_defensive_mode() {
         let (mut w, unit) = counterattack_setup();
-        w.em(unit).ai_mode = Some(crate::entity::AiMode::Defensive);
+        w.cm(unit)
+            .unwrap()
+            .set_stance(crate::entity::AiMode::Defensive);
         let place = sq(&w, "a1");
         w.counterattack(unit, place).unwrap();
-        assert!(w.e(unit).orders.is_empty());
+        assert!(w.e(unit).orders().is_empty());
     }
 
     const DAMAGE_VS_RULES: &str = "
@@ -330,7 +336,7 @@ mod test_worldplayerbase {
         w.plm(p).counterattack_places = vec![sq(&w, "c4")];
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
-        assert!(w.e(unit).orders.is_empty());
+        assert!(w.e(unit).orders().is_empty());
     }
 
     #[test]
@@ -339,7 +345,7 @@ mod test_worldplayerbase {
         w.plm(p).counterattack_places = vec![sq(&w, "a1"), place_of(&w, unit)];
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
-        assert!(w.e(unit).orders.is_empty());
+        assert!(w.e(unit).orders().is_empty());
     }
 }
 
@@ -459,7 +465,7 @@ starting_resources 10 10
     fn run_until_idle(w: &mut World, units: &[EntityId], n: usize) {
         for _ in 0..n {
             w.update();
-            if units.iter().all(|&u| w.e(u).orders.is_empty()) {
+            if units.iter().all(|&u| w.e(u).orders().is_empty()) {
                 break;
             }
         }
@@ -482,7 +488,7 @@ starting_resources 10 10
         let (mut w, cp) = tiny_set_up();
         let th = find(&w, cp, "townhall", 0).unwrap();
         take(&mut w, th, "train peasant");
-        assert!(!w.e(th).orders.is_empty());
+        assert!(!w.e(th).orders().is_empty());
     }
 
     #[test]
@@ -493,12 +499,12 @@ starting_resources 10 10
         let th = find(&w, cp, "townhall", 0).unwrap();
         assert!(!in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
-        assert!(w.e(th).orders.is_empty());
+        assert!(w.e(th).orders().is_empty());
         set_rule(&mut w, "peasant", |s| s.count_limit = 2);
         w.update();
         assert!(in_menu(&w, th, Keyword::Train, "train peasant"));
         take(&mut w, th, "train peasant");
-        assert!(!w.e(th).orders.is_empty());
+        assert!(!w.e(th).orders().is_empty());
     }
 
     #[test]
@@ -514,22 +520,22 @@ starting_resources 10 10
         let p1 = find(&w, cp, "peasant", 0).unwrap();
         let p2 = find(&w, cp, "peasant", 1).unwrap();
         for p in [p1, p2] {
-            assert!(w.e(p).orders.is_empty());
+            assert!(w.e(p).orders().is_empty());
         }
         assert!(in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
-            assert!(!w.e(p).orders.is_empty());
+            assert!(!w.e(p).orders().is_empty());
         }
         run_until_idle(&mut w, &[p1, p2], 50);
         for p in [p1, p2] {
-            assert!(w.e(p).orders.is_empty());
+            assert!(w.e(p).orders().is_empty());
         }
         assert_eq!(nb(&w, cp, "barracks"), 1);
         assert!(!in_menu(&w, p1, Keyword::Build, "build barracks"));
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
-            assert!(w.e(p).orders.is_empty());
+            assert!(w.e(p).orders().is_empty());
         }
         assert_eq!(nb(&w, cp, "barracks"), 1);
         set_rule(&mut w, "barracks", |s| s.count_limit = 2);
@@ -537,13 +543,13 @@ starting_resources 10 10
         assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         for p in [p1, p2] {
             take(&mut w, p, "build barracks a1");
-            assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
-            assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("barracks"));
+            assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Build);
+            assert_eq!(w.e(p).orders()[0].type_name(&w.rules), Some("barracks"));
         }
         assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 1);
         run_until_idle(&mut w, &[p1, p2], 50);
         for p in [p1, p2] {
-            assert!(w.e(p).orders.is_empty());
+            assert!(w.e(p).orders().is_empty());
         }
         assert_eq!(w.future_count(cp, w.rules.type_id("barracks").unwrap()), 2);
         assert_eq!(nb(&w, cp, "barracks"), 2);
@@ -565,15 +571,15 @@ starting_resources 10 10
         let p1 = find(&w, cp, "peasant", 0).unwrap();
         let p2 = find(&w, cp, "peasant", 1).unwrap();
         for p in [p1, p2] {
-            assert!(w.e(p).orders.is_empty());
+            assert!(w.e(p).orders().is_empty());
             take(&mut w, p, "build barracks a1");
             let r = request(&w, "build barracks a1");
             w.take_order(p, r, false, false, None).unwrap();
-            assert_eq!(w.e(p).orders.len(), 2);
+            assert_eq!(w.e(p).orders().len(), 2);
         }
         run_until_idle(&mut w, &[p1, p2], 1000);
-        assert!(w.e(p1).orders.is_empty());
-        assert!(w.e(p2).orders.is_empty());
+        assert!(w.e(p1).orders().is_empty());
+        assert!(w.e(p2).orders().is_empty());
         assert_eq!(nb(&w, cp, "barracks"), 1);
     }
 
@@ -590,8 +596,8 @@ starting_resources 10 10
         let a2 = find(&w, cp, "archer", 1).unwrap();
         take(&mut w, a1, "upgrade_to darkarcher");
         take(&mut w, a2, "upgrade_to darkarcher");
-        assert_eq!(w.e(a1).orders[0].keyword(), Keyword::UpgradeTo);
-        assert!(w.e(a2).orders.is_empty());
+        assert_eq!(w.e(a1).orders()[0].keyword(), Keyword::UpgradeTo);
+        assert!(w.e(a2).orders().is_empty());
     }
 
     #[test]
@@ -849,8 +855,8 @@ starting_resources 10 10
         w.update_buckets();
         w.update_perception(s.cp).unwrap();
         assert!(!w.ai_get(s.cp, 1, "blacksmith").unwrap()); // requires a townhall
-        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Build);
-        assert_eq!(w.e(p).orders[0].type_name(&w.rules), Some("blacksmith"));
+        assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Build);
+        assert_eq!(w.e(p).orders()[0].type_name(&w.rules), Some("blacksmith"));
     }
 
     #[test]
@@ -867,9 +873,9 @@ starting_resources 10 10
         let mut s = default_set_up();
         let p = find(&s.w, s.cp, "peasant", 0).unwrap();
         take(&mut s.w, p, "go 1");
-        assert!(!s.w.e(p).orders.is_empty());
+        assert!(!s.w.e(p).orders().is_empty());
         take(&mut s.w, p, "mode_offensive");
-        assert!(!s.w.e(p).orders.is_empty());
+        assert!(!s.w.e(p).orders().is_empty());
     }
 
     #[test]
@@ -1152,14 +1158,14 @@ starting_resources 10 10
         let name = s.w.square(place_of(&s.w, p)).name.clone();
         add(&mut s.w, s.cp2, &format!("{name} footman"));
         s.w.update();
-        assert_eq!(s.w.e(p).orders[0].keyword(), Keyword::Go);
+        assert_eq!(s.w.e(p).orders()[0].keyword(), Keyword::Go);
     }
 
     #[test]
     fn computer_test_offensive_smart_unit_must_sometimes_attack() {
         let (mut s, f) = footman_beside_peasant("jl1", "easy");
         s.w.update();
-        assert!(s.w.e(f).orders.is_empty());
+        assert!(s.w.e(f).orders().is_empty());
         assert!(s.w.e(f).is_attacking());
     }
 
@@ -1167,14 +1173,14 @@ starting_resources 10 10
     fn computer_test_offensive_smart_unit_must_sometimes_flee() {
         let (mut s, f) = footman_beside_peasant("jl1_extended", "easy");
         s.w.update();
-        assert_eq!(s.w.e(f).orders[0].keyword(), Keyword::Go);
+        assert_eq!(s.w.e(f).orders()[0].keyword(), Keyword::Go);
     }
 
     #[test]
     fn computer_test_offensive_not_smart_unit_must_always_attack() {
         let (mut s, f) = footman_beside_peasant("jl1_extended", "timers");
         s.w.update();
-        assert!(s.w.e(f).orders.is_empty());
+        assert!(s.w.e(f).orders().is_empty());
         assert!(s.w.e(f).is_attacking());
     }
 
@@ -1208,11 +1214,11 @@ starting_resources 10 10
         assert!(w.e(f).is_attacking());
         for _ in 0..100 {
             w.update();
-            if w.e(f).hp < w.e(f).stats.hp_max {
+            if w.c(f).unwrap().hp < w.e(f).stats.hp_max {
                 break;
             }
         }
-        assert!(w.e(f).hp < w.e(f).stats.hp_max);
+        assert!(w.c(f).unwrap().hp < w.e(f).stats.hp_max);
     }
 
     #[test]
@@ -1229,15 +1235,15 @@ starting_resources 10 10
         assert_eq!(nb(w, cp, "barracks"), 1);
         w.plm(cp).resources = vec![100_000, 100_000];
         take(w, th, "upgrade_to keep");
-        assert!(!w.e(th).orders.is_empty());
-        assert!(!w.e(th).orders[0].is_impossible());
+        assert!(!w.e(th).orders().is_empty());
+        assert!(!w.e(th).orders()[0].is_impossible());
         for _ in 0..10000 {
             w.creature_update(th).unwrap();
-            if w.e(th).orders.is_empty() {
+            if w.e(th).orders().is_empty() {
                 break;
             }
         }
-        assert!(w.e(th).orders.is_empty());
+        assert!(w.e(th).orders().is_empty());
         assert!(w.e(th).place.is_none());
         assert!(
             !w.player(cp).units.contains(&th),
@@ -1262,12 +1268,12 @@ starting_resources 10 10
         assert!(!w.player_is_an_enemy(cp, cp2));
         assert!(is_perceiving(w, cp, p2));
         w.em(th).stats.heal_level = 1;
-        w.em(p2).hp = 0;
+        w.cm(p2).unwrap().hp = 0;
         move_to(w, p2, place_of(w, p));
         w.update();
-        assert!(w.e(p2).hp > 0);
-        assert!(w.e(p).is_cloaked);
-        assert!(w.e(p2).is_cloaked);
+        assert!(w.c(p2).unwrap().hp > 0);
+        assert!(w.e(p).is_cloaked());
+        assert!(w.e(p2).is_cloaked());
         assert!(w.lang(cp, "no_enemy_left", &[]).unwrap());
     }
 
@@ -1282,14 +1288,14 @@ starting_resources 10 10
         assert!(w.is_an_enemy(p, &Target::Entity(p2)));
         assert!(w.player_is_an_enemy(cp, cp2));
         assert!(!is_perceiving(w, cp, p2));
-        w.em(p2).hp = 0;
+        w.cm(p2).unwrap().hp = 0;
         move_to(w, p2, place_of(w, p));
         w.creature_update(th).unwrap();
         w.entity_slow_update(th).unwrap();
-        assert_eq!(w.e(p2).hp, 0);
+        assert_eq!(w.c(p2).unwrap().hp, 0);
         w.update();
-        assert!(w.e(p).is_cloaked);
-        assert!(!w.e(p2).is_cloaked);
+        assert!(w.e(p).is_cloaked());
+        assert!(!w.e(p2).is_cloaked());
         assert!(!w.lang(cp, "no_enemy_left", &[]).unwrap());
     }
 
@@ -1334,18 +1340,18 @@ starting_resources 10 10
         let f = find(w, cp, attacker, 0).unwrap();
         let r = request(w, &format!("go {th}"));
         w.take_order(f, r, true, true, None).unwrap();
-        assert_eq!(w.e(th).hp, w.e(th).stats.hp_max);
+        assert_eq!(w.c(th).unwrap().hp, w.e(th).stats.hp_max);
         for _ in 0..100 {
             if world_update {
                 w.update();
             } else {
                 w.creature_update(f).unwrap();
             }
-            if w.e(th).hp != w.e(th).stats.hp_max {
+            if w.c(th).unwrap().hp != w.e(th).stats.hp_max {
                 break;
             }
         }
-        assert_ne!(w.e(th).hp, w.e(th).stats.hp_max);
+        assert_ne!(w.c(th).unwrap().hp, w.e(th).stats.hp_max);
     }
 
     #[test]
@@ -1424,10 +1430,7 @@ starting_resources 10 10
         w.die(f, None).unwrap();
         let last = *w.square(pl).objects.last().unwrap();
         assert!(w.e(last).is_corpse());
-        assert_eq!(
-            &*w.e(last).corpse_unit.as_ref().unwrap().type_name,
-            "peasant"
-        );
+        assert_eq!(&*w.e(last).corpse().unwrap().unit.type_name, "peasant");
         assert_ne!(w.e(p).place, Some(Place::Square(pl)));
     }
 
@@ -1493,7 +1496,7 @@ mod test_autorepair {
         let p = create(&mut w, "peasant", player, place);
         let o = create(&mut w, other, player, place);
         if wounded {
-            w.em(o).hp /= 2;
+            w.cm(o).unwrap().hp /= 2;
         }
         w.plm(player).resources = resources.to_vec();
         (w, p, o)
@@ -1503,36 +1506,36 @@ mod test_autorepair {
     fn test_decide_repair() {
         let (mut w, p, _) = setup("a2", [1000, 1000], "townhall", true);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
+        assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Repair);
     }
 
     #[test]
     fn test_decide_no_repair_if_no_resource() {
         let (mut w, p, _) = setup("a2", [0, 0], "townhall", true);
         w.decide(p).unwrap();
-        assert!(w.e(p).orders.is_empty());
+        assert!(w.e(p).orders().is_empty());
     }
 
     #[test]
     fn test_decide_gather_if_no_repair() {
         let (mut w, p, th) = setup("a1", [1000, 1000], "townhall", false);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Gather);
-        w.em(th).hp /= 2;
+        assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Gather);
+        w.cm(th).unwrap().hp /= 2;
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
+        assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Repair);
     }
 
     #[test]
     fn test_repair_unit() {
         let (mut w, p, c) = setup("a2", [10000, 10000], "catapult", true);
         w.decide(p).unwrap();
-        assert_eq!(w.e(p).orders[0].keyword(), Keyword::Repair);
-        assert!(w.e(p).orders[0].target().is_some());
+        assert_eq!(w.e(p).orders()[0].keyword(), Keyword::Repair);
+        assert!(w.e(p).orders()[0].target().is_some());
         for _ in 0..75 {
             w.creature_update(p).unwrap();
         }
-        assert_eq!(w.e(c).hp, w.e(c).stats.hp_max);
+        assert_eq!(w.c(c).unwrap().hp, w.e(c).stats.hp_max);
     }
 
     #[test]
@@ -1589,7 +1592,7 @@ mod test_cyclic_map {
         w.start_moving_to(u, Some(&Target::Square(b1)), false)
             .unwrap();
         let speed = w.e(u).stats.speed;
-        w.em(u).actual_speed = speed;
+        w.cm(u).unwrap().actual_speed = speed;
         w.action_update(u).unwrap();
         assert_eq!(w.e(u).o, 90);
         for _ in 0..12 {
@@ -1674,11 +1677,11 @@ player 10 10 a1 guardtower b1 peasant
         let (tower, unit) = (units[0], units[1]);
         w.take_default_order(unit, TargetRef::Entity(tower), true, false, None)
             .unwrap();
-        assert!(!w.e(unit).orders.is_empty());
-        assert!(!w.e(tower).orders.is_empty());
+        assert!(!w.e(unit).orders().is_empty());
+        assert!(!w.e(tower).orders().is_empty());
         w.update();
-        assert!(!w.e(unit).orders[0].is_complete());
-        assert!(w.e(tower).orders[0].is_complete());
+        assert!(!w.e(unit).orders()[0].is_complete());
+        assert!(w.e(tower).orders()[0].is_complete());
         for _ in 0..100 {
             w.update();
             if w.e(unit).is_inside() {
@@ -1762,9 +1765,9 @@ mod bugs_of_the_original {
         // 1 heal level heals 1000 / 25 = 40 hit points each turn.
         w.em(th).stats.heal_level = 1;
         let max = w.e(p).stats.hp_max;
-        w.em(p).hp = max - 200;
+        w.cm(p).unwrap().hp = max - 200;
         w.creature_update(th).unwrap();
-        assert_eq!(w.e(p).hp, max - 160);
+        assert_eq!(w.c(p).unwrap().hp, max - 160);
     }
 
     const TWO_SQUARES: &str = "
@@ -1800,7 +1803,7 @@ starting_squares a1 b1
         let (t, s) = (w.e(target), w.e(beside));
         let d2 = (t.x - s.x).pow(2) + (t.y - s.y).pow(2);
         assert!(d2 <= PRECISION * PRECISION, "within the splash radius");
-        w.em(target).hp = 1;
+        w.cm(target).unwrap().hp = 1;
         w.set_action_target(dragon, Some(Target::Entity(target)));
         let max = w.e(beside).stats.hp_max;
         for _ in 0..20 {
@@ -1811,7 +1814,7 @@ starting_squares a1 b1
         }
         assert!(w.e(target).place.is_none(), "the target is dead");
         // The dragon's damage of 4, less the footman's armor of 0.5.
-        assert_eq!(w.e(beside).hp, max - 3500);
+        assert_eq!(w.c(beside).unwrap().hp, max - 3500);
     }
 
     const THREE_SQUARES: &str = "
@@ -1878,7 +1881,7 @@ starting_resources 100 100
             .objects
             .iter()
             .copied()
-            .filter(|&o| w.e(o).class == crate::rules::EntityClass::Meadow)
+            .filter(|&o| w.e(o).class() == crate::rules::EntityClass::Meadow)
             .collect();
         let peasants = [0, 1].map(|i| find(&w, p, "peasant", i).unwrap());
         for (&peasant, &meadow) in peasants.iter().zip(&meadows) {
@@ -1887,7 +1890,7 @@ starting_resources 100 100
         assert_eq!(w.player(p).budget.len(), 2);
         assert_ne!(w.player(p).resources, start);
         for peasant in peasants {
-            w.em(peasant).orders.clear();
+            w.cm(peasant).unwrap().orders.clear();
         }
         w.player_slow_update(p).unwrap();
         assert!(w.player(p).budget.is_empty());
@@ -1902,7 +1905,7 @@ starting_resources 100 100
         let archer = create(&mut w, "archer", b, b1);
         assert!(!w.e(archer).is_melee());
         w.em(archer).stats.harm_level = 1;
-        w.em(archer).time_limit = Some(1_000_000);
+        w.cm(archer).unwrap().time_limit = Some(1_000_000);
         assert!(is_perceiving(&mut w, a, archer));
         w.update_enemy_menace_and_presence_and_corpses(a);
         let pl = w.player(a);

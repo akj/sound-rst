@@ -925,7 +925,11 @@ impl World {
             if self.can_receive(s, AirGround::Ground, None) {
                 let d = self.create_deposit(tid, s, &n).map_err(|e| MapError(e.0))?;
                 let m = self.create_meadow(s, None);
-                self.em(d).building_land = Some(m);
+                // `d` is the deposit created above: the meadow is created
+                // after it, to have the next id.
+                if let Some(deposit) = self.em(d).deposit_mut() {
+                    deposit.building_land = Some(m);
+                }
                 self.delete(m);
             }
         }
@@ -1226,7 +1230,7 @@ impl World {
         for s in &self.squares {
             for &o in &s.objects {
                 let e = self.e(o);
-                if e.type_id
+                if e.type_id()
                     .and_then(|t| self.rules.ty(t).resource_type)
                     .is_some()
                 {

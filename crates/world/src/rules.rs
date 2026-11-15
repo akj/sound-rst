@@ -823,7 +823,11 @@ impl EntityClass {
                 s.collision = 0;
             }
             EntityClass::Corpse | EntityClass::Exit => s.collision = 0,
-            _ => {
+            EntityClass::Worker
+            | EntityClass::Soldier
+            | EntityClass::Effect
+            | EntityClass::Building
+            | EntityClass::BuildingSite => {
                 // Creature
                 s.is_buildable_anywhere = 1;
                 s.transport_volume = 1;
@@ -857,7 +861,10 @@ impl EntityClass {
                             s.provides_survival = 1;
                         }
                     }
-                    _ => {}
+                    EntityClass::Deposit
+                    | EntityClass::Meadow
+                    | EntityClass::Corpse
+                    | EntityClass::Exit => {}
                 }
             }
         }

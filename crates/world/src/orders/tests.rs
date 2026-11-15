@@ -49,7 +49,7 @@ fn find(w: &World, p: PlayerId, type_name: &str) -> EntityId {
 
 /// The orders of a unit as the words they store: keyword, type, target.
 fn orders(w: &World, u: EntityId) -> Vec<Vec<String>> {
-    w.e(u).orders.iter().map(|o| o.words(w)).collect()
+    w.e(u).orders().iter().map(|o| o.words(w)).collect()
 }
 
 fn words(w: &[&str]) -> Vec<String> {
@@ -371,7 +371,10 @@ fn a_unit_trained_goes_to_the_rallying_point() {
     let rally = Request::plain(Keyword::RallyingPoint).unwrap();
     w.take_order(townhall, rally.at(TargetRef::Square(b2)), true, false, None)
         .unwrap();
-    assert_eq!(w.e(townhall).rallying_point, Some(TargetRef::Square(b2)));
+    assert_eq!(
+        w.c(townhall).unwrap().rallying_point,
+        Some(TargetRef::Square(b2))
+    );
     let before = w.pl(me).units.clone();
     w.take_order(townhall, Request::train("peasant"), false, false, None)
         .unwrap();
@@ -390,8 +393,8 @@ fn an_idle_worker_repairs_a_damaged_building_near_it() {
     let (mut w, me, _) = game();
     let townhall = find(&w, me, "townhall");
     let peasant = find(&w, me, "peasant");
-    w.em(peasant).auto_repair = Some(true);
-    w.em(townhall).hp -= 10;
+    w.cm(peasant).unwrap().work_mut().unwrap().auto_repair = true;
+    w.cm(townhall).unwrap().hp -= 10;
     w.decide(peasant).unwrap();
     assert_eq!(
         orders(&w, peasant),
@@ -459,7 +462,8 @@ fn update_until(w: &mut World, done: impl Fn(&World) -> bool) {
 /// Damage and speed, in thousandths, and the damage upgrade level.
 fn bonuses(w: &World, u: EntityId) -> (i64, i64, i64) {
     let e = w.e(u);
-    (e.stats.damage, e.stats.speed, e.damage_level)
+    let damage_level = e.creature().unwrap().damage_level;
+    (e.stats.damage, e.stats.speed, damage_level)
 }
 
 #[test]
@@ -491,7 +495,7 @@ fn a_converted_unit_has_its_new_owners_upgrades_and_none_of_its_old_owners() {
     assert_eq!(bonuses(&w, knight), (12_000, 5_000, 2));
     let priest = find(&w, a, "priest");
     order(&mut w, a, &[priest], &format!("use a_conversion {knight}"));
-    update_until(&mut w, |w| w.e(knight).player == Some(a));
+    update_until(&mut w, |w| w.e(knight).player() == Some(a));
     assert_eq!(bonuses(&w, knight), (12_000, 2_500, 2));
 }
 
@@ -507,7 +511,7 @@ fn upgrade_an_occupied_tower(extra: &str) -> (World, PlayerId, Vec<EntityId>, En
     // A building with an order cannot be upgraded: the tower has loaded
     // both archers.
     update_until(&mut w, |w| {
-        w.e(tower).inside.as_ref().unwrap().len() == 2 && w.e(tower).orders.is_empty()
+        w.e(tower).inside().unwrap().len() == 2 && w.e(tower).orders().is_empty()
     });
     order(&mut w, a, &[tower], "upgrade_to guardtower");
     update_until(&mut w, |w| !all(w, a, "guardtower").is_empty());
@@ -518,9 +522,9 @@ fn upgrade_an_occupied_tower(extra: &str) -> (World, PlayerId, Vec<EntityId>, En
 #[test]
 fn units_inside_a_building_upgraded_are_inside_the_new_building() {
     let (w, a, archers, guardtower) = upgrade_an_occupied_tower("");
-    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..]));
+    assert_eq!(w.e(guardtower).inside(), Some(&archers[..]));
     for &u in &archers {
-        assert_eq!(w.e(u).player, Some(a));
+        assert_eq!(w.e(u).player(), Some(a));
         assert_eq!(w.e(u).place, Some(Place::Inside(guardtower)));
     }
     assert_eq!(all(&w, a, "archer"), archers);
@@ -531,8 +535,8 @@ fn units_that_no_longer_fit_in_a_building_upgraded_are_beside_it() {
     // A mod whose guard tower holds one archer.
     let (w, a, archers, guardtower) =
         upgrade_an_occupied_tower("def guardtower\ntransport_capacity 1\n");
-    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..1]));
-    assert_eq!(w.e(archers[1]).player, Some(a));
+    assert_eq!(w.e(guardtower).inside(), Some(&archers[..1]));
+    assert_eq!(w.e(archers[1]).player(), Some(a));
     assert_eq!(w.e(archers[1]).place, w.e(guardtower).place);
 }
 
@@ -547,9 +551,9 @@ fn load_all_never_loads_the_transport_into_itself() {
     let a1 = w.square_by_name("a1").unwrap();
     let here = format!("load_all {}", w.square(a1).id);
     order(&mut w, a, &[transport], &here);
-    update_until(&mut w, |w| w.e(transport).orders.is_empty());
+    update_until(&mut w, |w| w.e(transport).orders().is_empty());
     assert_eq!(w.e(transport).place, Some(Place::Square(a1)));
-    assert_eq!(w.e(transport).inside.as_deref(), Some(&[footman][..]));
+    assert_eq!(w.e(transport).inside(), Some(&[footman][..]));
 }
 
 #[test]
@@ -579,7 +583,7 @@ fn units_upgraded_take_the_place_of_the_old_ones_where_the_player_named_them() {
     let groups = w.turn_message(a, Vec::new()).state.groups;
     assert_eq!(groups, [("6".to_owned(), vec![first, second])]);
     assert_eq!(w.pl(a).group, Some(vec![first, second]));
-    assert_eq!(w.e(first).group.as_deref(), Some("6"));
+    assert_eq!(w.c(first).unwrap().group.as_deref(), Some("6"));
 }
 
 #[test]
@@ -600,7 +604,10 @@ fn a_building_upgraded_keeps_its_rallying_point() {
         w.update();
     }
     let castle = find(&w, a, "castle");
-    assert_eq!(w.e(castle).rallying_point, Some(TargetRef::Square(b1)));
+    assert_eq!(
+        w.c(castle).unwrap().rallying_point,
+        Some(TargetRef::Square(b1))
+    );
     // A peasant trained in the castle goes there.
     order(&mut w, a, &[castle], "train peasant");
     update_until(&mut w, |w| !all(w, a, "peasant").is_empty());
@@ -622,23 +629,49 @@ fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
     let enemy_priest = find(&w, b, "priest");
     for u in [knight, enemy_priest] {
         let e = w.em(u);
-        e.hp = e.stats.hp_max;
-        e.mana = e.stats.mana_max;
+        let (hp_max, mana_max) = (e.stats.hp_max, e.stats.mana_max);
+        let c = e.creature_mut().unwrap();
+        c.hp = hp_max;
+        c.mana = mana_max;
     }
     let vitals = |w: &World, u| {
         let e = w.e(u);
-        (e.hp, e.stats.hp_max, e.mana, e.stats.mana_max)
+        let c = e.creature().unwrap();
+        (c.hp, e.stats.hp_max, c.mana, e.stats.mana_max)
     };
     assert_eq!(vitals(&w, knight), (55_000, 55_000, 0, 0));
     assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 250_000, 250_000));
     let priest = find(&w, a, "priest");
     for target in [knight, enemy_priest] {
-        w.em(priest).mana = w.e(priest).stats.mana_max;
+        w.cm(priest).unwrap().mana = w.e(priest).stats.mana_max;
         order(&mut w, a, &[priest], &format!("use a_conversion {target}"));
-        update_until(&mut w, |w| w.e(target).player == Some(a));
+        update_until(&mut w, |w| w.e(target).player() == Some(a));
     }
     assert_eq!(vitals(&w, knight), (45_000, 45_000, 0, 0));
     assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 200_000, 200_000));
+}
+
+#[test]
+fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
+    let extra = "def townhall\ncan_train peasant goldmine\ncan_upgrade_to keep goldmine\n\
+                 def peasant\ncan_build farm goldmine\n";
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 townhall barracks peasant");
+    w.update();
+    let townhall = find(&w, a, "townhall");
+    let peasant = find(&w, a, "peasant");
+    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t)).unwrap();
+    assert!(allowed(&w, townhall, Keyword::Train, "peasant"));
+    assert!(!allowed(&w, townhall, Keyword::Train, "goldmine"));
+    assert!(allowed(&w, townhall, Keyword::UpgradeTo, "keep"));
+    assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "goldmine"));
+    assert!(allowed(&w, peasant, Keyword::Build, "farm"));
+    assert!(!allowed(&w, peasant, Keyword::Build, "goldmine"));
+    let resources = w.pl(a).resources.clone();
+    order(&mut w, a, &[townhall], "train goldmine");
+    w.update();
+    assert!(w.e(townhall).orders().is_empty());
+    assert_eq!(w.pl(a).resources, resources);
 }
 
 /// The events of the entities `p` perceives, since the last call.
@@ -661,20 +694,20 @@ fn a_recall_with_no_room_for_its_units_is_impossible_says_why_once_and_costs_not
     w.queue_command(a, "cmd add_units b1 footman");
     w.update();
     let mage = find(&w, a, "mage");
-    w.em(mage).mana = 200_000;
+    w.cm(mage).unwrap().mana = 200_000;
     let b1 = w.square_by_name("b1").unwrap();
     let recall = format!("use a_recall {}", w.square(b1).id);
     order(&mut w, a, &[mage], &recall);
     entity_events(&mut w, a);
     update_until(&mut w, |w| {
-        w.e(mage).orders.first().is_some_and(Order::is_final)
+        w.e(mage).orders().first().is_some_and(Order::is_final)
     });
-    let o = &w.e(mage).orders[0];
+    let o = &w.e(mage).orders()[0];
     assert_eq!(o.progress(), Progress::Impossible);
-    assert_eq!(w.e(mage).distance_to_goal, crate::INF);
-    assert_eq!(w.e(mage).mana, 200_000);
+    assert_eq!(w.c(mage).unwrap().distance_to_goal, crate::INF);
+    assert_eq!(w.c(mage).unwrap().mana, 200_000);
     w.update();
-    assert!(w.e(mage).orders.is_empty());
+    assert!(w.e(mage).orders().is_empty());
     let events = entity_events(&mut w, a);
     let refused: Vec<_> = events
         .iter()
@@ -708,7 +741,7 @@ fn an_upgrade_that_finds_no_meadow_is_refunded_and_says_why() {
     ];
     assert_eq!(w.pl(a).resources, paid);
     entity_events(&mut w, a);
-    update_until(&mut w, |w| w.e(tower).orders.is_empty());
+    update_until(&mut w, |w| w.e(tower).orders().is_empty());
     let refused: Vec<_> = entity_events(&mut w, a)
         .into_iter()
         .filter(|e| matches!(e, EntityEvent::OrderImpossible(_)))
@@ -732,9 +765,9 @@ fn a_ship_trained_with_no_water_near_is_refunded_and_impossible() {
     order(&mut w, a, &[shipyard], "train boat");
     entity_events(&mut w, a);
     update_until(&mut w, |w| {
-        w.e(shipyard).orders.first().is_some_and(Order::is_final)
+        w.e(shipyard).orders().first().is_some_and(Order::is_final)
     });
-    assert_eq!(w.e(shipyard).orders[0].progress(), Progress::Impossible);
+    assert_eq!(w.e(shipyard).orders()[0].progress(), Progress::Impossible);
     assert_eq!((w.pl(a).resources.clone(), w.pl(a).used_food), before);
     let refused: Vec<_> = entity_events(&mut w, a)
         .into_iter()

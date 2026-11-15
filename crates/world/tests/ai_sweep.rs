@@ -109,7 +109,7 @@ fn farm_of(w: &World, p: PlayerId) -> Farm {
 }
 
 fn is_true_enemy(w: &World, p: PlayerId, e: &Entity) -> bool {
-    e.player
+    e.player()
         .is_some_and(|q| !w.player(p).allied.contains(&q) && !w.player(q).neutral)
 }
 
@@ -130,14 +130,14 @@ fn units(w: &World, p: PlayerId) -> impl Iterator<Item = &Entity> {
 /// idle soldiers gather where its workers are.
 fn home(w: &World, p: PlayerId) -> BTreeSet<SquareId> {
     units(w, p)
-        .filter(|e| e.class.is_building_class() || e.class == EntityClass::Worker)
+        .filter(|e| e.class().is_building_class() || e.class() == EntityClass::Worker)
         .filter_map(Entity::square)
         .collect()
 }
 
 /// `p` has a worker, and no enemy stands in its home.
 fn at_peace(w: &World, p: PlayerId) -> bool {
-    units(w, p).any(|e| e.class == EntityClass::Worker)
+    units(w, p).any(|e| e.class() == EntityClass::Worker)
         && !home(w, p).into_iter().any(|s| {
             w.square(s)
                 .objects
@@ -153,12 +153,12 @@ fn attacks(w: &World, p: PlayerId) -> bool {
         let Some(Action {
             kind: ActionKind::Attack,
             target: Some(Target::Entity(t)),
-        }) = &e.action
+        }) = e.creature().and_then(|c| c.action.as_ref())
         else {
             return false;
         };
-        e.class == EntityClass::Soldier
-            && e.orders.first().map(|o| o.keyword()) != Some(Keyword::AutoExplore)
+        e.class() == EntityClass::Soldier
+            && e.orders().first().map(|o| o.keyword()) != Some(Keyword::AutoExplore)
             && w.entity(*t).is_some_and(|t| {
                 is_true_enemy(w, p, t) && t.square().is_some_and(|s| !home.contains(&s))
             })
@@ -168,10 +168,9 @@ fn attacks(w: &World, p: PlayerId) -> bool {
 /// A farm site of `p` stands, or a worker has the order to build one.
 fn builds_a_farm(w: &World, p: PlayerId, farm: &Farm) -> bool {
     units(w, p).any(|e| {
-        e.site
-            .as_ref()
+        e.site()
             .is_some_and(|s| Some(s.building_type) == farm.type_id)
-            || e.orders.iter().any(|o| {
+            || e.orders().iter().any(|o| {
                 o.keyword() == Keyword::Build && o.type_name(&w.rules) == Some(farm.name.as_str())
             })
     })

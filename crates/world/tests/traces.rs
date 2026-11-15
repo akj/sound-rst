@@ -119,7 +119,7 @@ fn dump_static(w: &World) -> Vec<String> {
         ));
         for &e in &s.exits {
             let x = w.entity(e).unwrap();
-            let data = x.exit.as_ref().unwrap();
+            let data = x.exit().unwrap();
             out.push(format!(
                 "  exit {} {} {} {} {} other={} portal={}",
                 x.id,
@@ -146,34 +146,26 @@ fn dump_static(w: &World) -> Vec<String> {
 }
 
 fn obj_line(w: &World, o: &Entity) -> String {
-    let creature = o.is_creature();
-    let hp = if creature {
-        o.hp.to_string()
-    } else {
-        "-".into()
-    };
-    let mana = if creature {
-        o.mana.to_string()
-    } else {
-        "-".into()
-    };
+    let creature = o.creature();
+    let hp = creature.map_or("-".into(), |c| c.hp.to_string());
+    let mana = creature.map_or("-".into(), |c| c.mana.to_string());
     let player = o
-        .player
+        .player()
         .map_or("-".to_owned(), |p| w.player(p).obj_id.to_string());
     let orders = o
-        .orders
+        .orders()
         .iter()
         .map(|x| x.keyword().as_str())
         .collect::<Vec<_>>()
         .join(",");
-    let action = match (&o.action, creature) {
-        (Some(a), true) => match a.kind {
+    let action = match creature.and_then(|c| c.action.as_ref()) {
+        Some(a) => match a.kind {
             ActionKind::Plain => "Action",
             ActionKind::Move => "MoveAction",
             ActionKind::MoveXy => "MoveXYAction",
             ActionKind::Attack => "AttackAction",
         },
-        _ => "-",
+        None => "-",
     };
     format!(
         "{} {} {} {} {} hp={hp} mana={mana} qty={} player={player} orders={orders} action={action}",
@@ -212,7 +204,7 @@ fn dump_tick(w: &World) -> Vec<String> {
         for &o in &s.objects {
             let e = w.entity(o).unwrap();
             lines.push(obj_line(w, e));
-            if let Some(inside) = &e.inside {
+            if let Some(inside) = e.inside() {
                 for &i in inside {
                     lines.push(format!("  in {}", obj_line(w, w.entity(i).unwrap())));
                 }

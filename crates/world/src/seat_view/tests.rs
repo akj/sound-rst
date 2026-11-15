@@ -114,8 +114,8 @@ fn an_entity_is_known_as_perceived_else_as_remembered() {
 
     // Remembered: the copy as last seen, not the town hall now.
     remember(&mut w, me, townhall);
-    let seen_hp = w.entity(townhall).unwrap().hp;
-    w.entity_mut(townhall).unwrap().hp = 1000;
+    let seen_hp = w.entity(townhall).unwrap().creature().unwrap().hp;
+    w.entity_mut(townhall).unwrap().creature_mut().unwrap().hp = 1000;
     assert_ne!(seen_hp, 1000);
     let v = seat(&w, me);
     let e = v.known(townhall).unwrap();
@@ -138,7 +138,7 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
         .find(|&x| {
             w.entity(x)
                 .unwrap()
-                .exit
+                .exit()
                 .as_ref()
                 .unwrap()
                 .other_side
@@ -148,7 +148,7 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
     let other_side = w
         .entity(exit)
         .unwrap()
-        .exit
+        .exit()
         .as_ref()
         .unwrap()
         .other_side
@@ -161,8 +161,7 @@ fn an_exit_is_blocked_only_by_a_blocker_the_player_knows() {
     // exit is open for the player, though it is closed.
     w.entity_mut(other_side)
         .unwrap()
-        .exit
-        .as_mut()
+        .exit_mut()
         .unwrap()
         .blockers
         .push(blocker);
@@ -195,8 +194,7 @@ fn a_friendly_gate_lets_the_player_through() {
     w.entity_mut(gate).unwrap().stats.is_a_gate = 1;
     w.entity_mut(exit)
         .unwrap()
-        .exit
-        .as_mut()
+        .exit_mut()
         .unwrap()
         .blockers
         .push(gate);
@@ -272,7 +270,7 @@ fn a_remembered_unit_is_busy_with_what_it_did_when_last_seen() {
     let farm = unit(&w, them, "farm");
     // Last seen idle; repairing now.
     remember(&mut w, me, peasant);
-    w.entity_mut(farm).unwrap().hp = 1000;
+    w.entity_mut(farm).unwrap().creature_mut().unwrap().hp = 1000;
     command(
         &mut w,
         them,
@@ -392,7 +390,7 @@ fn the_default_order_is_the_worlds() {
     let (mut w, me, them) = game();
     let peasant = unit(&w, me, "peasant");
     let farm = unit(&w, me, "farm");
-    w.entity_mut(farm).unwrap().hp = 1000;
+    w.entity_mut(farm).unwrap().creature_mut().unwrap().hp = 1000;
     let townhall = unit(&w, them, "townhall");
     let b2 = w.square_by_name("b2").unwrap();
     let v = seat(&w, me);

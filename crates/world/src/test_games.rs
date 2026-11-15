@@ -118,7 +118,7 @@ pub fn shelter(w: &mut World, p: PlayerId, kind: &str) {
     w.block(b, exit);
     let inside = units.iter().copied().find(|&u| {
         w.entity(u)
-            .is_some_and(|e| e.class.is_unit() && !e.is_inside())
+            .is_some_and(|e| e.class().is_unit() && !e.is_inside())
     });
     w.load(b, inside.expect("a unit to put inside"));
 }

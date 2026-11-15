@@ -328,7 +328,7 @@ impl GameStart {
                 Some(MapExit {
                     id: e.id,
                     square: e.square()?,
-                    other_side: e.exit.as_ref()?.other_side,
+                    other_side: e.exit()?.other_side,
                 })
             })
             .collect();
@@ -427,7 +427,11 @@ impl World {
             let units: Vec<EntityId> = units
                 .iter()
                 .copied()
-                .filter(|&u| self.entity(u).and_then(|e| e.player).is_some_and(controls))
+                .filter(|&u| {
+                    self.entity(u)
+                        .and_then(|e| e.player())
+                        .is_some_and(controls)
+                })
                 .collect();
             if !units.is_empty() {
                 groups.push((name.clone(), units));

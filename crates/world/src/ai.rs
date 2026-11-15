@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{CreatureKind, Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::nofloat::{PRECISION, floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::pathfinding::Viewer;
@@ -81,12 +81,11 @@ enum Kind {
 impl Kind {
     fn matches(self, rules: &crate::Rules, e: &Entity) -> bool {
         match self {
-            Kind::Meadow => e.class == EntityClass::Meadow,
-            Kind::Deposit => e.class == EntityClass::Deposit,
-            Kind::DepositOf(rt) => {
-                e.class == EntityClass::Deposit
-                    && e.type_id.and_then(|t| rules.ty(t).resource_type) == Some(rt)
-            }
+            Kind::Meadow => e.is_meadow(),
+            Kind::Deposit => e.is_deposit(),
+            Kind::DepositOf(rt) => e
+                .deposit()
+                .is_some_and(|d| rules.ty(d.type_id).resource_type == Some(rt)),
         }
     }
 }
@@ -227,11 +226,11 @@ impl World {
             return;
         }
         let a = self.e(attacker);
-        if a.player.is_some_and(|ap| self.pl(p).allied.contains(&ap)) || !a.is_vulnerable() {
+        if a.player().is_some_and(|ap| self.pl(p).allied.contains(&ap)) || !a.is_vulnerable() {
             return;
         }
         let u = self.e(unit);
-        if u.orders.first().map(Order::keyword) == Some(Keyword::AutoExplore) {
+        if u.orders().first().map(Order::keyword) == Some(Keyword::AutoExplore) {
             return;
         }
         if u.stats.is_a_building != 0 {
@@ -287,7 +286,7 @@ impl World {
         let mut i = 0;
         while i < self.pl(p).units.len() {
             let u = self.pl(p).units[i];
-            if self.e(u).orders.is_empty()
+            if self.e(u).orders().is_empty()
                 && let Some(order) = self.random_order(u, &ids)?
             {
                 self.take_order(u, order, true, false, None)?;
@@ -556,19 +555,24 @@ impl World {
         let mut summon = Vec::new();
         for u in self.pl(p).units.clone() {
             let e = self.e(u);
-            match e.class {
-                EntityClass::Worker => {
+            match e.creature().map(|c| &c.kind) {
+                Some(CreatureKind::Worker { .. }) => {
                     workers.push(u);
                     if let Some(Order {
                         kind: OrderKind::Gather { aim, .. },
                         ..
-                    }) = e.orders.first()
+                    }) = e.orders().first()
                     {
                         add_count(&mut gathered, &aim.target, 1);
                     }
                 }
-                EntityClass::BuildingSite => sites.push(u),
-                _ => {}
+                Some(CreatureKind::BuildingSite(_)) => sites.push(u),
+                Some(
+                    CreatureKind::Soldier { .. }
+                    | CreatureKind::Effect { .. }
+                    | CreatureKind::Building { .. },
+                )
+                | None => {}
             }
             for a in self.can_use(u) {
                 if !self.is_order_allowed(u, Keyword::Use, Some(&a))? {
@@ -618,7 +622,7 @@ impl World {
             if let Some(Order {
                 kind: OrderKind::Wait { aim, .. },
                 ..
-            }) = e.orders.first()
+            }) = e.orders().first()
             {
                 match waiting
                     .iter_mut()
@@ -648,7 +652,7 @@ impl World {
                 for &u in &units {
                     let hit = self
                         .e(u)
-                        .orders
+                        .orders()
                         .iter()
                         .any(|o| matches!(&o.kind, OrderKind::Wait { aim, .. } if same_opt(&aim.target, place)));
                     if hit {
@@ -688,7 +692,7 @@ impl World {
         let menace: i64 = units
             .iter()
             .map(|&u| self.e(u))
-            .filter(|e| e.stats.speed > 0 && e.class == EntityClass::Soldier)
+            .filter(|e| e.stats.speed > 0 && e.class() == EntityClass::Soldier)
             .map(Entity::menace)
             .sum();
         menace > floordiv(enemy_menace * ratio, 100)
@@ -698,7 +702,7 @@ impl World {
         for site in self.cs(p).building_sites.clone() {
             let served = self.cs(p).workers.iter().any(|&u| {
                 self.e(u)
-                    .orders
+                    .orders()
                     .first()
                     .is_some_and(|o| matches!(o.target(), Some(Target::Entity(t)) if *t == site))
             });
@@ -717,7 +721,7 @@ impl World {
             .workers
             .iter()
             .copied()
-            .filter(|&u| self.e(u).orders.is_empty())
+            .filter(|&u| self.e(u).orders().is_empty())
             .collect();
         for u in idle {
             let place = self.e(u).place;
@@ -751,7 +755,7 @@ impl World {
             if let Some(Order {
                 kind: OrderKind::Gather { aim, .. },
                 ..
-            }) = e.orders.first()
+            }) = e.orders().first()
                 && matches!(e.place, Some(Place::Square(_)))
                 && let Some(t) = &aim.target
                 && let Ok(rt) = self.deposit_resource_type(t)
@@ -795,7 +799,8 @@ impl World {
 
     fn value_as_an_explorer(&self, u: EntityId) -> (bool, i64, i64) {
         let e = self.e(u);
-        (e.airground_type == AirGround::Air, e.stats.speed, e.hp)
+        let hp = e.creature().map_or(0, |c| c.hp);
+        (e.airground_type == AirGround::Air, e.stats.speed, hp)
     }
 
     /// `best_explorers`: the mobile units not upgrading, best first.
@@ -808,7 +813,7 @@ impl World {
             .filter(|&u| {
                 let e = self.e(u);
                 e.stats.speed > 0
-                    && e.orders.first().map(Order::keyword) != Some(Keyword::UpgradeTo)
+                    && e.orders().first().map(Order::keyword) != Some(Keyword::UpgradeTo)
             })
             .collect();
         v.sort_by(|&a, &b| {
@@ -824,7 +829,7 @@ impl World {
             return Ok(());
         };
         let first_is = |w: &World, u: EntityId| {
-            w.e(u).orders.first().map(Order::keyword) == Some(Keyword::AutoExplore)
+            w.e(u).orders().first().map(Order::keyword) == Some(Keyword::AutoExplore)
         };
         if first_is(self, best) {
             return Ok(());
@@ -855,10 +860,10 @@ impl World {
             .copied()
             .filter(|&u| {
                 let e = self.e(u);
-                e.class == EntityClass::Soldier
-                    && (e.orders.is_empty()
-                        || e.orders.len() == 1
-                            && matches!(&e.orders[0].kind, OrderKind::Go { aim, .. }
+                e.class() == EntityClass::Soldier
+                    && (e.orders().is_empty()
+                        || e.orders().len() == 1
+                            && matches!(&e.orders()[0].kind, OrderKind::Go { aim, .. }
                                 if !matches!(&aim.target,
                                     Some(Target::Square(s)) if self.pl(p).enemy_presence.contains(s))))
             })
@@ -906,7 +911,7 @@ impl World {
             .copied()
             .filter(|&u| {
                 let e = self.e(u);
-                e.time_limit.is_some_and(|t| t != 0) && e.stats.speed != 0
+                e.time_limit().is_some_and(|t| t != 0) && e.stats.speed != 0
             })
             .collect();
         if !temp.is_empty() {
@@ -920,7 +925,7 @@ impl World {
             used: false,
         };
         for (u, a) in self.cs(p).cataclysm_users.clone() {
-            if !self.e(u).orders.is_empty() || !self.cataclysm_is_efficient(p, &a, &mut enemies) {
+            if !self.e(u).orders().is_empty() || !self.cataclysm_is_efficient(p, &a, &mut enemies) {
                 continue;
             }
             let start = Self::square_of(self.e(u).place)?;
@@ -938,7 +943,12 @@ impl World {
             let t = self.square_target(last)?;
             let cataclysm = Request::use_ability(a.clone()).at(t);
             self.take_order(u, cataclysm, false, false, None)?;
-            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible()) {
+            if self
+                .e(u)
+                .orders()
+                .first()
+                .is_some_and(|o| !o.is_impossible())
+            {
                 let t = self.square_target(self.e(u).place)?;
                 self.take_order(u, Request::go(t), false, false, None)?;
             }
@@ -1028,7 +1038,12 @@ impl World {
         for (u, a) in self.cs(p).teleportation_users.clone() {
             let t = self.square_target(Some(place))?;
             self.take_order(u, Request::use_ability(a).at(t), true, false, None)?;
-            if self.e(u).orders.first().is_some_and(|o| !o.is_impossible()) {
+            if self
+                .e(u)
+                .orders()
+                .first()
+                .is_some_and(|o| !o.is_impossible())
+            {
                 used_teleportation = true;
             }
         }
@@ -1138,7 +1153,7 @@ impl World {
 
     fn idle_buildings_research(&mut self, p: PlayerId) -> Res {
         for u in self.pl(p).units.clone() {
-            if !self.e(u).orders.is_empty() {
+            if !self.e(u).orders().is_empty() {
                 continue;
             }
             for t in self.type_list(u, "can_research") {
@@ -1188,7 +1203,7 @@ impl World {
         }
         let mut deposits = Vec::new();
         for &u in &self.cs(p).workers {
-            for o in &self.e(u).orders {
+            for o in self.e(u).orders() {
                 if let OrderKind::Gather { aim, .. } = &o.kind
                     && let Some(t) = &aim.target
                     && self.t_place(t) != TPlace::Nowhere
@@ -1205,7 +1220,7 @@ impl World {
 
     fn deposit_resource_type(&self, d: &Target) -> Res<i64> {
         self.t_entity(d)
-            .and_then(|e| e.type_id)
+            .and_then(|e| e.type_id())
             .and_then(|t| self.rules.ty(t).resource_type)
             .ok_or_else(|| Abort::new("object has no attribute 'resource_type'"))
     }
@@ -1220,7 +1235,7 @@ impl World {
             .filter(|&v| {
                 let e = self.e(v);
                 e.place == dplace
-                    || e.orders.first().is_some_and(|o| {
+                    || e.orders().first().is_some_and(|o| {
                         matches!(&o.kind, OrderKind::Gather { aim, .. } if aim
                             .target
                             .as_ref()
@@ -1239,7 +1254,7 @@ impl World {
         };
         let wh = self.nearest_warehouse(p, dp, rt, true)?;
         if let Some(wh) = wh
-            && self.e(wh).class == EntityClass::BuildingSite
+            && self.e(wh).class() == EntityClass::BuildingSite
         {
             for v in nearby {
                 let repair = Request::repair(TargetRef::Entity(wh));
@@ -1287,7 +1302,7 @@ impl World {
             .filter(|e| e.place == Some(Place::Square(z)));
         let known: Vec<&Entity> = perceived.map(|&o| self.e(o)).chain(remembered).collect();
         let stores = |e: &Entity| {
-            e.type_id.is_some_and(|t| {
+            e.type_id().is_some_and(|t| {
                 self.rules
                     .ty(t)
                     .storable_resource_types
@@ -1298,8 +1313,8 @@ impl World {
             return false;
         }
         known.iter().any(|e| {
-            e.class == EntityClass::Deposit
-                && e.type_id.and_then(|t| self.rules.ty(t).resource_type) == Some(resource_type)
+            e.deposit()
+                .is_some_and(|d| self.rules.ty(d.type_id).resource_type == Some(resource_type))
         })
     }
 
@@ -1463,7 +1478,7 @@ impl World {
 
     fn entity_matches(&self, e: &Entity, sel: &Sel) -> bool {
         match sel {
-            Sel::Workers => e.class == EntityClass::Worker,
+            Sel::Workers => e.class() == EntityClass::Worker,
             _ => sel.matches_type(&e.type_name),
         }
     }
@@ -1489,14 +1504,13 @@ impl World {
         let mut n = 0;
         for &u in &self.pl(p).units {
             let e = self.e(u);
-            if let Some(site) = &e.site
-                && e.class == EntityClass::BuildingSite
+            if let Some(site) = e.site()
                 && sel.matches_type(&self.rules.ty(site.building_type).name)
             {
                 n += 1;
                 continue;
             }
-            for o in &e.orders {
+            for o in e.orders() {
                 let made = match &o.kind {
                     OrderKind::Production(p) => Some(p.product.type_id()),
                     OrderKind::Build { building, .. } => Some(*building),
@@ -1759,7 +1773,7 @@ impl World {
         p: PlayerId,
         u: EntityId,
     ) -> Res<(u8, Option<DepositPriority>)> {
-        Ok(match self.e(u).orders.first() {
+        Ok(match self.e(u).orders().first() {
             None => (0, None),
             Some(Order {
                 kind: OrderKind::Gather { aim, .. },
@@ -1772,13 +1786,13 @@ impl World {
     /// Whether a followed order is still in progress.
     fn tracked_is_alive(&mut self, t: &mut Tracked) -> bool {
         let unit = self.e(t.unit);
-        if let Some(live) = unit.orders.iter().find(|o| o.uid == t.order.uid) {
+        if let Some(live) = unit.orders().iter().find(|o| o.uid == t.order.uid) {
             t.order = live.clone();
             return !live.is_complete() && unit.place.is_some();
         }
         !t.order.is_complete()
             && unit.place.is_some()
-            && unit.orders.iter().any(|o| self.order_eq(o, &t.order))
+            && unit.orders().iter().any(|o| self.order_eq(o, &t.order))
     }
 
     /// `order`: gives the order to units of a type until `nb` of them
@@ -1811,14 +1825,14 @@ impl World {
             }
             let u = units.remove(0);
             if order.keyword() == Keyword::UpgradeTo
-                && self.e(u).orders.first().map(Order::keyword) == Some(Keyword::AutoExplore)
+                && self.e(u).orders().first().map(Order::keyword) == Some(Keyword::AutoExplore)
             {
                 self.take_order(u, Request::stop(), true, false, None)?;
             }
-            if requisition || self.e(u).orders.is_empty() {
+            if requisition || self.e(u).orders().is_empty() {
                 let first = self
                     .e(u)
-                    .orders
+                    .orders()
                     .first()
                     .map(|o| (o.keyword(), o.target().cloned()));
                 if let Some((kw, target)) = &first {
@@ -1834,7 +1848,7 @@ impl World {
                     }
                 }
                 self.take_order(u, order.clone(), true, false, None)?;
-                if let Some(o) = self.e(u).orders.first()
+                if let Some(o) = self.e(u).orders().first()
                     && o.keyword() == order.keyword()
                 {
                     let t = Tracked {
@@ -1933,7 +1947,7 @@ starting_squares a1
             if let Some(Order {
                 kind: OrderKind::Gather { aim, .. },
                 ..
-            }) = w.e(u).orders.first()
+            }) = w.e(u).orders().first()
                 && let Some(t) = &aim.target
             {
                 n[w.deposit_resource_type(t).unwrap() as usize] += 1;
@@ -1967,13 +1981,13 @@ starting_resources 0 50
             .unwrap()[0];
         let a1 = w.square_by_name("a1").unwrap();
         let wood = w.square(a1).objects.clone().into_iter().find(|&o| {
-            w.e(o).class == EntityClass::Deposit
+            w.e(o).class() == EntityClass::Deposit
                 && w.deposit_resource_type(&Target::Entity(o)) == Ok(1)
         });
         let wood = wood.unwrap();
         w.update();
         for u in w.pl(p).units.clone() {
-            if w.e(u).class == EntityClass::Worker {
+            if w.e(u).class() == EntityClass::Worker {
                 let gather = Request::gather(TargetRef::Entity(wood));
                 w.take_order(u, gather, true, false, None).unwrap();
             }

@@ -19,10 +19,10 @@
 
 use std::sync::Arc;
 
-use crate::entity::{AiMode, Entity, EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{AiMode, Creature, Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, Order, OrderKind};
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, TypeId};
+use crate::rules::{AirGround, EntityClass, Stats, TypeId};
 use crate::world::World;
 
 /// An entity as one player knows it: perceived now, or remembered as it
@@ -239,32 +239,34 @@ impl KnownEntity {
     /// `last_seen`.
     pub(crate) fn of(w: &World, viewer: PlayerId, e: &Entity, last_seen: Option<i64>) -> Self {
         let controlled = e
-            .player
+            .player()
             .is_some_and(|p| w.player(viewer).allied_control.contains(&p));
         let s = &e.stats;
         KnownEntity {
             id: e.id,
-            class: e.class,
+            class: e.class(),
             type_name: e.type_name.clone(),
-            player: e.player,
+            player: e.player(),
             place: e.place,
             x: e.x,
             y: e.y,
             o: e.o,
-            hp: e.hp,
+            // The wire keeps a number for what has no hit points, mana or
+            // speed: 0, as before the kinds were told apart.
+            hp: e.creature().map_or(0, |c| c.hp),
             hp_max: s.hp_max,
-            mana: e.mana,
+            mana: e.creature().map_or(0, |c| c.mana),
             mana_max: s.mana_max,
             qty: s.qty,
-            site_type: e.site.as_ref().map(|site| site.building_type),
-            number: e.number,
-            blocked_exit: e.blocked_exit,
+            site_type: e.site().map(|site| site.building_type),
+            number: e.creature().and_then(|c| c.number),
+            blocked_exit: e.blocked_exit(),
             airground: e.airground_type,
-            actual_speed: e.actual_speed,
+            actual_speed: e.creature().map_or(0, |c| c.actual_speed),
             is_moving: e.is_moving,
             is_mobile: s.speed != 0,
             is_invisible: e.is_invisible(),
-            is_cloaked: e.is_cloaked,
+            is_cloaked: e.is_cloaked(),
             is_a_detector: s.is_a_detector != 0,
             is_a_cloaker: s.is_a_cloaker != 0,
             is_a_building_land: e.is_a_building_land(),
@@ -272,7 +274,7 @@ impl KnownEntity {
             is_healable: s.is_healable != 0,
             is_a_gate: s.is_a_gate != 0,
             is_a_threat: e.menace() != 0,
-            exit: e.exit.as_ref().map(|x| KnownExit {
+            exit: e.exit().map(|x| KnownExit {
                 is_blocked_by_forests: x.is_blocked_by_forests,
                 blockers: x.blockers.clone(),
             }),
@@ -280,16 +282,19 @@ impl KnownEntity {
                 None => w.activity_of(e),
                 Some(_) => remembered_activity(w, viewer, e),
             },
-            upgrades: match (last_seen, e.player) {
+            upgrades: match (last_seen, e.player()) {
                 (None, Some(p)) => questions::upgrades_applying(
                     &w.rules,
-                    e.type_id.map(|t| w.rules.ty(t)),
+                    e.type_id().map(|t| w.rules.ty(t)),
                     &w.player(p).upgrades,
                 ),
                 _ => Vec::new(),
             },
             last_seen,
-            own: controlled.then(|| OwnPart::of(w, viewer, e)),
+            own: e
+                .creature()
+                .filter(|_| controlled)
+                .map(|c| OwnPart::of(w, viewer, c, s)),
         }
     }
 
@@ -322,27 +327,29 @@ impl KnownEntity {
 }
 
 impl OwnPart {
-    fn of(w: &World, viewer: PlayerId, e: &Entity) -> OwnPart {
-        let upgrading = e.orders.iter().any(|o| o.keyword() == Keyword::UpgradeTo);
+    /// Only a creature has an owner, so only a creature has this part.
+    fn of(w: &World, viewer: PlayerId, c: &Creature, stats: &Stats) -> OwnPart {
+        let upgrading = c.orders.iter().any(|o| o.keyword() == Keyword::UpgradeTo);
+        let work = c.work();
         OwnPart {
-            orders: e
+            orders: c
                 .orders
                 .iter()
                 .map(|o| KnownOrder::of(w, viewer, o))
                 .collect(),
-            has_basic_abilities: !questions::basic_abilities(e.class, upgrading).is_empty(),
-            distance_to_goal: e.distance_to_goal,
-            cargo: e.cargo,
-            inside: e.inside.clone(),
-            stance: e.ai_mode,
+            has_basic_abilities: !questions::basic_abilities(c.kind.class(), upgrading).is_empty(),
+            distance_to_goal: c.distance_to_goal,
+            cargo: work.and_then(|w| w.cargo),
+            inside: c.inside.clone(),
+            stance: c.stance(),
 
-            group: e.group.clone(),
-            is_idle: e.is_idle(),
-            auto_gather: e.auto_gather,
-            auto_repair: e.auto_repair,
-            transport_capacity: e.stats.transport_capacity,
-            transport_volume: e.stats.transport_volume,
-            food_cost: e.stats.food_cost,
+            group: c.group.clone(),
+            is_idle: c.is_idle(),
+            auto_gather: work.map(|w| w.auto_gather),
+            auto_repair: work.map(|w| w.auto_repair),
+            transport_capacity: stats.transport_capacity,
+            transport_volume: stats.transport_volume,
+            food_cost: stats.food_cost,
         }
     }
 }
@@ -401,7 +408,7 @@ impl KnownTarget {
 /// the remembered copy's first order. What it gathers from is named as
 /// `viewer` knows it now: perceived, else remembered.
 pub(crate) fn remembered_activity(w: &World, viewer: PlayerId, e: &Entity) -> Option<Activity> {
-    questions::activity(e.orders.first(), |t| match t {
+    questions::activity(e.orders().first(), |t| match t {
         Target::Entity(id) => {
             let pl = w.player(viewer);
             let perceived = pl.perception.contains(id).then(|| w.entity(*id)).flatten();

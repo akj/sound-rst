@@ -5,7 +5,7 @@
 //! 25`). A unit keeps a queue of orders and executes the first one.
 
 use crate::command::{KeywordOrder, OrderTarget};
-use crate::entity::{AiMode, EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{AiMode, Creature, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
@@ -1026,17 +1026,20 @@ impl MenuEntry {
 
 impl World {
     fn find_order(&self, unit: EntityId, uid: u64) -> Option<usize> {
-        self.entity(unit)?.orders.iter().position(|o| o.uid == uid)
+        self.entity(unit)?
+            .orders()
+            .iter()
+            .position(|o| o.uid == uid)
     }
 
     fn ord(&self, unit: EntityId, uid: u64) -> Option<&Order> {
         let i = self.find_order(unit, uid)?;
-        Some(&self.e(unit).orders[i])
+        self.e(unit).orders().get(i)
     }
 
     fn ordm(&mut self, unit: EntityId, uid: u64) -> Option<&mut Order> {
         let i = self.find_order(unit, uid)?;
-        Some(&mut self.em(unit).orders[i])
+        self.cm(unit)?.orders.get_mut(i)
     }
 
     /// The kind of a queued order, to change its state; `None` once the
@@ -1163,7 +1166,7 @@ impl World {
         imperative: bool,
         order_id: Option<u64>,
     ) -> Res {
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Err(Abort::new(
                 "'NoneType' object has no attribute 'get_object_by_id'",
             ));
@@ -1210,7 +1213,7 @@ impl World {
             .resolve_target(p, t)?
             .as_ref()
             .and_then(|t| self.t_entity(t))
-            .is_some_and(|e| e.player.is_some())
+            .is_some_and(|e| e.player().is_some())
         {
             request.keyword = Keyword::Attack;
         }
@@ -1244,7 +1247,7 @@ impl World {
 
     /// Cancels the orders of a unit, last first.
     pub fn cancel_all_orders(&mut self, unit: EntityId, unpay: bool) {
-        while let Some(o) = self.em(unit).orders.pop() {
+        while let Some(o) = self.cm(unit).and_then(|c| c.orders.pop()) {
             self.order_cancel(unit, &o, unpay);
         }
     }
@@ -1254,7 +1257,9 @@ impl World {
         let OrderKind::Production(_) = o.kind else {
             return;
         };
-        let Some(p) = self.e(unit).player else { return };
+        let Some(p) = self.e(unit).player() else {
+            return;
+        };
         // An impossible order was never paid for, or was refunded when it
         // failed; a complete one has delivered what it paid for. Either
         // waits in the queue until the unit's next update.
@@ -1274,18 +1279,18 @@ impl World {
     }
 
     fn queue_order(&mut self, unit: EntityId, order: Order) -> Res {
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let food = self.order_food_cost(unit, &order);
         let limit = self.food_limit();
-        if self.e(unit).orders.len() >= ORDERS_QUEUE_LIMIT {
+        if self.e(unit).orders().len() >= ORDERS_QUEUE_LIMIT {
             self.notify(
                 unit,
                 EntityEvent::OrderImpossible(Some(Reason::TheQueueIsFull)),
                 false,
             );
-        } else if self.e(unit).orders.is_empty()
+        } else if self.e(unit).orders().is_empty()
             && food != 0
             && self.pl(p).available_food(limit) < self.pl(p).used_food + food
         {
@@ -1296,7 +1301,10 @@ impl World {
             );
         } else {
             let uid = order.uid;
-            self.em(unit).orders.push(order);
+            // A unit with an owner is a creature.
+            if let Some(c) = self.cm(unit) {
+                c.orders.push(order);
+            }
             self.order_on_queued(unit, uid)?;
         }
         Ok(())
@@ -1311,36 +1319,47 @@ impl World {
                 self.notify(unit, ok, false);
             }
             Immediate::CancelLast => {
-                if let Some(o) = self.em(unit).orders.pop() {
+                if let Some(o) = self.cm(unit).and_then(|c| c.orders.pop()) {
                     self.order_cancel(unit, &o, true);
                 }
             }
             Immediate::CancelBuilding => {
                 let cost = self
                     .e(unit)
-                    .site
+                    .site()
                     .as_ref()
                     .map(|s| self.rules.ty(s.building_type).cost.clone())
                     .ok_or_else(|| Abort::new("'BuildingSite' object has no attribute 'type'"))?;
-                if let Some(p) = self.e(unit).player {
+                if let Some(p) = self.e(unit).player() {
                     self.unpay(p, &cost);
                 }
                 self.die(unit, None)?;
             }
+            // `is_order_allowed` gives the switches of auto gathering and
+            // repairing only to workers, and the stances only to workers and
+            // soldiers.
             Immediate::AutoGather(on) => {
-                self.em(unit).auto_gather = Some(on);
+                if let Some(w) = self.cm(unit).and_then(Creature::work_mut) {
+                    w.auto_gather = on;
+                }
                 self.notify(unit, ok, false);
             }
             Immediate::AutoRepair(on) => {
-                self.em(unit).auto_repair = Some(on);
+                if let Some(w) = self.cm(unit).and_then(Creature::work_mut) {
+                    w.auto_repair = on;
+                }
                 self.notify(unit, ok, false);
             }
             Immediate::Stance(mode) => {
-                self.em(unit).ai_mode = Some(mode);
+                if let Some(c) = self.cm(unit) {
+                    c.set_stance(mode);
+                }
                 self.notify(unit, ok, false);
             }
             Immediate::RallyingPoint(target) => {
-                self.em(unit).rallying_point = Some(target);
+                if let Some(c) = self.cm(unit) {
+                    c.rallying_point = Some(target);
+                }
                 self.notify(unit, ok, false);
             }
             Immediate::JoinGroup(name) => {
@@ -1349,13 +1368,14 @@ impl World {
                 }
                 let target_list = self.group_list(&name).cloned().unwrap_or_default();
                 let current = self
-                    .e(unit)
-                    .group
-                    .as_ref()
+                    .c(unit)
+                    .and_then(|c| c.group.as_ref())
                     .and_then(|g| self.group_list(g))
                     .cloned();
                 if current.as_ref() != Some(&target_list) {
-                    self.em(unit).group = Some(name.clone());
+                    if let Some(c) = self.cm(unit) {
+                        c.group = Some(name.clone());
+                    }
                     if let Some((_, l)) = self.groups.iter_mut().find(|(n, _)| *n == name) {
                         l.push(unit);
                     }
@@ -1363,7 +1383,7 @@ impl World {
                 }
             }
             Immediate::Enter(transport) => {
-                let Some(p) = self.e(unit).player else {
+                let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
                 let target = self.resolve_target(p, &transport)?;
@@ -1399,14 +1419,18 @@ impl World {
             o.progress = Progress::Impossible;
         }
         self.notify(unit, EntityEvent::OrderImpossible(reason), false);
-        self.em(unit).distance_to_goal = crate::world::INF;
+        if let Some(c) = self.cm(unit) {
+            c.distance_to_goal = crate::world::INF;
+        }
     }
 
     fn mark_as_complete(&mut self, unit: EntityId, uid: u64) {
         if let Some(o) = self.ordm(unit, uid) {
             o.complete();
         }
-        self.em(unit).distance_to_goal = 0;
+        if let Some(c) = self.cm(unit) {
+            c.distance_to_goal = 0;
+        }
     }
 
     fn set_target(&mut self, unit: EntityId, uid: u64, t: Option<Target>) {
@@ -1414,7 +1438,7 @@ impl World {
             aim.target = t.clone();
         }
         // A reserved project is the same object as the order.
-        if let Some(p) = self.e(unit).player {
+        if let Some(p) = self.e(unit).player() {
             for b in &mut self.plm(p).budget {
                 if b.uid == uid
                     && let Some(aim) = b.kind.aim_mut()
@@ -1433,7 +1457,7 @@ impl World {
         let Some(t) = self.target_of(unit, uid) else {
             return Ok(());
         };
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let nt = self.updated_target(p, &t)?;
@@ -1444,7 +1468,7 @@ impl World {
     /// What the target an order was given means to the unit's player now.
     /// The error is an order given without a target.
     fn resolve_given(&self, unit: EntityId, aim: &Aim) -> Res<Option<Target>> {
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(None);
         };
         let given = aim
@@ -1468,7 +1492,7 @@ impl World {
                     self.mark_as_impossible(unit, uid, Some(r));
                     return Ok(());
                 }
-                if let Some(p) = self.e(unit).player {
+                if let Some(p) = self.e(unit).player() {
                     self.pay(p, &cost);
                 }
                 let tc = self.production_time_cost(unit, production);
@@ -1488,7 +1512,7 @@ impl World {
                 }
                 if let Some(e) = t.as_ref().and_then(|t| self.t_entity(t))
                     && e.is_exit()
-                    && let Some(os) = e.exit.as_ref().and_then(|x| x.other_side)
+                    && let Some(os) = e.exit().and_then(|x| x.other_side)
                 {
                     t = self.e(os).square().map(Target::Square);
                 }
@@ -1512,7 +1536,7 @@ impl World {
                         self.mark_as_impossible(unit, uid, None);
                         return Ok(());
                     };
-                    let p = self.e(unit).player.expect("checked by take_order");
+                    let p = self.e(unit).player().expect("checked by take_order");
                     t = match self.t_place(&tt) {
                         TPlace::At(Place::Square(s)) => {
                             self.resolve_target(p, &TargetRef::Square(s))?
@@ -1538,7 +1562,7 @@ impl World {
                             route: Some(route), ..
                         },
                     ..
-                }) = self.em(unit).orders.first_mut()
+                }) = self.cm(unit).and_then(|c| c.orders.first_mut())
                 {
                     route.places.push(place);
                     self.mark_as_complete(unit, uid);
@@ -1568,7 +1592,7 @@ impl World {
             }
             OrderKind::AutoAttack => {}
             OrderKind::AutoExplore => {
-                let Some(p) = self.e(unit).player else {
+                let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
                 if self.pl(p).places_to_explore.is_none() {
@@ -1631,11 +1655,11 @@ impl World {
             OrderKind::Use { ability, aim } => self.use_on_queued(unit, uid, *ability, aim)?,
             OrderKind::Load { aim } => {
                 let t = self.resolve_given(unit, aim)?;
-                let p = self.e(unit).player;
+                let p = self.e(unit).player();
                 let same_player = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
-                    .is_some_and(|e| e.player == p);
+                    .is_some_and(|e| e.player() == p);
                 self.set_target(unit, uid, t);
                 if !same_player {
                     self.mark_as_impossible(unit, uid, None);
@@ -1669,7 +1693,7 @@ impl World {
 
     fn build_on_queued(&mut self, unit: EntityId, uid: u64, building: TypeId, aim: &Aim) -> Res {
         let bt = self.rules.ty(building).clone();
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let mut t = self.resolve_given(unit, aim)?;
@@ -1724,7 +1748,7 @@ impl World {
                     Some(Target::Zoom(z)) => self.zoom_building_land(z).map(Target::Entity),
                     Some(other) => self
                         .t_entity(other)
-                        .and_then(|e| e.building_land)
+                        .and_then(|e| e.building_land())
                         .map(Target::Entity),
                     None => None,
                 };
@@ -1766,7 +1790,7 @@ impl World {
 
     fn use_on_queued(&mut self, unit: EntityId, uid: u64, ability: TypeId, aim: &Aim) -> Res {
         let t = self.rules.ty(ability).clone();
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         if t.effect_target == ["ask"] {
@@ -1793,7 +1817,7 @@ impl World {
         } else if t.effect_target == ["self"] {
             self.set_target(unit, uid, Some(Target::Entity(unit)));
         }
-        if self.e(unit).mana < t.stats.mana_cost {
+        if self.c(unit).map_or(0, |c| c.mana) < t.stats.mana_cost {
             if self.group_has_enough_mana(p, t.stats.mana_cost) {
                 self.mark_as_complete(unit, uid);
             } else {
@@ -1811,7 +1835,8 @@ impl World {
         }
         let group = self.pl(p).group.clone().unwrap_or_default();
         for u in group {
-            if self.e(u).mana > mana {
+            // What has no mana has 0.
+            if self.c(u).map_or(0, |c| c.mana) > mana {
                 self.plm(p).group_had_enough_mana = true;
                 return true;
             }
@@ -1853,10 +1878,12 @@ impl World {
                 }
                 let t = t.expect("vulnerable");
                 if self.near_enough_to_aim(unit, &t)? {
-                    self.em(unit).action = Some(crate::entity::Action {
-                        kind: crate::entity::ActionKind::Attack,
-                        target: Some(t),
-                    });
+                    if let Some(c) = self.cm(unit) {
+                        c.action = Some(crate::entity::Action {
+                            kind: crate::entity::ActionKind::Attack,
+                            target: Some(t),
+                        });
+                    }
                 } else if self.e(unit).is_idle() {
                     self.move_to_or_fail(unit, uid, Some(t))?;
                 }
@@ -1900,7 +1927,7 @@ impl World {
                         *must_deploy = false;
                     }
                 }
-                let Some(p) = self.e(unit).player else {
+                let Some(p) = self.e(unit).player() else {
                     return Ok(());
                 };
                 if self.time_has_come(p, aim.target.as_ref())? {
@@ -1945,10 +1972,12 @@ impl World {
                     Some(t) => match t {
                         Target::Entity(id) => self.is_fully_repaired(*id),
                         Target::Memory(m) => {
+                            // A remembered entity of any kind: what has
+                            // no hit points has 0.
                             let e = &m.snapshot;
                             !e.is_building_site()
                                 && e.stats.is_repairable != 0
-                                && e.hp == e.stats.hp_max
+                                && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
                         }
                         _ => false,
                     },
@@ -2079,7 +2108,7 @@ impl World {
         }
         let smart = self
             .e(unit)
-            .player
+            .player()
             .is_some_and(|p| self.pl(p).smart_units());
         if smart {
             self.smart_move_to_or_fail(unit, uid, target)
@@ -2099,7 +2128,7 @@ impl World {
             .ord(unit, uid)
             .is_some_and(|o| matches!(o.kind, OrderKind::Go { .. } | OrderKind::Patrol { .. }));
         if self.e(unit).is_idle() && grouped {
-            let p = self.e(unit).player.expect("smart units have a player");
+            let p = self.e(unit).player().expect("smart units have a player");
             let next_square = match &target {
                 Some(t) => self.next_square(unit, t, false)?,
                 None => None,
@@ -2149,13 +2178,13 @@ impl World {
         let Some(me) = self.ord(unit, uid) else {
             return true;
         };
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return true;
         };
         for &u in &self.pl(p).units {
             let ue = self.e(u);
             if u != unit
-                && ue.orders.first().is_some_and(|f| self.order_eq(f, me))
+                && ue.orders().first().is_some_and(|f| self.order_eq(f, me))
                 && ue.place != self.e(unit).place
             {
                 return false;
@@ -2169,13 +2198,13 @@ impl World {
         let Some(me) = self.ord(unit, uid).cloned() else {
             return Ok(());
         };
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let here = self.e(unit).place;
         for u in self.pl(p).units.clone() {
             let ue = self.e(u);
-            if ue.orders.first().is_some_and(|f| self.order_eq(f, &me)) && ue.place == here {
+            if ue.orders().first().is_some_and(|f| self.order_eq(f, &me)) && ue.place == here {
                 self.start_moving_to(u, target.as_ref(), false)?;
             }
         }
@@ -2184,7 +2213,7 @@ impl World {
 
     fn production_execute(&mut self, unit: EntityId, o: &Order, production: &Production) -> Res {
         let uid = o.uid;
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let food = self.order_food_cost(unit, o);
@@ -2258,7 +2287,7 @@ impl World {
     /// order is then refunded and impossible.
     fn production_complete(&mut self, unit: EntityId, o: &Order, product: Product) -> Res<bool> {
         let uid = o.uid;
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(true);
         };
         match product {
@@ -2298,7 +2327,7 @@ impl World {
                     .create_creature(type_id, Some(p), Place::Square(place), x, y)
                     .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
                 self.notify(u, EntityEvent::Complete, false);
-                if let Some(t) = self.e(unit).rallying_point {
+                if let Some(t) = self.c(unit).and_then(|c| c.rallying_point) {
                     self.take_default_order(u, t, true, false, None)?;
                 }
             }
@@ -2313,12 +2342,16 @@ impl World {
                     return Ok(true);
                 };
                 let (mut x, mut y) = (e.x, e.y);
-                let (hp, hp_max) = (e.hp, e.stats.hp_max);
+                // A unit with a production order is a creature.
+                let (hp, rallying_point, group) = e.creature().map_or((0, None, None), |c| {
+                    (c.hp, c.rallying_point, c.group.clone())
+                });
+                let hp_max = e.stats.hp_max;
                 let leave_meadow =
                     e.stats.is_buildable_anywhere == 0 && t.stats.is_buildable_anywhere != 0;
                 let consume_meadow =
                     e.stats.is_buildable_anywhere != 0 && t.stats.is_buildable_anywhere == 0;
-                let blocked_exit = e.blocked_exit;
+                let blocked_exit = e.blocked_exit();
                 if consume_meadow {
                     let meadow = match place {
                         Place::Square(s) => self.find_nearest_meadow(s, unit),
@@ -2339,7 +2372,10 @@ impl World {
                 }
                 // Taken out first, the units inside stay their player's when
                 // the old building is deleted.
-                let inside = self.em(unit).inside.as_mut().map(std::mem::take);
+                let inside = self
+                    .cm(unit)
+                    .and_then(|c| c.inside.as_mut())
+                    .map(std::mem::take);
                 self.delete(unit);
                 let nu = self
                     .create_creature(type_id, Some(p), place, x, y)
@@ -2347,10 +2383,13 @@ impl World {
                 if let Some(ex) = blocked_exit {
                     self.block(nu, ex);
                 }
-                if hp != hp_max {
-                    self.em(nu).hp = hp;
+                // `nu` was just created as a creature.
+                if let Some(c) = self.cm(nu) {
+                    if hp != hp_max {
+                        c.hp = hp;
+                    }
+                    c.rallying_point = rallying_point;
                 }
-                self.em(nu).rallying_point = e.rallying_point;
                 // They go into the new building, or out beside it if they no
                 // longer fit: without collision if the square is full, as
                 // from a building destroyed.
@@ -2366,7 +2405,7 @@ impl World {
                         self.notify(o, EntityEvent::Exit, false);
                     }
                 }
-                self.replace_unit(unit, nu, e.group);
+                self.replace_unit(unit, nu, group);
                 self.notify(nu, EntityEvent::Complete, false);
                 if leave_meadow && let Place::Square(s) = place {
                     self.create_meadow(s, Some((x, y)));
@@ -2389,8 +2428,10 @@ impl World {
         for (_, units) in &mut self.groups {
             replace(units);
         }
-        self.em(new).group = group;
-        let Some(owner) = self.e(new).player else {
+        if let Some(c) = self.cm(new) {
+            c.group = group;
+        }
+        let Some(owner) = self.e(new).player() else {
             return;
         };
         for p in self.players.clone() {
@@ -2432,12 +2473,21 @@ impl World {
         }
     }
 
+    /// What a worker carries. Another kind carries nothing.
+    pub(crate) fn set_cargo(&mut self, unit: EntityId, cargo: Option<(i64, i64)>) {
+        if let Some(w) = self.cm(unit).and_then(Creature::work_mut) {
+            w.cargo = cargo;
+        }
+    }
+
     fn gather_execute(&mut self, unit: EntityId, uid: u64, step: GatherStep) -> Res {
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
+        // Only a worker can be given a gather order (`basic_abilities`):
+        // what has no work carries nothing.
         if step == GatherStep::Start {
-            let s = if self.e(unit).cargo.is_some() {
+            let s = if self.e(unit).work().is_some_and(|w| w.cargo.is_some()) {
                 GatherStep::BringBack { storage: None }
             } else {
                 GatherStep::GoGather
@@ -2458,7 +2508,8 @@ impl World {
             GatherStep::BringBack { storage: None } => {
                 let cargo = self
                     .e(unit)
-                    .cargo
+                    .work()
+                    .and_then(|w| w.cargo)
                     .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
                 let Some(here) = self.e(unit).place else {
                     return Ok(());
@@ -2467,7 +2518,7 @@ impl World {
                 self.set_gather_step(unit, uid, GatherStep::BringBack { storage });
                 match storage {
                     None => {
-                        self.em(unit).cargo = None;
+                        self.set_cargo(unit, None);
                         self.mark_as_impossible(unit, uid, None);
                     }
                     Some(s) => self.start_moving_to(unit, Some(&Target::Entity(s)), false)?,
@@ -2480,7 +2531,7 @@ impl World {
                 if self.near_enough(unit, &st) {
                     let until = self.time + 1000;
                     self.set_gather_step(unit, uid, GatherStep::Store { until });
-                    let r = self.e(unit).cargo.map_or(0, |c| c.0);
+                    let r = self.e(unit).work().and_then(|w| w.cargo).map_or(0, |c| c.0);
                     self.notify(unit, EntityEvent::Store(r), false);
                     self.stop(unit);
                 } else if self.e(unit).is_idle() {
@@ -2492,10 +2543,10 @@ impl World {
             }
             GatherStep::Store { until } => {
                 if self.time > until {
-                    if let Some((r, q)) = self.e(unit).cargo {
+                    if let Some((r, q)) = self.e(unit).work().and_then(|w| w.cargo) {
                         self.store(p, r, q);
                     }
-                    self.em(unit).cargo = None;
+                    self.set_cargo(unit, None);
                     self.set_gather_step(unit, uid, GatherStep::GoGather);
                 }
             }
@@ -2508,7 +2559,7 @@ impl World {
                     if self.near_enough(unit, &t) {
                         let et = self
                             .t_entity(&t)
-                            .and_then(|e| e.type_id)
+                            .and_then(|e| e.type_id())
                             .map_or(0, |ty| self.rules.ty(ty).stats.extraction_time);
                         let until = self.time + et;
                         self.set_gather_step(unit, uid, GatherStep::Extract { until });
@@ -2526,12 +2577,12 @@ impl World {
                         self.stop(unit);
                     } else if self.time > until {
                         let dep = self.t_entity(&t).cloned().expect("a deposit");
-                        let ty = dep.type_id.map(|ty| self.rules.ty(ty));
+                        let ty = dep.type_id().map(|ty| self.rules.ty(ty));
                         let cargo = (
                             ty.and_then(|t| t.resource_type).unwrap_or(0),
                             ty.map_or(0, |t| t.stats.extraction_qty),
                         );
-                        self.em(unit).cargo = Some(cargo);
+                        self.set_cargo(unit, Some(cargo));
                         if let Some(id) = t.entity_id() {
                             self.extract_resource(id)?;
                         }
@@ -2554,7 +2605,7 @@ impl World {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         };
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let here = self.e(unit).place;
@@ -2594,7 +2645,7 @@ impl World {
         type_id: TypeId,
         target: Target,
     ) -> Res {
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let bt = self.rules.ty(type_id).clone();
@@ -2620,8 +2671,9 @@ impl World {
         let site = self
             .create_building_site(p, place, x, y, type_id)
             .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
-        if remember_land {
-            self.em(site).building_land = target.entity_id();
+        // `site` was just created as a creature.
+        if remember_land && let Some(c) = self.cm(site) {
+            c.building_land = target.entity_id();
         }
         if is_exit && let Some(e) = target.entity_id() {
             self.block(site, e);
@@ -2637,17 +2689,22 @@ impl World {
             if u == unit {
                 continue;
             }
-            for n in 0..self.e(u).orders.len() {
-                if self.order_eq(&self.e(u).orders[n], &order) {
+            for n in 0..self.e(u).orders().len() {
+                if self.order_eq(&self.e(u).orders()[n], &order) {
                     let nuid = self.next_order_uid();
-                    self.em(u).orders[n] = Order::new(nuid, phase_two());
+                    if let Some(slot) = self.cm(u).and_then(|c| c.orders.get_mut(n)) {
+                        *slot = Order::new(nuid, phase_two());
+                    }
                     self.order_on_queued(u, nuid)?;
                 }
             }
         }
         let nuid = self.next_order_uid();
-        if let Some(i) = self.find_order(unit, uid) {
-            self.em(unit).orders[i] = Order::new(nuid, phase_two());
+        if let Some(slot) = self
+            .find_order(unit, uid)
+            .and_then(|i| self.cm(unit)?.orders.get_mut(i))
+        {
+            *slot = Order::new(nuid, phase_two());
             self.order_on_queued(unit, nuid)?;
         }
         Ok(())
@@ -2694,12 +2751,14 @@ impl World {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         }
-        if self.e(unit).mana < t.stats.mana_cost {
+        if self.c(unit).map_or(0, |c| c.mana) < t.stats.mana_cost {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughMana));
             return Ok(());
         }
         self.use_effect_execute(unit, uid, &kind, &t, &effect)?;
-        self.em(unit).mana -= t.stats.mana_cost;
+        if let Some(c) = self.cm(unit) {
+            c.mana -= t.stats.mana_cost;
+        }
         let universal = t.stats.universal_notification != 0;
         self.notify(unit, EntityEvent::UseComplete(t.name.clone()), universal);
         self.mark_as_complete(unit, uid);
@@ -2713,19 +2772,19 @@ impl World {
         t: &crate::rules::UnitType,
         target: &Target,
     ) -> Vec<EntityId> {
-        let p = self.e(unit).player;
+        let p = self.e(unit).player();
         let r = t.stats.effect_radius;
         match kind {
             "teleportation" => {
                 let (x, y) = (self.e(unit).x, self.e(unit).y);
                 self.get_objects(x, y, r, |e| {
-                    e.player == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
                 })
             }
             "recall" => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
-                    e.player == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
                 })
             }
             "raise_dead" => {
@@ -2735,7 +2794,7 @@ impl World {
             "resurrection" => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
-                    e.is_corpse() && e.corpse_unit.as_ref().is_some_and(|u| u.player == p)
+                    e.corpse().is_some_and(|c| c.unit.kind.player == p)
                 })
             }
             _ => Vec::new(),
@@ -2833,7 +2892,7 @@ impl World {
         effect: &[String],
     ) -> Res {
         let target = self.target_of(unit, uid).expect("checked");
-        let Some(p) = self.e(unit).player else {
+        let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
         let decay = || -> Res<i64> {
@@ -2903,10 +2962,15 @@ impl World {
                         break;
                     }
                     let c = corpses.remove(0);
-                    let Some(dead) = self.e(c).corpse_unit.clone() else {
+                    // The corpses chosen above.
+                    let Some(dead) = self.e(c).corpse().map(|c| c.unit.clone()) else {
                         continue;
                     };
-                    if !dead.type_id.is_some_and(|t| self.check_count_limit(p, t)) {
+                    if !dead
+                        .kind
+                        .type_id()
+                        .is_some_and(|t| self.check_count_limit(p, t))
+                    {
                         continue;
                     }
                     self.resurrect(c, *dead, p)?;
@@ -2920,12 +2984,12 @@ impl World {
     fn resurrect(
         &mut self,
         corpse: EntityId,
-        mut u: crate::entity::Entity,
+        mut u: crate::entity::Entity<Creature>,
         p: crate::entity::PlayerId,
     ) -> Res {
-        u.player = None;
-        u.hp = u.stats.hp_max / 3;
-        let id = self.register_unplaced(u);
+        u.kind.player = None;
+        u.kind.hp = u.stats.hp_max / 3;
+        let id = self.register_unplaced(u.into_entity());
         self.set_player(id, Some(p));
         let c = self.e(corpse);
         let (cp, cx, cy) = (c.place, c.x, c.y);
@@ -2937,9 +3001,11 @@ impl World {
             return Err(Abort::new("NotEnoughSpaceError"));
         }
         let decay = self.e(id).stats.decay;
-        if decay != 0 {
-            let t = self.time + decay;
-            self.em(id).time_limit = Some(t);
+        let time = self.time;
+        if decay != 0
+            && let Some(c) = self.cm(id)
+        {
+            c.time_limit = Some(time + decay);
         }
         self.delete(corpse);
         Ok(())

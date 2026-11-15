@@ -110,22 +110,20 @@ impl World {
 
     /// The other side of an exit.
     pub fn exit_other_side(&self, e: EntityId) -> Option<EntityId> {
-        self.e(e).exit.as_ref().and_then(|x| x.other_side)
+        self.e(e).exit().and_then(|x| x.other_side)
     }
 
     /// The blockers of both sides of an exit.
     pub(crate) fn exit_blockers(&self, e: EntityId) -> Vec<EntityId> {
         let mut b = self
             .e(e)
-            .exit
-            .as_ref()
+            .exit()
             .map(|x| x.blockers.clone())
             .unwrap_or_default();
         if let Some(os) = self.exit_other_side(e) {
             b.extend(
                 self.e(os)
-                    .exit
-                    .as_ref()
+                    .exit()
                     .map(|x| x.blockers.clone())
                     .unwrap_or_default(),
             );
@@ -143,11 +141,7 @@ impl World {
         ignore_enemy_walls: bool,
         ignore_forests: bool,
     ) -> bool {
-        let forest = self
-            .e(e)
-            .exit
-            .as_ref()
-            .is_some_and(|x| x.is_blocked_by_forests);
+        let forest = self.e(e).exit().is_some_and(|x| x.is_blocked_by_forests);
         if !ignore_forests && forest {
             return true;
         }

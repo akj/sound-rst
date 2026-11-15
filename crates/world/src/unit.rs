@@ -2,7 +2,8 @@
 //! `worldaction.py`, `worldresource.py`, `worldupgrade.py`).
 
 use crate::entity::{
-    Action, ActionKind, AiMode, Entity, EntityId, Place, PlayerId, SiteData, SquareId, Target,
+    Action, ActionKind, AiMode, Corpse, Creature, CreatureKind, Deposit, Entity, EntityId, Kind,
+    Place, PlayerId, SiteData, SquareId, Target,
 };
 use crate::events::{EntityEvent, Reason};
 use crate::known::Activity;
@@ -33,11 +34,16 @@ impl World {
         y: i64,
     ) -> Result<EntityId, NotEnoughSpace> {
         let t = self.rules.ty(type_id);
-        let class = t.entity_class().ok_or(NotEnoughSpace)?;
-        let mut e = Entity::new(class, &t.name);
-        e.type_id = Some(type_id);
+        // A type of another class (a deposit, an upgrade) has no owner, hit
+        // points or orders: it cannot be created as a creature.
+        let kind = t
+            .entity_class()
+            .and_then(|class| CreatureKind::of_type(type_id, class))
+            .ok_or(NotEnoughSpace)?;
+        let mut creature = Creature::new(kind);
+        creature.actual_speed = t.stats.speed;
+        let mut e = Entity::new(&t.name, Kind::Creature(creature));
         e.stats = t.stats.clone();
-        e.actual_speed = t.stats.speed;
         e.airground_type = t.airground_type;
         self.create_creature_from(e, player, place, x, y)
     }
@@ -61,18 +67,22 @@ impl World {
         let md = self.rules.minimal_damage();
         let time = self.time;
         let e = self.em(id);
-        if e.stats.transport_capacity != 0 {
-            e.inside = Some(Vec::new());
-        }
-        e.hp = e.stats.hp_max;
-        e.mana = if e.stats.mana_start > 0 {
-            e.stats.mana_start
-        } else {
-            e.stats.mana_max
-        };
-        e.minimal_damage = md;
-        if e.stats.decay != 0 {
-            e.time_limit = Some(time + e.stats.decay);
+        let s = &e.stats;
+        // `e` is a creature: the callers make one.
+        if let Kind::Creature(c) = &mut e.kind {
+            if s.transport_capacity != 0 {
+                c.inside = Some(Vec::new());
+            }
+            c.hp = s.hp_max;
+            c.mana = if s.mana_start > 0 {
+                s.mana_start
+            } else {
+                s.mana_max
+            };
+            c.minimal_damage = md;
+            if s.decay != 0 {
+                c.time_limit = Some(time + s.decay);
+            }
         }
         Ok(id)
     }
@@ -80,9 +90,18 @@ impl World {
     /// An entity of a type that is not in the world (`create_from_nowhere`):
     /// only its type's attributes are set.
     pub fn entity_from_nowhere(&self, type_name: &str) -> Option<Entity> {
-        let t = self.rules.unit_type(type_name)?;
-        let mut e = Entity::new(t.entity_class()?, &t.name);
-        e.type_id = self.rules.type_id(type_name);
+        let type_id = self.rules.type_id(type_name)?;
+        let t = self.rules.ty(type_id);
+        let kind = match t.entity_class()? {
+            EntityClass::Deposit => Kind::Deposit(Deposit {
+                type_id,
+                qty_max: 0,
+                resource_regen: 0,
+                building_land: None,
+            }),
+            class => Kind::Creature(Creature::new(CreatureKind::of_type(type_id, class)?)),
+        };
+        let mut e = Entity::new(&t.name, kind);
         e.stats = t.stats.clone();
         e.airground_type = t.airground_type;
         Some(e)
@@ -107,9 +126,17 @@ impl World {
         y: i64,
         building_type: TypeId,
     ) -> Result<EntityId, NotEnoughSpace> {
-        let e = Entity::new(EntityClass::BuildingSite, "buildingsite");
-        let id = self.create_creature_from(e, Some(player), place, x, y)?;
         let bt = self.rules.ty(building_type).clone();
+        let starting_hp = bt.stats.hp_max * 5 / 100;
+        let site = SiteData {
+            building_type,
+            starting_hp,
+            timer: floordiv(bt.stats.time_cost, VIRTUAL_TIME_INTERVAL),
+            damage_during_construction: 0,
+        };
+        let creature = Creature::new(CreatureKind::BuildingSite(site));
+        let e = Entity::new("buildingsite", Kind::Creature(creature));
+        let id = self.create_creature_from(e, Some(player), place, x, y)?;
         self.pay(player, &bt.cost);
         let e = self.em(id);
         e.stats.hp_max = bt.stats.hp_max;
@@ -118,14 +145,9 @@ impl World {
         e.stats.is_buildable_near_water_only = bt.stats.is_buildable_near_water_only;
         e.stats.is_a_gate = bt.stats.is_a_gate;
         e.stats.time_cost = bt.stats.time_cost;
-        let starting_hp = bt.stats.hp_max * 5 / 100;
-        e.hp = starting_hp;
-        e.site = Some(SiteData {
-            building_type,
-            starting_hp,
-            timer: floordiv(bt.stats.time_cost, VIRTUAL_TIME_INTERVAL),
-            damage_during_construction: 0,
-        });
+        if let Some(c) = e.creature_mut() {
+            c.hp = starting_hp;
+        }
         Ok(id)
     }
 
@@ -137,17 +159,18 @@ impl World {
         qty: &str,
     ) -> Res<EntityId> {
         let t = self.rules.ty(type_id);
-        let mut e = Entity::new(EntityClass::Deposit, &t.name);
-        e.type_id = Some(type_id);
-        e.stats = t.stats.clone();
-        e.airground_type = t.airground_type;
         let q = crate::nofloat::to_int(qty)
             .map_err(|_| Abort::new(format!("could not convert string to float: {qty:?}")))?;
+        let deposit = Deposit {
+            type_id,
+            qty_max: q,
+            resource_regen: if t.resource_type == Some(1) { 10 } else { 0 },
+            building_land: None,
+        };
+        let mut e = Entity::new(&t.name, Kind::Deposit(deposit));
+        e.stats = t.stats.clone();
+        e.airground_type = t.airground_type;
         e.stats.qty = q;
-        e.qty_max = q;
-        if t.resource_type == Some(1) {
-            e.resource_regen = 10;
-        }
         let place = Place::Square(square);
         let (x, y) = self
             .initial_position(e.stats.collision != 0, e.airground_type, place, None)
@@ -157,28 +180,28 @@ impl World {
 
     /// Creates a meadow on a square, at the center or at a point.
     pub(crate) fn create_meadow(&mut self, square: SquareId, xy: Option<(i64, i64)>) -> EntityId {
-        let e = Entity::new(EntityClass::Meadow, "meadow");
+        let e = Entity::new("meadow", Kind::Meadow);
         let place = Place::Square(square);
         let (x, y) = xy.unwrap_or((self.square(square).x, self.square(square).y));
         self.insert_entity(e, place, x, y, 90)
     }
 
-    /// Leaves a corpse where a unit dies.
-    fn create_corpse(&mut self, unit: EntityId) {
-        let mut copy = self.e(unit).clone();
+    /// Leaves a corpse where a unit dies: `dead` is a copy of the unit.
+    fn create_corpse(&mut self, mut dead: Entity<Creature>) {
         // The original's shallow copy shares the order list and the
         // interior, which the death empties.
-        copy.orders.clear();
-        if copy.inside.is_some() {
-            copy.inside = Some(Vec::new());
+        dead.kind.orders.clear();
+        if dead.kind.inside.is_some() {
+            dead.kind.inside = Some(Vec::new());
         }
-        let Some(place) = copy.place else { return };
-        let (x, y) = (copy.x, copy.y);
-        let mut e = Entity::new(EntityClass::Corpse, "corpse");
-        e.corpse_unit = Some(Box::new(copy));
-        let id = self.insert_entity(e, place, x, y, 90);
-        let t = self.time + 300 * PRECISION;
-        self.em(id).time_limit = Some(t);
+        let Some(place) = dead.place else { return };
+        let (x, y) = (dead.x, dead.y);
+        let corpse = Corpse {
+            unit: Box::new(dead),
+            time_limit: self.time + 300 * PRECISION,
+        };
+        let e = Entity::new("corpse", Kind::Corpse(corpse));
+        self.insert_entity(e, place, x, y, 90);
     }
 
     // ownership
@@ -186,20 +209,26 @@ impl World {
     /// `set_player`: stops the unit, cancels its orders and gives it to
     /// another player (or to nobody).
     pub(crate) fn set_player(&mut self, id: EntityId, player: Option<PlayerId>) {
+        // Only a creature has an owner, and every caller passes one.
+        if self.c(id).is_none() {
+            return;
+        }
         self.stop(id);
         self.cancel_all_orders(id, false);
-        if let Some(old) = self.e(id).player {
+        if let Some(old) = self.e(id).player() {
             self.player_remove(old, id);
         } else if let Some(p) = player
             && let Some(st) = self.e(id).stat_type()
         {
             self.plm(p).stats.add(StatEvent::Produced, st.into(), 1);
         }
-        self.em(id).player = player;
+        if let Some(c) = self.cm(id) {
+            c.player = player;
+        }
         if let Some(p) = player {
             self.player_add(p, id);
         }
-        if let Some(inside) = self.e(id).inside.clone() {
+        if let Some(inside) = self.e(id).inside().map(<[EntityId]>::to_vec) {
             for o in inside {
                 self.set_player(o, player);
             }
@@ -213,7 +242,7 @@ impl World {
             .units
             .iter()
             .filter(|&&u| u != id && self.e(u).type_name == *name)
-            .filter_map(|&u| self.e(u).number)
+            .filter_map(|&u| self.c(u).and_then(|c| c.number))
             .collect();
         let mut n = 1;
         while numbers.contains(&n) {
@@ -225,7 +254,9 @@ impl World {
     /// `Player.add`.
     fn player_add(&mut self, p: PlayerId, id: EntityId) {
         let n = self.next_free_number(id, p);
-        self.em(id).number = Some(n);
+        if let Some(c) = self.cm(id) {
+            c.number = Some(n);
+        }
         self.plm(p).units.push(id);
         let (fp, fc) = (self.e(id).stats.food_provided, self.e(id).stats.food_cost);
         self.plm(p).food += fp;
@@ -261,15 +292,17 @@ impl World {
     /// Collision stays: it says whether the unit holds the space where it
     /// stands.
     fn upgrade_to_player_level(&mut self, id: EntityId) -> Res {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Ok(());
         };
-        if let Some(t) = self.e(id).type_id {
+        if let Some(t) = self.e(id).type_id() {
             let mut stats = self.rules.ty(t).stats.clone();
             let e = self.em(id);
             stats.collision = e.stats.collision;
             e.stats = stats;
-            e.damage_level = 0;
+            if let Some(c) = e.creature_mut() {
+                c.damage_level = 0;
+            }
         }
         for name in self.can_use(id) {
             let Some(upg) = self.rules.type_id(&name) else {
@@ -280,8 +313,11 @@ impl World {
             }
         }
         let e = self.em(id);
-        e.hp = e.hp.min(e.stats.hp_max);
-        e.mana = e.mana.min(e.stats.mana_max);
+        let s = &e.stats;
+        if let Kind::Creature(c) = &mut e.kind {
+            c.hp = c.hp.min(s.hp_max);
+            c.mana = c.mana.min(s.mana_max);
+        }
         Ok(())
     }
 
@@ -328,11 +364,13 @@ impl World {
                 let stat = arg(1)?.clone();
                 let base = self
                     .e(unit)
-                    .type_id
+                    .type_id()
                     .map_or(0, |t| self.rules.ty(t).bonus(&stat));
                 self.effect_bonus(unit, start_level, &stat, base, 0)?;
-                if stat == "damage" {
-                    self.em(unit).damage_level += 1;
+                if stat == "damage"
+                    && let Some(c) = self.cm(unit)
+                {
+                    c.damage_level += 1;
                 }
                 Ok(())
             }
@@ -354,8 +392,10 @@ impl World {
             .get_mut(stat)
             .ok_or_else(|| Abort::new(format!("no attribute {stat}")))?;
         *v += base + incr * start_level;
-        if stat == "damage" {
-            e.damage_level += 1;
+        if stat == "damage"
+            && let Some(c) = e.creature_mut()
+        {
+            c.damage_level += 1;
         }
         Ok(())
     }
@@ -363,7 +403,7 @@ impl World {
     // type lists
 
     fn type_of(&self, id: EntityId) -> Option<&crate::rules::UnitType> {
-        self.e(id).type_id.map(|t| self.rules.ty(t))
+        self.e(id).type_id().map(|t| self.rules.ty(t))
     }
 
     pub(crate) fn can_use(&self, id: EntityId) -> Vec<String> {
@@ -383,7 +423,7 @@ impl World {
     }
 
     pub(crate) fn expanded_is_a(&self, e: &Entity) -> Vec<String> {
-        e.type_id
+        e.type_id()
             .map(|t| self.rules.ty(t).expanded_is_a.clone())
             .unwrap_or_default()
     }
@@ -397,7 +437,7 @@ impl World {
     /// What an entity of the world is busy with: what it gathers from is
     /// named as the world has it.
     pub(crate) fn activity_of(&self, e: &Entity) -> Option<Activity> {
-        questions::activity(e.orders.first(), |t| match t {
+        questions::activity(e.orders().first(), |t| match t {
             Target::Square(s) => Some(self.square(*s).type_name.as_str()),
             t => self.t_entity(t).map(|e| &*e.type_name),
         })
@@ -406,7 +446,7 @@ impl World {
     /// The upgrades of the unit's player that apply to it.
     pub fn unit_upgrades(&self, id: EntityId) -> Vec<String> {
         let e = self.e(id);
-        let Some(p) = e.player else {
+        let Some(p) = e.player() else {
             return Vec::new();
         };
         questions::upgrades_applying(&self.rules, self.type_of(id), &self.pl(p).upgrades)
@@ -506,8 +546,10 @@ impl World {
 
     fn already_walked(&self, id: EntityId, x: i64, y: i64) -> i64 {
         let e = self.e(id);
+        // Only a creature walks.
+        let Some(c) = e.creature() else { return 0 };
         let r2 = e.radius() * e.radius();
-        e.walked
+        c.walked
             .iter()
             .filter(|(lw, xw, yw, _)| *lw == e.place && square_of_distance(x, y, *xw, *yw) < r2)
             .map(|w| w.3)
@@ -516,7 +558,8 @@ impl World {
 
     fn future_coords(&self, id: EntityId, rotation: i64, target_d: i64) -> (i64, i64) {
         let e = self.e(id);
-        let mut d = floordiv(e.actual_speed * VIRTUAL_TIME_INTERVAL, 1000);
+        let speed = e.creature().map_or(0, |c| c.actual_speed);
+        let mut d = floordiv(speed * VIRTUAL_TIME_INTERVAL, 1000);
         if rotation == 0 {
             d = d.min(target_d);
         }
@@ -552,7 +595,7 @@ impl World {
         let Some(Place::Square(here)) = e.place else {
             return false;
         };
-        let player = e.player;
+        let player = e.player();
         for ex in self.square(here).exits.clone() {
             let Some(os) = self.exit_other_side(ex) else {
                 continue;
@@ -591,7 +634,9 @@ impl World {
     fn mark_the_dead_end(&mut self, id: EntityId) {
         let e = self.em(id);
         let w = (e.place, e.x, e.y, 5);
-        e.walked.push(w);
+        if let Some(c) = e.creature_mut() {
+            c.walked.push(w);
+        }
     }
 
     fn position_contains(&self, t: &Target, x: i64, y: i64) -> bool {
@@ -608,9 +653,11 @@ impl World {
 
     fn must_hold(&self, id: EntityId) -> bool {
         let e = self.e(id);
-        let smart = e.player.is_some_and(|p| self.pl(p).smart_units());
-        !(smart || e.ai_mode == Some(AiMode::Defensive))
-            && e.position_to_hold
+        // Only a creature holds a position.
+        let Some(c) = e.creature() else { return false };
+        let smart = c.player.is_some_and(|p| self.pl(p).smart_units());
+        !(smart || c.stance() == Some(AiMode::Defensive))
+            && c.position_to_hold
                 .as_ref()
                 .is_some_and(|t| self.position_contains(t, e.x, e.y))
     }
@@ -618,9 +665,8 @@ impl World {
     fn must_not_go_to(&self, id: EntityId, x: i64, y: i64) -> bool {
         self.must_hold(id)
             && !self
-                .e(id)
-                .position_to_hold
-                .as_ref()
+                .c(id)
+                .and_then(|c| c.position_to_hold.as_ref())
                 .is_some_and(|t| self.position_contains(t, x, y))
     }
 
@@ -662,22 +708,27 @@ impl World {
     /// `_reach`: one step toward the current orientation, turning around
     /// obstacles.
     fn reach(&mut self, id: EntityId, target_d: i64) -> Res {
-        if !self.e(id).smooth_rotations.is_empty() {
-            let rotation = self.em(id).smooth_rotations.remove(0);
-            if self.try_move(id, rotation, target_d)? || self.try_move(id, -rotation, target_d)? {
-                self.em(id).smooth_rotations.clear();
+        // Only a creature moves, and moving keeps it one.
+        let Some(c) = self.cm(id) else {
+            return Ok(());
+        };
+        if !c.smooth_rotations.is_empty() {
+            let rotation = c.smooth_rotations.remove(0);
+            if (self.try_move(id, rotation, target_d)? || self.try_move(id, -rotation, target_d)?)
+                && let Some(c) = self.cm(id)
+            {
+                c.smooth_rotations.clear();
             }
             return Ok(());
         }
-        if self.e(id).rotations.is_empty() {
-            let e = self.em(id);
-            e.walked = e
+        if c.rotations.is_empty() {
+            c.walked = c
                 .walked
                 .iter()
                 .filter(|w| w.3 > 1)
                 .map(|w| (w.0, w.1, w.2, w.3 - 1))
                 .collect();
-            if self.e(id).walked.is_empty() && self.try_move(id, 0, target_d)? {
+            if c.walked.is_empty() && self.try_move(id, 0, target_d)? {
                 return Ok(());
             }
             let mut rotations: Vec<(i64, i64)> = [0, 45, -45, 90, -90, 135, -135, 180]
@@ -685,20 +736,26 @@ impl World {
                 .map(|&r| (self.heuristic_value(id, r, target_d), r))
                 .collect();
             rotations.sort();
-            self.em(id).rotations = rotations;
+            if let Some(c) = self.cm(id) {
+                c.rotations = rotations;
+            }
         }
-        let n = self.e(id).rotations.len().min(4);
+        let n = self.c(id).map_or(0, |c| c.rotations.len()).min(4);
         for _ in 0..n {
-            let (_, rotation) = self.em(id).rotations.remove(0);
+            let Some(c) = self.cm(id) else { break };
+            let (_, rotation) = c.rotations.remove(0);
             if self.try_move(id, rotation, target_d)? {
-                self.em(id).rotations.clear();
+                if let Some(c) = self.cm(id) {
+                    c.rotations.clear();
+                }
                 return Ok(());
             }
         }
-        if self.e(id).rotations.is_empty() {
-            let e = self.em(id);
-            e.smooth_rotations = (1..180).collect();
-            e.walked.clear();
+        if let Some(c) = self.cm(id)
+            && c.rotations.is_empty()
+        {
+            c.smooth_rotations = (1..180).collect();
+            c.walked.clear();
             self.mark_the_dead_end(id);
             self.notify(id, EntityEvent::Collision, false);
         }
@@ -711,7 +768,7 @@ impl World {
     /// smart units, or the center of the square.
     pub(crate) fn deploy(&mut self, id: EntityId) -> Res {
         let e = self.e(id);
-        if let Some(Target::Zoom(z)) = &e.position_to_hold {
+        if let Some(Target::Zoom(z)) = e.creature().and_then(|c| c.position_to_hold.as_ref()) {
             let t = Target::Zoom(z.clone());
             self.set_action_target(id, Some(t));
             return Ok(());
@@ -719,9 +776,9 @@ impl World {
         let Some(Place::Square(place)) = e.place else {
             return Err(Abort::new("'Inside' object has no attribute 'x'"));
         };
-        let smart = e.player.is_some_and(|p| self.pl(p).smart_units());
+        let smart = e.player().is_some_and(|p| self.pl(p).smart_units());
         let t = if smart {
-            let p = e.player.expect("smart units have a player");
+            let p = e.player().expect("smart units have a player");
             let (x, y) = self.get_safest_subsquare(p, place);
             Target::Xy(x, y)
         } else {
@@ -741,7 +798,9 @@ impl World {
     }
 
     pub(crate) fn hold(&mut self, id: EntityId, target: Target) -> Res {
-        self.em(id).position_to_hold = Some(target);
+        if let Some(c) = self.cm(id) {
+            c.position_to_hold = Some(target);
+        }
         self.deploy(id)
     }
 
@@ -752,7 +811,7 @@ impl World {
         let Some(t) = self.t_entity(target) else {
             return Err(Abort::new("the target is not an entity"));
         };
-        let target_blocks = t.blocked_exit.is_some();
+        let target_blocks = t.blocked_exit().is_some();
         let e = self.e(id);
         if e.is_melee() {
             if let Some(Place::Inside(c)) = e.place {
@@ -825,7 +884,9 @@ impl World {
         } else {
             // The original also sets an unused attribute here; the action
             // goes on.
-            self.em(id).walked.clear();
+            if let Some(c) = self.cm(id) {
+                c.walked.clear();
+            }
             Ok(())
         }
     }
@@ -837,7 +898,9 @@ impl World {
         if !self.near_enough_to_aim(id, &target)? {
             self.turn_toward_and_reach(id, &target)
         } else {
-            self.em(id).walked.clear();
+            if let Some(c) = self.cm(id) {
+                c.walked.clear();
+            }
             self.aim(id, &target)
         }
     }
@@ -882,26 +945,32 @@ impl World {
                 target: None,
             },
         };
-        self.em(id).action = Some(action);
+        // Only a creature acts.
+        if let Some(c) = self.cm(id) {
+            c.action = Some(action);
+        }
     }
 
-    /// `stop`: no action, no position to hold.
+    /// `stop`: no action, no position to hold. Only a creature acts.
     pub(crate) fn stop(&mut self, id: EntityId) {
-        if !self.e(id).is_creature() {
-            return;
+        if let Some(c) = self.cm(id) {
+            c.action = Some(Action {
+                kind: ActionKind::Plain,
+                target: None,
+            });
+            c.position_to_hold = None;
         }
-        self.set_action_target(id, None);
-        self.em(id).position_to_hold = None;
     }
 
     fn complete_action(&mut self, id: EntityId) {
-        let e = self.em(id);
-        e.walked.clear();
-        e.action = None;
+        if let Some(c) = self.cm(id) {
+            c.walked.clear();
+            c.action = None;
+        }
     }
 
     pub(crate) fn action_update(&mut self, id: EntityId) -> Res {
-        let Some(action) = self.e(id).action.clone() else {
+        let Some(action) = self.c(id).and_then(|c| c.action.clone()) else {
             return Ok(());
         };
         match action.kind {
@@ -950,10 +1019,7 @@ impl World {
     fn move_action_update(&mut self, id: EntityId, target: Option<Target>) -> Res {
         // A move action always has a target.
         let Some(target) = target else { return Ok(()) };
-        let exit = self
-            .t_entity(&target)
-            .filter(|e| e.is_exit())
-            .and_then(|e| e.exit.clone());
+        let exit = self.t_entity(&target).and_then(|e| e.exit().cloned());
         if let Some(exit) = exit
             && let Some(os) = exit.other_side
         {
@@ -971,7 +1037,7 @@ impl World {
                         // The unit could not move: the action now aims at the
                         // center of the other side.
                         let c = (self.square(s).x, self.square(s).y);
-                        if let Some(a) = self.em(id).action.as_mut() {
+                        if let Some(a) = self.cm(id).and_then(|c| c.action.as_mut()) {
                             a.target = Some(Target::Xy(c.0, c.1));
                         }
                     }
@@ -1004,7 +1070,7 @@ impl World {
     pub(crate) fn place_objects(&self, p: Place) -> &[EntityId] {
         match p {
             Place::Square(s) => &self.square(s).objects,
-            Place::Inside(c) => self.e(c).inside.as_deref().unwrap_or(&[]),
+            Place::Inside(c) => self.e(c).inside().unwrap_or(&[]),
         }
     }
 
@@ -1012,7 +1078,7 @@ impl World {
 
     pub(crate) fn creature_update(&mut self, id: EntityId) -> Res {
         self.em(id).is_moving = false;
-        if self.e(id).player.is_none() {
+        if self.e(id).player().is_none() {
             return Ok(());
         }
         if self.e(id).stats.heal_level != 0 {
@@ -1021,9 +1087,9 @@ impl World {
         if self.e(id).stats.harm_level != 0 {
             self.harm_nearby_units(id)?;
         }
-        if self.e(id).inside.is_some() {
+        if self.e(id).inside().is_some() {
             let mut i = 0;
-            while let Some(&o) = self.e(id).inside.as_ref().and_then(|v| v.get(i)) {
+            while let Some(&o) = self.e(id).inside().and_then(|v| v.get(i)) {
                 let (x, y) = (self.e(id).x, self.e(id).y);
                 let oe = self.em(o);
                 oe.x = x;
@@ -1032,20 +1098,20 @@ impl World {
                 i += 1;
             }
         }
-        if self.e(id).player.is_none() {
+        if self.e(id).player().is_none() {
             return Ok(());
         }
-        if self.e(id).action.is_some() {
+        if self.c(id).is_some_and(|c| c.action.is_some()) {
             self.action_update(id)?;
         }
-        if self.e(id).player.is_none() {
+        if self.e(id).player().is_none() {
             return Ok(());
         }
         if self.e(id).has_imperative_orders() {
             self.execute_orders(id)?;
         } else {
             self.decide(id)?;
-            if !self.e(id).is_attacking() && !self.e(id).orders.is_empty() {
+            if !self.e(id).is_attacking() && !self.e(id).orders().is_empty() {
                 self.execute_orders(id)?;
             }
         }
@@ -1053,9 +1119,11 @@ impl World {
     }
 
     fn execute_orders(&mut self, id: EntityId) -> Res {
-        let first = &self.e(id).orders[0];
+        let first = &self.e(id).orders()[0];
         if first.is_final() {
-            self.em(id).orders.remove(0);
+            if let Some(c) = self.cm(id) {
+                c.orders.remove(0);
+            }
             Ok(())
         } else {
             let uid = first.uid;
@@ -1065,11 +1133,14 @@ impl World {
 
     pub(crate) fn regenerate(&mut self, id: EntityId) {
         let e = self.em(id);
-        if e.stats.hp_regen != 0 && e.hp < e.stats.hp_max {
-            e.hp = e.stats.hp_max.min(e.hp + e.stats.hp_regen);
-        }
-        if e.stats.mana_regen != 0 && e.mana < e.stats.mana_max {
-            e.mana = e.stats.mana_max.min(e.mana + e.stats.mana_regen);
+        let s = &e.stats;
+        if let Kind::Creature(c) = &mut e.kind {
+            if s.hp_regen != 0 && c.hp < s.hp_max {
+                c.hp = s.hp_max.min(c.hp + s.hp_regen);
+            }
+            if s.mana_regen != 0 && c.mana < s.mana_max {
+                c.mana = s.mana_max.min(c.mana + s.mana_regen);
+            }
         }
     }
 
@@ -1078,7 +1149,7 @@ impl World {
     fn raise_subsquare_threat(&mut self, id: EntityId, delta: i64) {
         let e = self.e(id);
         let sub = self.get_subsquare_id_from_xy(e.x, e.y);
-        let Some(p) = e.player else { return };
+        let Some(p) = e.player() else { return };
         for a in self.pl(p).allied.clone() {
             if self.pl(p).allied.contains(&a) {
                 *self.plm(a).subsquare_threat.entry(sub).or_insert(0) += delta;
@@ -1094,10 +1165,14 @@ impl World {
         attacker: EntityId,
         notify: bool,
     ) -> Res {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Ok(());
         };
-        if let Some(site) = self.em(id).site.as_mut() {
+        if let Some(Creature {
+            kind: CreatureKind::BuildingSite(site),
+            ..
+        }) = self.cm(id)
+        {
             site.damage_during_construction += damage;
         }
         let attacker = match self.e(attacker).place {
@@ -1111,12 +1186,16 @@ impl World {
             let ev = EntityEvent::Wounded {
                 attacker_type: a.type_name.to_string(),
                 attacker,
-                attacker_damage_level: a.damage_level,
+                attacker_damage_level: a.creature().map_or(0, |c| c.damage_level),
             };
             self.notify(id, ev, false);
         }
-        self.em(id).hp -= damage;
-        if self.e(id).hp < 0 {
+        // `id` has an owner: it is a creature.
+        let Some(c) = self.cm(id) else {
+            return Ok(());
+        };
+        c.hp -= damage;
+        if c.hp < 0 {
             self.die(id, Some(attacker))
         } else {
             self.on_unit_attacked(p, id, attacker);
@@ -1126,45 +1205,44 @@ impl World {
 
     /// `die`, with the behavior of the entity's class.
     pub(crate) fn die(&mut self, id: EntityId, attacker: Option<EntityId>) -> Res {
-        match self.e(id).class {
-            EntityClass::Worker | EntityClass::Soldier => {
-                if self.e(id).stats.corpse != 0 {
-                    self.create_corpse(id);
+        let e = self.e(id);
+        let (place, x, y) = (e.place, e.x, e.y);
+        match &e.kind {
+            Kind::Creature(c) => match &c.kind {
+                CreatureKind::Worker { .. } | CreatureKind::Soldier { .. } => {
+                    if e.stats.corpse != 0 {
+                        let dead = e.with_kind(c.clone());
+                        self.create_corpse(dead);
+                    }
+                    self.creature_die(id, attacker)
                 }
-                self.creature_die(id, attacker)
-            }
-            EntityClass::Effect => {
-                self.delete(id);
-                Ok(())
-            }
-            EntityClass::Building | EntityClass::BuildingSite => {
-                let e = self.e(id);
-                let (place, x, y) = (e.place, e.x, e.y);
-                self.creature_die(id, attacker)?;
-                if let Some(land) = self.e(id).building_land {
-                    let _ = self.move_to(land, place, Some((x, y)), 90);
+                CreatureKind::Effect { .. } => {
+                    self.delete(id);
+                    Ok(())
                 }
-                Ok(())
-            }
-            EntityClass::Deposit => {
-                let e = self.e(id);
-                let (place, x, y) = (e.place, e.x, e.y);
+                CreatureKind::Building { .. } | CreatureKind::BuildingSite(_) => {
+                    self.creature_die(id, attacker)?;
+                    if let Some(land) = self.e(id).building_land() {
+                        let _ = self.move_to(land, place, Some((x, y)), 90);
+                    }
+                    Ok(())
+                }
+            },
+            Kind::Deposit(_) => {
                 self.notify(id, EntityEvent::Exhausted, false);
                 self.delete(id);
-                if let Some(land) = self.e(id).building_land {
+                if let Some(land) = self.e(id).building_land() {
                     let _ = self.move_to(land, place, Some((x, y)), 90);
                 }
                 Ok(())
             }
-            EntityClass::Corpse => Ok(()),
-            EntityClass::Meadow | EntityClass::Exit => {
-                Err(Abort::new("this entity has no attribute 'die'"))
-            }
+            Kind::Corpse(_) => Ok(()),
+            Kind::Meadow | Kind::Exit(_) => Err(Abort::new("this entity has no attribute 'die'")),
         }
     }
 
     fn creature_die(&mut self, id: EntityId, attacker: Option<EntityId>) -> Res {
-        if let Some(inside) = self.e(id).inside.clone() {
+        if let Some(inside) = self.e(id).inside().map(<[EntityId]>::to_vec) {
             for o in inside {
                 let e = self.e(id);
                 let (place, x, y, a) = (e.place, e.x, e.y, e.airground_type);
@@ -1179,7 +1257,7 @@ impl World {
             }
         }
         self.notify(id, EntityEvent::Death, false);
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Err(Abort::new("'NoneType' object has no attribute 'stats'"));
         };
         let st = self.e(id).stat_type();
@@ -1189,7 +1267,7 @@ impl World {
         if let Some(a) = attacker {
             self.notify(id, EntityEvent::DeathBy(a), false);
             self.on_unit_attacked(p, id, a);
-            match self.e(a).player {
+            match self.e(a).player() {
                 Some(ap) => {
                     if let Some(st) = st {
                         self.plm(ap).stats.add(StatEvent::Killed, st.into(), 1);
@@ -1254,14 +1332,18 @@ impl World {
     fn heal_nearby_units(&mut self, id: EntityId) {
         let e = self.e(id);
         let hp = floordiv(e.stats.heal_level * PRECISION, 25);
-        let Some(p) = e.player else { return };
+        let Some(p) = e.player() else { return };
         let allies = self.pl(p).allied.clone();
+        // The units of players: creatures.
         let units = self.get_objects2(e.x, e.y, 6 * PRECISION, &allies, |x| {
-            x.stats.is_healable != 0 && x.hp < x.stats.hp_max
+            x.stats.is_healable != 0 && x.creature().map_or(0, |c| c.hp) < x.stats.hp_max
         });
         for u in units {
             let ue = self.em(u);
-            ue.hp = ue.stats.hp_max.min(ue.hp + hp);
+            let hp_max = ue.stats.hp_max;
+            if let Some(c) = ue.creature_mut() {
+                c.hp = hp_max.min(c.hp + hp);
+            }
         }
     }
 
@@ -1298,7 +1380,7 @@ impl World {
         if e.stats.damage == 0 {
             return false;
         }
-        let Some(p) = e.player else { return false };
+        let Some(p) = e.player() else { return false };
         let Target::Entity(oid) = other else {
             return false;
         };
@@ -1306,7 +1388,7 @@ impl World {
             return false;
         }
         let o = self.e(*oid);
-        if o.place.is_none() || o.hp < 0 {
+        if o.place.is_none() || o.creature().is_some_and(|c| c.hp < 0) {
             return false;
         }
         let kind = o.airground_type.ground_or_air();
@@ -1332,7 +1414,7 @@ impl World {
     }
 
     fn choose_enemy(&mut self, id: EntityId, place: SquareId) -> Res<bool> {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Ok(false);
         };
         let mut known = self.known_enemies(p, place);
@@ -1365,10 +1447,11 @@ impl World {
     }
 
     fn attack(&mut self, id: EntityId, target: Target) {
-        let same = matches!(&self.e(id).action, Some(a) if a.kind == ActionKind::Attack
+        let action = self.c(id).and_then(|c| c.action.as_ref());
+        let same = matches!(action, Some(a) if a.kind == ActionKind::Attack
             && a.target.as_ref().is_some_and(|t| t.same(&target)));
-        if !same {
-            self.em(id).action = Some(Action {
+        if !same && let Some(c) = self.cm(id) {
+            c.action = Some(Action {
                 kind: ActionKind::Attack,
                 target: Some(target),
             });
@@ -1377,7 +1460,7 @@ impl World {
     }
 
     fn flee(&mut self, id: EntityId) -> Res {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Ok(());
         };
         let Some(here) = self.e(id).place else {
@@ -1422,10 +1505,11 @@ impl World {
     /// repair and gather on their own.
     pub(crate) fn decide(&mut self, id: EntityId) -> Res {
         self.creature_decide(id)?;
-        if self.e(id).class != EntityClass::Worker {
+        let Some(work) = self.e(id).work() else {
             return Ok(());
-        }
-        let Some(p) = self.e(id).player else {
+        };
+        let (auto_repair, auto_gather) = (work.auto_repair, work.auto_gather);
+        let Some(p) = self.e(id).player() else {
             return Ok(());
         };
         if !self.pl(p).is_human() {
@@ -1433,20 +1517,20 @@ impl World {
         }
         if self
             .e(id)
-            .orders
+            .orders()
             .first()
             .is_some_and(|o| !matches!(o.kind, OrderKind::Gather { .. }))
         {
             return Ok(());
         }
         let place = self.e(id).place;
-        if self.e(id).auto_repair == Some(true) {
+        if auto_repair {
             for a in self.pl(p).allied.clone() {
                 for u in self.pl(a).units.clone() {
                     let ue = self.e(u);
                     if ue.place == place
                         && ue.stats.is_repairable != 0
-                        && ue.hp < ue.stats.hp_max
+                        && ue.creature().map_or(0, |c| c.hp) < ue.stats.hp_max
                         && !ue.is_building_site()
                     {
                         let cost = self.repair_cost(u);
@@ -1459,17 +1543,17 @@ impl World {
                 }
             }
         }
-        if !self.e(id).orders.is_empty() {
+        if !self.e(id).orders().is_empty() {
             return Ok(());
         }
-        if self.e(id).auto_gather == Some(true) {
+        if auto_gather {
             let Some(place) = place else { return Ok(()) };
             let allied = self.pl(p).allied.clone();
             let objects = self.place_objects(place).to_vec();
             let mut local: Vec<i64> = Vec::new();
             for &w in &objects {
                 let we = self.e(w);
-                if we.player.is_some_and(|wp| allied.contains(&wp))
+                if we.player().is_some_and(|wp| allied.contains(&wp))
                     && let Some(t) = self.type_of(w)
                 {
                     for &r in &t.storable_resource_types {
@@ -1492,10 +1576,10 @@ impl World {
                     })
                     .collect();
                 if !deposits.is_empty() {
-                    if let Some((r, _)) = self.e(id).cargo
+                    if let Some((r, _)) = self.e(id).work().and_then(|w| w.cargo)
                         && !local.contains(&r)
                     {
-                        self.em(id).cargo = None;
+                        self.set_cargo(id, None);
                     }
                     let i = self.random.choice_index(deposits.len()).expect("not empty");
                     let o = deposits[i];
@@ -1509,7 +1593,7 @@ impl World {
 
     fn creature_decide(&mut self, id: EntityId) -> Res {
         let e = self.e(id);
-        let Some(p) = e.player else { return Ok(()) };
+        let Some(p) = e.player() else { return Ok(()) };
         if let Some(Place::Inside(c)) = e.place {
             if let Some(Place::Square(s)) = self.e(c).place {
                 self.choose_enemy(id, s)?;
@@ -1519,7 +1603,7 @@ impl World {
         let Some(Place::Square(here)) = e.place else {
             return Ok(());
         };
-        if (self.pl(p).smart_units() || e.ai_mode == Some(AiMode::Defensive))
+        if (self.pl(p).smart_units() || e.stance() == Some(AiMode::Defensive))
             && e.stats.speed > 0
             && !self.must_hold(id)
             && self.balance(p, &[Some(Place::Square(here)), e.previous_place], None, 10) < 5
@@ -1548,7 +1632,7 @@ impl World {
     // attack
 
     fn armor_versus_of(&self, target: &Entity, attacker: &Entity) -> i64 {
-        if let Some(t) = target.type_id {
+        if let Some(t) = target.type_id() {
             let d = &self.rules.ty(t).armor_vs;
             if let Some((_, v)) = d.iter().find(|(k, _)| **k == *attacker.type_name) {
                 return *v;
@@ -1563,7 +1647,7 @@ impl World {
     }
 
     fn base_damage_versus_of(&self, attacker: &Entity, target: &Entity) -> i64 {
-        if let Some(t) = attacker.type_id {
+        if let Some(t) = attacker.type_id() {
             let d = &self.rules.ty(t).damage_vs;
             if let Some((_, v)) = d.iter().find(|(k, _)| **k == *target.type_name) {
                 return *v;
@@ -1591,7 +1675,8 @@ impl World {
     pub fn hit(&mut self, id: EntityId, target: EntityId) {
         let (a, t) = (self.e(id), self.e(target));
         let base = self.base_damage_versus_of(a, t);
-        let damage = a.minimal_damage.max(base - self.armor_versus_of(t, a));
+        let minimal = a.creature().map_or(0, |c| c.minimal_damage);
+        let damage = minimal.max(base - self.armor_versus_of(t, a));
         if let Err(Abort(m)) = self.receive_hit(target, damage, id, true) {
             self.warn(m);
         }
@@ -1600,7 +1685,8 @@ impl World {
     fn hit_res(&mut self, id: EntityId, target: EntityId) -> Res {
         let (a, t) = (self.e(id), self.e(target));
         let base = self.base_damage_versus_of(a, t);
-        let damage = a.minimal_damage.max(base - self.armor_versus_of(t, a));
+        let minimal = a.creature().map_or(0, |c| c.minimal_damage);
+        let damage = minimal.max(base - self.armor_versus_of(t, a));
         self.receive_hit(target, damage, id, true)
     }
 
@@ -1680,9 +1766,12 @@ impl World {
     }
 
     fn aim(&mut self, id: EntityId, target: &Target) -> Res {
-        if self.can_attack(id, target)? && self.time >= self.e(id).next_attack_time {
+        let next_attack_time = self.c(id).map_or(0, |c| c.next_attack_time);
+        if self.can_attack(id, target)? && self.time >= next_attack_time {
             let t = self.time + self.e(id).stats.cooldown;
-            self.em(id).next_attack_time = t;
+            if let Some(c) = self.cm(id) {
+                c.next_attack_time = t;
+            }
             self.notify(id, EntityEvent::LaunchAttack, false);
             let Target::Entity(tid) = target else {
                 return Ok(());
@@ -1707,7 +1796,7 @@ impl World {
         cost: &[i64],
         food: i64,
     ) -> Option<Reason> {
-        let p = self.e(id).player?;
+        let p = self.e(id).player()?;
         let pl = self.pl(p);
         for (i, &c) in cost.iter().enumerate() {
             if pl.resources.get(i).copied().unwrap_or(0) < c {
@@ -1715,7 +1804,7 @@ impl World {
             }
         }
         let limit = self.food_limit();
-        if self.e(id).orders.is_empty()
+        if self.e(id).orders().is_empty()
             && food > 0
             && pl.available_food(limit) < pl.used_food + food
         {
@@ -1746,7 +1835,7 @@ impl World {
 
     fn hp_delta(&self, id: EntityId) -> i64 {
         let e = self.e(id);
-        match &e.site {
+        match e.site() {
             Some(s) => self.delta(id, e.stats.hp_max - s.starting_hp, 100),
             None => self.delta(id, e.stats.hp_max, 70),
         }
@@ -1754,58 +1843,78 @@ impl World {
 
     pub(crate) fn is_fully_repaired(&self, id: EntityId) -> bool {
         let e = self.e(id);
-        !e.is_building_site() && e.stats.is_repairable != 0 && e.hp == e.stats.hp_max
+        !e.is_building_site()
+            && e.stats.is_repairable != 0
+            && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
     }
 
     /// `be_built`: a building site grows, another building is repaired at
     /// the actor's player's cost.
     pub(crate) fn be_built(&mut self, id: EntityId, actor: EntityId) -> Res {
-        if self.e(id).site.is_some() {
-            let delta = self.hp_delta(id);
-            let e = self.em(id);
-            e.hp = (e.hp + delta).min(e.stats.hp_max);
-            let site = e.site.as_mut().expect("checked");
+        let delta = self.e(id).site().is_some().then(|| self.hp_delta(id));
+        let e = self.em(id);
+        let hp_max = e.stats.hp_max;
+        if let (
+            Some(delta),
+            Kind::Creature(Creature {
+                hp,
+                kind: CreatureKind::BuildingSite(site),
+                ..
+            }),
+        ) = (delta, &mut e.kind)
+        {
+            *hp = (*hp + delta).min(hp_max);
             site.timer -= 1;
             if site.timer == 0 {
                 let site = site.clone();
                 let e = self.e(id);
-                let (player, place, x, y) = (e.player, e.place, e.x, e.y);
-                let blocked_exit = e.blocked_exit;
-                let land = e.building_land;
+                let (player, place, x, y) = (e.player(), e.place, e.x, e.y);
+                let blocked_exit = e.blocked_exit();
+                let land = e.building_land();
                 self.delete(id);
                 let place = place.ok_or_else(|| Abort::new("the building site has no place"))?;
                 let b = self
                     .create_creature(site.building_type, player, place, x, y)
                     .map_err(|_| Abort::new("NotEnoughSpaceError"))?;
-                self.em(b).building_land = land;
+                // `b` was just created as a creature.
+                if let Some(c) = self.cm(b) {
+                    c.building_land = land;
+                }
                 if let Some(ex) = blocked_exit {
                     self.block(b, ex);
                 }
                 let hp = self.rules.ty(site.building_type).stats.hp_max
                     - site.damage_during_construction;
-                self.em(b).hp = hp;
+                if let Some(c) = self.cm(b) {
+                    c.hp = hp;
+                }
                 self.notify(b, EntityEvent::Complete, false);
             }
             return Ok(());
         }
         let e = self.e(id);
-        if e.hp < e.stats.hp_max {
+        if e.creature().map_or(0, |c| c.hp) < e.stats.hp_max {
             let cost = self.repair_cost(id);
             match self.check_if_enough_resources(actor, &cost, 0) {
                 Some(reason) => {
                     self.notify(actor, EntityEvent::OrderImpossible(Some(reason)), false);
-                    if let Some(o) = self.em(actor).orders.first_mut() {
-                        o.complete();
+                    if let Some(c) = self.cm(actor) {
+                        if let Some(o) = c.orders.first_mut() {
+                            o.complete();
+                        }
+                        c.distance_to_goal = 0;
                     }
-                    self.em(actor).distance_to_goal = 0;
                 }
                 None => {
-                    if let Some(p) = self.e(actor).player {
+                    if let Some(p) = self.e(actor).player() {
                         self.pay(p, &cost);
                     }
                     let delta = self.hp_delta(id);
                     let e = self.em(id);
-                    e.hp = (e.hp + delta).min(e.stats.hp_max);
+                    let hp_max = e.stats.hp_max;
+                    if let Some(c) = e.creature_mut() {
+                        c.hp = (c.hp + delta).min(hp_max);
+                    }
                 }
             }
         }
@@ -1827,7 +1936,7 @@ impl World {
 
     pub(crate) fn load_all(&mut self, id: EntityId, place: Option<Place>) {
         let place = place.or(self.e(id).place);
-        let Some(p) = self.e(id).player else { return };
+        let Some(p) = self.e(id).player() else { return };
         let mut units = self.pl(p).units.clone();
         units.sort_by_key(|&u| std::cmp::Reverse(self.e(u).stats.transport_volume));
         for u in units {
@@ -1845,7 +1954,12 @@ impl World {
             }
             Some(s) => (Some(Place::Square(s)), self.square(s).x, self.square(s).y),
         };
-        for o in self.e(id).inside.clone().unwrap_or_default() {
+        for o in self
+            .e(id)
+            .inside()
+            .map(<[EntityId]>::to_vec)
+            .unwrap_or_default()
+        {
             let _ = self.move_to(o, place, Some((x, y)), 90);
             self.notify(o, EntityEvent::Exit, false);
         }
@@ -1860,8 +1974,8 @@ impl World {
         };
         if e.stats.speed != 0
             && e.menace() != 0
-            && e.ai_mode == Some(AiMode::Offensive)
-            && e.orders.is_empty()
+            && e.stance() == Some(AiMode::Offensive)
+            && e.orders().is_empty()
             && !e.is_attacking()
             && self.can_go(id, Some(Place::Square(place)), false, false)
         {
@@ -1919,9 +2033,11 @@ impl World {
         let Some(Place::Square(here)) = e.place else {
             return Ok(None);
         };
-        let (player, plane) = (e.player, e.airground_type);
+        let (player, plane) = (e.player(), e.airground_type);
         let d = self.shortest_path_distance_to(here, place, player, plane, avoid)?;
-        self.em(id).distance_to_goal = d;
+        if let Some(c) = self.cm(id) {
+            c.distance_to_goal = d;
+        }
         let n = self.shortest_path_to(here, place, player, plane, avoid)?;
         Ok(n.map(|n| match n {
             Node::Square(s) => Target::Square(s),
@@ -1965,7 +2081,7 @@ impl World {
     }
 
     pub(crate) fn start_moving_to_enemy(&mut self, id: EntityId) -> Res {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Ok(());
         };
         let Some(Place::Square(here)) = self.e(id).place else {
@@ -1996,13 +2112,13 @@ impl World {
     /// `auto_explore`: goes to unknown starting squares, unknown squares,
     /// squares to watch, then anywhere, avoiding danger.
     pub(crate) fn auto_explore(&mut self, id: EntityId) -> Res {
-        let Some(p) = self.e(id).player else {
+        let Some(p) = self.e(id).player() else {
             return Err(Abort::new("AssertionError"));
         };
         let current = self.e(id).action_target().cloned();
         match current {
             None => {
-                let dest = self.e(id).destination;
+                let dest = self.c(id).and_then(|c| c.destination);
                 if self.e(id).place != dest.map(Place::Square) {
                     let t = dest.map(Target::Square);
                     let stage = self.next_stage(id, t.as_ref(), true)?;
@@ -2026,7 +2142,9 @@ impl World {
                         let stage = self.next_stage(id, Some(&Target::Square(place)), true)?;
                         self.set_action_target(id, stage);
                         if !self.e(id).is_idle() {
-                            self.em(id).destination = Some(place);
+                            if let Some(c) = self.cm(id) {
+                                c.destination = Some(place);
+                            }
                             return Ok(());
                         }
                     }
@@ -2036,7 +2154,9 @@ impl World {
                     .choice_index(self.squares.len())
                     .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
                 let dest = SquareId(i as u32);
-                self.em(id).destination = Some(dest);
+                if let Some(c) = self.cm(id) {
+                    c.destination = Some(dest);
+                }
                 let stage = self.next_stage(id, Some(&Target::Square(dest)), false)?;
                 self.set_action_target(id, stage);
             }

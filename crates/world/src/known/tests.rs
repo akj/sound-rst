@@ -16,7 +16,7 @@ fn an_enemys_entity_has_no_own_part() {
             format!("order 0 0 go {b2}"),
         ],
     );
-    assert_eq!(w.entity(peasant).unwrap().orders.len(), 1);
+    assert_eq!(w.entity(peasant).unwrap().orders().len(), 1);
     // The player is made to see the computer's peasant.
     w.player_mut(me).perception.insert(peasant);
     let e = seat(&w, me).perceived(peasant).unwrap();
@@ -46,7 +46,7 @@ fn an_allys_entity_has_its_own_part_once_the_player_controls_the_allys_units() {
             format!("order 0 0 go {}", townhall.0),
         ],
     );
-    let target = w.entity(peasant).unwrap().orders[0].target();
+    let target = w.entity(peasant).unwrap().orders()[0].target();
     assert!(matches!(target, Some(Target::Memory(m)) if m.owner == them));
     w.player_mut(me).perception.insert(peasant);
     assert_eq!(seat(&w, me).perceived(peasant).unwrap().own, None);
@@ -77,10 +77,10 @@ fn the_players_own_unit_has_its_orders_cargo_and_the_rest() {
             format!("order 1 0 go {}", townhall.0),
         ],
     );
-    let e = w.entity_mut(peasant).unwrap();
-    e.cargo = Some((0, 5000));
-    e.group = Some("1".into());
-    let distance_to_goal = e.distance_to_goal;
+    let c = w.entity_mut(peasant).unwrap().creature_mut().unwrap();
+    c.work_mut().unwrap().cargo = Some((0, 5000));
+    c.group = Some("1".into());
+    let distance_to_goal = c.distance_to_goal;
 
     let e = seat(&w, me).perceived(peasant).unwrap();
     let own = e.own.unwrap();
@@ -134,8 +134,8 @@ fn a_remembered_entity_is_the_copy_as_remembered_with_its_time() {
     // Seen with 400 hit points at x 18 m; it is damaged and moved since.
     let seen = (400_000, 18_000);
     let e = w.entity_mut(townhall).unwrap();
-    assert_eq!((e.hp, e.x), seen);
-    (e.hp, e.x) = (1000, 18_500);
+    assert_eq!((e.creature().unwrap().hp, e.x), seen);
+    (e.creature_mut().unwrap().hp, e.x) = (1000, 18_500);
 
     let r = seat(&w, me).remembered(townhall).unwrap();
     assert_eq!(

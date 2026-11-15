@@ -96,7 +96,7 @@ impl<'a> Truth<'a> {
             .copied()
             .filter(|&u| {
                 w.entity(u)
-                    .and_then(|e| e.player)
+                    .and_then(|e| e.player())
                     .is_some_and(|p| self.controls(p))
             })
             .collect()
@@ -192,7 +192,7 @@ impl<'a> Truth<'a> {
         let other_side = self
             .w
             .entity(exit)
-            .and_then(|e| e.exit.as_ref())
+            .and_then(|e| e.exit())
             .and_then(|x| x.other_side);
         questions::exit_is_blocked(
             |id| self.known_entity(id),
@@ -220,7 +220,7 @@ impl<'a> Truth<'a> {
     }
 
     fn owner_has(&self, unit: EntityId, requirement: &str) -> Option<bool> {
-        let owner = self.w.entity(unit)?.player?;
+        let owner = self.w.entity(unit)?.player()?;
         self.controls(owner).then(|| self.w.has(owner, requirement))
     }
 
@@ -650,7 +650,7 @@ fn compare_start(t: &mut Tally, w: &World, s: &SeatView) {
     );
     for e in w.entities() {
         let other = e
-            .exit
+            .exit()
             .as_ref()
             .and_then(|x| x.other_side)
             .and_then(|o| w.entity(o)?.place);
@@ -874,7 +874,7 @@ fn a_default_order_reads_the_owners_own_unit_as_it_is_now() {
     w.load(tower, catapult);
     w.update();
     assert!(w.player(me).memory.contains_key(&catapult));
-    w.entity_mut(catapult).unwrap().hp = 1000;
+    w.entity_mut(catapult).unwrap().creature_mut().unwrap().hp = 1000;
 
     let v = Truth { w: &w, me };
     let s = seat(&w, me);
@@ -920,7 +920,7 @@ fn in_cheat_mode_the_seats_own_unit_inside_is_remembered() {
     w.load(tower, catapult);
     w.update();
     assert!(w.player(me).memory.contains_key(&catapult));
-    w.entity_mut(catapult).unwrap().hp = 1000;
+    w.entity_mut(catapult).unwrap().creature_mut().unwrap().hp = 1000;
 
     let v = Truth { w: &w, me };
     let s = seat(&w, me);
