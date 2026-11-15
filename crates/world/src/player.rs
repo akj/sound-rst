@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::ai::{Computer, Handicap, handicapped_name};
-use crate::entity::{Entity, EntityId, SquareId, StatType};
+use crate::entity::{Entity, EntityId, Names, SquareId, StatType};
 use crate::events::Event;
 use crate::message::TurnMessage;
 use crate::msg::{Msg, MsgPart};
@@ -355,6 +355,22 @@ pub struct Player {
     pub(crate) end_of_turn: Option<EndOfTurn>,
     /// The state of a scripted computer player.
     pub(crate) ai: Option<Box<Computer>>,
+    /// What the player knew before it left the game, which the digest
+    /// still hashes as if the player kept it.
+    pub(crate) digest_only: Option<Box<DigestOnly>>,
+}
+
+/// What a player forgets when it leaves the game, kept for the digest
+/// only.
+#[derive(Debug, Default)]
+pub(crate) struct DigestOnly {
+    perception: BTreeSet<EntityId>,
+    memory: BTreeMap<EntityId, Remembrance>,
+    budget: Vec<Order>,
+    detected_units: BTreeSet<EntityId>,
+    known_enemies: BTreeMap<SquareId, (i64, Vec<EntityId>)>,
+    group: Option<Vec<EntityId>>,
+    ai: Option<Box<Computer>>,
 }
 
 /// Every field but the events and the end of the turn, which only a
@@ -412,7 +428,40 @@ impl Hash for Player {
             events: _,
             end_of_turn: _,
             ai,
+            digest_only,
         } = self;
+        // A player who left hashes what it knew as it would have kept it:
+        // what it knew when it left, and what was added since.
+        let kept = digest_only.as_deref();
+        let union_set = |live: &BTreeSet<EntityId>, kept: Option<&BTreeSet<EntityId>>| {
+            let mut all = live.clone();
+            all.extend(kept.into_iter().flatten().copied());
+            all
+        };
+        let perception = &union_set(perception, kept.map(|k| &k.perception));
+        let detected_units = &union_set(detected_units, kept.map(|k| &k.detected_units));
+        let memory = &{
+            let mut all = kept.map(|k| k.memory.clone()).unwrap_or_default();
+            all.extend(memory.iter().map(|(k, v)| (*k, v.clone())));
+            all
+        };
+        let known_enemies = &{
+            let mut all = kept.map(|k| k.known_enemies.clone()).unwrap_or_default();
+            all.extend(known_enemies.iter().map(|(k, v)| (*k, v.clone())));
+            all
+        };
+        let budget = match kept {
+            Some(k) if budget.is_empty() => &k.budget,
+            _ => budget,
+        };
+        let group = match kept {
+            Some(k) if group.is_none() => &k.group,
+            _ => group,
+        };
+        let ai = match kept {
+            Some(k) if ai.is_none() => &k.ai,
+            _ => ai,
+        };
         obj_id.hash(state);
         kind.hash(state);
         controller.hash(state);
@@ -532,6 +581,114 @@ impl Player {
             events: Vec::new(),
             end_of_turn: None,
             ai: None,
+            digest_only: None,
+        }
+    }
+
+    /// Calls `f` with each id the player's state names (see [`Names`]):
+    /// what it perceives and remembers, its units, the orders of its
+    /// budget, what its units revealed until a time not yet past, the
+    /// enemies it found this turn, its selection and its computer's
+    /// bookkeeping. Its buckets name its units only when `buckets_read`:
+    /// an allied player in the game looks through them. A remembered copy
+    /// is read as it was, so what it holds is not named; which units were
+    /// detected is only asked about, never looked up.
+    pub(crate) fn names(&self, now: i64, buckets_read: bool, f: &mut impl FnMut(EntityId)) {
+        let Player {
+            obj_id: _,
+            kind: _,
+            controller: _,
+            neutral: _,
+            faction: _,
+            allied: _,
+            number: _,
+            perception,
+            memory,
+            objectives: _,
+            units,
+            budget,
+            upgrades: _,
+            forbidden_techs: _,
+            observed_before_squares: _,
+            strictly_observed_before_squares: _,
+            observed_squares: _,
+            partly_observed_squares: _,
+            observed_objects,
+            detected_units: _,
+            allied_control: _,
+            known_enemies,
+            enemy_menace: _,
+            enemy_presence: _,
+            places_with_corpses: _,
+            places_with_friends: _,
+            cataclysmic_places: _,
+            subsquare_threat: _,
+            counterattack_places: _,
+            resources: _,
+            storage_bonus: _,
+            food: _,
+            used_food: _,
+            cheatmode: _,
+            has_victory: _,
+            has_been_defeated: _,
+            observer_if_defeated: _,
+            group,
+            group_had_enough_mana: _,
+            stats: _,
+            triggers: _,
+            menace: _,
+            buckets,
+            places_to_explore: _,
+            cheat_has_all: _,
+            handicap: _,
+            events: _,
+            end_of_turn: _,
+            ai,
+            digest_only: _,
+        } = self;
+        perception.iter().for_each(|&o| f(o));
+        memory.keys().for_each(|&o| f(o));
+        units.names(f);
+        budget.names(f);
+        for (&o, &until) in observed_objects {
+            if until >= now {
+                f(o);
+            }
+        }
+        for (t, list) in known_enemies.values() {
+            if *t == now {
+                list.names(f);
+            }
+        }
+        group.names(f);
+        if buckets_read {
+            buckets.values().for_each(|b| b.names(f));
+        }
+        if let Some(ai) = ai {
+            ai.names(f);
+        }
+    }
+
+    /// Forgets, once out of the game, what nothing reads any more: what
+    /// it perceived and remembered, its budget, which units were detected,
+    /// the enemies it found, its selection and its computer's
+    /// bookkeeping. Its statistics, resources, alliances, upgrades and
+    /// squares stay, for the score and its allies; so do its buckets and
+    /// what its units revealed, which its allies still look through.
+    pub(crate) fn forget_after_leaving(&mut self) {
+        let kept = self.digest_only.get_or_insert_default();
+        kept.perception.append(&mut self.perception);
+        kept.memory.append(&mut self.memory);
+        kept.detected_units.append(&mut self.detected_units);
+        kept.known_enemies.append(&mut self.known_enemies);
+        if !self.budget.is_empty() {
+            kept.budget = std::mem::take(&mut self.budget);
+        }
+        if self.group.is_some() {
+            kept.group = self.group.take();
+        }
+        if self.ai.is_some() {
+            kept.ai = self.ai.take();
         }
     }
 

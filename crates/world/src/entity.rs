@@ -785,6 +785,201 @@ impl Entity<Creature> {
     }
 }
 
+/// What holds ids of entities that the simulation may look up later.
+/// The world keeps an entity that left the map while something names it,
+/// and frees it once nothing does (see `World::free_unnamed`). An id that
+/// is only resolved through what a player perceives or remembers, such as
+/// a [`crate::orders::TargetRef`], is not a name: resolving a freed id
+/// finds nothing, as resolving the id of a deleted entity did.
+pub(crate) trait Names {
+    /// Calls `f` with each id it names.
+    fn names(&self, f: &mut impl FnMut(EntityId));
+}
+
+impl<T: Names> Names for Option<T> {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        if let Some(t) = self {
+            t.names(f);
+        }
+    }
+}
+
+impl<T: Names> Names for [T] {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        for t in self {
+            t.names(f);
+        }
+    }
+}
+
+impl<T: Names> Names for Vec<T> {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        self.as_slice().names(f);
+    }
+}
+
+impl Names for EntityId {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        f(*self);
+    }
+}
+
+impl Names for Place {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        match self {
+            Place::Square(_) => {}
+            Place::Inside(c) => f(*c),
+        }
+    }
+}
+
+/// A remembered copy names the entity it is a copy of: an order aimed at
+/// it may look that entity up. What the copy itself holds is only read as
+/// it was, never looked up.
+impl Names for Target {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        match self {
+            Target::Entity(e) => f(*e),
+            Target::Memory(m) => f(m.snapshot.id),
+            Target::Square(_) | Target::Zoom(_) | Target::Xy(..) => {}
+        }
+    }
+}
+
+impl Names for Action {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Action { kind: _, target } = self;
+        target.names(f);
+    }
+}
+
+/// An entity names what it is inside, what it blocks, the land it covers,
+/// the other side of an exit, what is inside it and what its orders and
+/// action aim at. Its own id is not a name of itself. The place it was in
+/// before is only compared with places, never looked up.
+impl Names for Entity {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Entity {
+            id: _,
+            type_name: _,
+            place,
+            x: _,
+            y: _,
+            o: _,
+            stats: _,
+            airground_type: _,
+            is_moving: _,
+            previous_place: _,
+            kind,
+        } = self;
+        place.names(f);
+        kind.names(f);
+    }
+}
+
+impl Names for Kind {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        match self {
+            Kind::Meadow => {}
+            Kind::Deposit(Deposit {
+                type_id: _,
+                qty_max: _,
+                resource_regen: _,
+                building_land,
+            }) => building_land.names(f),
+            Kind::Exit(ExitData {
+                other_side,
+                is_a_portal: _,
+                blockers,
+                is_blocked_by_forests: _,
+            }) => {
+                other_side.names(f);
+                blockers.names(f);
+            }
+            Kind::Corpse(Corpse {
+                unit,
+                time_limit: _,
+            }) => unit.kind.names_kept_by_resurrection(f),
+            Kind::Creature(c) => c.names(f),
+        }
+    }
+}
+
+/// A rallying point is a target as given: resolved when a unit is trained.
+/// The dead ends it walked are only compared with places.
+impl Names for Creature {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        let Creature {
+            player: _,
+            hp: _,
+            mana: _,
+            orders,
+            action,
+            walked: _,
+            rotations: _,
+            smooth_rotations: _,
+            number: _,
+            inside,
+            position_to_hold,
+            minimal_damage: _,
+            next_attack_time: _,
+            damage_level: _,
+            distance_to_goal: _,
+            rallying_point: _,
+            group: _,
+            destination: _,
+            actual_speed: _,
+            time_limit: _,
+            is_cloaked: _,
+            blocked_exit,
+            building_land,
+            kind,
+        } = self;
+        match kind {
+            CreatureKind::Worker {
+                type_id: _,
+                stance: _,
+                work:
+                    Work {
+                        auto_gather: _,
+                        auto_repair: _,
+                        cargo: _,
+                    },
+            } => {}
+            CreatureKind::Soldier {
+                type_id: _,
+                stance: _,
+            }
+            | CreatureKind::Effect { type_id: _ }
+            | CreatureKind::Building { type_id: _ } => {}
+            CreatureKind::BuildingSite(SiteData {
+                building_type: _,
+                starting_hp: _,
+                timer: _,
+                damage_during_construction: _,
+            }) => {}
+        }
+        orders.names(f);
+        action.names(f);
+        inside.names(f);
+        position_to_hold.names(f);
+        blocked_exit.names(f);
+        building_land.names(f);
+    }
+}
+
+impl Creature {
+    /// What a corpse's copy of its unit names: what a resurrection carries
+    /// into the new unit and may look up there. Its orders were emptied
+    /// when it died; the resurrection stops it, which drops its action and
+    /// the position it held, and places it, which replaces where it was.
+    fn names_kept_by_resurrection(&self, f: &mut impl FnMut(EntityId)) {
+        self.inside.names(f);
+        self.blocked_exit.names(f);
+        self.building_land.names(f);
+    }
+}
+
 /// What the statistics count a creature as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StatType {

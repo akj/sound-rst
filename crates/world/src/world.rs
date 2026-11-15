@@ -9,8 +9,8 @@ use crate::abort::{Abort, Res};
 use crate::collision::CollisionMatrix;
 use crate::command::Command;
 use crate::entity::{
-    Action, ActionKind, COLLISION_RADIUS, Creature, Entity, EntityId, Kind, MemoryRef, Place,
-    PlayerId, SquareId, Target,
+    Action, ActionKind, COLLISION_RADIUS, Creature, Entity, EntityId, Kind, MemoryRef, Names,
+    Place, PlayerId, SquareId, Target,
 };
 use crate::events::{EntityEvent, Event};
 use crate::known::KnownEntity;
@@ -84,6 +84,8 @@ struct Entities {
     /// One more than the greatest id ever stored: the length of the list
     /// that the digest hashes, which had a place for every id up to it.
     digest_len: usize,
+    /// The entities freed, which the digest still hashes as they were.
+    digest_freed: BTreeMap<EntityId, Entity>,
 }
 
 /// The place in [`Entities::index`] of an id that names no entity stored.
@@ -132,6 +134,20 @@ impl Entities {
         }
     }
 
+    /// Frees the entities whose ids `gone` holds.
+    fn free(&mut self, gone: &BTreeSet<EntityId>) {
+        if gone.is_empty() {
+            return;
+        }
+        let (freed, kept) = std::mem::take(&mut self.slots)
+            .into_iter()
+            .partition::<Vec<Entity>, _>(|e| gone.contains(&e.id));
+        self.slots = kept;
+        self.digest_freed
+            .extend(freed.into_iter().map(|e| (e.id, e)));
+        self.reindex();
+    }
+
     /// Makes `index` give the position of every entity in `slots` again.
     fn reindex(&mut self) {
         self.index.fill(NO_SLOT);
@@ -154,8 +170,27 @@ impl Hash for Entities {
         self.digest_len.hash(state);
         let mut stored = self.slots.iter().peekable();
         for i in 0..self.digest_len {
-            let e = stored.next_if(|e| e.id.0 as usize == i);
+            let e = stored
+                .next_if(|e| e.id.0 as usize == i)
+                .or_else(|| self.digest_freed.get(&EntityId(i as u32)));
             e.hash(state);
+        }
+    }
+}
+
+/// The entities found named during [`World::named_among`], among those
+/// that left the map.
+struct Marker<'a> {
+    left: &'a BTreeSet<EntityId>,
+    named: BTreeSet<EntityId>,
+    /// Named, and what they hold not yet walked.
+    to_walk: Vec<EntityId>,
+}
+
+impl Marker<'_> {
+    fn name(&mut self, id: EntityId) {
+        if self.left.contains(&id) && self.named.insert(id) {
+            self.to_walk.push(id);
         }
     }
 }
@@ -184,6 +219,9 @@ pub struct World {
     pub(crate) grid_xy: BTreeMap<(i64, i64), SquareId>,
     pub(crate) square_by_obj: BTreeMap<u32, SquareId>,
     entities: Entities,
+    /// Entities that left the map since the last turn began, or were kept
+    /// then because something named them: what the next turn may free.
+    left_the_map: BTreeSet<EntityId>,
     pub(crate) active_objects: Vec<EntityId>,
     players_arena: Vec<Player>,
     /// The players still in the game, in creation order.
@@ -237,6 +275,7 @@ impl Hash for World {
             grid_xy: _,
             square_by_obj: _,
             entities,
+            left_the_map: _,
             active_objects,
             players_arena,
             players,
@@ -383,6 +422,7 @@ impl World {
             grid_xy: BTreeMap::new(),
             square_by_obj: BTreeMap::new(),
             entities: Entities::default(),
+            left_the_map: BTreeSet::new(),
             active_objects: Vec::new(),
             players_arena: Vec::new(),
             players: Vec::new(),
@@ -465,8 +505,9 @@ impl World {
 
     // access
 
-    /// The entity with this id. Deleted entities stay, without a place, as
-    /// in the original.
+    /// The entity with this id. A deleted entity stays, without a place,
+    /// while something names it (see [`Names`]), and is then freed: its id
+    /// names nothing from then on.
     pub fn entity(&self, id: EntityId) -> Option<&Entity> {
         self.entities.get(id)
     }
@@ -477,14 +518,16 @@ impl World {
         self.entities.get_mut(id)
     }
 
+    /// The entity with this id, which something names: an entity is freed
+    /// only once nothing does.
     pub(crate) fn e(&self, id: EntityId) -> &Entity {
         self.entity(id)
-            .expect("an entity id always names an entity")
+            .expect("an id that something names names a stored entity")
     }
 
     pub(crate) fn em(&mut self, id: EntityId) -> &mut Entity {
         self.entity_mut(id)
-            .expect("an entity id always names an entity")
+            .expect("an id that something names names a stored entity")
     }
 
     /// The creature with this id: `None` for an entity of another kind.
@@ -498,7 +541,8 @@ impl World {
         self.em(id).creature_mut()
     }
 
-    /// Every entity ever registered, in id order.
+    /// Every entity stored, in id order: those on the map, and those that
+    /// left it and that something still names (see [`Names`]).
     pub fn entities(&self) -> impl Iterator<Item = &Entity> {
         self.entities.iter()
     }
@@ -760,6 +804,7 @@ impl World {
         e.place = None;
         let active = Self::is_active_kind(&e.kind);
         self.entities.insert(e);
+        self.left_the_map.insert(id);
         if active {
             self.active_objects.push(id);
         }
@@ -875,6 +920,7 @@ impl World {
             self.leave(p, id);
             if new_place.is_none() {
                 self.unregister_entity(id);
+                self.left_the_map.insert(id);
             }
         }
         {
@@ -1038,6 +1084,70 @@ impl World {
         result
     }
 
+    // freeing
+
+    /// Frees the entities that left the map and that nothing names (see
+    /// [`Names`]), once the players who left the game have forgotten what
+    /// they no longer need. Done when a turn begins, before its commands:
+    /// the last turn's messages were built from what the players knew. An
+    /// entity named only by another one that left is freed with it.
+    fn free_unnamed(&mut self) {
+        for p in self.ex_players.clone() {
+            self.plm(p).forget_after_leaving();
+        }
+        let mut left = std::mem::take(&mut self.left_the_map);
+        left.retain(|&id| self.entity(id).is_some_and(|e| e.place.is_none()));
+        if left.is_empty() {
+            return;
+        }
+        let named = self.named_among(&left);
+        let gone: BTreeSet<EntityId> = left.difference(&named).copied().collect();
+        self.entities.free(&gone);
+        self.left_the_map = named;
+    }
+
+    /// Which of `left` something names: the recallable groups, the
+    /// objects updated each turn, the path graphs, the entities on the map,
+    /// the players, and what each entity named holds in turn.
+    fn named_among(&self, left: &BTreeSet<EntityId>) -> BTreeSet<EntityId> {
+        let mut m = Marker {
+            left,
+            named: BTreeSet::new(),
+            to_walk: Vec::new(),
+        };
+        let mut name = |id: EntityId| m.name(id);
+        for (_, units) in &self.groups {
+            units.names(&mut name);
+        }
+        self.active_objects.names(&mut name);
+        // They name only exits, which seldom leave the map.
+        if left
+            .iter()
+            .any(|&id| self.entity(id).is_some_and(Entity::is_exit))
+        {
+            self.graphs.names(&mut name);
+            self.path_cache.names(&mut name);
+        }
+        for e in self.entities.iter().filter(|e| e.place.is_some()) {
+            e.names(&mut name);
+        }
+        let now = self.time;
+        for (id, pl) in self.all_players() {
+            let buckets_read = !self.ex_players.contains(&id)
+                || self
+                    .players
+                    .iter()
+                    .any(|&q| self.pl(q).allied.contains(&id));
+            pl.names(now, buckets_read, &mut name);
+        }
+        while let Some(id) = m.to_walk.pop() {
+            if let Some(e) = self.entity(id) {
+                e.names(&mut |n| m.name(n));
+            }
+        }
+        m.named
+    }
+
     // update
 
     /// Queues a command of a player. Commands run in order at the start of
@@ -1071,6 +1181,7 @@ impl World {
     /// [`VIRTUAL_TIME_INTERVAL`]. The commands of a player who has left the
     /// game are dropped, including a player who left earlier in this turn.
     pub fn update(&mut self) {
+        self.free_unnamed();
         for (p, cmd) in std::mem::take(&mut self.pending_commands) {
             if !self.players.contains(&p) {
                 continue;
