@@ -570,7 +570,9 @@ impl GameInterface {
     /// (`server.write_line`); in a game on a server, it goes to the server
     /// as soon as the server takes it. A player out of the game sends
     /// nothing. A server takes no cheat, and sets its speed only when the
-    /// room's host asks (see [`GameInterface::server_update`]).
+    /// room's host asks (see [`GameInterface::server_update`]). While the
+    /// connection is lost, a command is not taken, and the player hears it
+    /// once.
     pub fn send_command(&mut self, cx: &Client, command: Command) {
         if !self.view().players().contains(&self.me) {
             cx.log.info(format!(
@@ -580,6 +582,9 @@ impl GameInterface {
         } else if self.on_a_server() && matches!(command, Command::Cheat(_)) {
             cx.log
                 .warning(format!("a game on a server takes no cheat: {command:?}"));
+        } else if self.refuse_while_returning() {
+            cx.log
+                .info(format!("not connected: didn't send {command:?}"));
         } else {
             self.pending_commands.push(command);
         }
@@ -627,7 +632,8 @@ impl GameInterface {
         } else if !waits && self.time_to_ask_for_next_update(cx) {
             self.ask_for_update(cx);
         }
-        if !waits {
+        // While returning, nothing is heard moving: the view is old.
+        if !waits && !self.returning() {
             self.animate_objects(cx);
         }
         self.process_events(cx)?;
@@ -1055,6 +1061,19 @@ impl GameInterface {
     #[cfg(any(test, feature = "testkit"))]
     pub fn set_turn_due(&mut self, at: f64) {
         self.turn_due_at(at);
+    }
+
+    /// Stops every noise of the game and forgets it: the next animation
+    /// starts each again where its object then is.
+    pub(crate) fn silence_noises(&mut self, cx: &Client) {
+        for v in self.dobjets.values_mut() {
+            if let Some(n) = v.anim.noise.take() {
+                n.stop(&cx.audio);
+            }
+        }
+        for (_, n) in std::mem::take(&mut self.terrain_noises) {
+            n.stop(&cx.audio);
+        }
     }
 
     /// Stops every noise of the game.

@@ -19,8 +19,8 @@ use crate::config::Config;
 use crate::game::GameInterface;
 use crate::input::{InputSource, Key, KeyDown, KeyUp, Mods, RawInput};
 use crate::log::Log;
-use crate::net::conn::{Connection, Link, NetEvent, Outgoing};
-use crate::net::{NetConfig, Seated};
+use crate::net::conn::{ConnectError, Connection, Link, NetEvent, Opening, Outgoing};
+use crate::net::{NetConfig, Redial, Seated};
 use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::session::Session;
@@ -29,7 +29,7 @@ use crate::voice::{Utterance, UtteranceLog, UtterancePart};
 use soundrts_protocol::game::{SeatFrame, decode_command, decode_frame};
 use soundrts_protocol::{
     AiLevel, ClientMsg, Faction, LobbyPlayer, LobbySnapshot, Login, MapInfo, PROTOCOL_VERSION,
-    SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
+    RoomId, RoomState, SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
 };
 use soundrts_world::{Command, GameSetup, Host, PlayerId, TurnMessage};
 
@@ -791,6 +791,10 @@ struct FakeState {
     /// In time order; equal times keep their order.
     scheduled: VecDeque<(f64, NetEvent)>,
     sent: Vec<Outgoing>,
+    /// What each connection the client opens again finds, in order: a
+    /// server and its welcome, or why it cannot be reached. Once none is
+    /// left, none can be.
+    dials: VecDeque<Result<(FakeServer, LobbySnapshot), ConnectError>>,
 }
 
 struct FakeLink(FakeServer);
@@ -817,9 +821,45 @@ impl FakeServer {
             clock,
             scheduled: VecDeque::new(),
             sent: Vec::new(),
+            dials: VecDeque::new(),
         })));
         let conn = Connection::new(Box::new(FakeLink(server.clone())));
         (server, conn)
+    }
+
+    /// What opens the client's connection again: each time, the next of
+    /// [`FakeServer::dial_to`] and [`FakeServer::dial_fails`].
+    pub fn redial(&self) -> Redial {
+        let server = self.clone();
+        Box::new(move || {
+            let next = server.0.borrow_mut().dials.pop_front();
+            Opening::done(match next {
+                Some(Ok((s, snapshot))) => Ok((Connection::new(Box::new(FakeLink(s))), snapshot)),
+                Some(Err(e)) => Err(e),
+                None => Err(ConnectError::Unreachable(
+                    "no server, as the test has it".into(),
+                )),
+            })
+        })
+    }
+
+    /// The next connection the client opens again reaches a new server,
+    /// which welcomes it with `snapshot`: returned, to script what it
+    /// sends.
+    pub fn dial_to(&self, snapshot: LobbySnapshot) -> FakeServer {
+        let clock = self.0.borrow().clock.clone();
+        let (back, _) = FakeServer::new(clock);
+        self.0
+            .borrow_mut()
+            .dials
+            .push_back(Ok((back.clone(), snapshot)));
+        back
+    }
+
+    /// The next connection the client opens again cannot reach the server.
+    pub fn dial_fails(&self) {
+        let e = ConnectError::Unreachable("refused, as the test has it".into());
+        self.0.borrow_mut().dials.push_back(Err(e));
     }
 
     fn schedule(&self, time: f64, e: NetEvent) {
@@ -880,6 +920,9 @@ impl FakeServer {
     }
 }
 
+/// How long a fake server says it holds a seat whose connection is lost.
+pub const FAKE_HOLD: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// A game run here as a server runs one, for a fake server to send its
 /// stream to the seat of slot `you`: the frames a server sends.
 pub struct FakeStream {
@@ -922,6 +965,7 @@ impl FakeStream {
                 map,
                 speed,
                 paused: false,
+                hold: FAKE_HOLD,
                 token: SeatToken::from_bits(1),
             },
             SeatFrame::Start(self.host.game_start().message()),
@@ -950,6 +994,11 @@ impl FakeStream {
     }
 
     /// What the seat is sent when the game is over for it.
+    /// The seat's message as of the last turn played.
+    pub fn message(&self) -> &TurnMessage {
+        &self.last
+    }
+
     pub fn end(&self) -> SeatFrame {
         SeatFrame::End(self.host.game_end(self.seat))
     }
@@ -999,6 +1048,50 @@ pub fn snapshot(you: &str, others: &[&str]) -> LobbySnapshot {
     }
 }
 
+/// Room 1, hosted by the first human of `slots`, on `map`, whose game is
+/// played.
+pub fn fake_room(map: MapInfo, slots: Vec<Slot>) -> RoomState {
+    let host = slots
+        .iter()
+        .find_map(|s| match &s.player {
+            SlotPlayer::Human(l) => Some(l.clone()),
+            SlotPlayer::Computer(_) => None,
+        })
+        .expect("a human");
+    RoomState {
+        id: RoomId(1),
+        host,
+        map,
+        speed: Speed::Normal,
+        open: true,
+        content: soundrts_protocol::ContentHash::new("x").expect("a hash"),
+        slots,
+    }
+}
+
+/// The lobby a connection opened again by `you` is welcomed to: the game
+/// of `room` runs, with `playing` still playing it, as far as the server
+/// knows.
+pub fn welcome_back(you: &str, room: &RoomState, playing: &[&str]) -> LobbySnapshot {
+    let mut s = snapshot(you, playing);
+    for p in &mut s.players {
+        if playing.contains(&p.login.as_str()) {
+            p.whereabouts = Whereabouts::Playing(room.id);
+        }
+    }
+    s.rooms = vec![soundrts_protocol::RoomSummary {
+        id: room.id,
+        host: room.host.clone(),
+        map: room.map.clone(),
+        speed: room.speed,
+        open: room.open,
+        content: room.content.clone(),
+        players: room.slots.iter().map(|s| s.player.clone()).collect(),
+        started: true,
+    }];
+    s
+}
+
 /// The settings that keep tests off the network: a hosted server listens
 /// on 127.0.0.1 on a free port, with no router and no lists to fetch.
 pub fn test_net_config() -> NetConfig {
@@ -1008,6 +1101,7 @@ pub fn test_net_config() -> NetConfig {
         upnp: false,
         discovery_targets: Vec::new(),
         public_list_url: None,
+        liveness: crate::net::conn::Liveness::default(),
     }
 }
 
@@ -1153,8 +1247,24 @@ impl Harness {
     pub fn join_fake_server(&mut self, you: &str, others: &[&str]) -> FakeServer {
         let (server, conn) = FakeServer::new(self.clock.clone());
         let content = self.client.res.content_hash();
-        self.client.net = Some(crate::net::Net::new(conn, snapshot(you, others), content));
+        let redial = server.redial();
+        self.client.net = Some(crate::net::Net::new(
+            conn,
+            snapshot(you, others),
+            content,
+            redial,
+        ));
         server
+    }
+
+    /// Puts the player in `room`, as a server that started its game would
+    /// have.
+    pub fn enter_fake_room(&mut self, room: &RoomState) {
+        let net = self.client.net.as_mut().expect("on a server");
+        net.room = Some(crate::net::lobby::RoomModel {
+            state: room.clone(),
+            map: crate::net::lobby::MapState::Downloading,
+        });
     }
 
     /// Joins, on a [`FakeServer`], the game of `stream` on the multiplayer
@@ -1231,28 +1341,41 @@ impl Harness {
         seed: i64,
         wrap: impl FnOnce(Connection) -> Connection,
     ) -> (soundrts_server::ServerHandle, TestGame) {
-        let server = soundrts_server::start(soundrts_server::ServerConfig {
-            name: soundrts_protocol::ServerName::new("test").expect("a name"),
-            ip: std::net::Ipv4Addr::LOCALHOST.into(),
-            port: 0,
-            seed: Some(seed),
-            ..soundrts_server::ServerConfig::default()
-        })
-        .expect("a server");
-        let address = server.local_addr().to_string();
+        let server = test_server(seed, |_| {});
+        self.connect_to(&server.local_addr().to_string(), wrap);
+        self.open_room(map, computers, speed);
+        let game = self.start_room_game(map);
+        (server, game)
+    }
+
+    /// Connects to the server at `address` as the multiplayer menu does,
+    /// with the connection passed through `wrap` before the client uses
+    /// it: a connection lost in a game is opened again the same way, and
+    /// not passed through `wrap`. Waits in real time for the server.
+    pub fn connect_to(&mut self, address: &str, wrap: impl FnOnce(Connection) -> Connection) {
         let content = self.client.res.content_hash();
-        let hello = ClientMsg::Hello {
-            protocol: PROTOCOL_VERSION,
-            login: Login::new(self.client.config.login.as_str()).expect("a login"),
-            content: content.clone(),
+        let dialer = crate::net::conn::Dialer {
+            address: address.to_owned(),
+            hello: ClientMsg::Hello {
+                protocol: PROTOCOL_VERSION,
+                login: Login::new(self.client.config.login.as_str()).expect("a login"),
+                content: content.clone(),
+            },
+            timeout: WAIT_LIMIT,
+            liveness: self.client.net_config.liveness,
         };
-        let (conn, snapshot) =
-            crate::net::conn::open(&address, hello, WAIT_LIMIT).expect("connected");
-        self.client.net = Some(crate::net::Net::new(wrap(conn), snapshot, content));
+        let (conn, snapshot) = dialer.open().expect("connected");
+        let redial = Box::new(move || dialer.start());
+        self.client.net = Some(crate::net::Net::new(wrap(conn), snapshot, content, redial));
+    }
+
+    /// Creates a room on the multiplayer map `map` at `speed` and adds
+    /// these computers: the room's id. Waits in real time for the server.
+    pub fn open_room(&mut self, map: &str, computers: &[AiLevel], speed: Speed) -> RoomId {
         let m = self.multiplayer_map(map);
         let info = m.info().expect("a map file");
         let net = self.client.net.as_mut().expect("on the server");
-        net.creating = Some(m.clone());
+        net.creating = Some(m);
         net.send(ClientMsg::CreateRoom {
             map: info,
             speed,
@@ -1263,8 +1386,52 @@ impl Harness {
             crate::net::send(&mut self.client, ClientMsg::AddComputer { level });
             self.pump_until(|n| n.room.as_ref().is_some_and(|r| r.state.slots.len() > i + 1));
         }
+        self.room_id()
+    }
+
+    /// The id of the room the player is in.
+    pub fn room_id(&self) -> RoomId {
+        let net = self.client.net.as_ref().expect("on the server");
+        net.room.as_ref().expect("in a room").state.id
+    }
+
+    /// Invites `login` to the room, once they are on the server.
+    pub fn invite(&mut self, login: &str) {
+        let login = Login::new(login).expect("a login");
+        self.pump_until(|n| n.lobby.players.iter().any(|p| p.login == login));
+        crate::net::send(&mut self.client, ClientMsg::Invite { login });
+    }
+
+    /// Joins the room `room` once invited, and is ready. Waits in real time
+    /// for the server.
+    pub fn join_room(&mut self, room: RoomId) {
+        self.pump_until(|n| n.invitations.iter().any(|i| i.room == room));
+        crate::net::send(&mut self.client, ClientMsg::JoinRoom { room });
+        self.pump_until(|n| n.room.is_some());
+        crate::net::send(&mut self.client, ClientMsg::SetReady { ready: true });
+    }
+
+    /// Waits until the room has `slots` slots, every human in it ready.
+    pub fn wait_for_ready(&mut self, slots: usize) {
+        self.pump_until(|n| {
+            n.room
+                .as_ref()
+                .is_some_and(|r| r.state.slots.len() == slots && r.not_ready().is_empty())
+        });
+    }
+
+    /// Starts the game of the player's room, as its host, on the
+    /// multiplayer map `map`, and joins it: nothing of it is handled yet.
+    pub fn start_room_game(&mut self, map: &str) -> TestGame {
+        let m = self.multiplayer_map(map);
         let texts = crate::multiplayer::game_texts(&mut self.client, &m).expect("the texts");
         crate::net::send(&mut self.client, ClientMsg::Start { texts });
+        self.join_room_game(map)
+    }
+
+    /// Joins the game the server started in the player's room, on the
+    /// multiplayer map `map`: nothing of it is handled yet.
+    pub fn join_room_game(&mut self, map: &str) -> TestGame {
         self.pump_until(|n| {
             n.started.is_some() && n.game.as_ref().is_some_and(|g| g.frames.len() >= 2)
         });
@@ -1274,17 +1441,15 @@ impl Harness {
             .as_mut()
             .and_then(|n| n.started.take())
             .expect("a seat");
+        let m = self.multiplayer_map(map);
         self.client.res.set_map(Some(&m));
         let game =
             crate::session::join_server_game(&mut self.client, &seated).expect("the game joined");
         self.client.input.clear();
-        (
-            server,
-            TestGame {
-                session: None,
-                game,
-            },
-        )
+        TestGame {
+            session: None,
+            game,
+        }
     }
 
     /// Reads what the server sends until `done` holds, in real time.
@@ -1369,6 +1534,23 @@ impl Harness {
     }
 }
 
+/// A server on 127.0.0.1, on a free port, which the test owns: it plays
+/// every game from `seed`, with its settings changed by `adjust`.
+pub fn test_server(
+    seed: i64,
+    adjust: impl FnOnce(&mut soundrts_server::ServerConfig),
+) -> soundrts_server::ServerHandle {
+    let mut config = soundrts_server::ServerConfig {
+        name: soundrts_protocol::ServerName::new("test").expect("a name"),
+        ip: std::net::Ipv4Addr::LOCALHOST.into(),
+        port: 0,
+        seed: Some(seed),
+        ..soundrts_server::ServerConfig::default()
+    };
+    adjust(&mut config);
+    soundrts_server::start(config).expect("a server")
+}
+
 /// A game started by [`Harness::start_training`], or on a server by
 /// [`Harness::start_on_server`], which has no session here.
 pub struct TestGame {
@@ -1386,4 +1568,152 @@ pub fn render(u: &Utterance) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// A network cable between clients and a server, all on 127.0.0.1: a
+/// proxy that passes every byte both ways until it is pulled. Pulled, it
+/// passes nothing and closes nothing, as a cable pulled out does: each end
+/// notices only when it stops hearing the other. A connection made
+/// meanwhile is refused at once. Plugged back in, new connections pass;
+/// those of before are closed, as an end that gave up answers a late
+/// packet with a reset. Dropping it stops it.
+pub struct Cable {
+    addr: std::net::SocketAddr,
+    state: Arc<CableState>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+struct CableState {
+    /// Each pull starts a new one: connections of an earlier one are cut.
+    era: std::sync::atomic::AtomicU64,
+    pulled: std::sync::atomic::AtomicBool,
+    stop: std::sync::atomic::AtomicBool,
+}
+
+impl CableState {
+    /// Whether a connection of `era` may pass bytes now; `None` once it is
+    /// cut.
+    fn passes(&self, era: u64) -> Option<bool> {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self.stop.load(SeqCst) {
+            return None;
+        }
+        let pulled = self.pulled.load(SeqCst);
+        if self.era.load(SeqCst) != era {
+            // Made before the last pull: held while pulled, then cut.
+            return pulled.then_some(false);
+        }
+        Some(!pulled)
+    }
+}
+
+impl Cable {
+    /// A cable to `server`, plugged in.
+    pub fn new(server: std::net::SocketAddr) -> Cable {
+        use std::sync::atomic::Ordering::SeqCst;
+        let listener =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).expect("a port");
+        listener.set_nonblocking(true).expect("non-blocking");
+        let addr = listener.local_addr().expect("an address");
+        let state = Arc::new(CableState {
+            era: std::sync::atomic::AtomicU64::new(0),
+            pulled: std::sync::atomic::AtomicBool::new(false),
+            stop: std::sync::atomic::AtomicBool::new(false),
+        });
+        let shared = Arc::clone(&state);
+        let thread = std::thread::spawn(move || {
+            while !shared.stop.load(SeqCst) {
+                match listener.accept() {
+                    Ok((client, _)) if !shared.pulled.load(SeqCst) => {
+                        if let Ok(server) = std::net::TcpStream::connect(server) {
+                            let era = shared.era.load(SeqCst);
+                            pass(&client, &server, era, &shared);
+                            pass(&server, &client, era, &shared);
+                        }
+                    }
+                    // Refused: nothing answers.
+                    Ok(_) => {}
+                    Err(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+                }
+            }
+        });
+        Cable {
+            addr,
+            state,
+            thread: Some(thread),
+        }
+    }
+
+    /// The address to connect to instead of the server's.
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.addr
+    }
+
+    /// Pulls the cable out: nothing passes.
+    pub fn pull(&self) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.state.pulled.store(true, SeqCst);
+        self.state.era.fetch_add(1, SeqCst);
+    }
+
+    /// Plugs the cable back in: new connections pass, those made before it
+    /// was pulled are closed.
+    pub fn plug_in(&self) {
+        self.state
+            .pulled
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Drop for Cable {
+    fn drop(&mut self) {
+        self.state
+            .stop
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// Passes the bytes read from `from` to `to`, on a thread, while the
+/// cable passes them for a connection of `era`; then closes both.
+fn pass(from: &std::net::TcpStream, to: &std::net::TcpStream, era: u64, cable: &Arc<CableState>) {
+    use std::io::{Read, Write};
+    let (Ok(mut from), Ok(mut to)) = (from.try_clone(), to.try_clone()) else {
+        return;
+    };
+    let cable = Arc::clone(cable);
+    let _ = from.set_read_timeout(Some(std::time::Duration::from_millis(10)));
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 16 * 1024];
+        loop {
+            match cable.passes(era) {
+                None => break,
+                Some(false) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    continue;
+                }
+                Some(true) => {}
+            }
+            match from.read(&mut buf) {
+                Ok(0) => break,
+                // Bytes read as the cable is pulled are lost.
+                Ok(n) if cable.passes(era) == Some(true) => {
+                    if to.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) => {}
+                Err(_) => break,
+            }
+        }
+        let _ = from.shutdown(std::net::Shutdown::Both);
+        let _ = to.shutdown(std::net::Shutdown::Both);
+    });
 }

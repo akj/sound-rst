@@ -6,6 +6,7 @@
 use soundrts_protocol::{ClockChange, Login, SeatChange, Speed, StartRefusal, StopReason};
 use soundrts_world::msg::{Msg, MsgPart, nb2msg};
 
+use crate::game::server::Failure;
 use crate::sound_cache::literal;
 
 // Phrases of the original's `tts.txt` that `msgparts` does not name.
@@ -143,6 +144,20 @@ pub const TOOK_TOO_LONG_TO_BUILD: &str = "it took too long to build";
 pub const SERVER_BUSY: &str = "the server is busy, try again later";
 pub const CANNOT_BE_RIGHT: &str = "game ended: the server sent what cannot be right";
 pub const ONLY_THE_HOST_SETS_THE_SPEED: &str = "only the host can change the speed";
+/// The game menu's item that stops the clock of a game on a server.
+pub const PAUSE: &str = "pause";
+/// The game menu's item that starts it again.
+pub const RESUME: &str = "resume";
+
+// Returning to a game on a server after the connection is lost.
+
+pub const CONNECTION_LOST: &str = "connection lost, trying to return";
+pub const BACK_IN_THE_GAME: &str = "back in the game";
+pub const ORDERS_NOT_TAKEN: &str = "order not taken: not connected";
+pub const COULD_NOT_RETURN: &str = "could not return:";
+pub const THE_GAME_IS_OVER: &str = "the game is over";
+pub const THE_SEAT_WAS_GIVEN_UP: &str = "your seat was given up";
+pub const NO_ANSWER_IN_TIME: &str = "the server could not be reached in time";
 
 /// What happened to a player of the game, `who`.
 pub fn seat_news(who: Msg, change: &SeatChange) -> Msg {
@@ -196,6 +211,16 @@ pub fn not_started(refusal: &StartRefusal) -> Msg {
         StartRefusal::Busy => text(SERVER_BUSY),
     };
     [text(NOT_STARTED), why].concat()
+}
+
+/// Why the player could not return to the game.
+pub fn return_failed(why: Failure) -> Msg {
+    let why = match why {
+        Failure::GameOver => THE_GAME_IS_OVER,
+        Failure::SeatGivenUp => THE_SEAT_WAS_GIVEN_UP,
+        Failure::TimeUp => NO_ANSWER_IN_TIME,
+    };
+    [text(COULD_NOT_RETURN), text(why)].concat()
 }
 
 /// A phrase as a message.

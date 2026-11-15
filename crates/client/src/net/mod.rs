@@ -19,6 +19,7 @@ pub mod words;
 use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::{
@@ -29,7 +30,7 @@ use soundrts_world::msg::{Msg, msg};
 use soundrts_world::msgparts as mp;
 
 use self::chat::{ChatLog, line_msg, line_news};
-use self::conn::{Connection, NetEvent};
+use self::conn::{Connection, NetEvent, Opening};
 use self::lobby::{LobbyModel, MapState, RoomModel, TooMany, check_room};
 use self::words::text;
 use crate::client::Client;
@@ -53,6 +54,8 @@ pub struct NetConfig {
     pub discovery_targets: Vec<SocketAddr>,
     /// Where the public list is; `None` to skip it.
     pub public_list_url: Option<String>,
+    /// How a connection notices a server that stopped answering.
+    pub liveness: conn::Liveness,
 }
 
 impl Default for NetConfig {
@@ -63,6 +66,7 @@ impl Default for NetConfig {
             upnp: true,
             discovery_targets: vec![discovery::broadcast_target()],
             public_list_url: Some(servers::PUBLIC_LIST_URL.to_owned()),
+            liveness: conn::Liveness::default(),
         }
     }
 }
@@ -83,7 +87,11 @@ pub struct Seated {
     pub map: MapInfo,
     pub speed: Speed,
     pub paused: bool,
-    /// What takes the seat back after a lost connection.
+    /// How long the server holds the seat once it notices the connection
+    /// is lost.
+    pub hold: Duration,
+    /// What takes the seat back after a lost connection: a secret, never
+    /// said, logged or written.
     pub token: SeatToken,
 }
 
@@ -119,9 +127,14 @@ impl GameLink {
     }
 }
 
+/// Opens a connection to the same server again, as the player first
+/// opened it, without waiting.
+pub type Redial = Box<dyn FnMut() -> Opening>;
+
 /// The connection to a server, and what the client knows of it.
 pub struct Net {
     conn: Connection,
+    redial: Redial,
     pub lobby: LobbyModel,
     pub room: Option<RoomModel>,
     pub chat: ChatLog,
@@ -145,13 +158,19 @@ pub struct Net {
 impl Net {
     /// The state after the server's welcome. The chat history goes into
     /// the log without being said.
-    pub fn new(conn: Connection, snapshot: LobbySnapshot, content: ContentHash) -> Net {
+    pub fn new(
+        conn: Connection,
+        snapshot: LobbySnapshot,
+        content: ContentHash,
+        redial: Redial,
+    ) -> Net {
         let mut chat = ChatLog::default();
         for line in &snapshot.chat {
             chat.push(line.clone());
         }
         Net {
             conn,
+            redial,
             lobby: LobbyModel::new(&snapshot),
             room: None,
             chat,
@@ -168,6 +187,22 @@ impl Net {
 
     pub fn send(&mut self, msg: ClientMsg) {
         self.conn.send(msg);
+    }
+
+    /// Starts opening a new connection to the server.
+    pub fn redial(&mut self) -> Opening {
+        (self.redial)()
+    }
+
+    /// The player is back in the game they played, of slot `you`, on
+    /// `conn`, a new connection, with the lobby as it now is: what comes
+    /// next on it goes to the game.
+    pub fn returned(&mut self, conn: Connection, lobby: LobbyModel, you: SlotIndex) {
+        self.conn = conn;
+        self.lobby = lobby;
+        self.closed = None;
+        self.game = Some(GameLink::new(you));
+        self.changed();
     }
 
     fn changed(&mut self) {
@@ -352,6 +387,7 @@ impl Net {
                 map,
                 speed,
                 paused,
+                hold,
                 token,
             } if self.game.is_none() => {
                 if let Err(too_many) = check_room(&map, 0) {
@@ -362,6 +398,7 @@ impl Net {
                     map,
                     speed,
                     paused,
+                    hold,
                     token,
                 });
                 self.game = Some(GameLink::new(you));

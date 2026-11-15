@@ -38,6 +38,8 @@
     clippy::arithmetic_side_effects
 )]
 
+use std::time::Duration;
+
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use soundrts_world::{
@@ -155,13 +157,15 @@ pub enum SeatFrame {
     /// follows.
     End(GameEnd),
     /// You have a seat in a game: when it starts, and when you
-    /// return to it. Keep `token` to return if your connection is lost.
-    /// The players' names and alliances come with the game.
+    /// return to it. Keep `token` to return if your connection is lost:
+    /// the game holds the seat for `hold` after it notices the loss. The
+    /// players' names and alliances come with the game.
     Seated {
         you: SlotIndex,
         map: MapInfo,
         speed: Speed,
         paused: bool,
+        hold: Duration,
         token: SeatToken,
     },
     /// Something happened to a seat of the game.

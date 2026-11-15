@@ -121,44 +121,183 @@ pub fn ws_url(address: &str) -> Option<String> {
 /// own buffers rather than the client's memory.
 pub const EVENT_QUEUE: usize = 1024;
 
+/// How a connection notices a server that no longer answers, as when a
+/// cable is pulled: after `ping` with nothing heard it pings the server,
+/// which answers at once, and after `silence` it gives the connection up as
+/// lost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Liveness {
+    pub ping: Duration,
+    pub silence: Duration,
+}
+
+impl Default for Liveness {
+    fn default() -> Liveness {
+        Liveness {
+            ping: Duration::from_secs(5),
+            silence: Duration::from_secs(15),
+        }
+    }
+}
+
+/// What opens a connection to one server: the first time, and again after
+/// it is lost.
+#[derive(Clone, Debug)]
+pub struct Dialer {
+    pub address: String,
+    pub hello: ClientMsg,
+    /// How long to wait for the server, then as long for its welcome.
+    pub timeout: Duration,
+    pub liveness: Liveness,
+}
+
+impl Dialer {
+    /// Starts opening a connection: [`Opening::poll`] says when it is open.
+    pub fn start(&self) -> Opening {
+        match ws_url(&self.address) {
+            Some(url) => start(url, self.hello.clone(), self.timeout, self.liveness),
+            None => Opening::done(Err(ConnectError::BadAddress)),
+        }
+    }
+
+    /// Connects, says hello, and waits for the server's welcome.
+    pub fn open(&self) -> Opened {
+        let mut opening = self.start();
+        loop {
+            if let Some(opened) = opening.poll() {
+                return opened;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
 /// Connects to `address`, says `hello`, and waits for the server's
 /// welcome, at most `timeout`.
-pub fn open(
-    address: &str,
-    hello: ClientMsg,
-    timeout: Duration,
-) -> Result<(Connection, LobbySnapshot), ConnectError> {
-    let url = ws_url(address).ok_or(ConnectError::BadAddress)?;
+pub fn open(address: &str, hello: ClientMsg, timeout: Duration) -> Opened {
+    Dialer {
+        address: address.to_owned(),
+        hello,
+        timeout,
+        liveness: Liveness::default(),
+    }
+    .open()
+}
+
+/// A connection with the server's welcome, or why there is none.
+pub type Opened = Result<(Connection, LobbySnapshot), ConnectError>;
+
+/// A connection being opened by its own thread: asking never waits.
+pub struct Opening(Stage);
+
+enum Stage {
+    /// The thread connects and says hello, until `deadline`.
+    Connecting {
+        link: SocketLink,
+        connected: mpsc::Receiver<Result<(), ConnectError>>,
+        deadline: Instant,
+    },
+    /// The hello is said: the welcome is awaited until `deadline`.
+    Welcoming { link: SocketLink, deadline: Instant },
+    /// Over, and not yet told if `Some`.
+    Done(Option<Opened>),
+}
+
+impl Opening {
+    /// An opening already over, as a fake server gives.
+    pub fn done(opened: Opened) -> Opening {
+        Opening(Stage::Done(Some(opened)))
+    }
+
+    /// The connection with the server's welcome, or why there is none,
+    /// once it is known; told once.
+    pub fn poll(&mut self) -> Option<Opened> {
+        if let Stage::Connecting {
+            connected,
+            deadline,
+            ..
+        } = &self.0
+        {
+            match connected.try_recv() {
+                Err(mpsc::TryRecvError::Empty) if Instant::now() <= *deadline => return None,
+                Ok(Ok(())) => {
+                    let Stage::Connecting { link, deadline, .. } =
+                        std::mem::replace(&mut self.0, Stage::Done(None))
+                    else {
+                        unreachable!("connecting");
+                    };
+                    // The welcome may take as long as the connection did.
+                    let wait = deadline.saturating_duration_since(Instant::now());
+                    self.0 = Stage::Welcoming {
+                        link,
+                        deadline: Instant::now() + wait.max(Duration::from_secs(1)),
+                    };
+                }
+                Ok(Err(e)) => self.0 = Stage::Done(Some(Err(e))),
+                Err(_) => {
+                    let e = ConnectError::Unreachable("timed out".into());
+                    self.0 = Stage::Done(Some(Err(e)));
+                }
+            }
+        }
+        if let Stage::Welcoming { link, deadline } = &mut self.0 {
+            match link.poll() {
+                Some(first) => {
+                    let Stage::Welcoming { link, .. } =
+                        std::mem::replace(&mut self.0, Stage::Done(None))
+                    else {
+                        unreachable!("welcoming");
+                    };
+                    self.0 = Stage::Done(Some(welcomed(link, first)));
+                }
+                None if Instant::now() > *deadline => {
+                    let e = ConnectError::NotAServer("no welcome in time".into());
+                    self.0 = Stage::Done(Some(Err(e)));
+                }
+                None => return None,
+            }
+        }
+        match &mut self.0 {
+            Stage::Done(opened) => opened.take(),
+            Stage::Connecting { .. } | Stage::Welcoming { .. } => None,
+        }
+    }
+}
+
+/// Starts the thread that connects to `url`.
+fn start(url: String, hello: ClientMsg, timeout: Duration, liveness: Liveness) -> Opening {
     let (events_tx, events_rx) = tokio_mpsc::channel(EVENT_QUEUE);
     let (out_tx, out_rx) = tokio_mpsc::unbounded_channel();
     let (connected_tx, connected_rx) = mpsc::channel();
-    let thread = std::thread::Builder::new()
+    let spawned = std::thread::Builder::new()
         .name("soundrts-connection".into())
-        .spawn(move || serve(url, hello, timeout, out_rx, events_tx, connected_tx))
-        .map_err(|e| ConnectError::Unreachable(e.to_string()))?;
-    let mut link = SocketLink {
-        out: Some(out_tx),
-        events: Some(events_rx),
-        thread: Some(thread),
+        .spawn(move || {
+            let channels = Channels {
+                out: out_rx,
+                events: events_tx,
+                connected: connected_tx,
+            };
+            serve(url, hello, timeout, liveness, channels);
+        });
+    let thread = match spawned {
+        Ok(t) => t,
+        Err(e) => return Opening::done(Err(ConnectError::Unreachable(e.to_string()))),
     };
-    // The thread gives up on its own at the timeout; the margin covers a
-    // slow thread start.
-    let wait = timeout + Duration::from_secs(1);
-    match connected_rx.recv_timeout(wait) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(e),
-        Err(_) => return Err(ConnectError::Unreachable("timed out".into())),
-    }
-    let deadline = Instant::now() + wait;
-    let first = loop {
-        if let Some(e) = link.poll() {
-            break e;
-        }
-        if Instant::now() > deadline {
-            return Err(ConnectError::NotAServer("no welcome in time".into()));
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    };
+    Opening(Stage::Connecting {
+        link: SocketLink {
+            out: Some(out_tx),
+            events: Some(events_rx),
+            thread: Some(thread),
+        },
+        connected: connected_rx,
+        // The thread gives up on its own at the timeout; the margin covers
+        // a slow thread start.
+        deadline: Instant::now() + timeout + Duration::from_secs(1),
+    })
+}
+
+/// The connection, if the server's first message is its welcome.
+fn welcomed(link: SocketLink, first: NetEvent) -> Opened {
     match first {
         NetEvent::Msg(ServerMsg::Welcome { lobby }) => {
             super::lobby::check_snapshot(&lobby)
@@ -220,14 +359,23 @@ enum End {
     Abandoned,
 }
 
-fn serve(
-    url: String,
-    hello: ClientMsg,
-    timeout: Duration,
-    mut out: tokio_mpsc::UnboundedReceiver<Outgoing>,
+/// Why a connection to a server that stopped answering is lost.
+const SILENT: &str = "the server stopped answering";
+
+/// How the connection's thread talks with the client.
+struct Channels {
+    out: tokio_mpsc::UnboundedReceiver<Outgoing>,
     events: tokio_mpsc::Sender<NetEvent>,
+    /// Whether the hello is said.
     connected: mpsc::Sender<Result<(), ConnectError>>,
-) {
+}
+
+fn serve(url: String, hello: ClientMsg, timeout: Duration, liveness: Liveness, channels: Channels) {
+    let Channels {
+        mut out,
+        events,
+        connected,
+    } = channels;
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -243,7 +391,13 @@ fn serve(
             .max_message_size(Some(MAX_MESSAGE_BYTES))
             .max_frame_size(Some(MAX_MESSAGE_BYTES));
         let connect = tokio_tungstenite::connect_async_with_config(url, Some(config), true);
-        let mut ws = match tokio::time::timeout(timeout, connect).await {
+        // A client that gives the connection up meanwhile waits for none of
+        // it.
+        let connecting = tokio::select! {
+            c = tokio::time::timeout(timeout, connect) => c,
+            _ = events.closed() => return,
+        };
+        let mut ws = match connecting {
             Ok(Ok((ws, _))) => ws,
             Ok(Err(e)) => {
                 let error = match e {
@@ -261,7 +415,11 @@ fn serve(
             }
         };
         let hello = Message::Text(hello.to_json().into());
-        match tokio::time::timeout(timeout, ws.send(hello)).await {
+        let said = tokio::select! {
+            s = tokio::time::timeout(timeout, ws.send(hello)) => s,
+            _ = events.closed() => return,
+        };
+        match said {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 let _ = connected.send(Err(ConnectError::NotAServer(e.to_string())));
@@ -273,7 +431,11 @@ fn serve(
             }
         }
         let _ = connected.send(Ok(()));
+        // When the server was last heard, and whether it was pinged since.
+        let mut heard = tokio::time::Instant::now();
+        let mut pinged = false;
         let end = loop {
+            let silent = heard + liveness.silence;
             tokio::select! {
                 // A dropped connection is closed cleanly first.
                 biased;
@@ -291,33 +453,53 @@ fn serve(
                                 }
                             }
                             _ = events.closed() => break End::Abandoned,
+                            _ = tokio::time::sleep_until(silent) => break End::Lost(SILENT.into()),
                         }
                     }
                     None => break End::Dropped,
                 },
-                incoming = ws.next() => match incoming {
-                    Some(Ok(Message::Text(text))) => match ServerMsg::from_json(&text) {
-                        // Waits while the queue is full: the socket is not
-                        // read meanwhile.
-                        Ok(msg) => {
-                            if events.send(NetEvent::Msg(msg)).await.is_err() {
+                incoming = ws.next() => {
+                    match incoming {
+                        Some(Ok(Message::Text(text))) => match ServerMsg::from_json(&text) {
+                            // Waits while the queue is full: the socket is
+                            // not read meanwhile.
+                            Ok(msg) => {
+                                if events.send(NetEvent::Msg(msg)).await.is_err() {
+                                    break End::Abandoned;
+                                }
+                            }
+                            Err(e) => {
+                                break End::Lost(format!("cannot read a message from the server: {e}"));
+                            }
+                        },
+                        Some(Ok(Message::Binary(bytes))) => {
+                            let frame = decode_frame(&bytes).map(Box::new);
+                            if events.send(NetEvent::Frame(frame)).await.is_err() {
                                 break End::Abandoned;
                             }
                         }
-                        Err(e) => {
-                            break End::Lost(format!("cannot read a message from the server: {e}"));
-                        }
-                    },
-                    Some(Ok(Message::Binary(bytes))) => {
-                        let frame = decode_frame(&bytes).map(Box::new);
-                        if events.send(NetEvent::Frame(frame)).await.is_err() {
-                            break End::Abandoned;
-                        }
+                        Some(Ok(Message::Close(_))) | None => break End::Lost("closed by the server".into()),
+                        Some(Ok(_)) => {}
+                        Some(Err(e)) => break End::Lost(e.to_string()),
                     }
-                    Some(Ok(Message::Close(_))) | None => break End::Lost("closed by the server".into()),
-                    Some(Ok(_)) => {}
-                    Some(Err(e)) => break End::Lost(e.to_string()),
-                },
+                    // Once handed over: a client slow to read is not a
+                    // silent server.
+                    heard = tokio::time::Instant::now();
+                    pinged = false;
+                }
+                _ = tokio::time::sleep_until(heard + liveness.ping), if !pinged => {
+                    pinged = true;
+                    tokio::select! {
+                        sent = ws.send(Message::Ping(Default::default())) => {
+                            if let Err(e) = sent {
+                                break End::Lost(e.to_string());
+                            }
+                        }
+                        _ = events.closed() => break End::Abandoned,
+                        _ = tokio::time::sleep_until(silent) => break End::Lost(SILENT.into()),
+                    }
+                }
+                _ = tokio::time::sleep_until(silent) => break End::Lost(SILENT.into()),
                 _ = events.closed() => break End::Abandoned,
             }
         };
@@ -341,6 +523,9 @@ fn serve(
             End::Abandoned => {}
         }
     });
+    // A host name still being looked up, on the runtime's blocking pool,
+    // is not waited for.
+    runtime.shutdown_background();
 }
 
 #[cfg(test)]

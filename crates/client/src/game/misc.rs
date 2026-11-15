@@ -25,6 +25,8 @@ use super::{GameInterface, Mode, Oops, POSITIONAL_BEEP_SOUND, R, Stop, Story, TU
 enum GameMenuChoice {
     Quit,
     Speed(f64),
+    /// Pauses a game on a server, or resumes it.
+    PauseOrResume,
 }
 
 /// The game menu, the choice made in it, and the story it was opened
@@ -423,9 +425,10 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
-    /// Opens the game menu: quit, the speeds, continue. The keys go to it
-    /// until a choice is made. In single-player the world waits meanwhile,
-    /// and its sounds stop; in a game on a server, the game goes on.
+    /// Opens the game menu: quit, the speeds, continue; on a server, for
+    /// the room's host, pause or resume. The keys go to it until a choice
+    /// is made. In single-player the world waits meanwhile, and its sounds
+    /// stop; in a game on a server, the game goes on.
     fn cmd_gamemenu(&mut self, cx: &mut Client) {
         if !self.on_a_server() {
             cx.stop_sound(false);
@@ -462,6 +465,10 @@ impl GameInterface {
                 set(GameMenuChoice::Speed(4.0)),
                 None,
             );
+        }
+        if let Some(paused) = self.paused_for_the_host(cx) {
+            let item = if paused { words::RESUME } else { words::PAUSE };
+            menu.append(text(item), set(GameMenuChoice::PauseOrResume), None);
         }
         menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
         menu.say_title(cx);
@@ -512,6 +519,7 @@ impl GameInterface {
     fn game_menu_chosen(&mut self, cx: &mut Client, choice: Option<GameMenuChoice>) {
         match choice {
             Some(GameMenuChoice::Quit) => self.gm_quit(cx),
+            Some(GameMenuChoice::PauseOrResume) => self.pause_or_resume(cx),
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.
@@ -524,8 +532,12 @@ impl GameInterface {
         }
     }
 
-    /// Asks the world to quit; asked again, quits at once.
+    /// Asks the world to quit; asked again, or while the connection is
+    /// lost, quits at once.
     fn gm_quit(&mut self, cx: &mut Client) {
+        if self.leave_while_returning(cx) {
+            return;
+        }
         if !self.already_asked_to_quit {
             self.turn_due_at(cx.clock.now());
             self.send_command(cx, Command::Quit);
@@ -629,7 +641,13 @@ impl GameInterface {
         Ok(())
     }
 
+    /// Cancels the order being given, or leaves first person mode, zoom
+    /// mode, or the object selected. While the connection is lost, leaves
+    /// the game at once.
     fn cmd_escape(&mut self, cx: &mut Client) -> R {
+        if self.leave_while_returning(cx) {
+            return Ok(());
+        }
         if self.order.is_some() {
             cx.voice.item(&msg(mp::CANCEL));
             self.order = None;

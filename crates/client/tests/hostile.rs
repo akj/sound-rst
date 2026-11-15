@@ -654,3 +654,200 @@ fn hostile_frames_of_a_game_on_a_server_are_taken_without_a_panic() {
         "{refused} changed streams refused"
     );
 }
+
+/// Andrew's game against a computer on jl1 for a fake server, encoded: what
+/// is sent before the connection is lost (the seat, the start, the whole
+/// message, 5 turns); after 3 turns he missed, what is sent when he
+/// returns (the seat, the start, the whole message); and 3 turns more,
+/// then the end.
+fn return_stream(h: &mut Harness) -> [Vec<Vec<u8>>; 3] {
+    let mut stream = FakeStream::new(h, "jl1", &slots(), 0, 1);
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut before = stream.opening(map.clone(), Speed::Normal);
+    for _ in 0..5 {
+        before.extend(stream.turn(Vec::new()));
+    }
+    for _ in 0..3 {
+        stream.turn(Vec::new());
+    }
+    let back = stream.opening(map, Speed::Normal);
+    let mut later = Vec::new();
+    for _ in 0..3 {
+        later.extend(stream.turn(Vec::new()));
+    }
+    later.push(stream.end());
+    let encode = |frames: Vec<SeatFrame>| frames.into_iter().map(encoded).collect();
+    [encode(before), encode(back), encode(later)]
+}
+
+fn slots() -> [soundrts_protocol::Slot; 2] {
+    [
+        slot(
+            soundrts_protocol::SlotPlayer::Human(Login::new("andrew").unwrap()),
+            1,
+        ),
+        slot(soundrts_protocol::SlotPlayer::Computer(AiLevel::Easy), 2),
+    ]
+}
+
+/// Plays `before` as Andrew's client takes it from a server, a turn every
+/// 0.3 s; loses the connection; then returns to a server that sends
+/// `back`, as it comes. What was said meanwhile.
+fn play_return(h: &mut Harness, before: &[Vec<u8>], back: &[Vec<u8>]) -> Vec<String> {
+    let server = h.join_fake_server("andrew", &[]);
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let room = soundrts::testkit::fake_room(map, slots().to_vec());
+    h.enter_fake_room(&room);
+    let t0 = h.clock.now();
+    for (i, f) in before.iter().enumerate() {
+        server.bytes_at(t0 + 0.3 * i.saturating_sub(2) as f64, f);
+    }
+    let lost = t0 + 0.3 * before.len() as f64;
+    server.close_at(lost);
+    let returned = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for (i, f) in back.iter().enumerate() {
+        returned.bytes_at(lost + 0.5 + 0.3 * i.saturating_sub(2) as f64, f);
+    }
+    let said = h.utterances().len();
+    soundrts::net::pump(&mut h.client);
+    let seated = h
+        .client
+        .net
+        .as_mut()
+        .and_then(|n| n.started.take())
+        .unwrap();
+    let map = h.multiplayer_map("jl1");
+    h.client.res.set_map(Some(&map));
+    let game = soundrts::session::join_server_game(&mut h.client, &seated).unwrap();
+    let mut g = TestGame {
+        session: None,
+        game,
+    };
+    h.run_for(&mut g, lost - t0 + 0.3 * back.len() as f64 + 5.0);
+    let ended = g.game.end_loop;
+    h.finish(&mut g);
+    h.client.res.set_map(None);
+    h.run_voice_for(5.0);
+    let said = h.said_since(said);
+    assert!(
+        ended || !refused(&said),
+        "the game said it ended, and went on"
+    );
+    said
+}
+
+/// Whether the game ended on what cannot be right.
+fn refused(said: &[String]) -> bool {
+    said.iter()
+        .any(|s| s == "game ended: the server sent what cannot be right")
+}
+
+#[test]
+fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
+    let worker = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let mut h = Harness::new("en", Script::new().keep_open());
+            let [before, back, later] = return_stream(&mut h);
+            let returned = |back: Vec<Vec<u8>>| [back, later.clone()].concat();
+            // The real return plays on to the end.
+            let said = play_return(&mut h, &before, &returned(back.clone()));
+            assert!(!refused(&said), "the real return was refused: {said:#?}");
+            assert!(said.iter().any(|s| s == "back in the game"), "{said:#?}");
+            let with = |i: usize, f: Vec<u8>| {
+                let mut s = back.clone();
+                s[i] = f;
+                returned(s)
+            };
+            // The opening of another seat of the game, or of another game.
+            let mut other = |map: &str, you: usize| {
+                let mut stream = FakeStream::new(&mut h, map, &slots(), you, 1);
+                for _ in 0..8 {
+                    stream.turn(Vec::new());
+                }
+                let map = h.multiplayer_map(map).info().unwrap();
+                let opening = stream.opening(map, Speed::Normal);
+                opening.into_iter().map(encoded).collect::<Vec<_>>()
+            };
+            let another_game = other("jl6", 0);
+            let another_player = other("jl1", 1);
+            let SeatFrame::Seated {
+                map,
+                speed,
+                paused,
+                hold,
+                token,
+                ..
+            } = frame(&back, 0)
+            else {
+                panic!("a seat");
+            };
+            let cases = [
+                (
+                    "the seat of another slot",
+                    with(
+                        0,
+                        encoded(SeatFrame::Seated {
+                            you: 1,
+                            map,
+                            speed,
+                            paused,
+                            hold,
+                            token,
+                        }),
+                    ),
+                ),
+                (
+                    "the start of another game",
+                    with(1, another_game[1].clone()),
+                ),
+                (
+                    "the message of another player",
+                    with(2, another_player[2].clone()),
+                ),
+                ("a message back in time", with(2, before[2].clone())),
+                (
+                    "a change before the whole message",
+                    with(2, later[0].clone()),
+                ),
+                ("the whole message before the start", {
+                    let mut s = back.clone();
+                    s.swap(1, 2);
+                    returned(s)
+                }),
+                ("the start before the seat", {
+                    let mut s = back.clone();
+                    s.swap(0, 1);
+                    returned(s)
+                }),
+                ("bytes that are no frame", with(1, vec![0xff; 40])),
+            ];
+            let mut failures = Vec::new();
+            for (what, stream) in cases {
+                match catch_unwind(AssertUnwindSafe(|| play_return(&mut h, &before, &stream))) {
+                    Ok(said) if refused(&said) => {}
+                    Ok(_) => failures.push(format!("{what}: not refused")),
+                    Err(_) => failures.push(format!("{what}: panic")),
+                }
+            }
+            for case in 0..RETURN_CASES {
+                let mut r = Rng::new(0x8E7, case);
+                let mut stream = back.clone();
+                let i = r.below(stream.len());
+                mutate_bytes(&mut r, &mut stream[i]);
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    play_return(&mut h, &before, &returned(stream))
+                }));
+                if result.is_err() {
+                    failures.push(format!("case {case}: frame {i} of the return: panic"));
+                }
+            }
+            failures
+        })
+        .unwrap();
+    let failures = worker.join().unwrap();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Returns with a frame changed at random.
+const RETURN_CASES: u64 = 60;
