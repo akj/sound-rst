@@ -255,12 +255,14 @@ impl OrderTarget {
     /// Reads a target written in a line of text. A square may also be
     /// written by its name. The error is a word that names no target.
     fn parse(world: &World, word: &str) -> Result<OrderTarget, String> {
-        Ok(match TargetRef::parse(world, word).map_err(|a| a.0)? {
-            TargetRef::Square(s) | TargetRef::SquareNamed(s) => OrderTarget::Square(s),
-            TargetRef::Point { square, x, y } => OrderTarget::Point { square, x, y },
-            TargetRef::Entity(e) => OrderTarget::Entity(e),
-            TargetRef::Nothing => return Err(format!("not a target: {word:?}")),
-        })
+        Ok(
+            match TargetRef::parse(world, word).map_err(|a| a.to_string())? {
+                TargetRef::Square(s) | TargetRef::SquareNamed(s) => OrderTarget::Square(s),
+                TargetRef::Point { square, x, y } => OrderTarget::Point { square, x, y },
+                TargetRef::Entity(e) => OrderTarget::Entity(e),
+                TargetRef::Nothing => return Err(format!("not a target: {word:?}")),
+            },
+        )
     }
 }
 

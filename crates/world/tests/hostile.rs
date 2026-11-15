@@ -522,7 +522,9 @@ fn warnings_of_a_game(rules: &str, ai: &str) -> Vec<String> {
 fn a_farm_that_costs_food_ends_the_computers_update_with_a_warning() {
     assert_eq!(
         warnings_of_a_game("def farm\nfood_cost 100\n", ""),
-        ["maximum recursion depth exceeded"; 3]
+        [0, 10, 20].map(|turn| format!(
+            "the update of player 87 stopped at turn {turn}: maximum recursion depth exceeded"
+        ))
     );
 }
 

@@ -267,8 +267,8 @@ fn a_zoom_outside_its_square_is_refused() {
     assert_eq!(
         w.drain_warnings(),
         [format!(
-            "problem with order: [\"build\", \"farm\", \"zoom-{id}-9223372036854775807-{y}\"]: \
-             the zoom is outside its square"
+            "the order [\"build\", \"farm\", \"zoom-{id}-9223372036854775807-{y}\"] given to \
+             peasant {peasant} of player 86 stopped at turn 0: the zoom is outside its square"
         )]
     );
     let keywords = |w: &World| {

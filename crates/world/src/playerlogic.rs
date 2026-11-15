@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::abort::{Abort, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
 use crate::msg::{Msg, msg};
@@ -13,7 +14,7 @@ use crate::orders::{Order, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
-use crate::world::{Abort, INF, Res, World};
+use crate::world::{INF, World};
 
 /// The side of the buckets used to find units near a point.
 pub const BUCKET_SIDE: i64 = 12 * PRECISION;

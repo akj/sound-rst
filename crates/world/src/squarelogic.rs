@@ -427,7 +427,7 @@ impl World {
         };
         for _ in 0..n {
             if let Err(e) = self.create_deposit(tid, s, q) {
-                self.warn(e.0);
+                self.warn(e.to_string());
             }
         }
     }

@@ -4,13 +4,14 @@
 //! that take one, and a target (`go 12`, `train footman`, `build farm
 //! 25`). A unit keeps a queue of orders and executes the first one.
 
+use crate::abort::{Abort, Res};
 use crate::command::{KeywordOrder, OrderTarget};
 use crate::entity::{AiMode, Creature, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
 use crate::rules::{AirGround, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
-use crate::world::{Abort, Res, TPlace, World};
+use crate::world::{TPlace, World};
 
 /// The most orders a unit can queue.
 pub const ORDERS_QUEUE_LIMIT: usize = 10;
@@ -383,7 +384,9 @@ impl Request {
         let arg = match rest {
             [] => None,
             [name] if keyword == Keyword::JoinGroup => Some(Arg::Group(name.clone())),
-            [word] => Some(Arg::Target(TargetRef::parse(w, word).map_err(|a| a.0)?)),
+            [word] => Some(Arg::Target(
+                TargetRef::parse(w, word).map_err(|a| a.to_string())?,
+            )),
             _ => return Err(format!("too many words in an order: {words:?}")),
         };
         Ok(Request {

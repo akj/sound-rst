@@ -809,7 +809,7 @@ impl GameInterface {
                 Ok(k) => k,
                 Err(e) => {
                     cx.log
-                        .warning(format!("the default order of unit {}: {}", id.0, e.0));
+                        .warning(format!("the default order of unit {}: {e}", id.0));
                     None
                 }
             };

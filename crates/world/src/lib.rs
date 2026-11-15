@@ -80,6 +80,7 @@ pub mod msgparts;
 
 pub mod defs;
 
+mod abort;
 mod ai;
 pub mod change;
 pub mod collision;
@@ -120,6 +121,7 @@ mod upstream_tests;
 mod wire;
 pub mod world;
 
+pub use abort::Abort;
 pub use ai::{Handicap, computer_name};
 pub use change::{
     ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
@@ -145,7 +147,7 @@ pub use record::{Record, RecordedTurn, ReplayError};
 pub use rules::{AiScripts, Rules, VIRTUAL_TIME_INTERVAL};
 pub use seat_view::{Comrades, MapSquare, SeatView};
 pub use setup::GameSetup;
-pub use world::{Abort, DefaultTrigger, INF, World, multiplayer_default_triggers};
+pub use world::{DefaultTrigger, INF, World, multiplayer_default_triggers};
 
 /// The version of the simulation. Players can join the same game only with
 /// the same version. Bump it whenever a change makes the simulation compute

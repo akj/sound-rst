@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use crate::abort::{Abort, Res};
 use crate::collision::CollisionMatrix;
 use crate::command::Command;
 use crate::entity::{
@@ -25,22 +26,6 @@ pub const INF: i64 = i64::MAX;
 
 /// The food limit when the map does not set one.
 pub const GLOBAL_FOOD_LIMIT: i64 = 80;
-
-/// An error the original raises and catches with `except: exception("")`:
-/// the work in progress stops (the update of one unit, one player's
-/// update, one command) and the game goes on. The message goes to the
-/// warnings.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Abort(pub String);
-
-impl Abort {
-    pub(crate) fn new(s: impl Into<String>) -> Abort {
-        Abort(s.into())
-    }
-}
-
-/// The result of work the original may abandon with an exception.
-pub type Res<T = ()> = Result<T, Abort>;
 
 /// There is no free space for an entity where it should appear.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -355,6 +340,28 @@ impl World {
 
     pub(crate) fn warn(&mut self, s: impl Into<String>) {
         self.warnings.push(s.into());
+    }
+
+    /// Warns that a piece of work of a unit or a player stopped part-way.
+    pub(crate) fn warn_stopped(&mut self, work: &str, whose: &str, e: &Abort) {
+        self.warn(format!(
+            "the {work} of {whose} stopped at turn {}: {e}",
+            self.turn()
+        ));
+    }
+
+    /// A player, as a warning names it.
+    pub(crate) fn who(&self, p: PlayerId) -> String {
+        format!("player {}", self.pl(p).obj_id)
+    }
+
+    /// An entity, as a warning names it.
+    pub(crate) fn what(&self, id: EntityId) -> String {
+        let e = self.e(id);
+        match e.player() {
+            Some(p) => format!("{} {id} of {}", e.type_name, self.who(p)),
+            None => format!("{} {id}", e.type_name),
+        }
     }
 
     /// The warnings since the last call: what the original logs.
@@ -984,8 +991,9 @@ impl World {
             if !self.players.contains(&p) {
                 continue;
             }
-            if let Err(Abort(msg)) = self.execute_command(p, &cmd) {
-                self.warn(format!("command {cmd:?}: {msg}"));
+            if let Err(e) = self.execute_command(p, &cmd) {
+                let who = self.who(p);
+                self.warn(format!("command {cmd:?} of {who} stopped: {e}"));
             }
         }
         self.tick();
@@ -998,9 +1006,9 @@ impl World {
         self.update_detection();
         for p in self.players.clone() {
             if self.players.contains(&p)
-                && let Err(Abort(msg)) = self.player_update(p)
+                && let Err(e) = self.player_update(p)
             {
-                self.warn(msg);
+                self.warn_stopped("update", &self.who(p), &e);
             }
         }
         let mut active = std::mem::take(&mut self.active_objects);
@@ -1008,24 +1016,24 @@ impl World {
         self.active_objects = active;
         for o in self.active_objects.clone() {
             if self.e(o).place.is_some()
-                && let Err(Abort(msg)) = self.entity_update(o)
+                && let Err(e) = self.entity_update(o)
             {
-                self.warn(msg);
+                self.warn_stopped("update", &self.what(o), &e);
             }
         }
         if self.time >= self.previous_slow_update + 1000 {
             for o in self.active_objects.clone() {
                 if self.e(o).place.is_some()
-                    && let Err(Abort(msg)) = self.entity_slow_update(o)
+                    && let Err(e) = self.entity_slow_update(o)
                 {
-                    self.warn(msg);
+                    self.warn_stopped("slow update", &self.what(o), &e);
                 }
             }
             for p in self.players.clone() {
                 if self.players.contains(&p)
-                    && let Err(Abort(msg)) = self.player_slow_update(p)
+                    && let Err(e) = self.player_slow_update(p)
                 {
-                    self.warn(msg);
+                    self.warn_stopped("slow update", &self.who(p), &e);
                 }
             }
             self.previous_slow_update += 1000;

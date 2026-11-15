@@ -26,13 +26,14 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use crate::abort::{Abort, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target};
 use crate::orders::{Keyword, MenuEntry, Order, OrderInfo, Request};
 use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
-use crate::world::{Abort, INF, Res, TPlace, World};
+use crate::world::{INF, TPlace, World};
 
 use super::Computer;
 

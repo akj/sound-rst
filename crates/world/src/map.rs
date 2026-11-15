@@ -25,7 +25,7 @@ use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upg
 use crate::rules::AirGround;
 use crate::square::Square;
 use crate::triggers::{Expr, list_to_tree};
-use crate::world::{Abort, World};
+use crate::world::World;
 
 /// The map cannot be loaded. The message says why, and where.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -923,7 +923,9 @@ impl World {
                 number(&format!("{cls} {n}"), q)?;
             }
             if self.can_receive(s, AirGround::Ground, None) {
-                let d = self.create_deposit(tid, s, &n).map_err(|e| MapError(e.0))?;
+                let d = self
+                    .create_deposit(tid, s, &n)
+                    .map_err(|e| MapError(e.to_string()))?;
                 let m = self.create_meadow(s, None);
                 // `d` is the deposit created above: the meadow is created
                 // after it, to have the next id.
@@ -1058,9 +1060,9 @@ impl World {
         self.plm(pid).allied = vec![pid];
         self.plm(pid).allied_control = vec![pid];
         if matches!(kind, PlayerKind::Computer { .. })
-            && let Err(Abort(m)) = self.new_computer(pid)
+            && let Err(e) = self.new_computer(pid)
         {
-            self.warn(m);
+            self.warn_stopped("set-up", &self.who(pid), &e);
         }
         Ok(pid)
     }

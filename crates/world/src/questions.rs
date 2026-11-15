@@ -11,6 +11,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::abort::{Abort, Res};
 use crate::entity::{AiMode, Creature, Entity, EntityId, Place, PlayerId, Target};
 use crate::known::{Activity, KnownEntity, KnownOrder, OwnPart};
 use crate::orders::{
@@ -19,7 +20,7 @@ use crate::orders::{
 use crate::player::Upgrades;
 use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
 use crate::seat_view::Comrades;
-use crate::world::{Abort, Res, World};
+use crate::world::World;
 
 /// The effects of an ability that its `use` order may always be given for.
 const EFFECTS: &[&str] = &[

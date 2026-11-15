@@ -1,6 +1,7 @@
 //! Map triggers, the trigger language (`lang_*`) and the text commands of
 //! players (`cmd_*`), from `worldplayerbase.py` and `worldplayercomputer.py`.
 
+use crate::abort::{Abort, Res};
 use crate::command::{Cheat, Command, Order, Queue};
 use crate::entity::{EntityId, Place, PlayerId, Target};
 use crate::events::{EntityEvent, Event};
@@ -10,7 +11,7 @@ use crate::msgparts as mp;
 use crate::nofloat::{py_float, py_int};
 use crate::orders::{Request, TargetRef};
 use crate::player::{Objective, PlayerKind};
-use crate::world::{Abort, NotEnoughSpace, Res, World};
+use crate::world::{NotEnoughSpace, World};
 
 /// The deepest a trigger may nest parentheses. Dropping, cloning, comparing
 /// or hashing an [`Expr`] goes one call deeper for each level, so this keeps
@@ -624,12 +625,16 @@ impl World {
                         Some(order_id),
                     ),
                 };
-                if let Err(Abort(m)) = r {
+                if let Err(e) = r {
                     let words = match &given {
                         Given::Default(t) => vec!["default".to_owned(), t.text(self)],
                         Given::Order(request) => request.words(self),
                     };
-                    self.warn(format!("problem with order: {words:?}: {m}"));
+                    let to = self.what(u);
+                    self.warn(format!(
+                        "the order {words:?} given to {to} stopped at turn {}: {e}",
+                        self.turn()
+                    ));
                 }
             }
         }

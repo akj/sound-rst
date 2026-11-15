@@ -1,6 +1,7 @@
 //! What units, buildings, deposits and corpses do (`worldunit.py`,
 //! `worldaction.py`, `worldresource.py`, `worldupgrade.py`).
 
+use crate::abort::{Abort, Res};
 use crate::entity::{
     Action, ActionKind, AiMode, Corpse, Creature, CreatureKind, Deposit, Entity, EntityId, Kind,
     Place, PlayerId, SiteData, SquareId, Target,
@@ -16,7 +17,7 @@ use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
-use crate::world::{Abort, NotEnoughSpace, Res, TPlace, World};
+use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
 pub const DISTANCE_MARGIN: i64 = 175;
@@ -261,8 +262,8 @@ impl World {
         let (fp, fc) = (self.e(id).stats.food_provided, self.e(id).stats.food_cost);
         self.plm(p).food += fp;
         self.plm(p).used_food += fc;
-        if let Err(Abort(m)) = self.upgrade_to_player_level(id) {
-            self.warn(m);
+        if let Err(e) = self.upgrade_to_player_level(id) {
+            self.warn_stopped("upgrade", &self.what(id), &e);
         }
         for u in self.pl(p).units.clone() {
             if matches!(self.e(u).action_target(), Some(Target::Entity(t)) if *t == id) {
@@ -1672,8 +1673,8 @@ impl World {
         let base = self.base_damage_versus_of(a, t);
         let minimal = a.creature().map_or(0, |c| c.minimal_damage);
         let damage = minimal.max(base - self.armor_versus_of(t, a));
-        if let Err(Abort(m)) = self.receive_hit(target, damage, id, true) {
-            self.warn(m);
+        if let Err(e) = self.receive_hit(target, damage, id, true) {
+            self.warn_stopped("hit", &self.what(target), &e);
         }
     }
 

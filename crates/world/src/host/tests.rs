@@ -665,13 +665,20 @@ fn a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_not
     assert!(own.iter().all(|&u| host.world.e(u).orders().is_empty()));
     let names: Vec<&str> = host.world.groups.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, [long.as_str()]);
-    let zoom = |at: &str| {
-        format!("problem with order: [\"go\", \"zoom-2-{at}\"]: the zoom is outside its square")
+    let zoom = |at: &str, unit: &str, turn: i64| {
+        format!(
+            "the order [\"go\", \"zoom-2-{at}\"] given to {unit} of player 86 stopped at turn \
+             {turn}: the zoom is outside its square"
+        )
     };
-    let (a, b) = (
-        zoom("9223372036854775807--9223372036854775808"),
-        zoom("-9223372036854775808-9223372036854775807"),
-    );
     // Once for each of the three units that can go.
-    assert_eq!(warnings, [&a, &a, &a, &b, &b, &b].map(String::as_str));
+    let units = ["peasant 90", "priest 94", "priest 95"];
+    let expected: Vec<String> = [
+        ("9223372036854775807--9223372036854775808", 11),
+        ("-9223372036854775808-9223372036854775807", 12),
+    ]
+    .iter()
+    .flat_map(|&(at, turn)| units.map(|u| zoom(at, u, turn)))
+    .collect();
+    assert_eq!(warnings, expected);
 }

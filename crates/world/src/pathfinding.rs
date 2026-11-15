@@ -8,10 +8,11 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 
+use crate::abort::{Abort, Res};
 use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::nofloat::int_distance;
 use crate::rules::AirGround;
-use crate::world::{Abort, INF, Res, World};
+use crate::world::{INF, World};
 
 /// A vertex of a path graph.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

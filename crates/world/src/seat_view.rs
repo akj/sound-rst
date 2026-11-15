@@ -34,6 +34,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::abort::{Abort, Res};
 use crate::command::OrderTarget;
 use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::known::{KnownEntity, KnownOrder, KnownTarget};
@@ -44,7 +45,6 @@ use crate::orders::{Keyword, MenuEntry, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
 use crate::rules::{Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
-use crate::world::{Abort, Res};
 
 /// What one seat knows of a game, from what it was sent: see the
 /// [module](self).

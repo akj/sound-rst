@@ -20,12 +20,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::abort::{Abort, Res};
 use crate::entity::{CreatureKind, Entity, EntityId, Place, SquareId, Target};
 use crate::nofloat::{floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass, Role};
-use crate::world::{Abort, Res, TPlace};
+use crate::world::TPlace;
 
 mod door;
 mod handicap;
@@ -373,7 +374,7 @@ impl Door<'_> {
         let planned = match self.follow_plan() {
             // The original catches a recursion error of its plan here, and
             // goes on with the next line of the plan at its next turn.
-            Err(Abort(m)) if m == RECURSION_ERROR => {
+            Err(Abort::Unclassified(m)) if m == RECURSION_ERROR => {
                 let ai_type = match self.kind() {
                     PlayerKind::Computer { ai_type } => ai_type.clone(),
                     _ => String::new(),

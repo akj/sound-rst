@@ -706,7 +706,10 @@ starting_resources 10 10
         let p = find(&w, cp, "priest", 0).unwrap();
         take(&mut w, p, "use a_resurrection a1");
         w.update();
-        assert_eq!(w.drain_warnings(), ["NotEnoughSpaceError"]);
+        assert_eq!(
+            w.drain_warnings(),
+            ["the update of priest 36 of player 12 stopped at turn 1: NotEnoughSpaceError"]
+        );
         assert_eq!(nb(&w, cp, "footman"), footmen);
         assert_eq!(w.player(cp).used_food, used_food);
         let unplaced = w
