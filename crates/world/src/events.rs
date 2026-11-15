@@ -133,4 +133,7 @@ pub enum Event {
     Speed(f64),
     /// The player left the game.
     Quit,
+    /// A unit the player may give orders to became another, with a new
+    /// id: an upgrade. What named the old unit names the new one.
+    Replaced { old: EntityId, new: EntityId },
 }

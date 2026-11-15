@@ -3,15 +3,17 @@ use crate::entity::ZoomTarget;
 use crate::player::Controller;
 use crate::{AiScripts, Rules};
 
-/// jl1 with a human, `me`, against an easy computer.
-fn game() -> (World, PlayerId, PlayerId) {
+/// A file of the original game.
+fn read(f: &str) -> String {
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
-    let read = |f: &str| {
-        let bytes = std::fs::read(dir.join(f))
-            .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
-        String::from_utf8_lossy(&bytes).into_owned()
-    };
+    let bytes = std::fs::read(dir.join(f))
+        .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// jl1 with a human, `me`, against an easy computer.
+fn game() -> (World, PlayerId, PlayerId) {
     let rules = Rules::load(&[read("res/rules.txt")]);
     let ai = AiScripts::load(&[read("res/ai.txt")]);
     let mut w = World::new(rules, ai, Vec::new(), 0);
@@ -373,4 +375,176 @@ fn a_place_inside_a_unit_is_no_target() {
     assert_eq!(t, TargetRef::Nothing);
     assert_eq!(Request::go(t).words(&w), words(&["go", "None"]));
     assert!(w.resolve_target(me, &t).unwrap().is_none());
+}
+
+// Units that change hands or change type, given orders as a player does.
+
+/// Two humans with no units, `a` (whose events are recorded) on a1 and
+/// `b` on b1, in a game that allows cheats, with the base rules and then
+/// a mod's `extra` rules.
+fn two_humans(extra: &str) -> (World, PlayerId, PlayerId) {
+    let rules = Rules::load(&[read("res/rules.txt"), extra.to_owned()]);
+    let ai = AiScripts::load(&[read("res/ai.txt")]);
+    let mut w = World::new(rules, ai, Vec::new(), 0);
+    w.allow_cheatmode = true;
+    let map = "square_width 12\nnb_columns 2\nnb_lines 1\nnb_meadows_by_square 0\n\
+               nb_players_min 2\nnb_players_max 2\nstarting_squares a1 b1\n";
+    w.load_and_build_map(map).unwrap();
+    let humans = [Controller::human("a", true), Controller::human("b", false)];
+    let ps = w.populate_map(&humans, false, false).unwrap();
+    for &p in &ps {
+        w.plm(p).resources = vec![1000 * crate::nofloat::PRECISION; 2];
+    }
+    (w, ps[0], ps[1])
+}
+
+/// Gives `units` of `p` an order written as a game on a server sends it:
+/// `use a_conversion 12`.
+fn order(w: &mut World, p: PlayerId, units: &[EntityId], words: &str) {
+    w.queue(p, crate::Command::Control(units.to_vec()));
+    w.queue_command(p, &format!("order 0 0 {words}"));
+}
+
+/// The units of `p` of this type, in the player's order.
+fn all(w: &World, p: PlayerId, type_name: &str) -> Vec<EntityId> {
+    let units = w.pl(p).units.iter().copied();
+    units.filter(|&u| &*w.e(u).type_name == type_name).collect()
+}
+
+/// Runs turns until `done`, at least one and at most 1000: the commands
+/// queued run in the next.
+fn update_until(w: &mut World, done: impl Fn(&World) -> bool) {
+    for _ in 0..1000 {
+        w.update();
+        if done(w) {
+            return;
+        }
+    }
+    panic!("not done after 1000 turns");
+}
+
+/// Damage and speed, in thousandths, and the damage upgrade level.
+fn bonuses(w: &World, u: EntityId) -> (i64, i64, i64) {
+    let e = w.e(u);
+    (e.stats.damage, e.stats.speed, e.damage_level)
+}
+
+#[test]
+fn a_resurrected_unit_has_its_owners_upgrades_once() {
+    let (mut w, a, _) = two_humans("");
+    let line = "cmd add_units a1 melee_weapon horse_speed u_resurrection knight priest";
+    w.queue_command(a, line);
+    w.update();
+    let knight = find(&w, a, "knight");
+    // A knight does 6 damage and walks at 2.5: the weapon adds its damage
+    // bonus of 6, the horses 2.5.
+    // Like the original, the weapon upgrade counts twice in the level.
+    assert_eq!(bonuses(&w, knight), (12_000, 5_000, 2));
+    w.die(knight, None).unwrap();
+    let priest = find(&w, a, "priest");
+    order(&mut w, a, &[priest], "use a_resurrection a1");
+    update_until(&mut w, |w| !all(w, a, "knight").is_empty());
+    let knight = find(&w, a, "knight");
+    assert_eq!(bonuses(&w, knight), (12_000, 5_000, 2));
+}
+
+#[test]
+fn a_converted_unit_has_its_new_owners_upgrades_and_none_of_its_old_owners() {
+    let (mut w, a, b) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 melee_weapon u_conversion priest");
+    w.queue_command(b, "cmd add_units a1 melee_weapon horse_speed knight");
+    w.update();
+    let knight = find(&w, b, "knight");
+    assert_eq!(bonuses(&w, knight), (12_000, 5_000, 2));
+    let priest = find(&w, a, "priest");
+    order(&mut w, a, &[priest], &format!("use a_conversion {knight}"));
+    update_until(&mut w, |w| w.e(knight).player == Some(a));
+    assert_eq!(bonuses(&w, knight), (12_000, 2_500, 2));
+}
+
+/// Two archers of `a` in a scout tower that is then upgraded to a guard
+/// tower, with a mod's `extra` rules: the archers and the guard tower.
+fn upgrade_an_occupied_tower(extra: &str) -> (World, PlayerId, Vec<EntityId>, EntityId) {
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 lumbermill scouttower 2 archer");
+    w.update();
+    let tower = find(&w, a, "scouttower");
+    let archers = all(&w, a, "archer");
+    order(&mut w, a, &archers, &format!("enter {tower}"));
+    // A building with an order cannot be upgraded: the tower has loaded
+    // both archers.
+    update_until(&mut w, |w| {
+        w.e(tower).inside.as_ref().unwrap().len() == 2 && w.e(tower).orders.is_empty()
+    });
+    order(&mut w, a, &[tower], "upgrade_to guardtower");
+    update_until(&mut w, |w| !all(w, a, "guardtower").is_empty());
+    let guardtower = find(&w, a, "guardtower");
+    (w, a, archers, guardtower)
+}
+
+#[test]
+fn units_inside_a_building_upgraded_are_inside_the_new_building() {
+    let (w, a, archers, guardtower) = upgrade_an_occupied_tower("");
+    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..]));
+    for &u in &archers {
+        assert_eq!(w.e(u).player, Some(a));
+        assert_eq!(w.e(u).place, Some(Place::Inside(guardtower)));
+    }
+    assert_eq!(all(&w, a, "archer"), archers);
+}
+
+#[test]
+fn units_that_no_longer_fit_in_a_building_upgraded_are_beside_it() {
+    // A mod whose guard tower holds one archer.
+    let (w, a, archers, guardtower) =
+        upgrade_an_occupied_tower("def guardtower\ntransport_capacity 1\n");
+    assert_eq!(w.e(guardtower).inside.as_deref(), Some(&archers[..1]));
+    assert_eq!(w.e(archers[1]).player, Some(a));
+    assert_eq!(w.e(archers[1]).place, w.e(guardtower).place);
+}
+
+#[test]
+fn load_all_never_loads_the_transport_into_itself() {
+    // A mod whose flying machine fits in a transport.
+    let (mut w, a, _) = two_humans("def new_flyingmachine\ntransport_volume 1\n");
+    w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
+    w.update();
+    let transport = find(&w, a, "new_flyingmachine");
+    let footman = find(&w, a, "footman");
+    let a1 = w.square_by_name("a1").unwrap();
+    let here = format!("load_all {}", w.square(a1).id);
+    order(&mut w, a, &[transport], &here);
+    update_until(&mut w, |w| w.e(transport).orders.is_empty());
+    assert_eq!(w.e(transport).place, Some(Place::Square(a1)));
+    assert_eq!(w.e(transport).inside.as_deref(), Some(&[footman][..]));
+}
+
+#[test]
+fn units_upgraded_take_the_place_of_the_old_ones_where_the_player_named_them() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(a, "cmd add_units a1 lumbermill magestower 2 archer");
+    w.update();
+    let archers = all(&w, a, "archer");
+    order(&mut w, a, &archers, "reset_group 6");
+    order(&mut w, a, &archers, "join_group 6");
+    order(&mut w, a, &archers, "upgrade_to darkarcher");
+    w.drain_events(a);
+    update_until(&mut w, |w| all(w, a, "darkarcher").len() == 2);
+    let dark = all(&w, a, "darkarcher");
+    let replaced: Vec<crate::Event> = w
+        .drain_events(a)
+        .into_iter()
+        .filter(|e| matches!(e, crate::Event::Replaced { .. }))
+        .collect();
+    // The second archer is upgraded first.
+    let (first, second) = (dark[1], dark[0]);
+    let told = |old, new| crate::Event::Replaced { old, new };
+    assert_eq!(
+        replaced,
+        [told(archers[1], second), told(archers[0], first)]
+    );
+    let groups = w.turn_message(a, Vec::new()).state.groups;
+    assert_eq!(groups, [("6".to_owned(), vec![first, second])]);
+    assert_eq!(w.pl(a).group, Some(vec![first, second]));
+    assert_eq!(w.e(first).group.as_deref(), Some("6"));
 }

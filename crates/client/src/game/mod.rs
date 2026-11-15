@@ -157,15 +157,18 @@ pub enum SrvEvent {
     EndOfTurn(Arc<TurnMessage>),
 }
 
-impl From<Event> for SrvEvent {
-    fn from(e: Event) -> SrvEvent {
-        match e {
+impl SrvEvent {
+    /// The event to handle in its turn. A unit replaced is followed at the
+    /// end of its turn instead, when the interface knows the new unit.
+    fn of(e: Event) -> Option<SrvEvent> {
+        Some(match e {
             Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
             Event::VoiceImportant(m) => SrvEvent::VoiceImportant(m),
             Event::Sequence(s) => SrvEvent::Sequence(s),
             Event::Speed(s) => SrvEvent::Speed(s),
             Event::Quit => SrvEvent::Quit,
-        }
+            Event::Replaced { .. } => return None,
+        })
     }
 }
 
@@ -633,14 +636,12 @@ impl GameInterface {
         }
         self.seat.install(report.message);
         if let Some(end) = report.end_of_turn {
-            for e in end.events.iter().cloned() {
-                self.srv_queue.push_back(SrvEvent::from(e));
-            }
+            let events = end.events.iter().cloned().filter_map(SrvEvent::of);
+            self.srv_queue.extend(events);
             self.srv_queue.push_back(SrvEvent::EndOfTurn(end));
         }
-        for e in report.then {
-            self.srv_queue.push_back(SrvEvent::from(e));
-        }
+        self.srv_queue
+            .extend(report.then.into_iter().filter_map(SrvEvent::of));
     }
 
     /// How far the game has got.
@@ -832,6 +833,7 @@ impl GameInterface {
         }
         self.units_alert_if_needed(cx, None);
         self.scout_info_if_needed(cx);
+        self.follow_replaced_units(m);
         self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
         self.update_group();
         if self.bell_enabled {

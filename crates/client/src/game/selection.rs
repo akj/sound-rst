@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::Keyword;
-use soundrts_world::{Command, EntityId, Order, OrderTarget};
+use soundrts_world::{Command, EntityId, Event, Order, OrderTarget, TurnMessage};
 
 use crate::audio::stereo;
 use crate::client::Client;
@@ -200,6 +200,25 @@ impl GameInterface {
             result.sort_by_key(key);
         }
         result
+    }
+
+    /// Puts each unit that took the place of another, by an upgrade, in
+    /// its place in the group, and as the selected object if the turn's
+    /// message `m` knows it. Done before the turn's entities are taken,
+    /// which keep the selected object only if it is still known.
+    pub(super) fn follow_replaced_units(&mut self, m: &TurnMessage) {
+        for e in &m.events {
+            let &Event::Replaced { old, new } = e else {
+                continue;
+            };
+            for u in self.group.iter_mut().filter(|u| **u == old) {
+                *u = new;
+            }
+            let known = m.perceived.iter().chain(&m.remembered).any(|e| e.id == new);
+            if self.target == Some(old) && known {
+                self.target = Some(new);
+            }
+        }
     }
 
     /// Keeps in the group the units still known and controlled.
@@ -818,8 +837,55 @@ impl GameInterface {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{cheat, enemy, go, training, unit};
+    use super::super::testing::{cheat, enemy, go, run_until, training, unit};
     use super::*;
+    use crate::input::{Key, Mods};
+
+    #[test]
+    fn units_upgraded_stay_selected_and_in_their_recallable_group() {
+        let (mut h, mut g) = training();
+        let me = g.game.me;
+        let townhall = unit(&g, me, "townhall");
+        let w = g.game.host.world();
+        let home = w.entity(townhall).unwrap().square().unwrap();
+        let home = g.game.view().square(home).name().to_owned();
+        cheat(
+            &mut g,
+            me,
+            &format!("add_units {home} lumbermill magestower 2 archer"),
+        );
+        let turn = g.game.view().turn() + 2;
+        h.run_until_turn(&mut g, turn);
+        let of_type = |g: &crate::testkit::TestGame, t: &str| -> Vec<EntityId> {
+            let w = g.game.host.world();
+            let units = w.player(me).units.iter().copied();
+            units
+                .filter(|&u| w.entity(u).is_some_and(|e| &*e.type_name == t))
+                .collect()
+        };
+        let archers = of_type(&g, "archer");
+        assert_eq!(archers.len(), 2);
+        g.game.group = archers.clone();
+        h.key(&mut g, Key::Num6, Mods::CTRL);
+        let control = format!("control {} {}", archers[0], archers[1]);
+        g.game.host.queue_line(me, &control);
+        g.game
+            .host
+            .queue_line(me, "order 0 0 upgrade_to darkarcher");
+        run_until(&mut h, &mut g, |game| {
+            let dark = |v: &EntityView| &*v.model.type_name == "darkarcher";
+            game.dobjets.values().filter(|v| dark(v)).count() == 2
+        });
+        let dark = of_type(&g, "darkarcher");
+        // The second archer is upgraded first.
+        let (first, second) = (dark[1], dark[0]);
+        assert_eq!(g.game.group, [first, second]);
+        g.game.group = Vec::new();
+        h.run_until_voice_idle(&mut g);
+        let said = h.key(&mut g, Key::Num6, Mods::NONE);
+        assert_eq!(g.game.group, [first, second]);
+        assert_eq!(said, [", You control 2 dark archer , ,"]);
+    }
 
     #[test]
     fn do_again_reads_nothing_of_a_player_the_player_does_not_control() {

@@ -6,7 +6,7 @@
 
 use crate::command::{KeywordOrder, OrderTarget};
 use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
-use crate::events::{EntityEvent, Reason};
+use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
 use crate::rules::{AirGround, VIRTUAL_TIME_INTERVAL};
@@ -1859,6 +1859,9 @@ impl World {
                         }
                     }
                 }
+                // Taken out first, the units inside stay their player's when
+                // the old building is deleted.
+                let inside = self.em(unit).inside.as_mut().map(std::mem::take);
                 self.delete(unit);
                 let nu = self
                     .create_creature(type_id, Some(p), place, x, y)
@@ -1869,6 +1872,22 @@ impl World {
                 if hp != hp_max {
                     self.em(nu).hp = hp;
                 }
+                // They go into the new building, or out beside it if they no
+                // longer fit: without collision if the square is full, as
+                // from a building destroyed.
+                for o in inside.unwrap_or_default() {
+                    if self.have_enough_space(nu, self.e(o)) {
+                        let _ = self.move_to(o, Some(Place::Inside(nu)), Some((0, 0)), 90);
+                    } else {
+                        let _ = self.move_to(o, Some(place), Some((x, y)), 90);
+                        if self.e(o).place == Some(Place::Inside(unit)) {
+                            self.em(o).stats.collision = 0;
+                            let _ = self.move_to(o, Some(place), Some((x, y)), 90);
+                        }
+                        self.notify(o, EntityEvent::Exit, false);
+                    }
+                }
+                self.replace_unit(unit, nu, e.group);
                 self.notify(nu, EntityEvent::Complete, false);
                 if leave_meadow && let Place::Square(s) = place {
                     self.create_meadow(s, Some((x, y)));
@@ -1877,6 +1896,33 @@ impl World {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Makes what named `old`, in the recallable group `group`, name `new`,
+    /// which took its place: the recallable groups, the units a player
+    /// controls, and the interface of each player that may give it orders,
+    /// told by an event.
+    fn replace_unit(&mut self, old: EntityId, new: EntityId, group: Option<String>) {
+        let replace = |units: &mut Vec<EntityId>| {
+            for u in units.iter_mut().filter(|u| **u == old) {
+                *u = new;
+            }
+        };
+        for (_, units) in &mut self.groups {
+            replace(units);
+        }
+        self.em(new).group = group;
+        let Some(owner) = self.e(new).player else {
+            return;
+        };
+        for p in self.players.clone() {
+            if let Some(units) = self.plm(p).group.as_mut() {
+                replace(units);
+            }
+            if self.pl(p).allied_control.contains(&owner) {
+                self.push(p, Event::Replaced { old, new });
+            }
+        }
     }
 
     fn go_execute(&mut self, unit: EntityId, uid: u64) -> Res {
