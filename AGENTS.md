@@ -61,10 +61,10 @@ Most features reach several of the places below. Before you call a change to the
   The third command builds the interface without the simulation's `truth` feature. It fails when the interface reads the whole world.
 - While you iterate, run one test, for example `cargo test -p soundrts --test transcripts menus_main`. The package of `crates/client` is `soundrts`. The other packages are `soundrts-world`, `soundrts-protocol`, `soundrts-server`, and `listening-room`.
 - No test speaks, plays a sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests run real servers on 127.0.0.1 only.
-- The game itself does all three. `cargo run -p soundrts -- --root vendor/soundrts-upstream` opens a window that takes the keyboard, and the game speaks through the screen reader that is running. Add `--probe` to print what the game found and exit. Start the game only when the developer asks for that run.
 - CI runs every test in its own process, several at a time. A test must pass alone and beside any other test. CI also runs the tests of `soundrts-world`, `soundrts-protocol`, and `soundrts-server` on Linux. The client needs Windows.
 - A change to what the game says ships with a test that expects the literal words and fails without the change.
 - A change that is meant to keep the behaviour leaves `expected/` as it is. If only the way the simulation stores its state changed, only the `*.digest.txt` files may change.
+- To prove that a feature works, follow `.claude/skills/verify-soundrts/SKILL.md`. It gives the commands for each feature, and it says what each proof covers: the tests, the built program, or a listener.
 
 ## Said is not heard
 
