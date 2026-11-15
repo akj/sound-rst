@@ -663,9 +663,10 @@ fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
 }
 
 #[test]
-fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
-    let extra = "def townhall\ncan_train peasant goldmine\ncan_upgrade_to keep goldmine\n\
-                 def peasant\ncan_build farm goldmine\n";
+fn a_deposit_an_upgrade_or_an_ability_listed_as_a_product_is_never_made() {
+    let extra = "def townhall\ncan_train peasant goldmine u_recall\n\
+                 can_upgrade_to keep goldmine a_recall\n\
+                 def peasant\ncan_build farm goldmine a_recall\n";
     let (mut w, a, _) = two_humans(extra);
     w.queue_command(a, "cmd add_units a1 townhall barracks peasant");
     w.update();
@@ -678,6 +679,9 @@ fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
     assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "goldmine"));
     assert!(allowed(&w, peasant, Keyword::Build, "farm"));
     assert!(!allowed(&w, peasant, Keyword::Build, "goldmine"));
+    assert!(!allowed(&w, townhall, Keyword::Train, "u_recall"));
+    assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "a_recall"));
+    assert!(!allowed(&w, peasant, Keyword::Build, "a_recall"));
     let resources = w.pl(a).resources.clone();
     order(&mut w, a, &[townhall], "train goldmine");
     w.update();

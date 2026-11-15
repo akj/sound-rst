@@ -625,10 +625,14 @@ fn is_almost_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t: 
     {
         return false;
     }
-    // A deposit has no owner, hit points or orders: a mod that lists one
-    // among what a unit trains, builds or becomes cannot make one.
+    // Only a unit or a building can be made: a mod that lists a deposit,
+    // an upgrade or an ability among what a unit trains, builds or becomes
+    // cannot make one.
     if matches!(kw, Keyword::Train | Keyword::Build | Keyword::UpgradeTo)
-        && rules.ty(t).entity_class() == Some(EntityClass::Deposit)
+        && !rules
+            .ty(t)
+            .entity_class()
+            .is_some_and(EntityClass::is_creature)
     {
         return false;
     }
