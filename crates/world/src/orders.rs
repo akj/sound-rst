@@ -2338,6 +2338,7 @@ impl World {
                 if hp != hp_max {
                     self.em(nu).hp = hp;
                 }
+                self.em(nu).rallying_point = e.rallying_point;
                 // They go into the new building, or out beside it if they no
                 // longer fit: without collision if the square is full, as
                 // from a building destroyed.

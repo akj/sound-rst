@@ -585,3 +585,29 @@ fn units_upgraded_take_the_place_of_the_old_ones_where_the_player_named_them() {
     assert_eq!(w.pl(a).group, Some(vec![first, second]));
     assert_eq!(w.e(first).group.as_deref(), Some("6"));
 }
+
+#[test]
+fn a_building_upgraded_keeps_its_rallying_point() {
+    let (mut w, a, _) = two_humans("");
+    w.queue_command(
+        a,
+        "cmd add_units a1 barracks lumbermill blacksmith stables keep",
+    );
+    w.update();
+    let keep = find(&w, a, "keep");
+    let b1 = w.square_by_name("b1").unwrap();
+    let b1_id = w.square(b1).id.to_string();
+    order(&mut w, a, &[keep], &format!("rallying_point {b1_id}"));
+    order(&mut w, a, &[keep], "upgrade_to castle");
+    // The upgrade takes 360 seconds: 1200 turns.
+    for _ in 0..1300 {
+        w.update();
+    }
+    let castle = find(&w, a, "castle");
+    assert_eq!(w.e(castle).rallying_point, Some(b1_id.clone()));
+    // A peasant trained in the castle goes there.
+    order(&mut w, a, &[castle], "train peasant");
+    update_until(&mut w, |w| !all(w, a, "peasant").is_empty());
+    let peasant = find(&w, a, "peasant");
+    assert_eq!(orders(&w, peasant).first(), Some(&words(&["go", &b1_id])));
+}
