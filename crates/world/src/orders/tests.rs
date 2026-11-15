@@ -879,3 +879,36 @@ fn a_unit_killed_by_or_dying_without_an_owner_is_removed() {
     assert_eq!(w.e(ownerless).place, None);
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
 }
+
+#[test]
+fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
+    let (w, me, _) = game();
+    let mut w = w;
+    let s = home(&w, me);
+    let (d, plain) = (0..w.squares.len())
+        .map(|i| SquareId(i as u32))
+        .filter(|&d| d != s)
+        .find_map(|d| {
+            let plain = w
+                .shortest_path_distance_to(s, d, Some(me), AirGround::Ground, false)
+                .unwrap();
+            (plain < crate::INF).then_some((d, plain))
+        })
+        .unwrap();
+    assert_eq!(
+        w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(plain)
+    );
+    w.plm(me).enemy_menace.insert(d, 1);
+    w.plm(me).enemy_presence.push(d);
+    // A new turn: the paths found this turn are kept.
+    w.time += crate::VIRTUAL_TIME_INTERVAL;
+    assert_eq!(
+        w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(crate::INF)
+    );
+    assert_eq!(
+        w.shortest_path_to(s, d, Some(me), AirGround::Ground, true),
+        Ok(None)
+    );
+}

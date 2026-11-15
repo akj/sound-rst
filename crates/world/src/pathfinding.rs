@@ -444,9 +444,10 @@ impl World {
                 .collect();
             return Ok(PathResult::Places(squares));
         }
-        match final_d.get(&end_n) {
-            Some(&d) => Ok(PathResult::Next(Some(path[1]), d)),
-            None => Err(Abort::new(format!("KeyError: {}", self.square(dest).name))),
-        }
+        // A destination to avoid is reached by no path that avoids danger.
+        Ok(match final_d.get(&end_n) {
+            Some(&d) => PathResult::Next(Some(path[1]), d),
+            None => PathResult::Next(None, INF),
+        })
     }
 }

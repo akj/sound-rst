@@ -37,7 +37,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("map.rs",                [  0,  0,  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  0,  0,  3]),
     ("orders.rs",             [  0,  0, 17,  7,  0, 14,  3]),
-    ("pathfinding.rs",        [  0,  0,  1,  1,  0,  0,  3]),
+    ("pathfinding.rs",        [  0,  0,  1,  0,  0,  0,  3]),
     ("player.rs",             [  0,  0,  0,  0,  0,  0,  1]),
     ("playerlogic.rs",        [  0,  0,  2,  5,  0,  2,  4]),
     ("pyrandom.rs",           [  0,  0,  0,  0,  0,  0, 25]),
