@@ -33,7 +33,8 @@ impl fmt::Display for RootError {
         }
         write!(
             f,
-            "Pass --root <folder>, or set the SOUNDRTS_ROOT environment variable, or put the \
+            "To download it, run: soundrts --fetch-data\n\
+             Or pass --root <folder>, or set the SOUNDRTS_ROOT environment variable, or put the \
              res, cfg, mods and single folders next to the program. In a development checkout, \
              run scripts/fetch-upstream.ps1, then use --root vendor/soundrts-upstream."
         )
@@ -47,13 +48,14 @@ fn is_root(dir: &Path) -> bool {
 }
 
 /// Finds the game root: `--root`, else `SOUNDRTS_ROOT`, else the
-/// executable's folder, else the current folder. An explicitly given
-/// folder must hold the game data too.
+/// executable's folder, else the current folder, else the downloaded data
+/// (`fetched`). An explicitly given folder must hold the game data too.
 pub fn find_root(
     cli: Option<&Path>,
     env: Option<OsString>,
     exe_dir: Option<&Path>,
     cwd: &Path,
+    fetched: Option<&Path>,
 ) -> Result<PathBuf, RootError> {
     let explicit = cli
         .map(Path::to_path_buf)
@@ -74,7 +76,7 @@ pub fn find_root(
         };
     }
     let mut tried = Vec::new();
-    for dir in exe_dir.into_iter().chain([cwd]) {
+    for dir in exe_dir.into_iter().chain([cwd]).chain(fetched) {
         if is_root(dir) {
             return Ok(dir.to_path_buf());
         }
@@ -83,18 +85,33 @@ pub fn find_root(
     Err(RootError { tried })
 }
 
+/// The player's folder outside the game root: `%APPDATA%\SoundRTS`, else
+/// `~/.SoundRTS`. It also holds the downloaded game data.
+pub fn player_dir(appdata: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    appdata
+        .map(|a| PathBuf::from(a).join("SoundRTS"))
+        .or_else(|| home.map(|h| PathBuf::from(h).join(".SoundRTS")))
+}
+
+/// Whether the process names its game root, by `--root` or
+/// `SOUNDRTS_ROOT`, as [`find_root`] reads them.
+pub fn root_is_explicit(cli: Option<&Path>) -> bool {
+    cli.is_some() || std::env::var_os("SOUNDRTS_ROOT").is_some_and(|v| !v.is_empty())
+}
+
+/// [`player_dir`] from the process environment.
+pub fn player_dir_from_environment() -> Option<PathBuf> {
+    player_dir(std::env::var_os("APPDATA"), std::env::var_os("HOME"))
+}
+
 /// The player's folder: `<root>/user` if it exists, else
 /// `%APPDATA%\SoundRTS`, else `~/.SoundRTS`, else `<root>/user`.
 pub fn find_user_dir(root: &Path, appdata: Option<OsString>, home: Option<OsString>) -> PathBuf {
     let local = root.join("user");
     if local.exists() {
         local
-    } else if let Some(appdata) = appdata {
-        PathBuf::from(appdata).join("SoundRTS")
-    } else if let Some(home) = home {
-        PathBuf::from(home).join(".SoundRTS")
     } else {
-        local
+        player_dir(appdata, home).unwrap_or(local)
     }
 }
 
@@ -111,7 +128,14 @@ impl Paths {
         let cwd = std::env::current_dir().unwrap_or_default();
         let exe = std::env::current_exe().ok();
         let exe_dir = exe.as_deref().and_then(Path::parent);
-        let root = find_root(cli_root, std::env::var_os("SOUNDRTS_ROOT"), exe_dir, &cwd)?;
+        let fetched = player_dir_from_environment().map(|p| crate::upstream::data_dir(&p));
+        let root = find_root(
+            cli_root,
+            std::env::var_os("SOUNDRTS_ROOT"),
+            exe_dir,
+            &cwd,
+            fetched.as_deref(),
+        )?;
         let user = find_user_dir(&root, std::env::var_os("APPDATA"), std::env::var_os("HOME"));
         Ok(Paths { root, user })
     }
@@ -209,17 +233,23 @@ mod tests {
         std::fs::write(dir.path().join("res/rules.txt"), "").unwrap();
         let other = tempfile::tempdir().unwrap();
         assert_eq!(
-            find_root(Some(dir.path()), None, Some(other.path()), other.path()),
+            find_root(
+                Some(dir.path()),
+                None,
+                Some(other.path()),
+                other.path(),
+                None
+            ),
             Ok(dir.path().to_path_buf())
         );
         assert_eq!(
-            find_root(Some(other.path()), None, Some(dir.path()), dir.path()),
+            find_root(Some(other.path()), None, Some(dir.path()), dir.path(), None),
             Err(RootError {
                 tried: vec![other.path().to_path_buf()]
             })
         );
         assert_eq!(
-            find_root(None, Some(dir.path().into()), None, other.path()),
+            find_root(None, Some(dir.path().into()), None, other.path(), None),
             Ok(dir.path().to_path_buf())
         );
     }
@@ -229,7 +259,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("a/b/res")).unwrap();
         std::fs::write(dir.path().join("a/b/res/rules.txt"), "").unwrap();
-        let root = find_root(Some(Path::new("a/b")), None, None, dir.path()).unwrap();
+        let root = find_root(Some(Path::new("a/b")), None, None, dir.path(), None).unwrap();
         assert_eq!(root, dir.path().join("a").join("b"));
         #[cfg(windows)]
         assert!(!root.to_string_lossy().contains('/'), "{}", root.display());
@@ -244,12 +274,12 @@ mod tests {
             std::fs::write(d.join("res/rules.txt"), "").unwrap();
         }
         assert_eq!(
-            find_root(None, None, Some(exe.path()), cwd.path()),
+            find_root(None, None, Some(exe.path()), cwd.path(), None),
             Ok(exe.path().to_path_buf())
         );
         std::fs::remove_file(exe.path().join("res/rules.txt")).unwrap();
         assert_eq!(
-            find_root(None, None, Some(exe.path()), cwd.path()),
+            find_root(None, None, Some(exe.path()), cwd.path(), None),
             Ok(cwd.path().to_path_buf())
         );
     }
@@ -257,8 +287,73 @@ mod tests {
     #[test]
     fn a_missing_root_error_says_how_to_get_the_data() {
         let empty = tempfile::tempdir().unwrap();
-        let error = find_root(None, None, None, empty.path()).unwrap_err();
+        let error = find_root(None, None, None, empty.path(), None).unwrap_err();
         assert!(error.to_string().contains("scripts/fetch-upstream.ps1"));
+        assert!(error.to_string().contains("soundrts --fetch-data"));
+    }
+
+    #[test]
+    fn the_downloaded_data_is_found_last_and_never_replaces_an_explicit_root() {
+        let make_root = |d: &Path| {
+            std::fs::create_dir_all(d.join("res")).unwrap();
+            std::fs::write(d.join("res/rules.txt"), "").unwrap();
+        };
+        let exe = tempfile::tempdir().unwrap();
+        let cwd = tempfile::tempdir().unwrap();
+        let fetched = tempfile::tempdir().unwrap();
+        let empty = tempfile::tempdir().unwrap();
+        make_root(fetched.path());
+        let found = |cli: Option<&Path>, env: Option<&Path>| {
+            find_root(
+                cli,
+                env.map(Into::into),
+                Some(exe.path()),
+                cwd.path(),
+                Some(fetched.path()),
+            )
+        };
+        assert_eq!(found(None, None), Ok(fetched.path().to_path_buf()));
+        let not_there = Err(RootError {
+            tried: vec![empty.path().to_path_buf()],
+        });
+        assert_eq!(found(Some(empty.path()), None), not_there);
+        assert_eq!(found(None, Some(empty.path())), not_there);
+        make_root(cwd.path());
+        assert_eq!(found(None, None), Ok(cwd.path().to_path_buf()));
+        make_root(exe.path());
+        assert_eq!(found(None, None), Ok(exe.path().to_path_buf()));
+
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        assert_eq!(
+            find_root(None, None, Some(a.path()), b.path(), Some(empty.path())),
+            Err(RootError {
+                tried: vec![
+                    a.path().to_path_buf(),
+                    b.path().to_path_buf(),
+                    empty.path().to_path_buf()
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn the_downloaded_data_goes_in_the_players_folder() {
+        assert_eq!(
+            player_dir(Some("A".into()), Some("H".into())),
+            Some(PathBuf::from("A").join("SoundRTS"))
+        );
+        assert_eq!(
+            player_dir(None, Some("H".into())),
+            Some(PathBuf::from("H").join(".SoundRTS"))
+        );
+        assert_eq!(player_dir(None, None), None);
+        assert_eq!(
+            crate::upstream::data_dir(Path::new("P")),
+            PathBuf::from("P")
+                .join("data")
+                .join("f3bd98384fb991e17b55e2f40bf31bf9e1f14989")
+        );
     }
 
     #[test]

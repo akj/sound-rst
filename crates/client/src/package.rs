@@ -109,7 +109,7 @@ fn stated_entries(bytes: &[u8], at: usize, record: &EndRecord) -> Option<u64> {
 /// The signature of an end record can also turn up inside an entry's data
 /// or the file's comment; there it is held to the limit only if it reads
 /// as a record a reader could use.
-fn too_many_entries(bytes: &[u8]) -> bool {
+pub(crate) fn too_many_entries(bytes: &[u8]) -> bool {
     let limit = u64::try_from(MAX_ENTRIES).unwrap_or(u64::MAX);
     let mut entries = 0_usize;
     for (at, w) in bytes.windows(4).enumerate() {
@@ -263,7 +263,7 @@ impl fmt::Debug for Package {
 /// `name` as a path under `root`: each part a plain name (not `..`, `.`,
 /// a drive or a stream), and no part below `root` a link. `None` when the
 /// name would leave the folder.
-fn confined(root: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn confined(root: &Path, name: &str) -> Option<PathBuf> {
     let mut path = root.to_path_buf();
     let mut exists = true;
     for part in name.split(['/', '\\']).filter(|p| !p.is_empty()) {

@@ -9,7 +9,8 @@
 $ErrorActionPreference = 'Stop'
 
 $Url = 'https://github.com/soundmud/soundrts.git'
-$Commit = 'f3bd98384fb991e17b55e2f40bf31bf9e1f14989'
+# The game also downloads the data of this commit when it has none.
+$Commit = (Get-Content -Raw (Join-Path $PSScriptRoot 'upstream-commit.txt')).Trim()
 $Target = Join-Path (Split-Path -Parent $PSScriptRoot) 'vendor/soundrts-upstream'
 
 function Invoke-Git {

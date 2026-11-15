@@ -13,6 +13,8 @@ pub struct Options {
     /// Overrides the soundpacks of `SoundRTS.ini` for this run.
     pub soundpacks: Option<String>,
     pub probe: bool,
+    /// Downloads the game data if the game finds none, then exits.
+    pub fetch_data: bool,
 }
 
 /// A command line the program cannot follow.
@@ -23,7 +25,7 @@ impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe]",
+            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data]",
             self.0
         )
     }
@@ -57,6 +59,7 @@ impl Options {
                     options.soundpacks = Some(value("--soundpacks")?.to_string_lossy().into_owned())
                 }
                 "--probe" => options.probe = true,
+                "--fetch-data" => options.fetch_data = true,
                 _ => {}
             }
         }
@@ -89,6 +92,7 @@ mod tests {
                 mods: Some("orc".into()),
                 soundpacks: Some("sp".into()),
                 probe: true,
+                fetch_data: false,
             })
         );
         assert_eq!(
@@ -96,5 +100,12 @@ mod tests {
             Ok(Some("a b".into()))
         );
         assert!(parse(&["--mods"]).is_err());
+        assert_eq!(
+            parse(&["--fetch-data"]),
+            Ok(Options {
+                fetch_data: true,
+                ..Options::default()
+            })
+        );
     }
 }

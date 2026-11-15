@@ -47,6 +47,20 @@ To check what the game found on your machine without starting it, run the probe.
 cargo run -p soundrts -- --root vendor/soundrts-upstream --probe
 ```
 
+## The first start
+
+A downloaded build of the game does not contain the data of the original game: its rules, maps, sounds and translations. The original game does not state a license for that data, so we do not share it.
+
+The first time you start the game from the desktop, the Start menu or File Explorer, it asks whether to download the data. Choose Yes. The game downloads about 10 megabytes from the original game's repository on GitHub. It says how far it has got, and then it starts. If you choose No, the game closes. The data goes in `%APPDATA%\SoundRTS\data`, and the next start uses it.
+
+To download the data without starting the game, run this in a terminal:
+
+```powershell
+soundrts --fetch-data
+```
+
+It prints where the data is and exits. If the game already has its data, it downloads nothing. A game started from a terminal or a script never asks. It tells you to run `soundrts --fetch-data`.
+
 ## Play
 
 The keys are those of the original. `vendor/soundrts-upstream/res/ui/bindings.txt` lists every key. To change keys, put your own `bindings.txt` in the settings folder.
@@ -142,7 +156,7 @@ NVDA 2024.1 and later can tell the game when speech has ended, and whether you s
 
 With `nvda_direct = 1`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = 0`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
 
-The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, and the current folder.
+The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, the current folder, and the downloaded data in `%APPDATA%\SoundRTS\data`. A folder given with `--root` or `SOUNDRTS_ROOT` must hold the data, and the game then looks nowhere else.
 
 ## Play with others
 
@@ -295,7 +309,7 @@ These tests show what text the port sends to the speech device. They cannot show
 - `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
-- `scripts/fetch-upstream.ps1` fetches the original game.
+- `scripts/fetch-upstream.ps1` fetches the original game. `scripts/upstream-commit.txt` names its pinned commit, which the game also downloads when it has no data.
 - `scripts/fetch-nvda-controller.ps1` fetches NVDA's controller client, for the `nvda_direct` setting.
 
 ## Licenses
