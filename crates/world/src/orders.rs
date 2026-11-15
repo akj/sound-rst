@@ -910,6 +910,16 @@ impl Progress {
     }
 }
 
+/// What a `use` order found before its effect.
+enum UseNeed {
+    /// The effect is to be done.
+    Effect,
+    /// Nothing to do: the order is complete.
+    Nothing,
+    /// No room where its units would go: the order is impossible.
+    NoRoom,
+}
+
 /// An order in a unit's queue.
 #[derive(Clone, Debug, Hash)]
 pub struct Order {
@@ -2659,9 +2669,16 @@ impl World {
             .clone()
             .ok_or_else(|| Abort::new("'NoneType' object is not subscriptable"))?;
         let kind = effect.first().cloned().unwrap_or_default();
-        if self.use_is_not_necessary(unit, uid, &kind, &t)? {
-            self.mark_as_complete(unit, uid);
-            return Ok(());
+        match self.use_need(unit, uid, &kind, &t)? {
+            UseNeed::Effect => {}
+            UseNeed::Nothing => {
+                self.mark_as_complete(unit, uid);
+                return Ok(());
+            }
+            UseNeed::NoRoom => {
+                self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
+                return Ok(());
+            }
         }
         let target = self.target_of(unit, uid).expect("checked");
         let (tx, ty) = self.t_xy(&target);
@@ -2724,13 +2741,15 @@ impl World {
         }
     }
 
-    fn use_is_not_necessary(
+    /// Whether a `use` order has its effect to do. A teleportation aimed
+    /// at a unit is aimed at its square from then on.
+    fn use_need(
         &mut self,
         unit: EntityId,
         uid: u64,
         kind: &str,
         t: &crate::rules::UnitType,
-    ) -> Res<bool> {
+    ) -> Res<UseNeed> {
         let target = self.target_of(unit, uid).expect("checked");
         match kind {
             "teleportation" => {
@@ -2757,22 +2776,21 @@ impl World {
                     unreachable!("a square")
                 };
                 if self.e(unit).place == Some(Place::Square(s)) {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 if !types.iter().any(|&a| self.can_receive(s, a, None)) {
-                    self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                    return Ok(true);
+                    return Ok(UseNeed::NoRoom);
                 }
-                Ok(false)
+                Ok(UseNeed::Effect)
             }
             "recall" => {
                 let units = self.effect_targets(unit, kind, t, &target);
                 if units.is_empty() {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 if matches!(target, Target::Square(s) if self.e(unit).place == Some(Place::Square(s)))
                 {
-                    return Ok(true);
+                    return Ok(UseNeed::Nothing);
                 }
                 let mut types: Vec<AirGround> = Vec::new();
                 for u in &units {
@@ -2785,15 +2803,19 @@ impl World {
                     return Err(Abort::new("'Inside' object has no attribute 'can_receive'"));
                 };
                 if !types.iter().any(|&a| self.can_receive(here, a, None)) {
-                    self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                    return Ok(true);
+                    return Ok(UseNeed::NoRoom);
                 }
-                Ok(false)
+                Ok(UseNeed::Effect)
             }
-            "conversion" => Ok(!self.is_an_enemy(unit, &target)),
-            "summon" => Ok(false),
+            "conversion" if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
+            "conversion" => Ok(UseNeed::Nothing),
+            "summon" => Ok(UseNeed::Effect),
             "raise_dead" | "resurrection" => {
-                Ok(self.effect_targets(unit, kind, t, &target).is_empty())
+                if self.effect_targets(unit, kind, t, &target).is_empty() {
+                    Ok(UseNeed::Nothing)
+                } else {
+                    Ok(UseNeed::Effect)
+                }
             }
             other => Err(Abort::new(format!(
                 "'UseOrder' object has no attribute '{other}_is_not_necessary'"

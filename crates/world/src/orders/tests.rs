@@ -644,3 +644,53 @@ fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
     assert_eq!(vitals(&w, knight), (45_000, 45_000, 0, 0));
     assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 200_000, 200_000));
 }
+
+/// The events of the entities `p` perceives, since the last call.
+fn entity_events(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
+    w.drain_events(p)
+        .into_iter()
+        .filter_map(|e| match e {
+            crate::Event::Entity { event, .. } => Some(event),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_recall_with_no_room_for_its_units_is_impossible_says_why_once_and_costs_nothing() {
+    let (mut w, a, _) = two_humans("");
+    // a1 is full: 143 footmen and the mage are as many ground units as a
+    // square holds.
+    w.queue_command(a, "cmd add_units a1 u_recall mage 143 footman");
+    w.queue_command(a, "cmd add_units b1 footman");
+    w.update();
+    let mage = find(&w, a, "mage");
+    w.em(mage).mana = 200_000;
+    let b1 = w.square_by_name("b1").unwrap();
+    let recall = format!("use a_recall {}", w.square(b1).id);
+    order(&mut w, a, &[mage], &recall);
+    entity_events(&mut w, a);
+    update_until(&mut w, |w| {
+        w.e(mage).orders.first().is_some_and(Order::is_final)
+    });
+    let o = &w.e(mage).orders[0];
+    assert_eq!(o.progress(), Progress::Impossible);
+    assert_eq!(w.e(mage).distance_to_goal, crate::INF);
+    assert_eq!(w.e(mage).mana, 200_000);
+    w.update();
+    assert!(w.e(mage).orders.is_empty());
+    let events = entity_events(&mut w, a);
+    let refused: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                EntityEvent::OrderImpossible(_) | EntityEvent::UseComplete(_)
+            )
+        })
+        .collect();
+    assert_eq!(
+        refused,
+        [&EntityEvent::OrderImpossible(Some(Reason::NotEnoughSpace))]
+    );
+}
