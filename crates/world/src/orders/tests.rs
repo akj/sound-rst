@@ -651,6 +651,29 @@ fn a_converted_unit_has_no_more_hit_points_or_mana_than_its_new_maximum() {
     assert_eq!(vitals(&w, enemy_priest), (30_000, 30_000, 200_000, 200_000));
 }
 
+#[test]
+fn a_deposit_listed_as_a_product_is_never_trained_built_or_upgraded_to() {
+    let extra = "def townhall\ncan_train peasant goldmine\ncan_upgrade_to keep goldmine\n\
+                 def peasant\ncan_build farm goldmine\n";
+    let (mut w, a, _) = two_humans(extra);
+    w.queue_command(a, "cmd add_units a1 townhall barracks peasant");
+    w.update();
+    let townhall = find(&w, a, "townhall");
+    let peasant = find(&w, a, "peasant");
+    let allowed = |w: &World, u, kw, t| w.is_order_allowed(u, kw, Some(t)).unwrap();
+    assert!(allowed(&w, townhall, Keyword::Train, "peasant"));
+    assert!(!allowed(&w, townhall, Keyword::Train, "goldmine"));
+    assert!(allowed(&w, townhall, Keyword::UpgradeTo, "keep"));
+    assert!(!allowed(&w, townhall, Keyword::UpgradeTo, "goldmine"));
+    assert!(allowed(&w, peasant, Keyword::Build, "farm"));
+    assert!(!allowed(&w, peasant, Keyword::Build, "goldmine"));
+    let resources = w.pl(a).resources.clone();
+    order(&mut w, a, &[townhall], "train goldmine");
+    w.update();
+    assert!(w.e(townhall).orders().is_empty());
+    assert_eq!(w.pl(a).resources, resources);
+}
+
 /// The events of the entities `p` perceives, since the last call.
 fn entity_events(w: &mut World, p: PlayerId) -> Vec<EntityEvent> {
     w.drain_events(p)
