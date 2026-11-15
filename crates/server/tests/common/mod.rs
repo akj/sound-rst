@@ -97,7 +97,7 @@ pub fn human(login: &Login) -> SlotPlayer {
     SlotPlayer::Human(login.clone())
 }
 
-/// A message from the server: JSON, or a binary frame of a hosted game.
+/// A message from the server: JSON, or a binary frame of a game.
 #[derive(Debug)]
 pub enum Frame {
     Msg(ServerMsg),
@@ -107,10 +107,6 @@ pub enum Frame {
 pub struct Client {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
     pub login: Login,
-    /// The turns received by the methods that skip them, in order.
-    pub turns: Vec<(Turn, Vec<SlotOrders>)>,
-    /// The last turn this client reported done.
-    pub done: Option<Turn>,
 }
 
 impl Client {
@@ -126,8 +122,6 @@ impl Client {
         Client {
             ws,
             login: login("nobody"),
-            turns: Vec::new(),
-            done: None,
         }
     }
 
@@ -152,8 +146,6 @@ impl Client {
         let mut c = Client {
             ws,
             login: login("nobody"),
-            turns: Vec::new(),
-            done: None,
         };
         c.send(ClientMsg::Hello {
             protocol: PROTOCOL_VERSION,
@@ -319,64 +311,6 @@ impl Client {
         let _ = self.ws.close(None).await;
         while let Ok(Some(Ok(_))) = tokio::time::timeout(TIMEOUT, self.ws.next()).await {}
     }
-
-    // -- Games ---------------------------------------------------------------
-
-    /// The next message that is not a turn. Turns are recorded, and
-    /// reported done with `digest` when `ack` is set.
-    pub async fn next_event(&mut self, ack: bool) -> ServerMsg {
-        loop {
-            match self.recv().await {
-                ServerMsg::Turn { turn, orders } => {
-                    self.turns.push((turn, orders));
-                    if ack {
-                        self.ack_turns(0).await;
-                    }
-                }
-                other => return other,
-            }
-        }
-    }
-
-    pub async fn expect_event(&mut self, ack: bool, expected: ServerMsg) {
-        let got = self.next_event(ack).await;
-        assert_eq!(got, expected, "{} got the wrong message", self.login);
-    }
-
-    /// The next turn, recorded; other messages fail the test.
-    pub async fn next_turn(&mut self) -> (Turn, Vec<SlotOrders>) {
-        match self.recv().await {
-            ServerMsg::Turn { turn, orders } => {
-                self.turns.push((turn, orders.clone()));
-                (turn, orders)
-            }
-            other => panic!("{}: expected a turn, got {other:?}", self.login),
-        }
-    }
-
-    /// Reports done every recorded turn not yet reported, with `digest`.
-    pub async fn ack_turns(&mut self, digest: Digest) {
-        let last = match self.turns.last() {
-            Some((t, _)) => *t,
-            None => return,
-        };
-        let first = self.done.map_or(0, |t| t + 1);
-        for turn in first..=last {
-            self.send(ClientMsg::TurnDone { turn, digest }).await;
-        }
-        self.done = Some(last);
-    }
-
-    /// Receives turns, reporting each done with `digest`, until `turn`.
-    pub async fn play_to(&mut self, turn: Turn, digest: Digest) {
-        while self.done.is_none_or(|d| d < turn) {
-            let (t, _) = self.next_turn().await;
-            if t <= turn {
-                self.send(ClientMsg::TurnDone { turn: t, digest }).await;
-                self.done = Some(t);
-            }
-        }
-    }
 }
 
 /// `n` clients said hello, the earlier ones having seen the later ones
@@ -487,45 +421,36 @@ pub async fn ready(clients: &mut [Client], who: usize, members: &[usize]) {
     }
 }
 
-/// Starts a game as [`start_game_unloaded`] does, then every player says
-/// they have loaded, so the clock starts.
-pub async fn start_game(clients: &mut [Client], room: RoomId, players: &[usize]) -> Vec<ServerMsg> {
-    let started = start_game_unloaded(clients, room, players).await;
-    for &p in players {
-        clients[p].send(ClientMsg::Loaded).await;
-    }
-    started
+/// A file of the original game.
+pub fn read(relative: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../vendor/soundrts-upstream")
+        .join(relative);
+    let bytes = std::fs::read(&path)
+        .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"));
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Starts a game from `room` hosted by `clients[0]`, where every human
-/// listed in `players` (by index, in slot order) is ready. Returns each
-/// player's `GameStarted`; every client is then past the moves into the
-/// game. Nobody has said they have loaded.
-pub async fn start_game_unloaded(
-    clients: &mut [Client],
-    room: RoomId,
-    players: &[usize],
-) -> Vec<ServerMsg> {
-    clients[0].send(ClientMsg::Start).await;
-    let mut started = Vec::new();
-    for &p in players {
-        let msg = clients[p].recv().await;
-        assert!(
-            matches!(msg, ServerMsg::GameStarted { .. }),
-            "expected the game to start, got {msg:?}"
-        );
-        started.push(msg);
+pub fn text(s: &str) -> GameText {
+    GameText::new(s).unwrap()
+}
+
+/// The original's rules, scripts and the map jl2, for 2 to 4 players.
+pub fn texts() -> GameTexts {
+    GameTexts {
+        rules: text(&read("res/rules.txt")),
+        ai: text(&read("res/ai.txt")),
+        map: text(&read("res/multi/jl2.txt")),
     }
+}
+
+/// Starts the game of `room` hosted by `clients[0]`, where every human
+/// listed in `players` (by index, in slot order) is ready: the server
+/// builds it from [`texts`]. Every client is then past the moves into the
+/// game; the game's frames come after.
+pub async fn start_game(clients: &mut [Client], room: RoomId, players: &[usize]) {
+    clients[0].send(ClientMsg::Start { texts: texts() }).await;
     let last_player = clients[*players.last().unwrap()].login.clone();
     let last = moved(&last_player, Whereabouts::Playing(room));
-    for c in clients.iter_mut() {
-        loop {
-            match c.recv().await {
-                ServerMsg::Turn { turn, orders } => c.turns.push((turn, orders)),
-                msg if msg == last => break,
-                _ => {}
-            }
-        }
-    }
-    started
+    sync(clients, &last).await;
 }

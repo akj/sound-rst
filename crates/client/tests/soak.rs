@@ -30,15 +30,15 @@ fn soak(map: &str, seed: i64) {
     let me = g.game.me;
     let square = g
         .game
-        .host
+        .host()
         .world()
         .player(me)
         .units
         .iter()
-        .filter_map(|&u| g.game.host.world().entity(u))
+        .filter_map(|&u| g.game.host().world().entity(u))
         .find(|e| &*e.type_name == "townhall")
         .and_then(|e| e.square())
-        .map(|s| g.game.host.world().square(s).name.clone())
+        .map(|s| g.game.host().world().square(s).name.clone())
         .expect("a town hall");
     g.game
         .execute_command(&mut h.client, &format!("add_units {square} 30 footman"))
@@ -56,7 +56,7 @@ fn soak(map: &str, seed: i64) {
     let rng = ClientRng::new(seed as u64);
     let mut presses = 0;
     let mut i = 0;
-    while g.game.host.world().turn() < TURNS && !g.game.end_loop {
+    while g.game.host().world().turn() < TURNS && !g.game.end_loop {
         let (chord, command) = if i < chords.len() {
             chords[i].clone()
         } else {
@@ -91,9 +91,9 @@ fn soak(map: &str, seed: i64) {
         println!("{map} END {:#?}", &all[all.len().saturating_sub(40)..]);
     }
     assert!(
-        g.game.host.world().turn() >= TURNS,
+        g.game.host().world().turn() >= TURNS,
         "{map}: the game ended at turn {}",
-        g.game.host.world().turn()
+        g.game.host().world().turn()
     );
     assert!(presses >= 300, "{map}: {presses} key presses");
     let unexpected: Vec<String> = h
@@ -104,7 +104,7 @@ fn soak(map: &str, seed: i64) {
         .collect();
     println!(
         "{map}: {presses} presses, turn {}",
-        g.game.host.world().turn()
+        g.game.host().world().turn()
     );
     println!("{map} log:\n{}", h.log_text());
     assert!(unexpected.is_empty(), "{map}: {unexpected:#?}");

@@ -19,8 +19,7 @@ use tracing::{info, warn};
 
 use crate::ServerConfig;
 use crate::connection::{ConnId, Outbox, Queued, encode};
-use crate::game::{self, GameInput};
-use crate::hosted::{self, Ending, HostedInput, Joining};
+use crate::game::{self, Ending, GameInput, Joining};
 use crate::room::{Member, Occupant, Phase, Room};
 
 pub(crate) type LobbyTx = mpsc::UnboundedSender<LobbyInput>;
@@ -42,7 +41,7 @@ pub(crate) enum LobbyInput {
     },
     /// The connection is closed.
     Gone { conn: ConnId },
-    /// A command for a hosted game, sent as a binary frame, counted as a
+    /// A command for a game, sent as a binary frame, counted as a
     /// message is.
     Command {
         conn: ConnId,
@@ -50,22 +49,19 @@ pub(crate) enum LobbyInput {
         bytes: usize,
         queued: Queued,
     },
-    /// A game took this human out (they asked, disconnected, or lagged),
-    /// or a hosted game is over for them.
+    /// A game is over for this human.
     LeftGame { room: RoomId, conn: ConnId },
-    /// No human is left in this lockstep game.
-    GameOver { room: RoomId },
-    /// A hosted game gave this player back their seat. They are sent
+    /// A game gave this player back their seat. They are sent
     /// nothing of the game before the lobby hears of it.
     Returned {
         room: RoomId,
         conn: ConnId,
         slot: SlotIndex,
     },
-    /// A hosted game had no seat for this player's token.
+    /// A game had no seat for this player's token.
     ReturnRefused { room: RoomId, conn: ConnId },
-    /// A hosted game's task ended.
-    HostedEnded { room: RoomId, ending: Ending },
+    /// A game's task ended.
+    GameEnded { room: RoomId, ending: Ending },
 }
 
 /// The most bytes of maps the server keeps.
@@ -80,14 +76,13 @@ pub(crate) fn spawn(config: &ServerConfig, player_count: Arc<AtomicU32>) -> Lobb
         name: config.name.clone(),
         max_clients: config.max_clients,
         max_rooms: config.max_rooms,
-        game_settings: (config.max_lead, config.lag_timeout),
-        hosted: HostedConfig {
+        games: GameConfig {
             grace: config.grace_period,
             load_budget: config.load_budget,
             turn_budget: config.turn_budget,
         },
         seed: config.seed,
-        overruns: hosted::Overruns::default(),
+        overruns: game::Overruns::default(),
         players: BTreeMap::new(),
         rooms: BTreeMap::new(),
         next_room: 1,
@@ -114,7 +109,7 @@ enum Place {
     },
     InRoom(RoomId),
     Playing(RoomId),
-    /// In the lobby, asking a hosted game for a seat back.
+    /// In the lobby, asking a game for a seat back.
     Returning(RoomId),
 }
 
@@ -131,7 +126,7 @@ impl Place {
 const IN_LOBBY: Place = Place::Lobby { creating: None };
 
 /// The server's settings for the games it hosts.
-struct HostedConfig {
+struct GameConfig {
     grace: std::time::Duration,
     load_budget: std::time::Duration,
     turn_budget: std::time::Duration,
@@ -180,10 +175,9 @@ struct Lobby {
     name: ServerName,
     max_clients: usize,
     max_rooms: usize,
-    game_settings: (u32, std::time::Duration),
-    hosted: HostedConfig,
+    games: GameConfig,
     seed: Option<i64>,
-    overruns: hosted::Overruns,
+    overruns: game::Overruns,
     /// In order of arrival.
     players: BTreeMap<ConnId, Player>,
     rooms: BTreeMap<RoomId, Room>,
@@ -225,7 +219,7 @@ impl Lobby {
                 } => {
                     if let Some(player) = self.players.get(&conn) {
                         let outbox = player.outbox.clone();
-                        let pass = self.pass_to_hosted(conn, queued, |slot| HostedInput::Command {
+                        let pass = self.pass_to_game(conn, queued, |slot| GameInput::Command {
                             slot,
                             command,
                             bytes,
@@ -237,10 +231,9 @@ impl Lobby {
                 }
                 LobbyInput::Gone { conn } => self.gone(conn),
                 LobbyInput::LeftGame { room, conn } => self.left_game(room, conn),
-                LobbyInput::GameOver { room } => self.game_over(room),
                 LobbyInput::Returned { room, conn, slot } => self.returned(room, conn, slot),
                 LobbyInput::ReturnRefused { room, conn } => self.return_refused(room, conn),
-                LobbyInput::HostedEnded { room, ending } => self.hosted_ended(room, ending),
+                LobbyInput::GameEnded { room, ending } => self.game_ended(room, ending),
             }
         }
     }
@@ -327,14 +320,8 @@ impl Lobby {
             Place::InRoom(id) => self.take_out_of_room(id, conn),
             Place::Playing(id) => {
                 let room = &self.rooms[&id];
-                match (&room.phase, room.slot_of(conn)) {
-                    (Phase::Playing { game }, Some(slot)) => {
-                        let _ = game.send((GameInput::Leave { slot }, None));
-                    }
-                    (Phase::Hosted { game }, Some(slot)) => {
-                        let _ = game.send((HostedInput::Dropped { slot }, None));
-                    }
-                    _ => {}
+                if let (Phase::Playing { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) {
+                    let _ = game.send((GameInput::Dropped { slot }, None));
                 }
             }
         }
@@ -386,34 +373,20 @@ impl Lobby {
             ClientMsg::AddComputer { level } => self.add_computer(conn, level),
             ClientMsg::RemoveSlot { slot } => self.remove_slot(conn, slot),
             ClientMsg::SetAlliance { slot, alliance } => self.set_alliance(conn, slot, alliance),
-            ClientMsg::Start => self.start(conn),
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
-            ClientMsg::Loaded => self.pass_to_game(conn, queued, |slot| GameInput::Loaded { slot }),
-            ClientMsg::Orders { orders } => {
-                self.pass_to_game(conn, queued, |slot| GameInput::Orders { slot, orders })
-            }
-            ClientMsg::TurnDone { turn, digest } => self.pass_to_game(conn, queued, |slot| {
-                GameInput::TurnDone { slot, turn, digest }
-            }),
             ClientMsg::LeaveGame => {
-                if self.is_hosted(conn) {
-                    self.pass_to_hosted(conn, queued, |slot| HostedInput::Leave { slot })
-                } else {
-                    self.pass_to_game(conn, queued, |slot| GameInput::Leave { slot })
-                }
+                self.pass_to_game(conn, queued, |slot| GameInput::Leave { slot })
             }
-            ClientMsg::StartHosted { texts } => self.start_hosted(conn, texts),
+            ClientMsg::Start { texts } => self.start(conn, texts),
             ClientMsg::ReturnToGame { room, token } => self.return_to_game(conn, room, token),
-            ClientMsg::PauseGame => self.host_control(conn, queued, |by| HostedInput::Pause { by }),
-            ClientMsg::ResumeGame => {
-                self.host_control(conn, queued, |by| HostedInput::Resume { by })
-            }
+            ClientMsg::PauseGame => self.host_control(conn, queued, |by| GameInput::Pause { by }),
+            ClientMsg::ResumeGame => self.host_control(conn, queued, |by| GameInput::Resume { by }),
             ClientMsg::SetGameSpeed { speed } => {
-                self.host_control(conn, queued, |by| HostedInput::Speed { by, speed })
+                self.host_control(conn, queued, |by| GameInput::Speed { by, speed })
             }
             ClientMsg::RemovePlayer { slot } => {
-                self.host_control(conn, queued, |by| HostedInput::Remove { by, slot })
+                self.host_control(conn, queued, |by| GameInput::Remove { by, slot })
             }
         }
     }
@@ -736,49 +709,6 @@ impl Lobby {
         Ok(())
     }
 
-    fn start(&mut self, conn: ConnId) -> Answer {
-        let id = self.startable_room(conn)?;
-        let seed = self.new_seed();
-        let room = self.rooms.get_mut(&id).expect("hosted");
-        let count = room.slots.len();
-        let slots = room.slots();
-        let mut players = Vec::new();
-        for (you, m) in room.members() {
-            m.outbox.send(&ServerMsg::GameStarted {
-                seed,
-                slots: slots.clone(),
-                you,
-                map: room.map.clone(),
-                speed: room.speed,
-            });
-            players.push(game::Player {
-                slot: you,
-                conn: m.conn,
-                login: m.login.clone(),
-                outbox: m.outbox.clone(),
-            });
-        }
-        let Some(me) = self.me.upgrade() else {
-            return Ok(());
-        };
-        let (max_lead, lag_timeout) = self.game_settings;
-        let settings = game::Settings {
-            turn_interval: room.speed.turn_interval(),
-            max_lead,
-            lag_timeout,
-        };
-        info!(room = id.0, seed, players = count, "starting game");
-        room.phase = Phase::Playing {
-            game: game::spawn(id, players, settings, me),
-        };
-        let humans: Vec<ConnId> = room.members().map(|(_, m)| m.conn).collect();
-        self.room_changed(id);
-        for human in humans {
-            self.move_player(human, Place::Playing(id));
-        }
-        Ok(())
-    }
-
     /// The room this player hosts, ready to start: every human ready, and
     /// as many players as the map takes.
     fn startable_room(&self, conn: ConnId) -> Result<RoomId, Refusal> {
@@ -802,12 +732,12 @@ impl Lobby {
 
     /// Starts a game the server runs. Every human is in the game at once;
     /// if it cannot be built, they are back in the room and the host is
-    /// told why ([`Lobby::hosted_ended`]).
-    fn start_hosted(&mut self, conn: ConnId, texts: GameTexts) -> Answer {
+    /// told why ([`Lobby::game_ended`]).
+    fn start(&mut self, conn: ConnId, texts: GameTexts) -> Answer {
         let id = self.startable_room(conn)?;
         if self.overruns.too_many() {
             let busy = SeatFrame::NotStarted(soundrts_protocol::StartRefusal::Busy);
-            hosted::tell(&self.players[&conn].outbox, &busy);
+            game::tell(&self.players[&conn].outbox, &busy);
             return Ok(());
         }
         let seed = self.new_seed();
@@ -832,22 +762,17 @@ impl Lobby {
                 outbox: m.outbox.clone(),
             })
             .collect();
-        let settings = hosted::Settings {
+        let settings = game::Settings {
             speed: room.speed,
-            grace: self.hosted.grace,
-            load_budget: self.hosted.load_budget,
-            turn_budget: self.hosted.turn_budget,
+            grace: self.games.grace,
+            load_budget: self.games.load_budget,
+            turn_budget: self.games.turn_budget,
             overruns: self.overruns.clone(),
         };
-        info!(
-            room = id.0,
-            seed,
-            players = slots.len(),
-            "starting hosted game"
-        );
+        info!(room = id.0, seed, players = slots.len(), "starting game");
         let humans: Vec<ConnId> = seats.iter().map(|s| s.conn).collect();
-        room.phase = Phase::Hosted {
-            game: hosted::spawn(id, setup, slots, room.map.clone(), seats, settings, me),
+        room.phase = Phase::Playing {
+            game: game::spawn(id, setup, slots, room.map.clone(), seats, settings, me),
         };
         self.room_changed(id);
         for human in humans {
@@ -858,6 +783,8 @@ impl Lobby {
 
     // -- Games -------------------------------------------------------------
 
+    /// Passes an input to the game this player plays, for their
+    /// slot.
     fn pass_to_game(
         &mut self,
         conn: ConnId,
@@ -868,47 +795,19 @@ impl Lobby {
             return Err(Refusal::NotNow);
         };
         let room = &self.rooms[&id];
-        let Phase::Playing { game } = &room.phase else {
-            return Err(Refusal::NotNow);
-        };
-        let slot = room.slot_of(conn).expect("a player is in their game");
-        let _ = game.send((input(slot), Some(queued)));
-        Ok(())
-    }
-
-    /// Whether this player plays a hosted game.
-    fn is_hosted(&self, conn: ConnId) -> bool {
-        match self.players[&conn].place {
-            Place::Playing(id) => matches!(self.rooms[&id].phase, Phase::Hosted { .. }),
-            _ => false,
-        }
-    }
-
-    /// Passes an input to the hosted game this player plays, for their
-    /// slot.
-    fn pass_to_hosted(
-        &mut self,
-        conn: ConnId,
-        queued: Queued,
-        input: impl FnOnce(SlotIndex) -> HostedInput,
-    ) -> Answer {
-        let Place::Playing(id) = self.players[&conn].place else {
-            return Err(Refusal::NotNow);
-        };
-        let room = &self.rooms[&id];
-        let (Phase::Hosted { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) else {
+        let (Phase::Playing { game }, Some(slot)) = (&room.phase, room.slot_of(conn)) else {
             return Err(Refusal::NotNow);
         };
         let _ = game.send((input(slot), Some(queued)));
         Ok(())
     }
 
-    /// Passes the room's host's input to the hosted game they play.
+    /// Passes the room's host's input to the game they play.
     fn host_control(
         &mut self,
         conn: ConnId,
         queued: Queued,
-        input: impl FnOnce(SlotIndex) -> HostedInput,
+        input: impl FnOnce(SlotIndex) -> GameInput,
     ) -> Answer {
         let Place::Playing(id) = self.players[&conn].place else {
             return Err(Refusal::NotNow);
@@ -916,10 +815,10 @@ impl Lobby {
         if self.rooms[&id].host != conn {
             return Err(Refusal::NotNow);
         }
-        self.pass_to_hosted(conn, queued, input)
+        self.pass_to_game(conn, queued, input)
     }
 
-    /// Asks a hosted game for the seat of `token`. The player waits in the
+    /// Asks a game for the seat of `token`. The player waits in the
     /// lobby for the answer ([`Lobby::returned`]).
     fn return_to_game(&mut self, conn: ConnId, id: RoomId, token: SeatToken) -> Answer {
         let player = &self.players[&conn];
@@ -927,12 +826,12 @@ impl Lobby {
             return Err(Refusal::NotNow);
         }
         let room = self.rooms.get(&id).ok_or(Refusal::NoSuchRoom)?;
-        let Phase::Hosted { game } = &room.phase else {
+        let Phase::Playing { game } = &room.phase else {
             return Err(Refusal::NotNow);
         };
         let outbox = player.outbox.clone();
         let _ = game.send((
-            HostedInput::Return {
+            GameInput::Return {
                 conn,
                 token,
                 outbox,
@@ -943,7 +842,7 @@ impl Lobby {
         Ok(())
     }
 
-    /// A hosted game gave `slot` back to this player: the slot is theirs
+    /// A game gave `slot` back to this player: the slot is theirs
     /// from now on. If they are gone meanwhile, the seat is dropped again.
     fn returned(&mut self, id: RoomId, conn: ConnId, slot: SlotIndex) {
         let waiting = self
@@ -953,11 +852,11 @@ impl Lobby {
         let Some(room) = self.rooms.get_mut(&id) else {
             return;
         };
-        let Phase::Hosted { game } = &room.phase else {
+        let Phase::Playing { game } = &room.phase else {
             return;
         };
         if !waiting {
-            let _ = game.send((HostedInput::Dropped { slot }, None));
+            let _ = game.send((GameInput::Dropped { slot }, None));
             return;
         }
         let player = &self.players[&conn];
@@ -985,10 +884,10 @@ impl Lobby {
         }
     }
 
-    /// A hosted game's task ended: the players still in it go back to the
+    /// A game's task ended: the players still in it go back to the
     /// lobby and the room closes, or, if it was never built, the room goes
     /// on gathering.
-    fn hosted_ended(&mut self, id: RoomId, ending: Ending) {
+    fn game_ended(&mut self, id: RoomId, ending: Ending) {
         match ending {
             Ending::Over => self.game_over(id),
             Ending::Stopped(reason) => {
@@ -1002,12 +901,12 @@ impl Lobby {
     fn tell_playing(&self, id: RoomId, frame: &SeatFrame) {
         for p in self.players.values() {
             if matches!(p.place, Place::Playing(r) if r == id) {
-                hosted::tell(&p.outbox, frame);
+                game::tell(&p.outbox, frame);
             }
         }
     }
 
-    /// The hosted game of room `id` could not be built: its players go
+    /// The game of room `id` could not be built: its players go
     /// back into the room, those who left meanwhile leave it, and the host
     /// is told why.
     fn not_built(&mut self, id: RoomId, reason: soundrts_protocol::StartRefusal) {
@@ -1017,9 +916,9 @@ impl Lobby {
         room.phase = Phase::Gathering {
             invited: BTreeSet::new(),
         };
-        info!(room = id.0, ?reason, "hosted game not built");
+        info!(room = id.0, ?reason, "game not built");
         if let Some((_, host)) = room.members().find(|(_, m)| m.conn == room.host) {
-            hosted::tell(&host.outbox, &SeatFrame::NotStarted(reason));
+            game::tell(&host.outbox, &SeatFrame::NotStarted(reason));
         }
         let members: Vec<ConnId> = room.members().map(|(_, m)| m.conn).collect();
         for conn in members {
@@ -1064,7 +963,7 @@ impl Lobby {
         self.close_room(id);
     }
 
-    /// Refuses every player waiting for a seat of the hosted game of room
+    /// Refuses every player waiting for a seat of the game of room
     /// `id`, which will not answer.
     fn refuse_returns(&mut self, id: RoomId) {
         let returning: Vec<ConnId> = self
@@ -1122,7 +1021,7 @@ impl Lobby {
     }
 }
 
-/// Who plays a slot in a hosted game. Every human receives events: the
+/// Who plays a slot in a game. Every human receives events: the
 /// server tells each their own.
 fn controller(slot: &Slot) -> Controller {
     let mut c = match &slot.player {

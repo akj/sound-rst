@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soundrts_protocol::{
-    AiLevel, ClientMsg, Faction, Login, MAX_ALLIANCE, PROTOCOL_VERSION, Rejection, ServerName,
-    SlotIndex, SlotPlayer, Speed,
+    AiLevel, ClientMsg, Faction, GameText, GameTexts, Login, MAX_ALLIANCE, PROTOCOL_VERSION,
+    Rejection, ServerName, SlotIndex, SlotPlayer, Speed,
 };
 use soundrts_server::{ServerConfig, ServerHandle, UpnpOutcome};
 use soundrts_world::Rules;
@@ -31,7 +31,7 @@ use crate::net::lobby::{MapState, computer_name, player_name};
 use crate::net::servers::{self, ListedServer};
 use crate::net::words::{self, text};
 use crate::net::{self, Net, discovery};
-use crate::session::Session;
+use crate::session;
 use crate::sound_cache::literal;
 
 /// How long to wait for a server's welcome.
@@ -658,7 +658,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
             }
         }
         if slots.len() >= usize::from(map.nb_players_min) {
-            choices.push(Choice::new(msg(mp::START), send_action(ClientMsg::Start)));
+            choices.push(Choice::new(msg(mp::START), Action::run(start_game)));
         }
         for (i, slot) in slots.iter().enumerate() {
             let name = player_name(&slot.player);
@@ -732,33 +732,57 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
     Menu::new(room.title(), choices)
 }
 
-/// Plays the game the server started, from the room's map.
+/// Asks the server to start the room's game: the room's host only. The
+/// server builds the game from the texts this client has: the rules and
+/// computer players of its layers with the map's own, and the map.
+fn start_game(cx: &mut Client) -> Result<Flow, Exit> {
+    let texts = net_ref(cx)
+        .room
+        .as_ref()
+        .and_then(|r| r.map())
+        .and_then(|map| game_texts(cx, &map));
+    match texts {
+        Some(texts) => net::send(cx, ClientMsg::Start { texts }),
+        None => cx
+            .voice
+            .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat()),
+    }
+    Ok(Flow::Stay)
+}
+
+/// The texts a server builds the game on `map` from, as this client has
+/// them. `None` if one is too long to send.
+pub fn game_texts(cx: &mut Client, map: &Map) -> Option<GameTexts> {
+    cx.res.set_map(Some(map));
+    let rules = cx.res.rules_text();
+    let ai = cx.res.ai_text();
+    cx.res.set_map(None);
+    let texts = (|| {
+        Ok::<_, soundrts_protocol::Invalid>(GameTexts {
+            rules: GameText::new(rules)?,
+            ai: GameText::new(ai)?,
+            map: GameText::new(map.definition.clone())?,
+        })
+    })();
+    texts
+        .map_err(|e| cx.log.warning(format!("cannot send the game: {e}")))
+        .ok()
+}
+
 /// Plays the game the server started, from the room's map. A game whose
-/// map is missing, or where the player's slot is not theirs, is left.
-fn play(cx: &mut Client, start: net::GameStart) -> Result<(), Exit> {
-    let you = net_ref(cx).lobby.you.clone();
-    let mine = start
-        .slots
-        .get(start.you)
-        .is_some_and(|s| s.player == SlotPlayer::Human(you));
+/// map is missing is left.
+fn play(cx: &mut Client, seated: net::Seated) -> Result<(), Exit> {
     let room_map = net_ref(cx)
         .room
         .as_ref()
         .and_then(|r| r.map())
-        .filter(|m| m.hash().as_ref() == Some(&start.map.hash));
-    let map = room_map.or_else(|| cx.res.find_multiplayer_map(&start.map.hash));
+        .filter(|m| m.hash().as_ref() == Some(&seated.map.hash));
+    let map = room_map.or_else(|| cx.res.find_multiplayer_map(&seated.map.hash));
     let result = match map {
-        Some(map) if mine => {
-            Session::multiplayer(map, &start.slots, start.you, start.seed, start.speed).run(cx)
-        }
-        _ => {
-            cx.log.warning(format!(
-                "cannot play the game: slot {} of {:?}, map found: {}",
-                start.you,
-                start.slots,
-                map.is_some()
-            ));
-            net::send(cx, ClientMsg::LeaveGame);
+        Some(map) => session::play_on_server(cx, &map, &seated),
+        None => {
+            cx.log.warning("cannot play the game: no map");
+            session::leave_server_game(cx);
             cx.voice
                 .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat());
             Ok(())

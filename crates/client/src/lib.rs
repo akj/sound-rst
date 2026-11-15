@@ -7,7 +7,9 @@
 //! what was said.
 //!
 //! A game is a [`session::Session`] (a training game or a campaign
-//! mission) that owns the world and runs the [`game::GameInterface`].
+//! mission) that owns the world and runs the [`game::GameInterface`], or a
+//! game a server runs, which the interface plays from what the server
+//! sends ([`session::play_on_server`]).
 
 pub mod audio;
 pub mod bindings;
@@ -31,7 +33,6 @@ pub mod package;
 pub mod parameters;
 pub mod paths;
 pub mod probe;
-pub mod record;
 pub mod resource;
 pub mod rng;
 pub mod rodio_output;

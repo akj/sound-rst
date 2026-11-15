@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use crate::change::TurnChange;
 use crate::command::{Cheat, Command};
 use crate::entity::PlayerId;
 use crate::events::Event;
@@ -66,6 +67,36 @@ pub struct SeatTurn {
     pub message: Arc<TurnMessage>,
 }
 
+impl SeatTurn {
+    /// The changes that bring a seat from `last`, the message it was last
+    /// sent, through this turn: the end of its turn, with `missed` told
+    /// first (see [`TurnChange::catching_up`]); then, if anything came
+    /// after the end of the turn (the players leaving, when it ended the
+    /// game), what the seat knows after the step, with those events, of
+    /// the same game time. A seat with no end of turn gets the second
+    /// alone, with `missed` first.
+    pub fn changes<'a>(
+        &self,
+        last: &TurnMessage,
+        missed: impl IntoIterator<Item = &'a Event>,
+    ) -> Vec<TurnChange> {
+        let after = || TurnMessage {
+            events: self.then.clone(),
+            ..(*self.message).clone()
+        };
+        match &self.end_of_turn {
+            Some(end) => {
+                let mut changes = vec![TurnChange::catching_up(last, missed, end)];
+                if !self.then.is_empty() || !Arc::ptr_eq(end, &self.message) {
+                    changes.push(TurnChange::between(end, &after()));
+                }
+                changes
+            }
+            None => vec![TurnChange::catching_up(last, missed, &after())],
+        }
+    }
+}
+
 /// Whether a cheat changes the game at once.
 enum AtOnce {
     /// It waits for the next step.
@@ -111,10 +142,10 @@ impl Host {
         None
     }
 
-    /// Queues a command of `player` received as text: the orders of a game
-    /// on a server, and those of a game record. A line that is not a
-    /// command is a warning. Temporary: it goes when a game on a server
-    /// sends commands as values.
+    /// Queues a command of `player` written as the original's line of
+    /// text, for tests. A line that is not a command is a warning. Only the
+    /// `truth` feature has it.
+    #[cfg(feature = "truth")]
     pub fn queue_line(&mut self, player: PlayerId, line: &str) {
         self.world.queue_command(player, line);
     }
@@ -210,22 +241,6 @@ impl Host {
         let mut w = std::mem::take(&mut self.warnings);
         w.extend(self.world.drain_warnings());
         w
-    }
-
-    /// The text line of a command, as a game on a server sends it and the
-    /// world reads it. `None` for the cheats the host carries out itself
-    /// ([`Cheat::Resources`], [`Cheat::AllTechs`], [`Cheat::InfiniteMana`],
-    /// [`Cheat::PlayAs`]), which have no text; a game on a server allows no
-    /// cheat. Temporary: it goes when a game on a server sends commands as
-    /// values.
-    pub fn line(&self, command: &Command) -> Option<String> {
-        command.line(&self.world)
-    }
-
-    /// A sum of the whole state of the game, to check that two machines
-    /// play the same game: see [`World::digest_u64`].
-    pub fn digest(&self) -> u64 {
-        self.world.digest_u64()
     }
 
     /// The whole world, to check a game's results in tests. Only the

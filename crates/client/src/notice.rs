@@ -7,8 +7,7 @@
 //! with nowhere to go opens a message box, which a screen reader reads, so
 //! starting the game from the desktop never fails silently.
 
-/// Prints the answer to a command-line request such as `--probe` or
-/// `--check-record`.
+/// Prints the answer to a command-line request such as `--probe`.
 pub fn print(text: &str) {
     imp::print(text);
 }

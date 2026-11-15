@@ -140,6 +140,7 @@ fn a_server_that_floods_the_client_waits_for_it() {
                 got += 1;
             }
             Some(NetEvent::Closed(r)) => panic!("closed after {got}: {r}"),
+            Some(NetEvent::Frame(f)) => panic!("a frame after {got}: {f:?}"),
             None => {
                 assert!(Instant::now() < deadline, "{got} messages read");
                 std::thread::sleep(Duration::from_millis(1));

@@ -384,14 +384,14 @@ mod tests {
 
     /// The square of the player's town hall, and its name.
     fn home(g: &TestGame, p: PlayerId) -> (SquareId, String) {
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let square = w.entity(unit(g, p, "townhall")).unwrap().square().unwrap();
         (square, g.game.view().square(square).name().to_owned())
     }
 
     /// The units of `p` of this type, in the whole world.
     fn units(g: &TestGame, p: PlayerId, type_name: &str) -> Vec<EntityId> {
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         w.player(p)
             .units
             .iter()
@@ -402,8 +402,12 @@ mod tests {
 
     /// Gives `unit` of `p` an order, as the interface sends it.
     fn order(g: &mut TestGame, p: PlayerId, unit: EntityId, order: &str) {
-        g.game.host.queue_line(p, &format!("control {}", unit.0));
-        g.game.host.queue_line(p, &format!("order 0 0 {order}"));
+        g.game
+            .host_mut()
+            .queue_line(p, &format!("control {}", unit.0));
+        g.game
+            .host_mut()
+            .queue_line(p, &format!("order 0 0 {order}"));
     }
 
     /// What a key answers: the first thing said after it, before the news
@@ -449,12 +453,15 @@ mod tests {
         let me = g.game.me;
         let (square, name) = home(&g, me);
         // Cheat mode shows the whole map: the deposits are known.
-        let _ = g.game.host.queue(me, Command::Cheat(Cheat::ToggleMode));
+        let _ = g
+            .game
+            .host_mut()
+            .queue(me, Command::Cheat(Cheat::ToggleMode));
         g.game.cheat_at_once(Cheat::Resources);
         cheat(&mut g, me, &format!("add_units {name} 5 peasant"));
         run_turns(&mut h, &mut g, 1);
         let find = |g: &TestGame, type_name: &str| {
-            let w = g.game.host.world();
+            let w = g.game.host().world();
             w.entities()
                 .find(|e| &*e.type_name == type_name)
                 .map(|e| e.id)
@@ -468,7 +475,7 @@ mod tests {
         let to = g.game.view().square(square).protocol_id();
         order(&mut g, me, peasants[3], &format!("build farm {to}"));
         run_until(&mut h, &mut g, |game| {
-            game.host
+            game.host()
                 .world()
                 .entities()
                 .any(|e| &*e.type_name == "buildingsite")
@@ -510,7 +517,7 @@ mod tests {
     fn the_other_players_are_said_ally_or_enemy_and_defeated() {
         let (mut h, mut g) = training_allied("jl2", &["easy"; 3], &["1", "1", "2", "2"]);
         let them = g.game.view().players()[3];
-        let _ = g.game.host.queue(them, Command::Quit);
+        let _ = g.game.host_mut().queue(them, Command::Quit);
         run_turns(&mut h, &mut g, 2);
         assert_eq!(
             ask(&mut h, &mut g, Key::F12, Mods::NONE),
@@ -601,7 +608,7 @@ mod tests {
             ask(&mut h, &mut g, Key::V, Mods::SHIFT),
             "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5"
         );
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let stats = |u: EntityId| {
             let s = &w.entity(u).unwrap().stats;
             (s.damage, s.range, s.armor)
@@ -635,7 +642,7 @@ mod tests {
             .view()
             .players()
             .iter()
-            .map(|&p| g.game.host.world().player(p).faction.clone())
+            .map(|&p| g.game.host().world().player(p).faction.clone())
             .collect();
         assert_eq!(factions, ["orc_faction", "human_faction"]);
         assert_eq!(

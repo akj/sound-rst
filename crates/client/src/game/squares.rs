@@ -699,7 +699,7 @@ mod tests {
         let (mut h, mut g) = training();
         let townhall = unit(&g, g.game.me, "townhall");
         let game = &mut g.game;
-        let home = game.host.world().entity(townhall).unwrap().square();
+        let home = game.host().world().entity(townhall).unwrap().square();
         let home = home.unwrap();
         // Observed: the terrain noted at the end of each turn.
         assert!(game.scouted_squares.contains(&home));
@@ -714,7 +714,7 @@ mod tests {
         assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
         // Never observed nor glimpsed: unknown, with no terrain.
         let b3 = game.view().square_at(1, 2).unwrap();
-        assert_eq!(game.host.world().square(b3).type_name, "_meadows");
+        assert_eq!(game.host().world().square(b3).type_name, "_meadows");
         assert_eq!(game.view().terrain(b3), "");
         let m = game.square_postfix(&h.client, b3);
         assert_eq!(said(&mut h, &m), ", unknown");
@@ -761,7 +761,7 @@ mod tests {
         cheat(&mut g, them, "add_units a4 10 peasant");
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
-        let w = g.game.host.world();
+        let w = g.game.host().world();
         let on_a4 = |t: &str| -> Vec<EntityId> {
             w.square(a4)
                 .objects
@@ -775,18 +775,18 @@ mod tests {
         assert_eq!(wood.len(), 1);
         assert!(cutters.len() >= 10);
         let ids: Vec<String> = cutters.iter().map(|u| u.0.to_string()).collect();
-        let host = &mut g.game.host;
+        let host = g.game.host_mut();
         host.queue_line(them, &format!("control {}", ids.join(" ")));
         host.queue_line(them, &format!("order 0 0 gather {}", wood[0].0));
         for _ in 0..3000 {
-            if g.game.host.world().square(a4).type_name != "_forest" {
+            if g.game.host().world().square(a4).type_name != "_forest" {
                 break;
             }
             assert!(!glimpsed(&g.game, a4));
             let next = g.game.view().turn() + 1;
             h.run_until_turn(&mut g, next);
         }
-        assert_eq!(g.game.host.world().square(a4).type_name, "_meadows");
+        assert_eq!(g.game.host().world().square(a4).type_name, "_meadows");
         assert_eq!(g.game.view().terrain(a4), "_forest");
         assert!(!glimpsed(&g.game, a4));
         let m = g.game.square_postfix(&h.client, a4);
