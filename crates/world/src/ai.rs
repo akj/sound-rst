@@ -340,7 +340,7 @@ impl Door<'_> {
         }
         self.state_mut().lacking = None;
         self.update_effect_users_and_workers()?;
-        self.update_time_has_come();
+        self.update_time_has_come()?;
         self.send_workers_to_forgotten_building_sites()?;
         self.idle_workers_gather()?;
         self.send_explorer()?;
@@ -595,7 +595,7 @@ impl Door<'_> {
         Ok(())
     }
 
-    fn update_time_has_come(&mut self) {
+    fn update_time_has_come(&mut self) -> Res {
         // (target, menace, units), in the order the targets first appear
         let mut waiting: Vec<(Option<Target>, i64, Vec<EntityId>)> = Vec::new();
         for &u in self.units() {
@@ -641,10 +641,21 @@ impl Door<'_> {
             }
         }
         // The original walks a set of units: the order does not change the
-        // result, so the id order is used.
+        // result, so the id order is used. The original cancels their
+        // orders; a human stops them.
         for u in cancel {
-            self.cancel_orders(u);
+            self.stop(u)?;
         }
+        Ok(())
+    }
+
+    /// Stops a unit with the stop order, if it has something to stop: a
+    /// human gives no stop order to a unit standing idle.
+    fn stop(&mut self, u: EntityId) -> Res {
+        if self.is_order_allowed(u, Keyword::Stop, None)? {
+            self.give(u, Request::stop(), true)?;
+        }
+        Ok(())
     }
 
     fn target_enemy_menace(&self, t: Option<&Target>) -> i64 {
@@ -973,7 +984,7 @@ impl Door<'_> {
             .filter(|&u| self.unit(u).and_then(|e| e.place) != Some(place))
             .collect();
         for &u in &units {
-            self.cancel_orders(u);
+            self.stop(u)?;
         }
         let mut used_teleportation = false;
         for (u, a) in self.state().teleportation_users.clone() {

@@ -568,13 +568,6 @@ impl Door<'_> {
         self.world.take_order(u, r, forget_previous, false, None)
     }
 
-    /// A change no order makes: cancels the orders of one of its units.
-    pub(super) fn cancel_orders(&mut self, u: EntityId) {
-        if self.unit(u).is_some() {
-            self.world.cancel_all_orders(u, true);
-        }
-    }
-
     /// The handicap of the random computer: 1000 of each resource each
     /// time it plays, and every requirement met.
     pub(super) fn grant_handicap(&mut self) {

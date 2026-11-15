@@ -147,3 +147,31 @@ starting_units townhall peasant
     w.door(c).defensive_routine().unwrap();
     assert_eq!(orders(&w, workers[0]), Vec::<Vec<String>>::new());
 }
+
+#[test]
+fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
+    let (mut w, p) = three_squares();
+    let [a1, b1, c1] = ["a1", "b1", "c1"].map(|n| w.square_by_name(n).unwrap());
+    let (x, y) = (w.square(a1).x, w.square(a1).y);
+    let footman = w.rules.type_id("footman").unwrap();
+    let f = w
+        .create_creature(footman, Some(p), Place::Square(a1), x, y)
+        .unwrap();
+    // The footman walks to b1, and is to wait for the right time to go to
+    // c1, where the computer knows of a menace far beyond it.
+    w.cm(f).unwrap().action = Some(crate::entity::Action {
+        kind: crate::entity::ActionKind::Plain,
+        target: Some(Target::Square(b1)),
+    });
+    let wait = crate::command::KeywordOrder::new(Keyword::Wait)
+        .unwrap()
+        .at(crate::command::OrderTarget::Square(c1));
+    w.take_order(f, Request::from(&wait), false, false, None)
+        .unwrap();
+    assert_eq!(orders(&w, f).len(), 1);
+    w.plm(p).enemy_menace.insert(c1, i64::MAX / 1000);
+    // Too weak, it is stopped: its orders are gone, and it stands still.
+    w.door(p).update_time_has_come().unwrap();
+    assert!(orders(&w, f).is_empty());
+    assert!(w.e(f).is_idle());
+}
