@@ -9,14 +9,13 @@ use crate::entity::{
 use crate::events::{EntityEvent, Reason};
 use crate::known::Activity;
 use crate::nofloat::{
-    PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, py_int,
-    square_of_distance,
+    PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, square_of_distance,
 };
 use crate::orders::{Keyword, OrderKind, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, ClassId, Effect, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
@@ -57,12 +56,8 @@ impl World {
         x: i64,
         y: i64,
     ) -> Result<EntityId, NotEnoughSpace> {
-        let (x, y) = self.initial_position(
-            e.stats.collision != 0,
-            e.airground_type,
-            place,
-            Some((x, y)),
-        )?;
+        let (x, y) =
+            self.initial_position(e.stats.collision, e.airground_type, place, Some((x, y)))?;
         let id = self.insert_entity(e, place, x, y, 90);
         self.set_player(id, player);
         let md = self.rules.minimal_damage();
@@ -171,8 +166,7 @@ impl World {
         e.airground_type = t.airground_type;
         e.stats.qty = q;
         let place = Place::Square(square);
-        let (x, y) =
-            self.initial_position(e.stats.collision != 0, e.airground_type, place, None)?;
+        let (x, y) = self.initial_position(e.stats.collision, e.airground_type, place, None)?;
         Ok(self.insert_entity(e, place, x, y, 90))
     }
 
@@ -302,10 +296,7 @@ impl World {
                 c.damage_level = 0;
             }
         }
-        for name in self.can_use(id) {
-            let Some(upg) = self.rules.type_id(&name) else {
-                continue;
-            };
+        for upg in self.can_use(id) {
             // An ability has no level; a mod may research one, to no effect.
             if !self.rules.ty(upg).is_upgrade() {
                 continue;
@@ -334,11 +325,7 @@ impl World {
             Vec::new()
         };
         for u in units {
-            if self
-                .can_use(u)
-                .iter()
-                .any(|c| *c == self.rules.ty(upgrade).name)
-            {
+            if self.can_use(u).contains(&upgrade) {
                 self.apply_upgrade_effect(upgrade, u, level)?;
             }
         }
@@ -347,58 +334,50 @@ impl World {
     }
 
     fn apply_upgrade_effect(&mut self, upgrade: TypeId, unit: EntityId, start_level: i64) -> Res {
-        // An upgrade without an effect has none. The rules drop an effect
-        // they cannot read, so what follows reads one they could.
+        // An upgrade without an effect has none.
         let Some(effect) = self.rules.ty(upgrade).effect.clone() else {
             return Ok(());
         };
-        let arg = |i: usize| -> Res<&String> { Ok(effect.get(i).ok_or(Invariant::EffectUnread)?) };
-        let int = |s: &str| -> Res<i64> { Ok(py_int(s).map_err(|_| Invariant::EffectUnread)?) };
-        match effect.first().map(String::as_str) {
-            Some("bonus") => {
-                let stat = arg(1)?.clone();
-                let base = int(arg(2)?)?;
-                let incr = match effect.get(3) {
-                    Some(s) => int(s)?,
-                    None => 0,
-                };
-                self.effect_bonus(unit, start_level, &stat, base, incr)
+        match effect {
+            Effect::Bonus {
+                stat,
+                value,
+                per_level,
+            } => {
+                self.effect_bonus(unit, stat, value + per_level * start_level);
+                Ok(())
             }
-            Some("apply_bonus") => {
-                let stat = arg(1)?.clone();
-                let base = self
+            Effect::ApplyBonus(stat) => {
+                let value = self
                     .e(unit)
                     .type_id()
-                    .map_or(0, |t| self.rules.ty(t).bonus(&stat));
-                self.effect_bonus(unit, start_level, &stat, base, 0)?;
-                if stat == "damage"
+                    .map_or(0, |t| self.rules.ty(t).bonus(stat));
+                self.effect_bonus(unit, stat, value);
+                if stat == Stat::Damage
                     && let Some(c) = self.cm(unit)
                 {
                     c.damage_level += 1;
                 }
                 Ok(())
             }
-            _ => Err(Invariant::EffectUnread.into()),
+            // The rules give an upgrade only the effects above.
+            Effect::Teleportation
+            | Effect::Recall
+            | Effect::Conversion
+            | Effect::Summon { .. }
+            | Effect::RaiseDead { .. }
+            | Effect::Resurrection { .. } => Err(Invariant::EffectUnread.into()),
         }
     }
 
-    fn effect_bonus(
-        &mut self,
-        unit: EntityId,
-        start_level: i64,
-        stat: &str,
-        base: i64,
-        incr: i64,
-    ) -> Res {
+    fn effect_bonus(&mut self, unit: EntityId, stat: Stat, value: i64) {
         let e = self.em(unit);
-        let v = e.stats.get_mut(stat).ok_or(Invariant::EffectUnread)?;
-        *v += base + incr * start_level;
-        if stat == "damage"
+        e.stats.add(stat, value);
+        if stat == Stat::Damage
             && let Some(c) = e.creature_mut()
         {
             c.damage_level += 1;
         }
-        Ok(())
     }
 
     // type lists
@@ -407,7 +386,7 @@ impl World {
         self.e(id).type_id().map(|t| self.rules.ty(t))
     }
 
-    pub(crate) fn can_use(&self, id: EntityId) -> Vec<String> {
+    pub(crate) fn can_use(&self, id: EntityId) -> Vec<TypeId> {
         self.type_of(id)
             .map(|t| t.can_use.clone())
             .unwrap_or_default()
@@ -418,9 +397,16 @@ impl World {
         questions::entity_cost(&self.rules, &self.e(id))
     }
 
-    pub(crate) fn expanded_is_a(&self, e: &Entity) -> Vec<String> {
+    /// The classes of an entity's type, its own first, then those it
+    /// derives from, nearest first.
+    fn classes_of(&self, e: &Entity) -> Vec<ClassId> {
         e.type_id()
-            .map(|t| self.rules.ty(t).expanded_is_a.clone())
+            .map(|t| {
+                let t = self.rules.ty(t);
+                std::iter::once(t.class)
+                    .chain(t.expanded_is_a.iter().copied())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -668,7 +654,7 @@ impl World {
 
     fn would_collide_if(&self, id: EntityId, x: i64, y: i64) -> Res<bool> {
         let e = self.e(id);
-        if e.stats.collision == 0 {
+        if !e.stats.collision {
             return Ok(false);
         }
         if !matches!(e.place, Some(Place::Square(_))) {
@@ -822,7 +808,7 @@ impl World {
             return Ok(false);
         }
         let mut actual_range = e.stats.range;
-        if e.stats.is_ballistic != 0 {
+        if e.stats.is_ballistic {
             let (h, th) = (self.height_of(e)?, self.height_of(t)?);
             if h > th {
                 actual_range += (h - th) * PRECISION;
@@ -850,8 +836,8 @@ impl World {
         let e = self.e(id);
         match self.t_entity(other) {
             Some(o)
-                if e.stats.collision != 0
-                    && o.stats.collision != 0
+                if e.stats.collision
+                    && o.stats.collision
                     && o.airground_type == e.airground_type =>
             {
                 e.radius() + o.radius()
@@ -1203,7 +1189,7 @@ impl World {
         match &e.kind {
             Kind::Creature(c) => match &c.kind {
                 CreatureKind::Worker { .. } | CreatureKind::Soldier { .. } => {
-                    if e.stats.corpse != 0 {
+                    if e.stats.corpse {
                         let dead = e.with_kind(c.clone());
                         self.create_corpse(dead);
                     }
@@ -1241,7 +1227,7 @@ impl World {
                 let (place, x, y, a) = (e.place, e.x, e.y, e.airground_type);
                 let _ = self.move_to(o, place, Some((x, y)), 90);
                 if self.e(o).place == Some(Place::Inside(id)) {
-                    self.em(o).stats.collision = 0;
+                    self.em(o).stats.collision = false;
                     let _ = self.move_to(o, place, Some((x, y)), 90);
                 }
                 if a != AirGround::Ground {
@@ -1327,7 +1313,7 @@ impl World {
         let allies = self.pl(p).allied.clone();
         // The units of players: creatures.
         let units = self.get_objects2(e.x, e.y, 6 * PRECISION, &allies, |x| {
-            x.stats.is_healable != 0 && x.creature().map_or(0, |c| c.hp) < x.stats.hp_max
+            x.stats.is_healable && x.creature().map_or(0, |c| c.hp) < x.stats.hp_max
         });
         for u in units {
             let ue = self.em(u);
@@ -1342,13 +1328,16 @@ impl World {
         let e = self.e(id);
         let hp = floordiv(e.stats.harm_level * PRECISION, 25);
         let (x, y) = (e.x, e.y);
-        let my_type = e.type_name.to_string();
-        let candidates =
-            self.get_objects2(x, y, 6 * PRECISION, &[], |o| o.stats.is_vulnerable != 0);
+        // What has no type harms nothing, and nothing harms what has none.
+        let Some(my_type) = e.type_id() else {
+            return Ok(());
+        };
+        let candidates = self.get_objects2(x, y, 6 * PRECISION, &[], |o| o.stats.is_vulnerable);
         let mut units = Vec::new();
         for u in candidates {
-            let t = self.e(u).type_name.to_string();
-            if self.can_harm(&my_type, &t) {
+            if let Some(t) = self.e(u).type_id()
+                && self.can_harm(my_type, t)
+            {
                 units.push(u);
             }
         }
@@ -1384,14 +1373,13 @@ impl World {
             return false;
         }
         let kind = o.airground_type.ground_or_air();
-        let targets = self
-            .type_of(id)
-            .map(|t| t.target_types.clone())
-            .unwrap_or_else(|| vec!["ground".into()]);
-        if !targets.iter().any(|t| t == kind) {
+        let reaches = self.type_of(id).map_or(kind == AirGround::Ground, |t| {
+            t.target_types.contains(&kind)
+        });
+        if !reaches {
             return false;
         }
-        o.stats.is_vulnerable != 0
+        o.stats.is_vulnerable
     }
 
     /// `can_attack`: without moving to another square.
@@ -1521,7 +1509,7 @@ impl World {
                 for u in self.pl(a).units.clone() {
                     let ue = self.e(u);
                     if ue.place == place
-                        && ue.stats.is_repairable != 0
+                        && ue.stats.is_repairable
                         && ue.creature().map_or(0, |c| c.hp) < ue.stats.hp_max
                         && !ue.is_building_site()
                     {
@@ -1626,11 +1614,8 @@ impl World {
     fn armor_versus_of(&self, target: &Entity, attacker: &Entity) -> i64 {
         if let Some(t) = target.type_id() {
             let d = &self.rules.ty(t).armor_vs;
-            if let Some((_, v)) = d.iter().find(|(k, _)| **k == *attacker.type_name) {
-                return *v;
-            }
-            for name in self.expanded_is_a(attacker) {
-                if let Some((_, v)) = d.iter().find(|(k, _)| *k == name) {
+            for class in self.classes_of(attacker) {
+                if let Some((_, v)) = d.iter().find(|(k, _)| *k == class) {
                     return *v;
                 }
             }
@@ -1641,11 +1626,8 @@ impl World {
     fn base_damage_versus_of(&self, attacker: &Entity, target: &Entity) -> i64 {
         if let Some(t) = attacker.type_id() {
             let d = &self.rules.ty(t).damage_vs;
-            if let Some((_, v)) = d.iter().find(|(k, _)| **k == *target.type_name) {
-                return *v;
-            }
-            for name in self.expanded_is_a(target) {
-                if let Some((_, v)) = d.iter().find(|(k, _)| *k == name) {
+            for class in self.classes_of(target) {
+                if let Some((_, v)) = d.iter().find(|(k, _)| *k == class) {
                     return *v;
                 }
             }
@@ -1832,7 +1814,7 @@ impl World {
     pub(crate) fn is_fully_repaired(&self, id: EntityId) -> bool {
         let e = self.e(id);
         !e.is_building_site()
-            && e.stats.is_repairable != 0
+            && e.stats.is_repairable
             && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
     }
 
@@ -1864,8 +1846,8 @@ impl World {
                 // another layer may find that layer full: it then waits,
                 // finished, until there is room for it.
                 let bt = self.rules.ty(site.building_type);
-                let (collision, airground) = (bt.stats.collision != 0, bt.airground_type);
-                let room_freed = e.stats.collision != 0 && e.airground_type == airground;
+                let (collision, airground) = (bt.stats.collision, bt.airground_type);
+                let room_freed = e.stats.collision && e.airground_type == airground;
                 if !room_freed
                     && self
                         .initial_position(collision, airground, place, Some((x, y)))

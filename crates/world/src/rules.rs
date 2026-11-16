@@ -20,8 +20,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::script::Script;
-use crate::defs::{bounded, check_size, preprocess_within_limits};
+use crate::defs::{bounded, check_size, preprocess_within_limits, source_lines};
 use crate::nofloat::{PRECISION, py_int, to_int};
+
+mod effect;
+mod properties;
+
+pub use effect::{Effect, Summoned};
+
+use properties::Written;
 
 /// Game time between two world updates, in milliseconds.
 pub const VIRTUAL_TIME_INTERVAL: i64 = 300;
@@ -292,87 +299,26 @@ fn without_level(attr: &str) -> Option<&str> {
     (end.get(..7)? == "_level_").then_some(base)
 }
 
-const STRING_PROPERTIES: &[&str] = &["airground_type"];
-
-const INT_PROPERTIES: &[&str] = &[
-    "nb_of_resource_types",
-    "collision",
-    "corpse",
-    "food_cost",
-    "food_provided",
-    "harm_level",
-    "heal_level",
-    "resource_type",
-    "is_repairable",
-    "is_healable",
-    "is_vulnerable",
-    "is_undead",
-    "is_a_building_land",
-    "is_buildable_anywhere",
-    "bonus_height",
-    "transport_capacity",
-    "transport_volume",
-    "is_invisible",
-    "is_cloakable",
-    "is_a_detector",
-    "is_a_cloaker",
-    "universal_notification",
-    "presence",
-    "provides_survival",
-    "is_ballistic",
-    "is_teleportable",
-    "is_a_gate",
-    "is_buildable_on_exits_only",
-    "is_buildable_near_water_only",
-    "count_limit",
-];
-
-const PRECISION_PROPERTIES: &[&str] = &[
-    "armor",
-    "damage",
-    "minimal_damage",
-    "damage_radius",
-    "range",
-    "minimal_range",
-    "decay",
-    "qty",
-    "extraction_qty",
-    "hp_max",
-    "mana_cost",
-    "mana_max",
-    "mana_start",
-    "extraction_time",
-    "time_cost",
-    "cooldown",
-    "hp_regen",
-    "mana_regen",
-    "speed",
-    "effect_range",
-    "effect_radius",
-    "sight_range",
-    "cloaking_range",
-    "detection_range",
-];
-
-fn is_precision_property(k: &str) -> bool {
-    PRECISION_PROPERTIES.contains(&k)
-        || k.strip_suffix("_bonus")
-            .is_some_and(|base| PRECISION_PROPERTIES.contains(&base))
-}
-
 /// Reads definition text into `defs` (`_Definitions.read` with the
 /// property types of `Rules`). A line that cannot be read is skipped with a
 /// warning, like the original. A text over a limit is an error.
-fn read_rules_text(s: &str, d: &mut Definitions, warnings: &mut Vec<String>) -> Result<(), String> {
-    let s = preprocess_within_limits(s)?;
+fn read_rules_text(
+    text: &str,
+    d: &mut Definitions,
+    set_at: &mut SetAt,
+    warnings: &mut Vec<String>,
+) -> Result<(), String> {
+    let s = preprocess_within_limits(text)?;
+    let numbers = source_lines(text);
     let mut name = String::from("(the name is missing)");
-    for line in s.split('\n') {
+    for (i, line) in s.split('\n').enumerate() {
         let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
         let Some((w0, args)) = words.split_first() else {
             continue;
         };
         if w0 == "clear" {
             d.defs.clear();
+            set_at.clear();
             continue;
         }
         if w0 == "def" {
@@ -400,49 +346,57 @@ fn read_rules_text(s: &str, d: &mut Definitions, warnings: &mut Vec<String>) -> 
             return Err(format!("{name} has more than {MAX_PROPERTIES} properties"));
         }
         def_set(def, w0, value);
+        if let Some(&n) = numbers.get(i) {
+            set_at.insert((name.clone(), w0.clone()), n);
+        }
     }
     Ok(())
 }
+
+/// The line of the text each property was last set on, by class and
+/// property name.
+type SetAt = BTreeMap<(String, String), usize>;
 
 /// The value of property `w0` written with the words `args`, or `None` when
 /// it cannot be read.
 fn property_value(w0: &str, args: &[String]) -> Option<RawValue> {
     let first = || args.first();
-    Some(if STRING_PROPERTIES.contains(&w0) {
-        RawValue::Str(first()?.clone())
-    } else if INT_PROPERTIES.contains(&w0) {
-        RawValue::Int(int(first()?)?)
-    } else if is_precision_property(w0) {
-        let v = match first()?.as_str() {
-            "square" if w0 == "effect_range" => "6",
-            "nearby" if w0 == "effect_range" => "12",
-            "anywhere" | "inf" if w0 == "effect_range" => "2147483",
-            "inf" => "2147483",
-            other => other,
-        };
-        RawValue::Int(decimal(v)?)
-    } else if w0 == "storable_resource_types" {
-        RawValue::IntList(args.iter().map(|x| int(x)).collect::<Option<_>>()?)
-    } else if w0 == "cost" || w0 == "storage_bonus" {
-        RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
-    } else {
-        let mut words = args.to_vec();
-        if w0 == "effect" && first()? == "bonus" {
-            if is_precision_property(args.get(1)?) {
-                for w in words.iter_mut().skip(2).take(2) {
-                    *w = decimal(w)?.to_string();
-                }
-                args.get(2)?;
-            } else {
-                // The simulation reads these as integers and adds them.
-                for w in words.iter().skip(2).take(2) {
-                    if py_int(w).is_ok() {
-                        int(w)?;
+    Some(match properties::written(w0) {
+        Written::Text => RawValue::Str(first()?.clone()),
+        Written::Int => RawValue::Int(int(first()?)?),
+        Written::Decimal => {
+            let v = match first()?.as_str() {
+                "square" if w0 == "effect_range" => "6",
+                "nearby" if w0 == "effect_range" => "12",
+                "anywhere" | "inf" if w0 == "effect_range" => "2147483",
+                "inf" => "2147483",
+                other => other,
+            };
+            RawValue::Int(decimal(v)?)
+        }
+        Written::Ints => RawValue::IntList(args.iter().map(|x| int(x)).collect::<Option<_>>()?),
+        Written::Decimals => {
+            RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
+        }
+        Written::Words => {
+            let mut words = args.to_vec();
+            if w0 == "effect" && first()? == "bonus" {
+                if properties::written(args.get(1)?) == Written::Decimal {
+                    for w in words.iter_mut().skip(2).take(2) {
+                        *w = decimal(w)?.to_string();
+                    }
+                    args.get(2)?;
+                } else {
+                    // The simulation reads these as integers and adds them.
+                    for w in words.iter().skip(2).take(2) {
+                        if py_int(w).is_ok() {
+                            int(w)?;
+                        }
                     }
                 }
             }
+            RawValue::Words(words)
         }
-        RawValue::Words(words)
     })
 }
 
@@ -514,21 +468,6 @@ impl BaseClass {
         })
     }
 
-    /// Whether the Python base class has an attribute called `k` that is
-    /// not a method. A rules property that is not one of them is dropped
-    /// with a warning.
-    fn has_attribute(self, k: &str) -> bool {
-        let lists: &[&[&str]] = match self {
-            BaseClass::Worker => &[CREATURE_ATTRS, UNIT_ATTRS, WORKER_ATTRS],
-            BaseClass::Soldier | BaseClass::Effect => &[CREATURE_ATTRS, UNIT_ATTRS],
-            BaseClass::Building => &[CREATURE_ATTRS, BUILDING_ATTRS],
-            BaseClass::Deposit => &[DEPOSIT_ATTRS],
-            BaseClass::Upgrade => &[UPGRADE_ATTRS],
-            BaseClass::Ability => &[ABILITY_ATTRS],
-        };
-        lists.iter().any(|l| l.contains(&k))
-    }
-
     fn is_creature(self) -> bool {
         matches!(
             self,
@@ -537,233 +476,133 @@ impl BaseClass {
     }
 }
 
-/// Attributes shared by every creature class (worldunit.Creature and
-/// worldentity.Entity), as listed by `dir()` without the methods.
-const CREATURE_ATTRS: &[&str] = &[
-    "_previous_square",
-    "_rotations",
-    "_smooth_rotations",
-    "action_target",
-    "activity",
-    "ai_mode",
-    "airground_type",
-    "any_land",
-    "armor",
-    "armor_vs",
-    "basic_abilities",
-    "blocked_exit",
-    "bonus_height",
-    "building_land",
-    "can_build",
-    "can_research",
-    "can_switch_ai_mode",
-    "can_train",
-    "can_upgrade_to",
-    "can_use",
-    "cloaking_range",
-    "collision",
-    "cooldown",
-    "corpse",
-    "cost",
-    "count_limit",
-    "damage",
-    "damage_level",
-    "damage_radius",
-    "damage_vs",
-    "decay",
-    "detection_range",
-    "distance_to_goal",
-    "expanded_is_a",
-    "food_cost",
-    "food_provided",
-    "group",
-    "harm_level",
-    "harm_target_type",
-    "heal_level",
-    "height",
-    "hp_delta",
-    "hp_max",
-    "hp_regen",
-    "id",
-    "inside",
-    "is_a",
-    "is_a_building",
-    "is_a_building_land",
-    "is_a_cloaker",
-    "is_a_detector",
-    "is_a_gate",
-    "is_a_unit",
-    "is_ballistic",
-    "is_buildable_anywhere",
-    "is_cloakable",
-    "is_cloaked",
-    "is_fully_repaired",
-    "is_healable",
-    "is_idle",
-    "is_inside",
-    "is_invisible",
-    "is_melee",
-    "is_memory",
-    "is_moving",
-    "is_near_water",
-    "is_repairable",
-    "is_teleportable",
-    "is_undead",
-    "is_vulnerable",
-    "mana_max",
-    "mana_regen",
-    "mana_start",
-    "menace",
-    "minimal_range",
-    "next_attack_time",
-    "number",
-    "o",
-    "place",
-    "player",
-    "presence",
-    "provides_survival",
-    "qty",
-    "radius",
-    "rallying_point",
-    "range",
-    "repair_cost",
-    "requirements",
-    "sight_range",
-    "speed",
-    "speed_on_terrain",
-    "splash",
-    "stat_type",
-    "storable_resource_types",
-    "storage_bonus",
-    "target_types",
-    "time_cost",
-    "time_limit",
-    "transport_capacity",
-    "transport_volume",
-    "type_name",
-    "upgrades",
-    "walked",
-    "x",
-    "y",
-];
-/// worldunit.Unit adds these.
-const UNIT_ATTRS: &[&str] = &["_basic_abilities", "_destination"];
-/// worldunit.Worker adds these.
-const WORKER_ATTRS: &[&str] = &["auto_gather", "auto_repair", "cargo"];
-/// worldunit.Building adds these.
-const BUILDING_ATTRS: &[&str] = &["is_buildable_near_water_only", "is_buildable_on_exits_only"];
-const DEPOSIT_ATTRS: &[&str] = &[
-    "_previous_square",
-    "activity",
-    "airground_type",
-    "any_land",
-    "blocked_exit",
-    "bonus_height",
-    "building_land",
-    "cloaking_range",
-    "collision",
-    "detection_range",
-    "extraction_qty",
-    "extraction_time",
-    "harm_level",
-    "id",
-    "is_a_building_land",
-    "is_a_cloaker",
-    "is_a_detector",
-    "is_cloakable",
-    "is_cloaked",
-    "is_healable",
-    "is_inside",
-    "is_invisible",
-    "is_memory",
-    "is_moving",
-    "is_near_water",
-    "is_repairable",
-    "is_teleportable",
-    "is_undead",
-    "is_vulnerable",
-    "menace",
-    "o",
-    "place",
-    "player",
-    "qty",
-    "radius",
-    "resource_regen",
-    "resource_type",
-    "sight_range",
-    "speed",
-    "speed_on_terrain",
-    "time_limit",
-    "transport_capacity",
-    "transport_volume",
-    "x",
-    "y",
-];
-const UPGRADE_ATTRS: &[&str] = &[
-    "cost",
-    "count_limit",
-    "effect",
-    "food_cost",
-    "requirements",
-    "time_cost",
-];
-const ABILITY_ATTRS: &[&str] = &[
-    "cost",
-    "count_limit",
-    "effect",
-    "effect_radius",
-    "effect_range",
-    "effect_target",
-    "food_cost",
-    "mana_cost",
-    "requirements",
-    "time_cost",
-    "universal_notification",
-];
-
 macro_rules! stats {
-    ($($name:ident),* $(,)?) => {
-        /// The numeric attributes of an entity or a unit type, by their
-        /// Python names. Booleans are 0 or 1, as Python treats them as
-        /// integers. Decimal values are multiplied by [`PRECISION`].
-        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-        pub struct Stats {
-            $(pub $name: i64,)*
+    (
+        numbers { $($number:ident: $number_stat:ident),* $(,)? }
+        flags { $($flag:ident: $flag_stat:ident),* $(,)? }
+    ) => {
+        /// A statistic of an entity or a unit type, which an upgrade's
+        /// effect may name.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Stat {
+            $($number_stat,)*
+            $($flag_stat,)*
         }
 
-        impl Stats {
-            /// Every attribute name.
-            pub const NAMES: &'static [&'static str] = &[$(stringify!($name)),*];
-
-            /// The value of the attribute called `name`.
-            pub fn get(&self, name: &str) -> Option<i64> {
+        impl Stat {
+            /// The statistic the rules call `name`.
+            pub fn parse(name: &str) -> Option<Stat> {
                 match name {
-                    $(stringify!($name) => Some(self.$name),)*
+                    $(stringify!($number) => Some(Stat::$number_stat),)*
+                    $(stringify!($flag) => Some(Stat::$flag_stat),)*
                     _ => None,
                 }
             }
 
-            /// The attribute called `name`, to change it.
-            pub fn get_mut(&mut self, name: &str) -> Option<&mut i64> {
-                match name {
-                    $(stringify!($name) => Some(&mut self.$name),)*
-                    _ => None,
+            /// The name the rules give the statistic.
+            pub fn name(self) -> &'static str {
+                match self {
+                    $(Stat::$number_stat => stringify!($number),)*
+                    $(Stat::$flag_stat => stringify!($flag),)*
                 }
+            }
+        }
+
+        /// The attributes of an entity or a unit type, by their Python
+        /// names: numbers, decimals multiplied by [`PRECISION`], and
+        /// yes-or-no flags.
+        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+        pub struct Stats {
+            $(pub $number: i64,)*
+            $(pub $flag: bool,)*
+        }
+
+        impl Stats {
+            /// The value of a statistic, a flag as 0 or 1, as Python counts
+            /// a boolean.
+            pub fn get(&self, stat: Stat) -> i64 {
+                match stat {
+                    $(Stat::$number_stat => self.$number,)*
+                    $(Stat::$flag_stat => i64::from(self.$flag),)*
+                }
+            }
+
+            /// Sets a statistic to the value the rules give it. A flag is
+            /// set when the value is not 0.
+            pub fn set(&mut self, stat: Stat, value: i64) {
+                match stat {
+                    $(Stat::$number_stat => self.$number = value,)*
+                    $(Stat::$flag_stat => self.$flag = value != 0,)*
+                }
+            }
+
+            /// Adds `delta` to a statistic, as an upgrade's bonus does. A
+            /// flag counts as 0 or 1, and is set when the sum is not 0.
+            pub fn add(&mut self, stat: Stat, delta: i64) {
+                self.set(stat, self.get(stat).saturating_add(delta));
             }
         }
     };
 }
 
 stats! {
-    collision, bonus_height, harm_level, heal_level, qty, is_vulnerable, is_repairable,
-    is_healable, is_undead, is_teleportable, is_a_building_land, transport_capacity,
-    transport_volume, is_invisible, is_cloakable, sight_range, is_a_detector, detection_range,
-    is_a_cloaker, cloaking_range, speed, hp_max, hp_regen, mana_max, mana_start, mana_regen,
-    time_cost, food_cost, food_provided, armor, damage, damage_radius, range, is_ballistic,
-    minimal_range, cooldown, decay, corpse, presence, count_limit, is_a_gate, provides_survival,
-    is_buildable_anywhere, is_buildable_on_exits_only, is_buildable_near_water_only, is_a_unit,
-    is_a_building, mana_cost, effect_range, effect_radius, universal_notification,
-    extraction_time, extraction_qty,
+    numbers {
+        bonus_height: BonusHeight,
+        harm_level: HarmLevel,
+        heal_level: HealLevel,
+        qty: Qty,
+        transport_capacity: TransportCapacity,
+        transport_volume: TransportVolume,
+        sight_range: SightRange,
+        detection_range: DetectionRange,
+        cloaking_range: CloakingRange,
+        speed: Speed,
+        hp_max: HpMax,
+        hp_regen: HpRegen,
+        mana_max: ManaMax,
+        mana_start: ManaStart,
+        mana_regen: ManaRegen,
+        time_cost: TimeCost,
+        food_cost: FoodCost,
+        food_provided: FoodProvided,
+        armor: Armor,
+        damage: Damage,
+        damage_radius: DamageRadius,
+        range: Range,
+        minimal_range: MinimalRange,
+        cooldown: Cooldown,
+        decay: Decay,
+        count_limit: CountLimit,
+        mana_cost: ManaCost,
+        effect_range: EffectRange,
+        effect_radius: EffectRadius,
+        extraction_time: ExtractionTime,
+        extraction_qty: ExtractionQty,
+    }
+    flags {
+        collision: Collision,
+        is_vulnerable: IsVulnerable,
+        is_repairable: IsRepairable,
+        is_healable: IsHealable,
+        is_undead: IsUndead,
+        is_teleportable: IsTeleportable,
+        is_a_building_land: IsABuildingLand,
+        is_invisible: IsInvisible,
+        is_cloakable: IsCloakable,
+        is_a_detector: IsADetector,
+        is_a_cloaker: IsACloaker,
+        is_ballistic: IsBallistic,
+        corpse: Corpse,
+        presence: Presence,
+        is_a_gate: IsAGate,
+        provides_survival: ProvidesSurvival,
+        is_buildable_anywhere: IsBuildableAnywhere,
+        is_buildable_on_exits_only: IsBuildableOnExitsOnly,
+        is_buildable_near_water_only: IsBuildableNearWaterOnly,
+        is_a_unit: IsAUnit,
+        is_a_building: IsABuilding,
+        universal_notification: UniversalNotification,
+    }
 }
 
 /// The kind of Python class an entity is an instance of.
@@ -810,7 +649,7 @@ impl EntityClass {
     /// The class attribute defaults of the Python class.
     pub fn default_stats(self) -> Stats {
         let mut s = Stats {
-            collision: 1,
+            collision: true,
             transport_volume: 99,
             sight_range: 85 * PRECISION / 10,
             detection_range: 85 * PRECISION / 10,
@@ -820,46 +659,46 @@ impl EntityClass {
         match self {
             EntityClass::Deposit => {}
             EntityClass::Meadow => {
-                s.is_a_building_land = 1;
-                s.collision = 0;
+                s.is_a_building_land = true;
+                s.collision = false;
             }
-            EntityClass::Corpse | EntityClass::Exit => s.collision = 0,
+            EntityClass::Corpse | EntityClass::Exit => s.collision = false,
             EntityClass::Worker
             | EntityClass::Soldier
             | EntityClass::Effect
             | EntityClass::Building
             | EntityClass::BuildingSite => {
                 // Creature
-                s.is_buildable_anywhere = 1;
+                s.is_buildable_anywhere = true;
                 s.transport_volume = 1;
-                s.is_vulnerable = 1;
-                s.is_healable = 1;
-                s.corpse = 1;
-                s.presence = 1;
+                s.is_vulnerable = true;
+                s.is_healable = true;
+                s.corpse = true;
+                s.presence = true;
                 if self.is_unit() {
                     s.food_cost = 1;
-                    s.is_cloakable = 1;
-                    s.is_a_gate = 1;
-                    s.is_a_unit = 1;
+                    s.is_cloakable = true;
+                    s.is_a_gate = true;
+                    s.is_a_unit = true;
                 }
                 match self {
-                    EntityClass::Worker | EntityClass::Soldier => s.is_teleportable = 1,
+                    EntityClass::Worker | EntityClass::Soldier => s.is_teleportable = true,
                     EntityClass::Effect => {
-                        s.collision = 0;
-                        s.corpse = 0;
+                        s.collision = false;
+                        s.corpse = false;
                         s.food_cost = 0;
-                        s.is_vulnerable = 0;
-                        s.presence = 0;
+                        s.is_vulnerable = false;
+                        s.presence = false;
                     }
                     EntityClass::Building | EntityClass::BuildingSite => {
-                        s.is_repairable = 1;
-                        s.is_healable = 0;
-                        s.is_a_building = 1;
+                        s.is_repairable = true;
+                        s.is_healable = false;
+                        s.is_a_building = true;
                         s.transport_volume = 99;
-                        s.corpse = 0;
+                        s.corpse = false;
                         if self == EntityClass::Building {
-                            s.is_buildable_anywhere = 0;
-                            s.provides_survival = 1;
+                            s.is_buildable_anywhere = false;
+                            s.provides_survival = true;
                         }
                     }
                     EntityClass::Deposit
@@ -902,10 +741,58 @@ impl AirGround {
     }
 
     /// `ground_or_air`: water units count as ground units.
-    pub fn ground_or_air(self) -> &'static str {
+    pub fn ground_or_air(self) -> AirGround {
         match self {
-            AirGround::Air => "air",
-            _ => "ground",
+            AirGround::Air => AirGround::Air,
+            AirGround::Ground | AirGround::Water => AirGround::Ground,
+        }
+    }
+}
+
+/// A kind of unit that a type's harm (`harm_target_type`) is limited to.
+/// The harm reaches a type only if it is of every kind listed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HarmTarget {
+    Healable,
+    Building,
+    /// Air units, or ground units (water units among them).
+    Layer(AirGround),
+    Unit,
+    Undead,
+}
+
+impl HarmTarget {
+    fn parse(s: &str) -> Option<HarmTarget> {
+        Some(match s {
+            "healable" => HarmTarget::Healable,
+            "building" => HarmTarget::Building,
+            "air" => HarmTarget::Layer(AirGround::Air),
+            "ground" => HarmTarget::Layer(AirGround::Ground),
+            "unit" => HarmTarget::Unit,
+            "undead" => HarmTarget::Undead,
+            _ => return None,
+        })
+    }
+}
+
+/// Where an ability aims (`effect_target`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectTarget {
+    /// The player chooses the target (`ask`).
+    Ask,
+    /// A square chosen at random (`random`).
+    Random,
+    /// The unit that uses the ability (`self`).
+    User,
+}
+
+impl EffectTarget {
+    fn parse(words: &[String]) -> Option<EffectTarget> {
+        match words {
+            [w] if w == "ask" => Some(EffectTarget::Ask),
+            [w] if w == "random" => Some(EffectTarget::Random),
+            [w] if w == "self" => Some(EffectTarget::User),
+            _ => None,
         }
     }
 }
@@ -914,35 +801,45 @@ impl AirGround {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitType {
     pub name: String,
+    /// The class of the rules the type is.
+    pub class: ClassId,
     pub base: BaseClass,
     pub stats: Stats,
     pub airground_type: AirGround,
     /// The cost in each resource, with [`PRECISION`]. Deposits have none.
     pub cost: Vec<i64>,
-    pub requirements: Vec<String>,
-    pub is_a: Vec<String>,
+    /// The classes a player must have a unit of, or an upgrade of.
+    pub requirements: Vec<ClassId>,
+    pub is_a: Vec<ClassId>,
     /// The parents, grandparents and so on, nearest first.
-    pub expanded_is_a: Vec<String>,
-    pub can_build: Vec<String>,
-    pub can_train: Vec<String>,
-    pub can_use: Vec<String>,
-    pub can_research: Vec<String>,
-    pub can_upgrade_to: Vec<String>,
-    pub target_types: Vec<String>,
-    pub harm_target_type: Vec<String>,
+    pub expanded_is_a: Vec<ClassId>,
+    pub can_build: Vec<TypeId>,
+    pub can_train: Vec<TypeId>,
+    pub can_use: Vec<TypeId>,
+    pub can_research: Vec<TypeId>,
+    pub can_upgrade_to: Vec<TypeId>,
+    /// The layers of the units it can attack: ground, air, or both.
+    pub target_types: Vec<AirGround>,
+    pub harm_target_type: Vec<HarmTarget>,
     pub speed_on_terrain: Vec<String>,
     pub storable_resource_types: Vec<i64>,
     pub storage_bonus: Vec<i64>,
-    pub damage_vs: Vec<(String, i64)>,
-    pub armor_vs: Vec<(String, i64)>,
+    /// The damage against units of a class, the type's own or one it
+    /// derives from.
+    pub damage_vs: Vec<(ClassId, i64)>,
+    /// The armor against attackers of a class.
+    pub armor_vs: Vec<(ClassId, i64)>,
     pub splash: bool,
-    /// The `<stat>_bonus` values, by stat name.
-    pub bonuses: Vec<(String, i64)>,
+    /// The `<stat>_bonus` values.
+    pub bonuses: Vec<(Stat, i64)>,
     /// Deposits: the resource it holds.
     pub resource_type: Option<i64>,
-    /// Upgrades and abilities: the effect and its arguments.
-    pub effect: Option<Vec<String>>,
-    pub effect_target: Vec<String>,
+    /// Upgrades and abilities: the effect. `None` for an upgrade that
+    /// does nothing, or an ability that cannot be used.
+    pub effect: Option<Effect>,
+    /// Abilities: where it aims. `None` for an ability that names no
+    /// target the simulation knows: it aims at nothing.
+    pub effect_target: Option<EffectTarget>,
 }
 
 impl UnitType {
@@ -959,10 +856,10 @@ impl UnitType {
     }
 
     /// `getattr(type, stat + "_bonus", 0)`.
-    pub fn bonus(&self, stat: &str) -> i64 {
+    pub fn bonus(&self, stat: Stat) -> i64 {
         self.bonuses
             .iter()
-            .find(|(k, _)| k == stat)
+            .find(|(k, _)| *k == stat)
             .map_or(0, |(_, v)| *v)
     }
 
@@ -974,8 +871,8 @@ impl UnitType {
         self.base == BaseClass::Ability
     }
 
-    fn new(name: &str, base: BaseClass, nb_res: usize) -> UnitType {
-        let class = match base {
+    fn new(name: &str, class: ClassId, base: BaseClass, nb_res: usize) -> UnitType {
+        let entity_class = match base {
             BaseClass::Worker => EntityClass::Worker,
             BaseClass::Soldier => EntityClass::Soldier,
             BaseClass::Building => EntityClass::Building,
@@ -983,7 +880,7 @@ impl UnitType {
             BaseClass::Deposit => EntityClass::Deposit,
             BaseClass::Upgrade | BaseClass::Ability => EntityClass::Deposit,
         };
-        let mut stats = class.default_stats();
+        let mut stats = entity_class.default_stats();
         if matches!(base, BaseClass::Upgrade | BaseClass::Ability) {
             stats = Stats::default();
             if base == BaseClass::Ability {
@@ -993,6 +890,7 @@ impl UnitType {
         }
         UnitType {
             name: name.to_owned(),
+            class,
             base,
             stats,
             airground_type: AirGround::Ground,
@@ -1009,7 +907,7 @@ impl UnitType {
             can_use: Vec::new(),
             can_research: Vec::new(),
             can_upgrade_to: Vec::new(),
-            target_types: vec!["ground".into()],
+            target_types: vec![AirGround::Ground],
             harm_target_type: Vec::new(),
             speed_on_terrain: Vec::new(),
             storable_resource_types: Vec::new(),
@@ -1020,11 +918,7 @@ impl UnitType {
             bonuses: Vec::new(),
             resource_type: None,
             effect: None,
-            effect_target: if base == BaseClass::Ability {
-                vec!["self".into()]
-            } else {
-                Vec::new()
-            },
+            effect_target: (base == BaseClass::Ability).then_some(EffectTarget::User),
         }
     }
 }
@@ -1033,6 +927,11 @@ impl UnitType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TypeId(pub u32);
+
+/// A class of the rules: a type, or a class that types derive from, in
+/// definition order. `parameters` is not a class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClassId(u32);
 
 /// An index into the factions of [`Rules`]: the classes whose `class` is
 /// `faction`. Factions are not unit types, so they have no [`TypeId`].
@@ -1112,6 +1011,8 @@ pub struct Rules {
     raw: Definitions,
     types: Vec<UnitType>,
     by_name: BTreeMap<String, TypeId>,
+    classes: Vec<Class>,
+    class_ids: BTreeMap<String, ClassId>,
     factions: Vec<Faction>,
     pub roles: Roles,
     /// What went wrong while reading the rules. The original logs these.
@@ -1126,20 +1027,24 @@ impl Rules {
     ///
     /// Rules over one of the limits ([`crate::defs::MAX_TEXT_BYTES`],
     /// [`MAX_DEFINITIONS`], [`MAX_ANCESTORS`]...) are refused: they load as
-    /// empty rules with a warning that says which limit.
+    /// empty rules with a warning that says which limit. So are rules in
+    /// which a type names a type or a class they lack, with a warning that
+    /// gives the line: the text's, or with several texts, its number too.
     pub fn load<S: AsRef<str>>(texts: &[S]) -> Rules {
         let mut warnings = Vec::new();
         let mut raw = Definitions::default();
+        let mut set_at = SetAt::new();
         let read = check_size(layers_size(texts)).and_then(|()| {
             let s = replace_class_race(&join_layers(texts));
-            read_rules_text(&s, &mut raw, &mut warnings)?;
+            read_rules_text(&s, &mut raw, &mut set_at, &mut warnings)?;
             raw.check_inheritance()
         });
+        let refused = |e: String| Rules {
+            warnings: vec![format!("the rules are refused: {e}")],
+            ..Rules::default()
+        };
         if let Err(e) = read {
-            return Rules {
-                warnings: vec![format!("the rules are refused: {e}")],
-                ..Rules::default()
-            };
+            return refused(e);
         }
         raw.apply_inheritance(true, &mut warnings);
         if let Some(RawValue::Int(n)) = raw.get("parameters", "nb_of_resource_types")
@@ -1150,28 +1055,49 @@ impl Rules {
             ));
         }
         let nb_res = nb_of_resource_types(&raw);
+        let names = Names::new(&raw);
         let mut types = Vec::new();
-        let mut by_name = BTreeMap::new();
         for (name, d) in &mut raw.defs {
-            let class_name = match def_get(d, "class") {
-                Some(RawValue::Words(w)) => w.first().cloned(),
-                _ => None,
+            let Some(base) = base_class(d) else {
+                continue;
             };
-            let Some(base) = class_name.as_deref().and_then(BaseClass::from_name) else {
+            let Some(&class) = names.classes.get(name.as_str()) else {
                 continue;
             };
             interpret(d, base, name, nb_res, &mut warnings);
-            let t = build_type(name, base, d, nb_res, &mut warnings);
-            by_name.insert(name.clone(), TypeId(types.len() as u32));
-            types.push(t);
+            match build_type(name, class, base, d, nb_res, &names, &mut warnings) {
+                Ok(t) => types.push(t),
+                Err(unknown) => {
+                    let unknown = unknown.at_its_source(&raw);
+                    let place = unknown.place(&raw, &set_at, texts);
+                    return refused(format!("{place}{unknown}"));
+                }
+            }
         }
-        check_references(&raw, &types, &by_name, &mut warnings);
+        let Names {
+            types: by_name,
+            classes: class_ids,
+        } = names;
+        let mut classes: Vec<Class> = class_ids
+            .iter()
+            .map(|(name, &id)| (id, name.clone()))
+            .collect::<BTreeMap<_, _>>()
+            .into_values()
+            .map(|name| Class { name, ty: None })
+            .collect();
+        for (i, t) in types.iter().enumerate() {
+            if let Some(c) = classes.get_mut(t.class.0 as usize) {
+                c.ty = Some(TypeId(i as u32));
+            }
+        }
         let factions = read_factions(&raw, &types, &by_name, &mut warnings);
         Rules {
             raw,
             roles: Roles::new(&by_name),
             types,
             by_name,
+            classes,
+            class_ids,
             factions,
             warnings,
         }
@@ -1199,17 +1125,36 @@ impl Rules {
 
     /// The class names in definition order, without `parameters`.
     pub fn classnames(&self) -> Vec<&str> {
-        self.raw
-            .defs
-            .iter()
-            .map(|(n, _)| n.as_str())
-            .filter(|n| *n != "parameters")
-            .collect()
+        self.classes.iter().map(|c| c.name.as_str()).collect()
     }
 
     /// Whether `name` is a class name (`name in rules.classnames()`).
     pub fn has_class(&self, name: &str) -> bool {
-        name != "parameters" && self.raw.index(name).is_some()
+        self.class_ids.contains_key(name)
+    }
+
+    /// The class called `name`.
+    pub fn class_id(&self, name: &str) -> Option<ClassId> {
+        self.class_ids.get(name).copied()
+    }
+
+    /// The name of a class these rules gave.
+    pub fn class_name(&self, class: ClassId) -> &str {
+        self.classes
+            .get(class.0 as usize)
+            .map_or("", |c| c.name.as_str())
+    }
+
+    /// The type a class is, if it is one.
+    pub fn class_type(&self, class: ClassId) -> Option<TypeId> {
+        self.classes.get(class.0 as usize).and_then(|c| c.ty)
+    }
+
+    /// Whether units of type `t` are of `class`: of the type itself or of
+    /// a class it derives from.
+    pub fn is_of_class(&self, t: TypeId, class: ClassId) -> bool {
+        let t = self.ty(t);
+        t.class == class || t.expanded_is_a.contains(&class)
     }
 
     /// The names of the factions, in definition order.
@@ -1306,39 +1251,30 @@ impl Rules {
         }
     }
 
-    /// The classes able to build, train, upgrade to, research or summon
-    /// `type_name`, in definition order.
-    pub fn get_makers(&self, type_name: &str) -> Vec<String> {
-        let t = type_name.to_owned();
-        let mut result = Vec::new();
-        for c in self.classnames() {
-            let Some(uc) = self.unit_type(c) else {
-                continue;
-            };
-            let mut can = [
-                &uc.can_build,
-                &uc.can_train,
-                &uc.can_upgrade_to,
-                &uc.can_research,
-            ]
-            .iter()
-            .any(|l| l.contains(&t));
-            if !can {
-                for ability in &uc.can_use {
-                    if let Some(effect) = self.get_words(ability, "effect")
-                        && effect.first().map(String::as_str) == Some("summon")
-                        && effect.contains(&t)
-                    {
-                        can = true;
-                        break;
-                    }
-                }
-            }
-            if can {
-                result.push(c.to_owned());
-            }
-        }
-        result
+    /// The types able to build, train, upgrade to, research or summon `t`,
+    /// in definition order.
+    pub fn get_makers(&self, t: TypeId) -> Vec<TypeId> {
+        let summons = |ability: &TypeId| {
+            matches!(
+                &self.ty(*ability).effect,
+                Some(Effect::Summon { items, .. }) if items.iter().any(|s| s.ty == t)
+            )
+        };
+        (0..self.types.len())
+            .map(|i| TypeId(i as u32))
+            .filter(|&m| {
+                let mt = self.ty(m);
+                [
+                    &mt.can_build,
+                    &mt.can_train,
+                    &mt.can_upgrade_to,
+                    &mt.can_research,
+                ]
+                .iter()
+                .any(|l| l.contains(&t))
+                    || mt.can_use.iter().any(summons)
+            })
+            .collect()
     }
 
     /// `rules.get("parameters", "minimal_damage")`, or 0.17.
@@ -1350,38 +1286,167 @@ impl Rules {
     }
 }
 
-/// Warns of each name in a type's lists that the rules do not have: a
-/// list of what it makes or uses names types, and a requirement a class
-/// (a type, or a class that types derive from).
-fn check_references(
-    raw: &Definitions,
-    types: &[UnitType],
-    by_name: &BTreeMap<String, TypeId>,
-    warnings: &mut Vec<String>,
-) {
-    for t in types {
-        for name in &t.requirements {
-            if raw.index(name).is_none() {
-                warnings.push(format!(
-                    "error in {}.requirements: {name} doesn't exist",
-                    t.name
-                ));
+/// A class of the rules: its name, and the type it is if it is one.
+#[derive(Clone, Debug)]
+struct Class {
+    name: String,
+    ty: Option<TypeId>,
+}
+
+/// The base class a definition derives from, if it is a type.
+fn base_class(d: &Def) -> Option<BaseClass> {
+    match def_get(d, "class") {
+        Some(RawValue::Words(w)) => w.first().and_then(|c| BaseClass::from_name(c)),
+        _ => None,
+    }
+}
+
+/// The types and the classes of the rules by name, which the properties
+/// of a type name.
+struct Names {
+    types: BTreeMap<String, TypeId>,
+    classes: BTreeMap<String, ClassId>,
+}
+
+impl Names {
+    fn new(raw: &Definitions) -> Names {
+        let mut types = BTreeMap::new();
+        let mut classes = BTreeMap::new();
+        for (name, d) in &raw.defs {
+            if name == "parameters" {
+                continue;
+            }
+            classes.insert(name.clone(), ClassId(classes.len() as u32));
+            if base_class(d).is_some() {
+                types.insert(name.clone(), TypeId(types.len() as u32));
             }
         }
-        let lists = [
-            ("can_build", &t.can_build),
-            ("can_train", &t.can_train),
-            ("can_use", &t.can_use),
-            ("can_research", &t.can_research),
-            ("can_upgrade_to", &t.can_upgrade_to),
-        ];
-        for (attr, list) in lists {
-            for name in list {
-                if !by_name.contains_key(name) {
-                    warnings.push(format!("error in {}.{attr}: {name} doesn't exist", t.name));
-                }
-            }
+        Names { types, classes }
+    }
+
+    fn type_ids(
+        &self,
+        class: &str,
+        property: &str,
+        words: &[String],
+    ) -> Result<Vec<TypeId>, Unknown> {
+        words
+            .iter()
+            .map(|w| {
+                self.types
+                    .get(w)
+                    .copied()
+                    .ok_or_else(|| Unknown::new(class, property, w))
+            })
+            .collect()
+    }
+
+    fn class_id(&self, class: &str, property: &str, word: &str) -> Result<ClassId, Unknown> {
+        self.classes
+            .get(word)
+            .copied()
+            .ok_or_else(|| Unknown::new(class, property, word))
+    }
+
+    fn class_ids(
+        &self,
+        class: &str,
+        property: &str,
+        words: &[String],
+    ) -> Result<Vec<ClassId>, Unknown> {
+        words
+            .iter()
+            .map(|w| self.class_id(class, property, w))
+            .collect()
+    }
+}
+
+/// A name in a property of a type that the rules do not have: the rules
+/// are refused.
+#[derive(Debug)]
+struct Unknown {
+    class: String,
+    property: String,
+    name: String,
+}
+
+impl Unknown {
+    fn new(class: &str, property: &str, name: &str) -> Unknown {
+        Unknown {
+            class: class.to_owned(),
+            property: property.to_owned(),
+            name: name.to_owned(),
         }
+    }
+
+    /// The name as the rules wrote it: an ancestor missing from the
+    /// ancestors the rules list is missing from the `is_a` of the class,
+    /// or of the ancestor, that names it.
+    fn at_its_source(self, raw: &Definitions) -> Unknown {
+        if self.property != "expanded_is_a" {
+            return self;
+        }
+        let words =
+            |class: &str, property: &str| match raw.def(class).and_then(|d| def_get(d, property)) {
+                Some(RawValue::Words(w)) => w.clone(),
+                _ => Vec::new(),
+            };
+        let ancestors = words(&self.class, "expanded_is_a");
+        let source = std::iter::once(&self.class)
+            .chain(&ancestors)
+            .find(|c| words(c, "is_a").contains(&self.name));
+        match source {
+            Some(c) => Unknown::new(c, "is_a", &self.name),
+            None => self,
+        }
+    }
+
+    /// Where the property was written, as `line 12: `, or with several
+    /// texts `text 2, line 12: `: in the class, or else in the nearest of
+    /// its ancestors that has it. Empty if no line has it.
+    fn place<S: AsRef<str>>(&self, raw: &Definitions, set_at: &SetAt, texts: &[S]) -> String {
+        let ancestors = match raw
+            .def(&self.class)
+            .and_then(|d| def_get(d, "expanded_is_a"))
+        {
+            Some(RawValue::Words(w)) => w.clone(),
+            _ => Vec::new(),
+        };
+        let line = std::iter::once(&self.class)
+            .chain(&ancestors)
+            .find_map(|c| set_at.get(&(c.clone(), self.property.clone())));
+        let Some(&line) = line else {
+            return String::new();
+        };
+        if texts.len() < 2 {
+            return format!("line {line}: ");
+        }
+        // The texts are joined with a line break, each line end counted
+        // as one.
+        let mut first = 1usize;
+        for (i, text) in texts.iter().enumerate() {
+            let t = text.as_ref();
+            let lines = t.replace("\r\n", "\n").split(['\n', '\r']).count();
+            if line < first.saturating_add(lines) {
+                return format!(
+                    "text {}, line {}: ",
+                    i.saturating_add(1),
+                    line.saturating_sub(first).saturating_add(1)
+                );
+            }
+            first = first.saturating_add(lines);
+        }
+        format!("line {line}: ")
+    }
+}
+
+impl std::fmt::Display for Unknown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "error in {}.{}: {} doesn't exist",
+            self.class, self.property, self.name
+        )
     }
 }
 
@@ -1508,10 +1573,7 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
         if k == "class" {
             continue;
         }
-        let known = base.has_attribute(&k)
-            || k.strip_suffix("_bonus")
-                .is_some_and(|s| base.has_attribute(s));
-        if !known {
+        if !properties::is_held_by(&k, base) {
             def_remove(d, &k);
             warnings.push(format!(
                 "in {name}: {base:?} doesn't have any attribute called '{k}'"
@@ -1525,14 +1587,18 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
     }
 }
 
+/// The type a class of the rules defines, or the first name in its
+/// properties that the rules do not have.
 fn build_type(
     name: &str,
+    class: ClassId,
     base: BaseClass,
     d: &Def,
     nb_res: usize,
+    names: &Names,
     warnings: &mut Vec<String>,
-) -> UnitType {
-    let mut t = UnitType::new(name, base, nb_res);
+) -> Result<UnitType, Unknown> {
+    let mut t = UnitType::new(name, class, base, nb_res);
     for (k, v) in d {
         let k = k.as_str();
         let words = || v.words().map(<[String]>::to_vec).unwrap_or_default();
@@ -1550,19 +1616,46 @@ fn build_type(
                     t.cost = l.clone();
                 }
             }
-            "requirements" => t.requirements = words(),
-            "is_a" => t.is_a = words(),
-            "expanded_is_a" => t.expanded_is_a = words(),
-            "can_build" => t.can_build = words(),
-            "can_train" => t.can_train = words(),
-            "can_use" => t.can_use = words(),
-            "can_research" => t.can_research = words(),
-            "can_upgrade_to" => t.can_upgrade_to = words(),
-            "target_types" => t.target_types = words(),
-            "harm_target_type" => t.harm_target_type = words(),
+            "requirements" => t.requirements = names.class_ids(name, k, &words())?,
+            "is_a" => t.is_a = names.class_ids(name, k, &words())?,
+            "expanded_is_a" => t.expanded_is_a = names.class_ids(name, k, &words())?,
+            "can_build" => t.can_build = names.type_ids(name, k, &words())?,
+            "can_train" => t.can_train = names.type_ids(name, k, &words())?,
+            "can_use" => t.can_use = names.type_ids(name, k, &words())?,
+            "can_research" => t.can_research = names.type_ids(name, k, &words())?,
+            "can_upgrade_to" => t.can_upgrade_to = names.type_ids(name, k, &words())?,
+            "target_types" => {
+                t.target_types = known_words(name, k, &words(), warnings, |w| match w {
+                    "ground" => Some(AirGround::Ground),
+                    "air" => Some(AirGround::Air),
+                    _ => None,
+                });
+            }
+            "harm_target_type" => {
+                t.harm_target_type = known_words(name, k, &words(), warnings, HarmTarget::parse);
+            }
             "speed_on_terrain" => t.speed_on_terrain = words(),
-            "effect" => t.effect = Some(words()),
-            "effect_target" => t.effect_target = words(),
+            "effect" => {
+                let w = words();
+                t.effect = Effect::parse(base, &w, |n| names.types.get(n).copied())
+                    .map_err(|n| Unknown::new(name, k, &n))?;
+                if t.effect.is_none() {
+                    warnings.push(format!(
+                        "in {name}: the effect '{}' cannot be applied",
+                        w.join(" ")
+                    ));
+                }
+            }
+            "effect_target" => {
+                let w = words();
+                t.effect_target = EffectTarget::parse(&w);
+                if t.effect_target.is_none() {
+                    warnings.push(format!(
+                        "in {name}: unknown effect_target '{}'",
+                        w.join(" ")
+                    ));
+                }
+            }
             "storable_resource_types" | "storage_bonus" => {
                 let l = match v {
                     RawValue::IntList(l) => l.clone(),
@@ -1576,10 +1669,14 @@ fn build_type(
             }
             "damage_vs" | "armor_vs" => {
                 if let RawValue::Versus(m) = v {
+                    let m = m
+                        .iter()
+                        .map(|(c, n)| Ok((names.class_id(name, k, c)?, *n)))
+                        .collect::<Result<_, Unknown>>()?;
                     if k == "damage_vs" {
-                        t.damage_vs = m.clone();
+                        t.damage_vs = m;
                     } else {
-                        t.armor_vs = m.clone();
+                        t.armor_vs = m;
                     }
                 }
             }
@@ -1590,13 +1687,16 @@ fn build_type(
                 }
             }
             _ => {
-                if let Some(stat) = t.stats.get_mut(k) {
-                    *stat = match v {
+                if let Some(stat) = Stat::parse(k) {
+                    let value = match v {
                         RawValue::Int(n) => *n,
                         other => i64::from(other.is_truthy()),
                     };
-                } else if let (Some(s), RawValue::Int(n)) = (k.strip_suffix("_bonus"), v) {
-                    t.bonuses.push((s.to_owned(), *n));
+                    t.stats.set(stat, value);
+                } else if let (Some(s), RawValue::Int(n)) =
+                    (k.strip_suffix("_bonus").and_then(Stat::parse), v)
+                {
+                    t.bonuses.push((s, *n));
                 } else {
                     warnings.push(format!(
                         "in {name}: the property '{k}' is not supported by this port"
@@ -1605,46 +1705,26 @@ fn build_type(
             }
         }
     }
-    t.effect = readable_effect(name, base, t.effect.take(), warnings);
-    t
+    Ok(t)
 }
 
-/// The effect of an upgrade or an ability, if the simulation can apply it.
-/// One it cannot read is dropped with a warning: an upgrade without an
-/// effect has none, and an ability without one is never allowed.
-fn readable_effect(
+/// The words of a list property that name a kind `parse` knows, in order.
+/// Each other word is dropped with a warning: it never matched anything.
+fn known_words<T>(
     name: &str,
-    base: BaseClass,
-    effect: Option<Vec<String>>,
+    property: &str,
+    words: &[String],
     warnings: &mut Vec<String>,
-) -> Option<Vec<String>> {
-    let effect = effect?;
-    let stat = |i: usize| {
-        effect
-            .get(i)
-            .is_some_and(|s| Stats::default().get(s).is_some())
-    };
-    let integer = |i: usize| effect.get(i).is_some_and(|s| py_int(s).is_ok());
-    let readable = match (base, effect.first().map(String::as_str)) {
-        (BaseClass::Upgrade, Some("bonus")) => {
-            stat(1) && integer(2) && (effect.len() < 4 || integer(3))
+    parse: impl Fn(&str) -> Option<T>,
+) -> Vec<T> {
+    let mut known = Vec::new();
+    for w in words {
+        match parse(w) {
+            Some(k) => known.push(k),
+            None => warnings.push(format!("in {name}: unknown {property} '{w}'")),
         }
-        (BaseClass::Upgrade, Some("apply_bonus")) => stat(1),
-        (BaseClass::Upgrade, _) => false,
-        (BaseClass::Ability, Some("summon" | "raise_dead")) => {
-            effect.get(1).is_some_and(|s| to_int(s).is_ok())
-        }
-        (BaseClass::Ability, Some("resurrection")) => integer(1),
-        _ => true,
-    };
-    if readable {
-        return Some(effect);
     }
-    warnings.push(format!(
-        "in {name}: the effect '{}' cannot be applied",
-        effect.join(" ")
-    ));
-    None
+    known
 }
 
 /// The computer player scripts of `ai.txt`, by name, in definition order.
@@ -1742,7 +1822,9 @@ mod tests {
         ]);
         assert_eq!(r.unit_type("c").unwrap().stats.hp_max, 3000);
         assert_eq!(r.unit_type("c").unwrap().stats.speed, 2000);
-        assert_eq!(r.unit_type("c").unwrap().expanded_is_a, ["b", "a"]);
+        let ancestors = &r.unit_type("c").unwrap().expanded_is_a;
+        let names: Vec<&str> = ancestors.iter().map(|&c| r.class_name(c)).collect();
+        assert_eq!(names, ["b", "a"]);
         assert_eq!(r.get("c", "hp_max"), Some(RawValue::Int(3000)));
     }
 
@@ -1763,17 +1845,108 @@ mod tests {
     fn effect_bonus_values_of_decimal_stats_are_converted() {
         let r = Rules::load(&["def u\nclass upgrade\neffect bonus damage 1.5\n"]);
         assert_eq!(
-            r.unit_type("u").unwrap().effect.as_deref(),
-            Some(&["bonus".to_owned(), "damage".to_owned(), "1500".to_owned()][..])
+            r.unit_type("u").unwrap().effect,
+            Some(Effect::Bonus {
+                stat: Stat::Damage,
+                value: 1500,
+                per_level: 0
+            })
+        );
+    }
+
+    #[test]
+    fn each_kind_of_effect_is_read_with_its_arguments() {
+        let r = Rules::load(&["def u\nclass upgrade\neffect apply_bonus armor\n\
+             def s\nclass ability\neffect summon 120 2 dragon\n\
+             def d\nclass ability\neffect raise_dead 600 zombie\n\
+             def r\nclass ability\neffect resurrection 6\n\
+             def c\nclass ability\neffect conversion\n\
+             def dragon\nclass soldier\ndef zombie\nclass soldier\n"]);
+        let effect = |name: &str| r.unit_type(name).unwrap().effect.clone().unwrap();
+        assert_eq!(effect("u"), Effect::ApplyBonus(Stat::Armor));
+        assert_eq!(
+            effect("s"),
+            Effect::Summon {
+                decay: 120_000,
+                items: vec![Summoned {
+                    count: 2,
+                    ty: r.type_id("dragon").unwrap()
+                }]
+            }
+        );
+        assert_eq!(
+            effect("d"),
+            Effect::RaiseDead {
+                decay: 600_000,
+                items: vec![Summoned {
+                    count: 1,
+                    ty: r.type_id("zombie").unwrap()
+                }]
+            }
+        );
+        assert_eq!(effect("r"), Effect::Resurrection { count: 6 });
+        assert_eq!(effect("c"), Effect::Conversion);
+        assert_eq!(r.warnings, Vec::<String>::new());
+    }
+
+    /// An effect the simulation cannot apply: of an unknown kind, of the
+    /// other base class, or with an argument it cannot read.
+    #[test]
+    fn an_effect_that_cannot_be_applied_is_dropped_with_a_warning() {
+        let r = Rules::load(&["def a\nclass ability\neffect fly\n\
+             def b\nclass ability\neffect bonus armor 1\n\
+             def c\nclass upgrade\neffect recall\n\
+             def d\nclass upgrade\neffect bonus nothing 1\n\
+             def e\nclass ability\neffect summon soon dragon\n\
+             def f\nclass ability\neffect resurrection 1.5\n"]);
+        for name in ["a", "b", "c", "d", "e", "f"] {
+            assert_eq!(r.unit_type(name).unwrap().effect, None, "{name}");
+        }
+        assert_eq!(
+            r.warnings,
+            [
+                "in a: the effect 'fly' cannot be applied",
+                "in b: the effect 'bonus armor 1000' cannot be applied",
+                "in c: the effect 'recall' cannot be applied",
+                "in d: the effect 'bonus nothing 1' cannot be applied",
+                "in e: the effect 'summon soon dragon' cannot be applied",
+                "in f: the effect 'resurrection 1.5' cannot be applied",
+            ]
+        );
+    }
+
+    #[test]
+    fn target_kinds_are_read_and_an_unknown_one_is_dropped_with_a_warning() {
+        let r = Rules::load(&[
+            "def a\nclass soldier\ntarget_types air sea\nharm_target_type undead dragon\n\
+             def s\nclass ability\neffect recall\neffect_target ask\n\
+             def z\nclass ability\neffect recall\neffect_target there\n",
+        ]);
+        let a = r.unit_type("a").unwrap();
+        assert_eq!(a.target_types, [AirGround::Air]);
+        assert_eq!(a.harm_target_type, [HarmTarget::Undead]);
+        assert_eq!(
+            r.unit_type("s").unwrap().effect_target,
+            Some(EffectTarget::Ask)
+        );
+        assert_eq!(r.unit_type("z").unwrap().effect_target, None);
+        assert_eq!(
+            r.warnings,
+            [
+                "in a: unknown target_types 'sea'",
+                "in a: unknown harm_target_type 'dragon'",
+                "in z: unknown effect_target 'there'"
+            ]
         );
     }
 
     #[test]
     fn damage_vs_lists_targets_before_their_value() {
-        let r = Rules::load(&["def p\nclass soldier\ndamage_vs a b 2 c 3\n"]);
+        let r = Rules::load(&["def p\nclass soldier\ndamage_vs a b 2 c 3\ndef a\ndef b\ndef c\n"]);
+        let c = |name: &str| r.class_id(name).unwrap();
         assert_eq!(
             r.unit_type("p").unwrap().damage_vs,
-            [("a".into(), 2000), ("b".into(), 2000), ("c".into(), 3000)]
+            [(c("a"), 2000), (c("b"), 2000), (c("c"), 3000)]
         );
     }
 
@@ -1878,15 +2051,12 @@ mod tests {
         ]);
         assert_eq!(r.unit_type("boost").unwrap().effect, None);
         assert_eq!(
-            r.unit_type("plus").unwrap().effect.as_deref(),
-            Some(
-                &[
-                    "bonus".to_owned(),
-                    "collision".to_owned(),
-                    "1".to_owned(),
-                    "2".to_owned()
-                ][..]
-            )
+            r.unit_type("plus").unwrap().effect,
+            Some(Effect::Bonus {
+                stat: Stat::Collision,
+                value: 1,
+                per_level: 2
+            })
         );
         assert_eq!(
             r.warnings,
@@ -1916,21 +2086,68 @@ mod tests {
         assert_eq!(ai.get("easy").unwrap().lines(), ["d"]);
     }
 
+    /// A requirement, a parent or what a unit of one type is against may
+    /// name a class that types derive from; what it makes or uses names a
+    /// type; an equivalent of a faction that names no type is left out.
     #[test]
-    fn a_type_named_that_the_rules_lack_is_a_warning() {
+    fn a_type_names_classes_and_types_of_the_rules() {
         let r = Rules::load(&[
-            "def a\nclass soldier\nrequirements b z footsoldier\ncan_use y\ndef footsoldier\n\
-             def b\nclass building\ncan_train a x\n\
+            "def a\nclass soldier\nrequirements b footsoldier\nis_a footsoldier\n\
+             damage_vs footsoldier 2\ndef footsoldier\n\
+             def b\nclass building\ncan_train a\n\
              def f\nclass faction\na b\nb w\neasy f_easy\n",
+        ]);
+        let a = r.unit_type("a").unwrap();
+        let footsoldier = r.class_id("footsoldier").unwrap();
+        assert_eq!(a.requirements, [r.class_id("b").unwrap(), footsoldier]);
+        assert_eq!(a.is_a, [footsoldier]);
+        assert_eq!(a.damage_vs, [(footsoldier, 2000)]);
+        assert_eq!(r.class_type(footsoldier), None);
+        assert!(r.is_of_class(r.type_id("a").unwrap(), footsoldier));
+        assert_eq!(
+            r.unit_type("b").unwrap().can_train,
+            [r.type_id("a").unwrap()]
+        );
+        assert_eq!(r.warnings, ["error in f.b: w doesn't exist"]);
+    }
+
+    /// A name in a type's properties that the rules lack refuses the
+    /// rules, with the line that wrote it, as the rules over a limit are.
+    #[test]
+    fn a_type_named_that_the_rules_lack_refuses_the_rules_with_its_line() {
+        assert_eq!(
+            refused("def a\nclass soldier\n\n; comment\nrequirements b z\ndef b\nclass soldier\n"),
+            "the rules are refused: line 5: error in a.requirements: z doesn't exist"
+        );
+        assert_eq!(
+            refused("def a\nclass soldier\ncan_use y\n"),
+            "the rules are refused: line 3: error in a.can_use: y doesn't exist"
+        );
+        assert_eq!(
+            refused("def a\nclass ability\neffect summon 10 2 \\\n ghost\n"),
+            "the rules are refused: line 3: error in a.effect: ghost doesn't exist"
+        );
+        assert_eq!(
+            refused("def a\nclass soldier\nis_a b\n"),
+            "the rules are refused: line 3: error in a.is_a: b doesn't exist"
+        );
+        // A parent's parent that the rules lack: the line that names it.
+        assert_eq!(
+            refused("def child\nclass soldier\nis_a parent\ndef parent\nis_a missing\n"),
+            "the rules are refused: line 5: error in parent.is_a: missing doesn't exist"
+        );
+        // Inherited, it is the parent's line; in a later text, its own.
+        assert_eq!(
+            refused("def a\nclass soldier\ncan_train x\ndef c\nis_a a\n"),
+            "the rules are refused: line 3: error in a.can_train: x doesn't exist"
+        );
+        let r = Rules::load(&[
+            "def a\nclass soldier\n",
+            "def b\nclass soldier\ndamage_vs q 2\n",
         ]);
         assert_eq!(
             r.warnings,
-            [
-                "error in a.requirements: z doesn't exist",
-                "error in a.can_use: y doesn't exist",
-                "error in b.can_train: x doesn't exist",
-                "error in f.b: w doesn't exist",
-            ]
+            ["the rules are refused: text 2, line 3: error in b.damage_vs: q doesn't exist"]
         );
     }
 

@@ -10,9 +10,11 @@ use crate::entity::{
     AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
 };
 use crate::events::{EntityEvent, Event, Reason};
-use crate::nofloat::{py_int, square_of_distance, to_int};
+use crate::nofloat::{py_int, square_of_distance};
 use crate::questions;
-use crate::rules::{AirGround, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{
+    AirGround, ClassId, Effect, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL,
+};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// The most orders a unit can queue.
@@ -449,7 +451,7 @@ impl Request {
     fn lacks_its_target(&self, w: &World) -> bool {
         let asks = || {
             let ability = self.type_name.as_deref().and_then(|n| w.rules.type_id(n));
-            ability.is_some_and(|t| w.rules.ty(t).effect_target == ["ask"])
+            ability.is_some_and(|t| w.rules.ty(t).effect_target == Some(EffectTarget::Ask))
         };
         match self.keyword {
             Keyword::JoinGroup => self.arg.is_none(),
@@ -1116,9 +1118,9 @@ pub struct OrderInfo {
 pub struct MenuEntry {
     pub keyword: Keyword,
     pub type_id: Option<TypeId>,
-    /// The requirements of the type, by the class names the rules give
-    /// them: a type, or a class that types derive from.
-    pub requirements: Vec<String>,
+    /// The requirements of the type: classes of the rules, each a type or
+    /// a class that types derive from.
+    pub requirements: Vec<ClassId>,
 }
 
 impl MenuEntry {
@@ -1731,7 +1733,7 @@ impl World {
                 let repairable = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
-                    .is_some_and(|e| e.stats.is_repairable != 0);
+                    .is_some_and(|e| e.stats.is_repairable);
                 self.set_target(unit, uid, t);
                 if !repairable {
                     self.mark_as_impossible(unit, uid, None);
@@ -1794,7 +1796,7 @@ impl World {
         };
         let mut t = self.resolve_given(unit, aim)?;
         let cannot = Some(Reason::CannotBuildHere);
-        if bt.stats.is_buildable_on_exits_only != 0 {
+        if bt.stats.is_buildable_on_exits_only {
             let is_exit = t
                 .as_ref()
                 .and_then(|t| self.t_entity(t))
@@ -1817,13 +1819,13 @@ impl World {
                 self.mark_as_impossible(unit, uid, cannot);
                 return Ok(());
             }
-        } else if bt.stats.is_buildable_near_water_only != 0
+        } else if bt.stats.is_buildable_near_water_only
             && !t.as_ref().is_some_and(|t| self.target_is_near_water(t))
         {
             self.set_target(unit, uid, t);
             self.mark_as_impossible(unit, uid, cannot);
             return Ok(());
-        } else if bt.stats.is_buildable_anywhere != 0 {
+        } else if bt.stats.is_buildable_anywhere {
             t = match &t {
                 Some(t) => self.target_any_land(t),
                 None => None,
@@ -1889,7 +1891,7 @@ impl World {
         let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
-        if t.effect_target == ["ask"] {
+        if t.effect_target == Some(EffectTarget::Ask) {
             let target = match aim.given {
                 Some(given) => self.resolve_target(p, &given),
                 None => None,
@@ -1900,7 +1902,7 @@ impl World {
                 self.mark_as_impossible(unit, uid, None);
                 return Ok(());
             }
-        } else if t.effect_target == ["random"] {
+        } else if t.effect_target == Some(EffectTarget::Random) {
             let i = self
                 .random
                 .choice_index(self.squares.len())
@@ -1910,7 +1912,7 @@ impl World {
                 uid,
                 Some(Target::Square(crate::entity::SquareId(i as u32))),
             );
-        } else if t.effect_target == ["self"] {
+        } else if t.effect_target == Some(EffectTarget::User) {
             self.set_target(unit, uid, Some(Target::Entity(unit)));
         }
         if self.c(unit).map_or(0, |c| c.mana) < t.stats.mana_cost {
@@ -1966,7 +1968,7 @@ impl World {
                 let t = self.target_of(unit, uid);
                 // A unit inside another is out of reach.
                 let vulnerable = t.as_ref().and_then(|t| self.t_entity(t)).is_some_and(|e| {
-                    e.stats.is_vulnerable != 0 && matches!(e.place, Some(Place::Square(_)))
+                    e.stats.is_vulnerable && matches!(e.place, Some(Place::Square(_)))
                 });
                 if !vulnerable {
                     self.mark_as_impossible(unit, uid, None);
@@ -2069,7 +2071,7 @@ impl World {
                             // no hit points has 0.
                             let e = &m.snapshot;
                             !e.is_building_site()
-                                && e.stats.is_repairable != 0
+                                && e.stats.is_repairable
                                 && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
                         }
                         _ => false,
@@ -2387,7 +2389,7 @@ impl World {
             Product::Train(type_id) => {
                 let t = self.rules.ty(type_id).clone();
                 let found = if t.airground_type == AirGround::Water
-                    && self.e(unit).stats.is_buildable_near_water_only != 0
+                    && self.e(unit).stats.is_buildable_near_water_only
                 {
                     match self.nearest_water(unit) {
                         None => None,
@@ -2438,10 +2440,9 @@ impl World {
                     (c.hp, c.rallying_point, c.group.clone())
                 });
                 let hp_max = e.stats.hp_max;
-                let leave_meadow =
-                    e.stats.is_buildable_anywhere == 0 && t.stats.is_buildable_anywhere != 0;
+                let leave_meadow = !e.stats.is_buildable_anywhere && t.stats.is_buildable_anywhere;
                 let consume_meadow =
-                    e.stats.is_buildable_anywhere != 0 && t.stats.is_buildable_anywhere == 0;
+                    e.stats.is_buildable_anywhere && !t.stats.is_buildable_anywhere;
                 let blocked_exit = e.blocked_exit();
                 let mut meadow = None;
                 if consume_meadow {
@@ -2465,15 +2466,10 @@ impl World {
                 // The old building frees room for the new one only in its
                 // own layer: a mod's new type may be in another, and find
                 // that layer full.
-                let room_freed = e.stats.collision != 0 && e.airground_type == t.airground_type;
+                let room_freed = e.stats.collision && e.airground_type == t.airground_type;
                 if !room_freed
                     && self
-                        .initial_position(
-                            t.stats.collision != 0,
-                            t.airground_type,
-                            place,
-                            Some((x, y)),
-                        )
+                        .initial_position(t.stats.collision, t.airground_type, place, Some((x, y)))
                         .is_err()
                 {
                     self.order_cancel(unit, o, true);
@@ -2515,7 +2511,7 @@ impl World {
                     } else {
                         let _ = self.move_to(o, Some(place), Some((x, y)), 90);
                         if self.e(o).place == Some(Place::Inside(unit)) {
-                            self.em(o).stats.collision = 0;
+                            self.em(o).stats.collision = false;
                             let _ = self.move_to(o, Some(place), Some((x, y)), 90);
                         }
                         self.notify(o, EntityEvent::Exit, false);
@@ -2781,7 +2777,7 @@ impl World {
             },
         };
         let is_exit = target.entity_id().is_some_and(|e| self.e(e).is_exit());
-        let remember_land = !(is_exit || bt.stats.is_buildable_anywhere != 0);
+        let remember_land = !(is_exit || bt.stats.is_buildable_anywhere);
         // The land of a building that needs it is a meadow: a remembered
         // one was made its entity above.
         if remember_land {
@@ -2846,8 +2842,7 @@ impl World {
         }
         let t = self.rules.ty(ability).clone();
         let effect = t.effect.clone().ok_or(Invariant::UnknownAbility)?;
-        let kind = effect.first().cloned().unwrap_or_default();
-        match self.use_need(unit, uid, &kind, &t)? {
+        match self.use_need(unit, uid, &effect, &t)? {
             UseNeed::Effect => {}
             UseNeed::Nothing => {
                 self.mark_as_complete(unit, uid);
@@ -2871,7 +2866,7 @@ impl World {
             return Ok(());
         }
         self.stop(unit);
-        if kind == "conversion" && matches!(target, Target::Memory(_)) {
+        if effect == Effect::Conversion && matches!(target, Target::Memory(_)) {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         }
@@ -2879,14 +2874,14 @@ impl World {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughMana));
             return Ok(());
         }
-        if !self.use_effect_execute(unit, uid, &kind, &t, &effect)? {
+        if !self.use_effect_execute(unit, uid, &effect, &t)? {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
             return Ok(());
         }
         if let Some(c) = self.cm(unit) {
             c.mana -= t.stats.mana_cost;
         }
-        let universal = t.stats.universal_notification != 0;
+        let universal = t.stats.universal_notification;
         self.notify(unit, EntityEvent::UseComplete(t.name.clone()), universal);
         self.mark_as_complete(unit, uid);
         Ok(())
@@ -2895,36 +2890,39 @@ impl World {
     fn effect_targets(
         &self,
         unit: EntityId,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
         target: &Target,
     ) -> Vec<EntityId> {
         let p = self.e(unit).player();
         let r = t.stats.effect_radius;
-        match kind {
-            "teleportation" => {
+        match effect {
+            Effect::Teleportation => {
                 let (x, y) = (self.e(unit).x, self.e(unit).y);
                 self.get_objects(x, y, r, |e| {
-                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
-            "recall" => {
+            Effect::Recall => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
-                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
-            "raise_dead" => {
+            Effect::RaiseDead { .. } => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| e.is_corpse())
             }
-            "resurrection" => {
+            Effect::Resurrection { .. } => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
                     e.corpse().is_some_and(|c| c.unit.kind.player == p)
                 })
             }
-            _ => Vec::new(),
+            Effect::Bonus { .. }
+            | Effect::ApplyBonus(_)
+            | Effect::Conversion
+            | Effect::Summon { .. } => Vec::new(),
         }
     }
 
@@ -2934,13 +2932,13 @@ impl World {
         &mut self,
         unit: EntityId,
         uid: u64,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
     ) -> Res<UseNeed> {
         let target = self.target_of(unit, uid).expect("checked");
-        match kind {
-            "teleportation" => {
-                let units = self.effect_targets(unit, kind, t, &target);
+        match effect {
+            Effect::Teleportation => {
+                let units = self.effect_targets(unit, effect, t, &target);
                 let mut types: Vec<AirGround> = Vec::new();
                 for u in &units {
                     let a = self.e(*u).airground_type;
@@ -2970,8 +2968,8 @@ impl World {
                 }
                 Ok(UseNeed::Effect)
             }
-            "recall" => {
-                let units = self.effect_targets(unit, kind, t, &target);
+            Effect::Recall => {
+                let units = self.effect_targets(unit, effect, t, &target);
                 if units.is_empty() {
                     return Ok(UseNeed::Nothing);
                 }
@@ -2994,17 +2992,18 @@ impl World {
                 }
                 Ok(UseNeed::Effect)
             }
-            "conversion" if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
-            "conversion" => Ok(UseNeed::Nothing),
-            "summon" => Ok(UseNeed::Effect),
-            "raise_dead" | "resurrection" => {
-                if self.effect_targets(unit, kind, t, &target).is_empty() {
+            Effect::Conversion if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
+            Effect::Conversion => Ok(UseNeed::Nothing),
+            Effect::Summon { .. } => Ok(UseNeed::Effect),
+            Effect::RaiseDead { .. } | Effect::Resurrection { .. } => {
+                if self.effect_targets(unit, effect, t, &target).is_empty() {
                     Ok(UseNeed::Nothing)
                 } else {
                     Ok(UseNeed::Effect)
                 }
             }
-            _ => Err(Invariant::UnknownAbility.into()),
+            // An upgrade's effect: the order is not allowed.
+            Effect::Bonus { .. } | Effect::ApplyBonus(_) => Err(Invariant::UnknownAbility.into()),
         }
     }
 
@@ -3012,34 +3011,28 @@ impl World {
         &mut self,
         unit: EntityId,
         uid: u64,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
-        effect: &[String],
     ) -> Res<bool> {
         let target = self.target_of(unit, uid).expect("checked");
         let Some(p) = self.e(unit).player() else {
             return Ok(true);
         };
-        // The rules drop an effect whose numbers they cannot read.
-        let decay = || -> Res<i64> {
-            let s = effect.get(1).ok_or(Invariant::EffectUnread)?;
-            Ok(to_int(s).map_err(|_| Invariant::EffectUnread)?)
-        };
-        match kind {
-            "teleportation" => {
+        match effect {
+            Effect::Teleportation => {
                 let Target::Square(s) = target else {
                     return Ok(true);
                 };
-                for u in self.effect_targets(unit, kind, t, &Target::Entity(unit)) {
+                for u in self.effect_targets(unit, effect, t, &Target::Entity(unit)) {
                     let a = self.e(u).airground_type;
                     if self.can_receive(s, a, None) {
                         let _ = self.move_to(u, Some(Place::Square(s)), None, 90);
                     }
                 }
             }
-            "recall" => {
+            Effect::Recall => {
                 let nearest_water = self.nearest_water(unit);
-                for u in self.effect_targets(unit, kind, t, &target) {
+                for u in self.effect_targets(unit, effect, t, &target) {
                     let Some(Place::Square(mut place)) = self.e(unit).place else {
                         continue;
                     };
@@ -3055,31 +3048,23 @@ impl World {
                     }
                 }
             }
-            "conversion" => {
+            Effect::Conversion => {
                 if let Some(id) = target.entity_id() {
                     self.set_player(id, Some(p));
                 }
             }
-            "summon" => {
-                let d = decay()?;
-                let items = effect.get(2..).unwrap_or(&[]).to_vec();
-                self.lang_add_units(p, &items, Some(&target), d, None, false);
+            Effect::Summon { decay, items } => {
+                self.add_summoned(p, items, Some(&target), *decay, None);
             }
-            "raise_dead" => {
-                let d = decay()?;
+            Effect::RaiseDead { decay, items } => {
                 let (tx, ty) = self.t_xy(&target);
-                let mut corpses = self.effect_targets(unit, kind, t, &target);
+                let mut corpses = self.effect_targets(unit, effect, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
-                let items = effect.get(2..).unwrap_or(&[]).to_vec();
-                self.lang_add_units(p, &items, None, d, Some(corpses), false);
+                self.add_summoned(p, items, None, *decay, Some(corpses));
             }
-            "resurrection" => {
-                let n = effect
-                    .get(1)
-                    .and_then(|s| crate::nofloat::py_int(s).ok())
-                    .ok_or(Invariant::EffectUnread)?;
+            &Effect::Resurrection { count: n } => {
                 let (tx, ty) = self.t_xy(&target);
-                let mut corpses = self.effect_targets(unit, kind, t, &target);
+                let mut corpses = self.effect_targets(unit, effect, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
                 let mut risen = false;
                 for _ in 0..n {

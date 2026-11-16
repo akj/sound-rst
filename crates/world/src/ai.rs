@@ -27,7 +27,7 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, EntityClass, Role, TypeId};
+use crate::rules::{AirGround, ClassId, Effect, EffectTarget, EntityClass, Role, TypeId};
 use crate::world::TPlace;
 
 mod door;
@@ -558,28 +558,24 @@ impl Door<'_> {
                     continue;
                 }
                 let rules = self.rules();
-                let Some(effect) = self.effect(a) else {
-                    continue;
-                };
-                let mut words = effect.iter().map(String::as_str);
-                match words.next() {
-                    None => continue,
-                    Some("raise_dead") => raise_dead.push((u, a)),
-                    Some("teleportation") => teleportation.push((u, a)),
-                    Some("summon") => {
-                        for item in words {
-                            if rules.get_is_truthy(item, "harm_level") {
+                match &rules.ty(a).effect {
+                    Some(Effect::RaiseDead { .. }) => raise_dead.push((u, a)),
+                    Some(Effect::Teleportation) => teleportation.push((u, a)),
+                    Some(Effect::Summon { items, .. }) => {
+                        for item in items {
+                            let stats = &rules.ty(item.ty).stats;
+                            if stats.harm_level != 0 {
                                 cataclysm.push((u, a));
                             }
-                            if rules.get_is_truthy(item, "is_a_detector") {
+                            if stats.is_a_detector {
                                 detector.push((u, a));
                             }
-                            if rules.get_is_truthy(item, "damage") {
+                            if stats.damage != 0 {
                                 summon.push((u, a));
                             }
                         }
                     }
-                    Some(_) => {}
+                    _ => {}
                 }
             }
         }
@@ -968,15 +964,11 @@ impl Door<'_> {
                 }
             }
         }
-        let Some(effect) = self.effect(a) else {
-            return false;
-        };
-        let mut words = effect.iter();
-        if words.next().map(String::as_str) == Some("summon") {
-            for item in words {
-                if self.rules().get_is_truthy(item, "harm_level") {
+        if let Some(Effect::Summon { items, .. }) = self.rules().ty(a).effect.clone() {
+            for item in &items {
+                if self.rules().ty(item.ty).stats.harm_level != 0 {
                     for &t in &types {
-                        if self.can_harm(item, t) {
+                        if self.can_harm(item.ty, t) {
                             return true;
                         }
                     }
@@ -1140,11 +1132,7 @@ impl Door<'_> {
                 .type_id()
                 .map(|t| self.rules().ty(t).can_research.clone())
                 .unwrap_or_default();
-            for name in researchable {
-                // The rules warned of a name of no type when they loaded.
-                let Some(t) = self.rules().type_id(&name) else {
-                    continue;
-                };
+            for t in researchable {
                 let cost = self.rules().ty(t).cost.clone();
                 if self.future_nb(&Sel::List(vec![t])) == 0
                     && self.missing_resources(&cost).is_empty()
@@ -1583,11 +1571,11 @@ impl Door<'_> {
         false
     }
 
-    fn get_requirements(&mut self, requirements: &[String], depth: usize) -> Planned<bool> {
+    fn get_requirements(&mut self, requirements: &[ClassId], depth: usize) -> Planned<bool> {
         let depth = deeper(depth)?;
-        for r in requirements {
+        for &r in requirements {
             if !self.has(r) {
-                let t = self.rules().type_id(r);
+                let t = self.rules().class_type(r);
                 return self.get_types(1, t.into_iter().collect(), depth);
             }
         }
@@ -1619,8 +1607,7 @@ impl Door<'_> {
         }
         let mc = self.rules().ty(maker).clone();
         let maker_sel = Sel::One(maker);
-        let name = t.name.clone();
-        if mc.can_upgrade_to.contains(&name) {
+        if mc.can_upgrade_to.contains(&made) {
             if self.nb(&maker_sel) >= nb {
                 let cost: Vec<i64> = t
                     .cost
@@ -1634,7 +1621,7 @@ impl Door<'_> {
             } else {
                 self.get_types(nb, vec![maker], depth)?;
             }
-        } else if mc.can_build.contains(&name) {
+        } else if mc.can_build.contains(&made) {
             if !self.gather(&t.cost, t.stats.food_cost, depth)? {
                 return Ok(());
             }
@@ -1670,7 +1657,7 @@ impl Door<'_> {
             if let Some(id) = meadow.as_ref().and_then(Mark::entity_id) {
                 self.order(4, maker_sel, Task::Build(made, id), true)?;
             }
-        } else if mc.can_train.contains(&name) {
+        } else if mc.can_train.contains(&made) {
             let nb_maker = self.nb(&maker_sel);
             if self.nb(&Sel::Workers) != 0
                 && nb > nb_maker * 3
@@ -1682,18 +1669,19 @@ impl Door<'_> {
             if self.gather(&t.cost, t.stats.food_cost, depth)? {
                 self.order(nb, maker_sel, Task::Train(made), false)?;
             }
-        } else if mc.can_research.contains(&name) {
+        } else if mc.can_research.contains(&made) {
             if self.gather(&t.cost, t.stats.food_cost, depth)? {
                 self.order(1, maker_sel, Task::Research(made), false)?;
             }
         } else {
             for a in self.listed(Some(maker), |t| &t.can_use) {
-                let Some(effect) = self.effect(a) else {
-                    continue;
-                };
-                if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
+                let summons = matches!(
+                    &self.rules().ty(a).effect,
+                    Some(Effect::Summon { items, .. }) if items.iter().any(|s| s.ty == made)
+                );
+                if summons {
                     let mut target = None;
-                    if self.rules().ty(a).effect_target == ["ask"] {
+                    if self.rules().ty(a).effect_target == Some(EffectTarget::Ask) {
                         // The maker is one of its units: an upgrade, which a
                         // player has without a unit, makes nothing.
                         let Some(&first) = self.units().first() else {
@@ -1712,33 +1700,17 @@ impl Door<'_> {
     /// The types able to build, train, upgrade to, research or summon `t`,
     /// in definition order.
     fn makers(&self, t: TypeId) -> Vec<TypeId> {
-        let rules = self.rules();
-        rules
-            .get_makers(&rules.ty(t).name)
-            .iter()
-            .filter_map(|m| rules.type_id(m))
-            .collect()
+        self.rules().get_makers(t)
     }
 
-    /// The types a list of a unit's type names, such as what it can use;
-    /// a name of no type is left out.
+    /// A list of a unit's type, such as what it can use.
     fn listed(
         &self,
         t: Option<TypeId>,
-        list: impl Fn(&crate::rules::UnitType) -> &Vec<String>,
+        list: impl Fn(&crate::rules::UnitType) -> &Vec<TypeId>,
     ) -> Vec<TypeId> {
-        let rules = self.rules();
-        t.map(|t| list(rules.ty(t)))
-            .into_iter()
-            .flatten()
-            .filter_map(|n| rules.type_id(n))
-            .collect()
-    }
-
-    /// The words of an ability's effect, as the rules give them.
-    fn effect(&self, a: TypeId) -> Option<Vec<String>> {
-        let rules = self.rules();
-        rules.get_words(&rules.ty(a).name, "effect")
+        t.map(|t| list(self.rules().ty(t)).clone())
+            .unwrap_or_default()
     }
 
     /// The type that plays a role for the player's faction, if the rules
@@ -2104,23 +2076,10 @@ starting_resources 100 100
     }
 
     #[test]
-    fn a_research_the_rules_lack_is_left_out() {
-        let (mut w, p) = scripted(
-            "def easy\nresearch 1\nattack\n",
-            "townhall blacksmith 2 peasant",
-        );
-        let blacksmith = w.rules.unit_type_mut("blacksmith").unwrap();
-        blacksmith.can_research.insert(0, "dance".to_owned());
-        for _ in 0..30 {
-            w.update();
-        }
-        assert_eq!(w.drain_warnings(), Vec::<String>::new());
-        assert_eq!(w.computer_state(p).constant_attacks, 1);
-    }
-
-    #[test]
     fn rules_without_a_farm_leave_the_computer_short_of_food() {
-        let rules = read("res/rules.txt").replace("def farm\n", "def barn\n");
+        // The farm is called otherwise, where it is defined and where the
+        // peasant builds it.
+        let rules = read("res/rules.txt").replace(" farm", " barn");
         // A town hall gives the food of one peasant: getting more asks
         // for a farm.
         let (mut w, p) = scripted_with_rules(&rules, "def easy\nattack\n", "townhall 1 peasant");

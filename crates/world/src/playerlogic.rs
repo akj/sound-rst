@@ -13,7 +13,7 @@ use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
 use crate::orders::{Order, OrderKind, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
+use crate::rules::{AirGround, ClassId, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
 use crate::world::{INF, World};
 
 /// The side of the buckets used to find units near a point.
@@ -112,7 +112,7 @@ impl World {
                                 && self.player_is_an_enemy(owner, p)
                                 && self.pl(owner).units.contains(u)
                         }) && self.pl(p).perception.contains(u)
-                            && e.stats.is_vulnerable != 0
+                            && e.stats.is_vulnerable
                             && !e.is_inside()
                     })
                     .collect();
@@ -594,9 +594,7 @@ impl World {
                 }
             } else if o.is_corpse() {
                 corpses.insert(place);
-            } else if o.player().is_some_and(|op| allied.contains(&op))
-                && o.stats.is_vulnerable != 0
-            {
+            } else if o.player().is_some_and(|op| allied.contains(&op)) && o.stats.is_vulnerable {
                 friends.insert(place);
             }
             if o.time_limit().is_some_and(|t| t != 0) && o.stats.harm_level != 0 {
@@ -618,7 +616,7 @@ impl World {
                 Some(Place::Square(s)) => self.square(s).is_ground,
                 _ => true,
             };
-            if e.stats.is_vulnerable != 0 && e.airground_type == AirGround::Ground && !on_ground {
+            if e.stats.is_vulnerable && e.airground_type == AirGround::Ground && !on_ground {
                 self.die(u, None)?;
             }
         }
@@ -684,13 +682,9 @@ impl World {
 
     // lookups
 
-    /// `has`: an upgrade, or a unit of the type or derived from it.
-    pub fn has(&self, p: PlayerId, type_name: &str) -> bool {
-        questions::has(self, self.facts(p), type_name)
-    }
-
-    pub fn has_all(&self, p: PlayerId, type_names: &[String]) -> bool {
-        questions::has_all(self, self.facts(p), type_names)
+    /// `has`: an upgrade, or a unit of the class or derived from it.
+    pub fn has(&self, p: PlayerId, class: ClassId) -> bool {
+        questions::has(self, self.facts(p), class)
     }
 
     /// What a target means to a player now: a subsquare, a square, a
@@ -973,7 +967,7 @@ impl World {
             self.warn(format!("couldn't create an initial unit: {type_name}"));
             return;
         }
-        let (x, y, land) = self.find_and_remove_meadow(place, t.stats.is_buildable_anywhere != 0);
+        let (x, y, land) = self.find_and_remove_meadow(place, t.stats.is_buildable_anywhere);
         let Some((x, y)) = self.find_free_space(place, t.airground_type, x, y) else {
             return;
         };

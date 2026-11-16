@@ -27,7 +27,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("ai/door.rs",            [  0,  0,  0,  2,  0]),
     ("map.rs",                [  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  3]),
-    ("orders.rs",             [  0, 20,  0, 14,  3]),
+    ("orders.rs",             [  0, 17,  0, 14,  3]),
     ("pathfinding.rs",        [  0,  1,  0,  0,  3]),
     ("player.rs",             [  0,  0,  0,  0,  1]),
     ("playerlogic.rs",        [  0,  3,  0,  2,  4]),
@@ -39,7 +39,7 @@ const COMMITTED: &[(&str, Counts)] = &[
     ("squarelogic.rs",        [  0,  0,  0,  1,  1]),
     ("test_games.rs",         [  0,  0,  3,  1,  2]),
     ("triggers.rs",           [  9,  0,  0,  0,  4]),
-    ("unit.rs",               [  0, 17,  0,  3,  3]),
+    ("unit.rs",               [  0, 14,  0,  3,  3]),
     ("world.rs",              [  0,  0,  0,  2,  6]),
 ];
 

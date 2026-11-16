@@ -4,7 +4,7 @@
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::orders::{Keyword, MenuEntry};
-use soundrts_world::rules::TypeId;
+use soundrts_world::rules::{ClassId, TypeId};
 use soundrts_world::{EntityId, KeywordOrder, SeatView};
 
 use crate::style::Style;
@@ -79,7 +79,7 @@ pub struct OrderTypeView {
     pub type_id: Option<TypeId>,
     /// The unit the order was listed for.
     pub unit: EntityId,
-    pub requirements: Vec<String>,
+    pub requirements: Vec<ClassId>,
     pub title: Msg,
     pub shortcut: Option<String>,
     pub index: f64,
@@ -171,10 +171,11 @@ impl OrderTypeView {
     /// requirement of a unit whose owner the player does not control
     /// counts as missing.
     fn requirements_msg(&self, view: &SeatView, style: &Style) -> Msg {
-        let missing: Vec<&String> = self
+        let missing: Vec<&str> = self
             .requirements
             .iter()
-            .filter(|r| !view.owner_has(self.unit, r).unwrap_or(false))
+            .filter(|&&r| !view.owner_has(self.unit, r).unwrap_or(false))
+            .map(|&r| view.class_name(r))
             .collect();
         let mut and_index = 0;
         let mut m: Msg = Vec::new();

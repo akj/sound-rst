@@ -68,19 +68,10 @@ pub fn preprocess_within_limits(s: &str) -> Result<String, String> {
 ///
 /// Expects `\n` line ends. Whoever reads the file converts them first.
 pub fn preprocess(s: &str) -> String {
-    let mut lines: Vec<&str> = s
-        .split('\n')
-        .map(|line| line.split_once(';').map_or(line, |(code, _)| code))
-        .collect();
-
-    // A blank line goes together with its line end, so the last piece of the
-    // text, which has no line end, stays.
-    let last = lines.pop().unwrap_or_default();
-    lines.retain(|line| !line.chars().all(|c| c == ' ' || c == '\t'));
-
+    let (lines, (_, last)) = kept_lines(s);
     let mut out = String::with_capacity(s.len());
-    for line in lines {
-        match line.trim_end_matches([' ', '\t']).strip_suffix('\\') {
+    for (_, line) in lines {
+        match joined(line) {
             Some(joined) => {
                 out.push_str(joined);
                 out.push(' ');
@@ -93,6 +84,44 @@ pub fn preprocess(s: &str) -> String {
     }
     out.push_str(last);
     out
+}
+
+/// For each line of [`preprocess`] of `s`, the number of the line of `s`
+/// it starts on, counted from 1.
+pub fn source_lines(s: &str) -> Vec<usize> {
+    let (lines, (last_number, _)) = kept_lines(s);
+    let mut numbers = Vec::new();
+    let mut start = None;
+    for (n, line) in lines {
+        let first = *start.get_or_insert(n);
+        if joined(line).is_none() {
+            numbers.push(first);
+            start = None;
+        }
+    }
+    numbers.push(start.unwrap_or(last_number));
+    numbers
+}
+
+/// The lines of `s` without their comments, each with its number from 1,
+/// without the blank ones; and apart, the last piece of the text, which has
+/// no line end. A blank line goes together with its line end, so the last
+/// piece stays.
+fn kept_lines(s: &str) -> (Vec<(usize, &str)>, (usize, &str)) {
+    let mut lines: Vec<(usize, &str)> = s
+        .split('\n')
+        .map(|line| line.split_once(';').map_or(line, |(code, _)| code))
+        .enumerate()
+        .map(|(i, line)| (i.saturating_add(1), line))
+        .collect();
+    let last = lines.pop().unwrap_or((1, ""));
+    lines.retain(|(_, line)| !line.chars().all(|c| c == ' ' || c == '\t'));
+    (lines, last)
+}
+
+/// A line ending with a backslash, without it: it joins the next one.
+fn joined(line: &str) -> Option<&str> {
+    line.trim_end_matches([' ', '\t']).strip_suffix('\\')
 }
 
 #[cfg(test)]
@@ -141,6 +170,15 @@ mod tests {
             p(&"é \\\n".repeat(2000)),
             Err("a line of 8000 bytes, more than 4096 (in \"é  é  é  é  é  é  é  é  é  é  é  é  é  é...\")".to_owned())
         );
+    }
+
+    #[test]
+    fn each_line_left_knows_the_line_it_starts_on() {
+        let s = "a\n; comment\n\nb \\\n; between\nc\nd";
+        assert_eq!(preprocess(s), "a\nb  c\nd");
+        assert_eq!(super::source_lines(s), [1, 4, 7]);
+        assert_eq!(super::source_lines("a\n"), [1, 2]);
+        assert_eq!(super::source_lines("a\\\n"), [1]);
     }
 
     #[test]

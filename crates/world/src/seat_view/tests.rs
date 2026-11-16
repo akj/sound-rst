@@ -191,7 +191,7 @@ fn a_friendly_gate_lets_the_player_through() {
     let home = square_of(&w, unit(&w, me, "townhall"));
     let exit = w.square(home).exits[0];
     let gate = unit(&w, me, "farm");
-    w.entity_mut(gate).unwrap().stats.is_a_gate = 1;
+    w.entity_mut(gate).unwrap().stats.is_a_gate = true;
     w.entity_mut(exit)
         .unwrap()
         .exit_mut()
@@ -375,7 +375,10 @@ fn the_order_menus_are_the_worlds() {
     let build_farm = build.iter().find(|e| e.type_id == farm).unwrap();
     assert_eq!(build_farm.text(&w.rules), "build farm");
     // A farm requires a town hall.
-    assert_eq!(build_farm.requirements, ["townhall"]);
+    assert_eq!(
+        build_farm.requirements,
+        [w.rules.class_id("townhall").unwrap()]
+    );
     assert_eq!(v.order_menu(EntityId(99_999), Keyword::Go, true), []);
     let info = v.order_info(peasant, Keyword::Build, farm).unwrap();
     let old = w.order_info(peasant, Keyword::Build, farm).unwrap();
@@ -413,11 +416,12 @@ fn a_requirement_is_known_only_for_a_controlled_owner() {
     let mine = unit(&w, me, "peasant");
     let theirs = unit(&w, them, "peasant");
     let v = seat(&w, me);
-    assert_eq!(v.owner_has(mine, "farm"), Some(true));
-    assert_eq!(v.owner_has(mine, "barracks"), Some(false));
+    let class = |name: &str| w.rules.class_id(name).unwrap();
+    assert_eq!(v.owner_has(mine, class("farm")), Some(true));
+    assert_eq!(v.owner_has(mine, class("barracks")), Some(false));
     // The other player has a farm: not the player's to know.
-    assert!(w.has(them, "farm"));
-    assert_eq!(v.owner_has(theirs, "farm"), None);
+    assert!(w.has(them, class("farm")));
+    assert_eq!(v.owner_has(theirs, class("farm")), None);
 }
 
 #[test]

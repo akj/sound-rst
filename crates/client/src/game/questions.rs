@@ -7,9 +7,8 @@
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::nofloat::py_int;
 use soundrts_world::orders::Keyword;
-use soundrts_world::rules::Stats;
+use soundrts_world::rules::{Effect, Stats};
 use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
@@ -317,17 +316,12 @@ fn combat_stats(view: &SeatView, e: &KnownEntity) -> Option<Stats> {
     let t = view.unit_type(&e.type_name)?;
     let mut stats = t.stats.clone();
     for u in &e.upgrades {
-        let Some(effect) = view.unit_type(u).and_then(|u| u.effect.as_deref()) else {
-            continue;
-        };
-        let (stat, value) = match effect {
-            [kind, stat, base, ..] if kind == "bonus" => (stat, py_int(base).unwrap_or(0)),
-            [kind, stat, ..] if kind == "apply_bonus" => (stat, t.bonus(stat)),
+        let (stat, value) = match view.unit_type(u).and_then(|u| u.effect.as_ref()) {
+            Some(&Effect::Bonus { stat, value, .. }) => (stat, value),
+            Some(&Effect::ApplyBonus(stat)) => (stat, t.bonus(stat)),
             _ => continue,
         };
-        if let Some(v) = stats.get_mut(stat) {
-            *v = v.saturating_add(value);
-        }
+        stats.add(stat, value);
     }
     Some(stats)
 }

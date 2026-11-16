@@ -554,6 +554,69 @@ fn a_plan_line_that_recurses_is_skipped_with_a_warning() {
     );
 }
 
+/// A rules layer from a map or a mod gives an ability or an upgrade an
+/// effect the simulation cannot apply: of no kind it knows, with a
+/// statistic that does not exist, or with a number it cannot read. The
+/// rules drop each such effect with a warning when they load: the ability
+/// is never allowed, the upgrade does nothing, and the game plays on.
+#[test]
+fn a_bad_effect_line_is_dropped_when_the_rules_load() {
+    let layer = "def a_holy_vision\neffect summon soon holy_vision\n\
+                 def a_recall\neffect recall_all\n\
+                 def melee_armor\neffect apply_bonus armour\n";
+    let rules = Rules::load(&[common::read("res/rules.txt"), layer.to_owned()]);
+    assert_eq!(
+        rules.warnings,
+        [
+            "in a_recall: the effect 'recall_all' cannot be applied",
+            "in a_holy_vision: the effect 'summon soon holy_vision' cannot be applied",
+            "in melee_armor: the effect 'apply_bonus armour' cannot be applied",
+        ]
+    );
+    for name in ["a_recall", "a_holy_vision", "melee_armor"] {
+        assert_eq!(rules.unit_type(name).unwrap().effect, None, "{name}");
+    }
+    assert_eq!(warnings_of_a_game(layer, ""), Vec::<String>::new());
+}
+
+/// A rules layer from a map or a mod names a type, or a class, that the
+/// rules lack: what a unit trains, a requirement, a summoned unit, a
+/// parent. The rules are refused whole, with the text and the line that
+/// names it, as rules over a limit are.
+#[test]
+fn a_type_name_the_rules_lack_refuses_the_rules_with_its_line() {
+    let base = common::read("res/rules.txt");
+    for (layer, warning) in [
+        (
+            "def barracks\ncan_train footman dragoon\n",
+            "text 2, line 2: error in barracks.can_train: dragoon doesn't exist",
+        ),
+        (
+            "def knight\n; heavier\nrequirements stables armoury\n",
+            "text 2, line 3: error in knight.requirements: armoury doesn't exist",
+        ),
+        (
+            "def a_meteors\neffect summon 15 comet\n",
+            "text 2, line 2: error in a_meteors.effect: comet doesn't exist",
+        ),
+        (
+            "def footman\nis_a infantry\n",
+            "text 2, line 2: error in footman.is_a: infantry doesn't exist",
+        ),
+    ] {
+        let rules = Rules::load(&[base.clone(), layer.to_owned()]);
+        assert_eq!(
+            rules.warnings,
+            [format!("the rules are refused: {warning}")]
+        );
+        assert!(rules.types().is_empty(), "{layer}");
+        let mut w = World::new(rules, common::ai(), multiplayer_default_triggers(), 0);
+        if w.load_and_build_map(&common::read(PLAYED_MAP)).is_ok() {
+            play(&mut w, &["easy"]);
+        }
+    }
+}
+
 /// A stale or hostile client names entities that were freed long ago: a
 /// player who left the game took its units with it. Each command is
 /// carried out as for an entity that no longer exists: the selection

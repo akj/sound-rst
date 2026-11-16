@@ -11,6 +11,7 @@ use crate::msgparts as mp;
 use crate::nofloat::{py_float, py_int};
 use crate::orders::{Request, TargetRef};
 use crate::player::{Objective, PlayerKind};
+use crate::rules::{Summoned, TypeId};
 use crate::world::{NotEnoughSpace, World};
 
 /// The deepest a trigger may nest parentheses. Dropping, cloning, comparing
@@ -195,7 +196,7 @@ impl World {
                         .square_by_name(x)
                         .ok_or_else(|| TriggerError::NoSuchSquare(x.to_owned()))?;
                     for &o in &self.square(s).objects {
-                        if self.pl(first).units.contains(&o) && self.e(o).stats.presence != 0 {
+                        if self.pl(first).units.contains(&o) && self.e(o).stats.presence {
                             return Ok(true);
                         }
                     }
@@ -223,7 +224,7 @@ impl World {
                 .pl(p)
                 .units
                 .iter()
-                .any(|&u| self.e(u).stats.provides_survival != 0)),
+                .any(|&u| self.e(u).stats.provides_survival)),
             "victory" => {
                 self.victory(p);
                 Ok(false)
@@ -388,44 +389,15 @@ impl World {
             } else if is_digits(i) {
                 nb = py_int(i).unwrap_or(1).min(MAX_START_UNITS);
             } else {
-                match self.rules.type_id(i).map(|t| {
-                    (
-                        t,
-                        self.rules.ty(t).is_upgrade(),
-                        self.rules.ty(t).is_ability(),
-                    )
-                }) {
-                    Some((t, true, _)) => {
-                        self.plm(p).upgrades.add(t);
-                        self.send_voice_important(p, msg(mp::OK));
-                    }
-                    Some((_, _, true)) => {
-                        self.send_voice_important(p, msg(mp::BEEP));
-                        self.warn("cannot add an ability");
-                    }
-                    Some((t, _, _)) => {
-                        for _ in 0..nb {
-                            if !self.check_count_limit(p, t) {
-                                break;
-                            }
-                            match self.add_unit_for_lang(
-                                p,
-                                i,
-                                square,
-                                target,
-                                decay,
-                                corpses.as_mut(),
-                                notify,
-                            ) {
-                                Ok(()) => {}
-                                // The unit that found no space was never
-                                // created.
-                                Err(AddUnitError::NotEnoughSpace) => self.warn("not enough space"),
-                                Err(AddUnitError::Other(m)) => {
-                                    self.warn(format!("couldn't add unit: {i}: {m}"))
-                                }
-                            }
-                        }
+                match self.rules.type_id(i) {
+                    Some(t) => {
+                        let add = Added {
+                            square,
+                            target,
+                            decay,
+                            notify,
+                        };
+                        self.add_of_type(p, t, nb, &add, corpses.as_mut());
                     }
                     None => self.send_voice_important(p, msg(mp::BEEP)),
                 }
@@ -434,21 +406,82 @@ impl World {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Adds the units a summon or a raising of the dead names, at the
+    /// target, or in place of the corpses: as [`World::lang_add_units`]
+    /// with types and counts.
+    pub(crate) fn add_summoned(
+        &mut self,
+        p: PlayerId,
+        items: &[Summoned],
+        target: Option<&Target>,
+        decay: i64,
+        mut corpses: Option<Vec<EntityId>>,
+    ) {
+        let Some(square) = self.square_by_name("a1") else {
+            self.warn("add_units: the map has no square a1");
+            return;
+        };
+        let add = Added {
+            square,
+            target,
+            decay,
+            notify: false,
+        };
+        for s in items {
+            self.add_of_type(p, s.ty, s.count, &add, corpses.as_mut());
+        }
+    }
+
+    /// Adds `nb` units of type `t`, or the upgrade `t`. An ability cannot
+    /// be added.
+    fn add_of_type(
+        &mut self,
+        p: PlayerId,
+        t: TypeId,
+        nb: i64,
+        add: &Added<'_>,
+        mut corpses: Option<&mut Vec<EntityId>>,
+    ) {
+        if self.rules.ty(t).is_upgrade() {
+            self.plm(p).upgrades.add(t);
+            self.send_voice_important(p, msg(mp::OK));
+            return;
+        }
+        if self.rules.ty(t).is_ability() {
+            self.send_voice_important(p, msg(mp::BEEP));
+            self.warn("cannot add an ability");
+            return;
+        }
+        for _ in 0..nb {
+            if !self.check_count_limit(p, t) {
+                break;
+            }
+            match self.add_unit_for_lang(p, t, add, corpses.as_deref_mut()) {
+                Ok(()) => {}
+                // The unit that found no space was never created.
+                Err(AddUnitError::NotEnoughSpace) => self.warn("not enough space"),
+                Err(AddUnitError::Other(m)) => {
+                    let name = &self.rules.ty(t).name;
+                    let w = format!("couldn't add unit: {name}: {m}");
+                    self.warn(w);
+                }
+            }
+        }
+    }
+
     fn add_unit_for_lang(
         &mut self,
         p: PlayerId,
-        type_name: &str,
-        mut square: crate::entity::SquareId,
-        target: Option<&Target>,
-        decay: i64,
+        tid: TypeId,
+        add: &Added<'_>,
         corpses: Option<&mut Vec<EntityId>>,
-        notify: bool,
     ) -> Result<(), AddUnitError> {
-        let tid = self
-            .rules
-            .type_id(type_name)
-            .ok_or(AddUnitError::Other("no such type".into()))?;
+        let &Added {
+            mut square,
+            target,
+            decay,
+            notify,
+        } = add;
         if self
             .rules
             .ty(tid)
@@ -478,7 +511,7 @@ impl World {
             };
             (place, x, y)
         } else {
-            let anywhere = self.rules.ty(tid).stats.is_buildable_anywhere != 0;
+            let anywhere = self.rules.ty(tid).stats.is_buildable_anywhere;
             let (x, y, l) = self.find_and_remove_meadow(square, anywhere);
             land = l;
             (Place::Square(square), x, y)
@@ -663,6 +696,16 @@ enum Given {
     /// The order each unit chooses for the target.
     Default(TargetRef),
     Order(Request),
+}
+
+/// Where and how units are added: on `square`, or at the target, or in
+/// place of corpses; for `decay` thousandths of a second if not 0; with an
+/// event that each is added if `notify`.
+struct Added<'a> {
+    square: SquareId,
+    target: Option<&'a Target>,
+    decay: i64,
+    notify: bool,
 }
 
 enum AddUnitError {

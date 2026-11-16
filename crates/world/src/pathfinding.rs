@@ -210,7 +210,7 @@ impl World {
             if ignore_enemy_walls && enemy {
                 continue;
             }
-            if self.e(b).stats.is_a_gate == 0 || enemy {
+            if !self.e(b).stats.is_a_gate || enemy {
                 return true;
             }
         }

@@ -18,7 +18,7 @@ use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
 use crate::player::{EndOfTurn, Player};
 use crate::pyrandom::PyRandom;
-use crate::rules::{AiScripts, AirGround, Rules, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AiScripts, AirGround, HarmTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::square::Square;
 
 /// `float("inf")` for path distances.
@@ -209,7 +209,7 @@ pub struct World {
     pub players: Vec<PlayerId>,
     /// The players who left.
     pub ex_players: Vec<PlayerId>,
-    harm_target_types: BTreeMap<(String, String), bool>,
+    harm_target_types: BTreeMap<(TypeId, TypeId), bool>,
     /// The map definition as parsed.
     pub map: MapDef,
     pub(crate) collision_ground: CollisionMatrix,
@@ -817,7 +817,7 @@ impl World {
 
     pub(crate) fn occupy_space(&mut self, id: EntityId) {
         let e = self.e(id);
-        if e.stats.collision == 0 {
+        if !e.stats.collision {
             return;
         }
         if let Some(Place::Square(_)) = e.place {
@@ -850,7 +850,7 @@ impl World {
             (None, Some(Place::Inside(c))) => (self.e(c).x, self.e(c).y),
             (None, None) => (0, 0),
         };
-        let collision = self.e(id).stats.collision != 0;
+        let collision = self.e(id).stats.collision;
         if let (Some(np), true) = (new_place, collision) {
             match np {
                 Place::Square(s) => {
@@ -1029,38 +1029,19 @@ impl World {
 
     /// Whether units of the first type can harm units of the second type
     /// (`harm_target_type`).
-    pub fn can_harm(&mut self, unit_type: &str, other_type: &str) -> bool {
-        let key = (unit_type.to_owned(), other_type.to_owned());
+    pub fn can_harm(&mut self, unit_type: TypeId, other_type: TypeId) -> bool {
+        let key = (unit_type, other_type);
         if let Some(&r) = self.harm_target_types.get(&key) {
             return r;
         }
-        let result = match (
-            self.rules.unit_type(unit_type),
-            self.rules.unit_type(other_type),
-        ) {
-            (_, None) => false,
-            (None, Some(_)) => {
-                // `unit.harm_target_type` on None raises; the original
-                // catches it in the caller.
-                false
-            }
-            (Some(unit), Some(other)) => {
-                let mut r = true;
-                for t in &unit.harm_target_type {
-                    let fails = (t == "healable" && other.stats.is_healable == 0)
-                        || (t == "building" && other.stats.is_a_building == 0)
-                        || ((t == "air" || t == "ground")
-                            && other.airground_type.ground_or_air() != t)
-                        || (t == "unit" && other.stats.is_a_unit == 0)
-                        || (t == "undead" && other.stats.is_undead == 0);
-                    if fails {
-                        r = false;
-                        break;
-                    }
-                }
-                r
-            }
-        };
+        let (unit, other) = (self.rules.ty(unit_type), self.rules.ty(other_type));
+        let result = unit.harm_target_type.iter().all(|&t| match t {
+            HarmTarget::Healable => other.stats.is_healable,
+            HarmTarget::Building => other.stats.is_a_building,
+            HarmTarget::Layer(a) => other.airground_type.ground_or_air() == a,
+            HarmTarget::Unit => other.stats.is_a_unit,
+            HarmTarget::Undead => other.stats.is_undead,
+        });
         self.harm_target_types.insert(key, result);
         result
     }
@@ -1364,7 +1345,7 @@ impl World {
     pub(crate) fn update_cloaking(&mut self) {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
-                if self.e(u).stats.is_cloakable != 0
+                if self.e(u).stats.is_cloakable
                     && let Some(c) = self.cm(u)
                 {
                     c.is_cloaked = false;
@@ -1374,7 +1355,7 @@ impl World {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
                 let e = self.e(u);
-                if e.stats.is_a_cloaker == 0 {
+                if !e.stats.is_a_cloaker {
                     continue;
                 }
                 let r2 = e.stats.cloaking_range * e.stats.cloaking_range;
@@ -1382,7 +1363,7 @@ impl World {
                 for vp in self.pl(p).allied.clone() {
                     for vu in self.potential_neighbors(vp, ux, uy) {
                         let v = self.e(vu);
-                        if v.stats.is_cloakable == 0 || v.is_cloaked() {
+                        if !v.stats.is_cloakable || v.is_cloaked() {
                             continue;
                         }
                         if crate::nofloat::square_of_distance(v.x, v.y, ux, uy) < r2
@@ -1403,7 +1384,7 @@ impl World {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
                 let e = self.e(u);
-                if e.stats.is_a_detector == 0 {
+                if !e.stats.is_a_detector {
                     continue;
                 }
                 let r2 = e.stats.detection_range * e.stats.detection_range;

@@ -653,7 +653,7 @@ impl Entity {
 
     /// `is_a_building_land`: meadows are, exits and buildings are not.
     pub fn is_a_building_land(&self) -> bool {
-        self.stats.is_a_building_land != 0
+        self.stats.is_a_building_land
     }
 
     pub fn is_inside(&self) -> bool {
@@ -665,7 +665,7 @@ impl Entity {
     }
 
     pub fn radius(&self) -> i64 {
-        if self.stats.collision != 0 {
+        if self.stats.collision {
             COLLISION_RADIUS
         } else {
             0
@@ -673,11 +673,11 @@ impl Entity {
     }
 
     pub fn is_invisible(&self) -> bool {
-        self.stats.is_invisible != 0
+        self.stats.is_invisible
     }
 
     pub fn is_vulnerable(&self) -> bool {
-        self.stats.is_vulnerable != 0
+        self.stats.is_vulnerable
     }
 
     /// `menace`: the danger a unit represents.

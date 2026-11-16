@@ -43,7 +43,7 @@ use crate::msg::Msg;
 use crate::orders::{Keyword, MenuEntry, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
-use crate::rules::{Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{ClassId, Rules, TypeId, UnitType, VIRTUAL_TIME_INTERVAL};
 
 /// What one seat knows of a game, from what it was sent: see the
 /// [module](self).
@@ -196,6 +196,11 @@ impl SeatView {
     /// The unit type of this id, from the rules.
     pub fn unit_type_by_id(&self, id: TypeId) -> &UnitType {
         self.start.rules.ty(id)
+    }
+
+    /// The name of a class of the rules.
+    pub fn class_name(&self, class: ClassId) -> &str {
+        self.start.rules.class_name(class)
     }
 
     // 2. The player's own state.
@@ -386,7 +391,7 @@ impl SeatView {
 
     /// Whether the owner of a unit has a requirement of a menu entry, built
     /// or researched. `None` unless the player controls the owner's units.
-    pub fn owner_has(&self, unit: EntityId, requirement: &str) -> Option<bool> {
+    pub fn owner_has(&self, unit: EntityId, requirement: ClassId) -> Option<bool> {
         let owner = self.unit(unit)?.known.player?;
         Some(questions::has(self, self.player_facts(owner)?, requirement))
     }
