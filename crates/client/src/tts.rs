@@ -292,7 +292,7 @@ mod windows_speech {
             )),
             None => notes.push(format!(
                 "NVDA controller client for nvda_direct: {CLIENT_DLL} is not next to the \
-                 program; nvda_direct = 1 falls back to Tolk"
+                 program; nvda_direct = true falls back to Tolk"
             )),
         }
         SpeechReport {

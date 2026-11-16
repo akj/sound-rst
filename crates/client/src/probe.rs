@@ -2,13 +2,11 @@
 //! speaking, playing, or writing a file.
 
 use std::fmt::Write;
-use std::rc::Rc;
 
 use crate::client::{app_title, open_resources};
 use crate::config::Config;
 use crate::log::Log;
 use crate::options::Options;
-use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::resource::preferred_language;
 
@@ -16,13 +14,12 @@ use crate::resource::preferred_language;
 pub fn report(options: &Options) -> Result<String, String> {
     let paths = Paths::from_environment(options.root.as_deref()).map_err(|e| e.to_string())?;
     let log = Log::stderr();
-    let params = Rc::new(
-        Parameters::load(&paths.parameters_file(), &log)
-            .map_err(|e| format!("cannot read {}: {e}", paths.parameters_file().display()))?,
-    );
-    let config_file = paths.config_file();
+    let config_file = paths.settings_file();
     let config = match std::fs::read(&config_file) {
-        Ok(bytes) => Config::from_ini(&String::from_utf8_lossy(&bytes), &log).0,
+        Ok(bytes) => Config::from_toml(&String::from_utf8_lossy(&bytes)).unwrap_or_else(|e| {
+            log.warning(format!("{} is refused: {e}", config_file.display()));
+            Config::default()
+        }),
         Err(_) => Config::default(),
     };
     let mods = options.mods.clone().unwrap_or_else(|| config.mods.clone());
@@ -30,8 +27,15 @@ pub fn report(options: &Options) -> Result<String, String> {
         .soundpacks
         .clone()
         .unwrap_or_else(|| config.soundpacks.clone());
-    let preferred = preferred_language(&paths.language_file(), &log);
-    let res = open_resources(&paths, params, &mods, &soundpacks, preferred.clone(), &log);
+    let preferred = preferred_language(config.language.as_deref(), &log);
+    let res = open_resources(
+        &paths,
+        config.parameters.clone(),
+        &mods,
+        &soundpacks,
+        preferred.clone(),
+        &log,
+    );
 
     let mut out = String::new();
     let _ = writeln!(out, "{}", app_title(&res.mods, &res.soundpacks).trim_end());

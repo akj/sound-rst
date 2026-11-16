@@ -74,7 +74,7 @@ Speech, news, keys, settings and sound. For a blind player this is the whole int
 
 ### H1. The game guesses when speech has ended
 
-**Fixed** in pull requests 11 and 27, in the recorded speech tests; not yet heard through NVDA. Speech runs on its own thread. With `nvda_direct = 1` in `SoundRTS.ini`, or the item in Options, Sound and speech, NVDA reports when speech ends; it is off by default until you have heard it. Other screen readers still use the guess, now scaled by a speech-rate measure in Options, Sound and speech. Stop always reaches the screen reader (`Tts::stop` in `crates/client/src/tts.rs`). Tests: `stop_reaches_the_screen_reader_when_the_estimate_says_speech_is_over` in `crates/client/src/tts.rs`; `a_finished_report_starts_the_next_queued_message_without_waiting_for_the_estimate` in `crates/client/tests/voice.rs`; `the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key` in `crates/client/tests/sound_and_speech.rs`. The line numbers below are from before.
+**Fixed** in pull requests 11 and 27, in the recorded speech tests; not yet heard through NVDA. Speech runs on its own thread. With `nvda_direct = true` in `settings.toml`, or the item in Options, Sound and speech, NVDA reports when speech ends; it is off by default until you have heard it. Other screen readers still use the guess, now scaled by a speech-rate measure in Options, Sound and speech. Stop always reaches the screen reader (`Tts::stop` in `crates/client/src/tts.rs`). Tests: `stop_reaches_the_screen_reader_when_the_estimate_says_speech_is_over` in `crates/client/src/tts.rs`; `a_finished_report_starts_the_next_queued_message_without_waiting_for_the_estimate` in `crates/client/tests/voice.rs`; `the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key` in `crates/client/tests/sound_and_speech.rs`. The line numbers below are from before.
 
 Checked today. Size: small for the setting, medium for the exact NVDA fix. Needs your ears.
 
@@ -185,7 +185,7 @@ Checked today for volume, verbosity and key repeat; the rest from the review. Si
 
 - The main volume always starts at half. `crates/client/src/sound.rs` line 341.
 - The speed chosen in the game menu is not saved.
-- Speech timing and verbosity can only be changed in `SoundRTS.ini`. Verbosity is a list of words matched by substring.
+- Speech timing and verbosity can only be changed in the settings file. Verbosity is a list of words matched by substring.
 - Keys can only be remapped by editing a file, and menu keys cannot be remapped.
 - Key repeat is fixed at 500 then 100 milliseconds and ignores your Windows setting. `crates/client/src/input.rs` line 269.
 - Each press of a volume key also cuts all speech.

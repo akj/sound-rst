@@ -23,7 +23,6 @@ use soundrts::input::{
 };
 use soundrts::log::Log;
 use soundrts::mainmenu::main_menu;
-use soundrts::parameters::Parameters;
 use soundrts::paths::Paths;
 use soundrts::sound::{SoundEvent, SoundLog, StereoVolume};
 use soundrts::testkit::{RecordingSpeech, upstream_root};
@@ -712,17 +711,16 @@ fn run(s: &Scenario) -> String {
         login: Login::parse(s.setting("login")).expect("a valid login"),
         mods: s.setting("mods").to_owned(),
         soundpacks: s.setting("soundpacks").to_owned(),
+        language: Some(s.setting("language").to_owned()),
         ..Config::default()
     };
-    config.save(&paths.config_file(), &log);
-    let params =
-        Rc::new(Parameters::load(&paths.parameters_file(), &log).expect("cfg/parameters.toml"));
+    config.save(&paths.settings_file(), &log);
     let res = open_resources(
         &paths,
-        params,
+        config.parameters.clone(),
         &config.mods,
         &config.soundpacks,
-        Some(s.setting("language").to_owned()),
+        config.language.clone(),
         &log,
     );
     let seed: i64 = s.setting("seed").parse().unwrap();

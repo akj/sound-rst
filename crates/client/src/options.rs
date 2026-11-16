@@ -8,9 +8,9 @@ use std::path::PathBuf;
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Options {
     pub root: Option<PathBuf>,
-    /// Overrides the mods of `SoundRTS.ini` for this run.
+    /// Overrides the mods of `settings.toml` for this run.
     pub mods: Option<String>,
-    /// Overrides the soundpacks of `SoundRTS.ini` for this run.
+    /// Overrides the soundpacks of `settings.toml` for this run.
     pub soundpacks: Option<String>,
     pub probe: bool,
     /// Downloads the game data if the game finds none, then exits.

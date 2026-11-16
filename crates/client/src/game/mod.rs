@@ -914,7 +914,7 @@ impl GameInterface {
 
     fn animate_objects(&mut self, cx: &mut Client) {
         let now = cx.clock.now();
-        if now < self.previous_animation + cx.params.number("animation_delay", 0.1) {
+        if now < self.previous_animation + cx.config.parameters.animation_delay {
             return;
         }
         self.set_obs_pos(cx);

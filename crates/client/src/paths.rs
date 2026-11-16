@@ -159,20 +159,14 @@ impl Paths {
     pub fn client_log(&self) -> PathBuf {
         self.tmp().join("client.log")
     }
-    pub fn config_file(&self) -> PathBuf {
-        self.user.join("SoundRTS.ini")
+    pub fn settings_file(&self) -> PathBuf {
+        self.user.join("settings.toml")
     }
     pub fn campaigns_config(&self) -> PathBuf {
         self.user.join("campaigns.ini")
     }
     pub fn custom_bindings(&self) -> PathBuf {
         self.user.join("bindings.txt")
-    }
-    pub fn language_file(&self) -> PathBuf {
-        self.root.join("cfg").join("language.txt")
-    }
-    pub fn parameters_file(&self) -> PathBuf {
-        self.root.join("cfg").join("parameters.toml")
     }
 
     /// Creates the player's folders, as the game expects them. A folder

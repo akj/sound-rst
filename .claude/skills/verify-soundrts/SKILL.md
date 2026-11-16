@@ -69,7 +69,7 @@ Hold every proof to these standards:
 
 - Quote the action and the result: the `step` and `voice` lines of a transcript, or the command and its output. A final `ok` alone is not a proof.
 - Prefer a test that presses scripted keys through the real menus to a test that calls an internal function.
-- Check side effects where the feature has them: the settings written to `SoundRTS.ini`, the data that `--fetch-data` wrote. A harness log does not show a file that a test read back, so name the test that checks the file.
+- Check side effects where the feature has them: the settings written to `settings.toml`, the data that `--fetch-data` wrote. A harness log does not show a file that a test read back, so name the test that checks the file.
 - When a precondition is missing, report the failure and its reason. A missing network, a test that no longer exists, or game data at the wrong commit is a failed drive. Never replace the drive with an easier check and call the feature verified.
 - Report a feature as verified only for the entry points you drove. The feature file lists the others.
 

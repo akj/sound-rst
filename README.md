@@ -70,11 +70,13 @@ The keys are those of the original. `vendor/soundrts-upstream/res/ui/bindings.tx
 
 To hear what a key does without doing it, press Control F1 in a game. The game says "key help on". Each key or chord you press then says its name and what it does, for example "Control Tab: next useful target", and does nothing else. A key with no command says "no command". A modifier pressed alone, such as Left Control, is described when you release it, because it acts then. Escape or Control F1 turns key help off. The game goes on while key help is on, as it does on a server.
 
-The settings folder is `user` inside the data folder if that folder exists. Otherwise the settings folder is `%APPDATA%\SoundRTS`. It holds `SoundRTS.ini`, the campaign bookmarks, and the log `tmp/client.log`.
+The settings folder is `user` inside the data folder if that folder exists. Otherwise the settings folder is `%APPDATA%\SoundRTS`. It holds your settings in `settings.toml`, the campaign bookmarks, and the log `tmp/client.log`.
 
-To get a written record of everything the game says, set `debug_mode = 1` in `SoundRTS.ini`. The log then has one `SAID:` line for each message.
+`settings.toml` is a text file. The options menu writes it, and you can edit it in a text editor while the game is closed. A setting that the file leaves out takes its default. Settings that mean yes or no take `true` or `false`. If the game cannot read the file, it uses the defaults, keeps your file as `settings.toml.old`, writes a new `settings.toml`, and names the line of the first error in the log. The `[parameters]` table holds the tuning values of the original's `cfg/parameters.toml`, such as the volume of each sound. The game does not read the original's `SoundRTS.ini`, `cfg/parameters.toml` or `cfg/language.txt`.
 
-To play in another language, write its code, for example `fr`, in `cfg/language.txt` in the data folder.
+To get a written record of everything the game says, set `debug_mode = true` in `settings.toml`. The log then has one `SAID:` line for each message.
+
+To play in another language, write its code in `settings.toml`, for example `language = "fr"`. Without it, the game uses the language of Windows.
 
 Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is said again after it, and the sounds go on playing.
 
@@ -150,7 +152,7 @@ Nothing said stops the game. Important messages, such as a player defeated, a ne
 | Delete | Moves to the square of the last alert and says it. Press again to go to the alert before. |
 | F5, F6 | Walk back and forth through every message, as before. |
 
-The options menu's Sound and speech items, or the `[news]` section of `SoundRTS.ini`, say what you hear of each category. Each of `alert`, `production`, `economy`, `scouting`, `chat`, `system` and `story` takes one of these values:
+The options menu's Sound and speech items, or the `[news]` table of `settings.toml`, say what you hear of each category. Each of `alert`, `production`, `economy`, `scouting`, `chat`, `system` and `story` takes one of these values, in quotes, for example `chat = "log"`:
 
 - `speak`: said in its turn, with its sound. This is the default.
 - `sound`: only its sound plays, for example the bell of a finished building or the chat sound. The message waits in the log, unheard.
@@ -194,9 +196,9 @@ NVDA 2024.1 and later can tell the game when speech has ended, and whether you s
    pwsh scripts/fetch-nvda-controller.ps1
    ```
 
-2. In the options menu, in Sound and speech, switch "NVDA tells the game when it has finished speaking" on. In `SoundRTS.ini`, that is `nvda_direct = 1` in the `[tts]` section. The change applies the next time you start the game.
+2. In the options menu, in Sound and speech, switch "NVDA tells the game when it has finished speaking" on. In `settings.toml`, that is `nvda_direct = true`. The change applies the next time you start the game.
 
-With `nvda_direct = 1`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = 0`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
+With `nvda_direct = true`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = false`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
 
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, the current folder, and the downloaded data in `%APPDATA%\SoundRTS\data`. A folder given with `--root` or `SOUNDRTS_ROOT` must hold the data, and the game then looks nowhere else.
 

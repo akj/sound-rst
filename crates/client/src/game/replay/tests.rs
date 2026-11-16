@@ -33,16 +33,8 @@ fn orders(g: &mut TestGame) {
 /// of the terrain start at random times of the player's own clock, which
 /// a listener's clock does not keep.
 fn without_ambience() -> Harness {
-    let h = Harness::new("en", Script::new().keep_open());
-    let path = h.client.paths.parameters_file();
-    let text = std::fs::read_to_string(path).unwrap();
-    assert!(text.contains("animation_delay = 0.1"));
-    let text = text.replace("animation_delay = 0.1", "animation_delay = 1e9");
-    let mut h = h;
-    h.client.params = std::rc::Rc::new(crate::parameters::Parameters::from_toml(
-        &text,
-        &h.client.log,
-    ));
+    let mut h = Harness::new("en", Script::new().keep_open());
+    std::sync::Arc::make_mut(&mut h.client.config.parameters).animation_delay = 1e9;
     h
 }
 

@@ -2,6 +2,7 @@
 //! category, with what it is about, and what the player chose to hear of
 //! each category.
 
+use serde::{Deserialize, Serialize};
 use soundrts_protocol::SlotIndex;
 use soundrts_world::events::Reason;
 use soundrts_world::msg::Msg;
@@ -41,19 +42,6 @@ impl Category {
         Category::Story,
     ];
 
-    /// The option name in `SoundRTS.ini`.
-    pub fn name(self) -> &'static str {
-        match self {
-            Category::Alert => "alert",
-            Category::Production => "production",
-            Category::Economy => "economy",
-            Category::Scouting => "scouting",
-            Category::Chat => "chat",
-            Category::System => "system",
-            Category::Story => "story",
-        }
-    }
-
     /// The categories whose news is said before the other news waiting,
     /// in this order: what players say, news of the game or the connection
     /// itself, then the story.
@@ -67,7 +55,8 @@ impl Category {
 }
 
 /// What the player hears of a category of news.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Policy {
     /// Said in turn, with its sound.
     Speak,
@@ -81,51 +70,67 @@ pub enum Policy {
 }
 
 impl Policy {
-    pub fn name(self) -> &'static str {
-        match self {
-            Policy::Speak => "speak",
-            Policy::Sound => "sound",
-            Policy::Log => "log",
-            Policy::Drop => "drop",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Policy> {
-        [Policy::Speak, Policy::Sound, Policy::Log, Policy::Drop]
-            .into_iter()
-            .find(|p| p.name() == s.trim())
-    }
-
     /// Whether the news comes with the sound of its event.
     pub fn plays_sound(self) -> bool {
         matches!(self, Policy::Speak | Policy::Sound)
     }
 }
 
-/// A policy for each category.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Policies([Policy; 7]);
+/// A policy for each category: the `[news]` table of `settings.toml`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Policies {
+    alert: Policy,
+    production: Policy,
+    economy: Policy,
+    scouting: Policy,
+    chat: Policy,
+    system: Policy,
+    story: Policy,
+}
 
 impl Default for Policies {
     fn default() -> Self {
-        Policies([Policy::Speak; 7])
+        let speak = Policy::Speak;
+        Policies {
+            alert: speak,
+            production: speak,
+            economy: speak,
+            scouting: speak,
+            chat: speak,
+            system: speak,
+            story: speak,
+        }
     }
 }
 
 impl Policies {
-    fn index(c: Category) -> usize {
-        Category::ALL
-            .iter()
-            .position(|&x| x == c)
-            .expect("every category")
+    fn slot(&mut self, c: Category) -> &mut Policy {
+        match c {
+            Category::Alert => &mut self.alert,
+            Category::Production => &mut self.production,
+            Category::Economy => &mut self.economy,
+            Category::Scouting => &mut self.scouting,
+            Category::Chat => &mut self.chat,
+            Category::System => &mut self.system,
+            Category::Story => &mut self.story,
+        }
     }
 
     pub fn of(&self, c: Category) -> Policy {
-        self.0[Self::index(c)]
+        match c {
+            Category::Alert => self.alert,
+            Category::Production => self.production,
+            Category::Economy => self.economy,
+            Category::Scouting => self.scouting,
+            Category::Chat => self.chat,
+            Category::System => self.system,
+            Category::Story => self.story,
+        }
     }
 
     pub fn set(&mut self, c: Category, p: Policy) {
-        self.0[Self::index(c)] = p;
+        *self.slot(c) = p;
     }
 }
 

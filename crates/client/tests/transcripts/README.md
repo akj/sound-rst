@@ -76,9 +76,10 @@ readers, it never reports when speech ends, so the client's own estimate
 
 - Saying `text` speaks until
   `now + round(len(text) × d × 10^6) + round(n × (c − 1) × d × 10^6)` µs.
-  `d` is `wait_delay_per_character` (0.1, the default of `SoundRTS.ini`).
+  `d` is `wait_delay_per_character` (0.1, the default of `settings.toml`).
   `n` is the number of numeric characters in `text`. `c` is
-  `tts_digit_coefficient` (3, from `cfg/parameters.toml`). The products
+  `tts_digit_coefficient` (3, the default in the `[parameters]` of
+  `settings.toml`). The products
   are f64, left to right.
 - Speech goes on while its end is later than now. Stopping ends it. A new
   text replaces the previous one.
@@ -323,7 +324,7 @@ UTF-8 text, one item per line. `#` starts a comment line. Settings come
 first, then steps.
 
     language en          the language (en, fr...)
-    login player         the login in SoundRTS.ini
+    login player         the login in settings.toml
     mods                 the mods (empty: none)
     soundpacks           the soundpacks
     seed 42              the world's seed and the client's random seed
@@ -336,7 +337,7 @@ first, then steps.
     wait_turns 150
     wait_game_end
 
-The other `SoundRTS.ini` options keep their defaults. The settings folder
+The other settings of `settings.toml` keep their defaults. The settings folder
 starts empty: no campaign bookmarks, no remembered menu choices.
 
 ## Scenarios

@@ -1,4 +1,4 @@
-# French (cfg/language.txt = fr): the main menu, its help, a short game on
+# French (language = "fr" in settings.toml): the main menu, its help, a short game on
 # jl1 against a quiet computer (status keys, a unit, its orders, a target,
 # the time, the game menu), then quit.
 language fr

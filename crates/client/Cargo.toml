@@ -28,7 +28,7 @@ tokio-rustls = { version = "0.26", default-features = false }
 webpki-roots = "1.0.10"
 ureq = "3"
 indexmap = "2"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 rodio = { version = "0.23", default-features = false, features = ["playback", "vorbis"] }
 sys-locale = "0.3"

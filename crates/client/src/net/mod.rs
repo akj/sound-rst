@@ -247,7 +247,7 @@ impl Net {
                 if let soundrts_protocol::LobbyChange::RoomClosed { id } = &change {
                     self.invitations.retain(|i| i.room != *id);
                 }
-                let said = match self.lobby.apply(change, cx.config.announce_arrivals != 0) {
+                let said = match self.lobby.apply(change, cx.config.announce_arrivals) {
                     Ok(said) => said,
                     Err(too_many) => return self.give_up(cx, too_many),
                 };

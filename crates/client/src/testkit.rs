@@ -21,7 +21,6 @@ use crate::input::{InputSource, Key, KeyDown, KeyUp, Mods, RawInput};
 use crate::log::Log;
 use crate::net::conn::{ConnectError, Connection, Link, NetEvent, Opening, Outgoing};
 use crate::net::{NetConfig, Redial, Seated};
-use crate::parameters::Parameters;
 use crate::paths::Paths;
 use crate::session::Session;
 use crate::tts::{Progress, SpeechBackend};
@@ -1177,12 +1176,10 @@ impl Harness {
         };
         paths.create_user_folders(&Log::silent());
         let log = Log::file_only(&paths.client_log());
-        let params =
-            Rc::new(Parameters::load(&paths.parameters_file(), &log).expect("cfg/parameters.toml"));
         let clock = Rc::new(ManualClock::new());
         let res = open_resources(
             &paths,
-            params,
+            config.parameters.clone(),
             &config.mods,
             &config.soundpacks,
             Some(language.to_owned()),

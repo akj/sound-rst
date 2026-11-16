@@ -160,8 +160,8 @@ fn options_then_modify_login_with_typed_characters() {
         "the beep plays on the voice channel"
     );
     assert_eq!(h.client.config.login.as_str(), "bo2");
-    let ini = std::fs::read_to_string(h.user_dir.path().join("SoundRTS.ini")).unwrap();
-    assert!(ini.contains("\nlogin = bo2\n"), "{ini}");
+    let settings = std::fs::read_to_string(h.user_dir.path().join("settings.toml")).unwrap();
+    assert!(settings.starts_with("login = \"bo2\"\n"), "{settings}");
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn test_first_letter() {
 #[test]
 fn in_debug_mode_the_log_has_what_the_voice_said() {
     let config = soundrts::config::Config {
-        debug_mode: 1,
+        debug_mode: true,
         ..Default::default()
     };
     let script = Script::new()

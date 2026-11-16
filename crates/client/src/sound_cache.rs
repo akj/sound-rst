@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use soundrts_world::msg::{MsgPart, NB_ENCODE_SHIFT};
 
@@ -90,7 +91,7 @@ pub fn literal(s: &str) -> MsgPart {
 pub struct SoundCache {
     txt: HashMap<String, String>,
     sounds: HashMap<String, SoundRef>,
-    params: Rc<Parameters>,
+    params: Arc<Parameters>,
     log: Log,
 }
 
@@ -117,7 +118,7 @@ impl SoundCache {
     pub fn new(
         texts: &[String],
         sound_dirs: &[(Package, String)],
-        params: Rc<Parameters>,
+        params: Arc<Parameters>,
         log: Log,
     ) -> SoundCache {
         let mut txt = HashMap::new();
@@ -257,7 +258,7 @@ impl SoundCache {
     }
 
     /// Applies the parameters' volumes again to the loaded sounds.
-    pub fn update_volumes(&mut self, params: Rc<Parameters>) {
+    pub fn update_volumes(&mut self, params: Arc<Parameters>) {
         for s in self.sounds.values() {
             if let SoundRef::Loaded(s) = s {
                 s.set_volume(params.sound_volume(&s.key, &s.mod_name));
@@ -289,7 +290,7 @@ impl Sounds {
         self.0.borrow_mut().translate(part)
     }
 
-    pub fn update_volumes(&self, params: Rc<Parameters>) {
+    pub fn update_volumes(&self, params: Arc<Parameters>) {
         self.0.borrow_mut().update_volumes(params);
     }
 }
@@ -301,7 +302,7 @@ mod tests {
     #[test]
     fn a_downloaded_text_cannot_stand_for_a_number_or_a_word() {
         let log = Log::silent();
-        let params = Rc::new(Parameters::default());
+        let params = Arc::new(Parameters::default());
         let mut cache =
             SoundCache::new(&["5 What are your orders?\n".to_owned()], &[], params, log);
         let added = format!(

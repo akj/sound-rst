@@ -1,15 +1,21 @@
-//! `SoundRTS.ini`: the player's settings, read and written in the format of
-//! Python's configparser so an existing file keeps working.
+//! `settings.toml`: the player's settings, in the settings folder. Each
+//! setting the file leaves out takes its default. A file that is not
+//! valid is refused as a whole, with the line of its first error.
 
-use std::collections::HashMap;
 use std::fmt;
+use std::num::NonZeroU8;
 use std::path::Path;
+use std::sync::Arc;
+
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::log::Log;
-use crate::message::{Category, Policies, Policy};
+use crate::message::Policies;
+use crate::parameters::Parameters;
 
 /// A login: 1 to 20 ASCII letters and digits.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct Login(String);
 
 impl Login {
@@ -34,370 +40,141 @@ impl fmt::Display for Login {
     }
 }
 
+impl TryFrom<String> for Login {
+    type Error = &'static str;
+
+    fn try_from(s: String) -> Result<Login, Self::Error> {
+        Login::parse(&s).ok_or("a login is 1 to 20 letters and digits")
+    }
+}
+
+impl From<Login> for String {
+    fn from(login: Login) -> String {
+        login.0
+    }
+}
+
 pub const DEFAULT_LOGIN: &str = "player";
 
 pub fn login_is_valid(login: &str) -> bool {
     (1..=20).contains(&login.len()) && login.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
-/// The settings of `SoundRTS.ini`.
-#[derive(Clone, Debug, PartialEq)]
+/// The settings of `settings.toml`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub login: Login,
+    /// The code of the language the player chose, such as `fr`; without
+    /// one, the system's language.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     pub mods: String,
     pub soundpacks: String,
-    pub num_channels: i64,
+    pub num_channels: NonZeroU8,
     /// The speed a single-player game starts at: 1 is normal.
+    #[serde(deserialize_with = "positive")]
     pub speed: f64,
     /// The main volume of the game's sounds, in percent.
+    #[serde(deserialize_with = "percent")]
     pub main_volume: u8,
-    /// What the player hears of each category of news (`[news]`).
-    pub news: Policies,
-    pub debug_mode: i64,
-    pub timeout: f64,
-    pub fpct_coef: f64,
-    pub fpct_max: i64,
-    pub require_humans: i64,
+    /// Write each message the voice says to the log.
+    pub debug_mode: bool,
+    /// Say when a player arrives on or leaves the server.
+    pub announce_arrivals: bool,
+    /// Speak through NVDA's own controller client, which says when speech
+    /// ends, rather than through Tolk only.
+    pub nvda_direct: bool,
     /// How long the screen reader takes to say one character, in seconds:
     /// the game estimates from it when speech ends.
+    #[serde(deserialize_with = "positive")]
     pub wait_delay_per_character: f64,
-    /// Say when a player arrives on or leaves the server (1) or not (0).
-    pub announce_arrivals: i64,
-    /// Speak through NVDA's own controller client, which says when speech
-    /// ends (1), or through Tolk only (0).
-    pub nvda_direct: i64,
+    /// What the player hears of each category of news.
+    pub news: Policies,
+    pub parameters: Arc<Parameters>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             login: Login::default(),
+            language: None,
             mods: String::new(),
             soundpacks: String::new(),
-            num_channels: 16,
+            num_channels: NonZeroU8::new(16).expect("16 is not 0"),
             speed: 1.0,
             main_volume: 50,
-            news: Policies::default(),
-            debug_mode: 0,
-            timeout: 60.0,
-            fpct_coef: 2.3,
-            fpct_max: 3,
-            require_humans: 0,
+            debug_mode: false,
+            announce_arrivals: true,
+            nvda_direct: false,
             wait_delay_per_character: 0.1,
-            announce_arrivals: 1,
-            nvda_direct: 0,
+            news: Policies::default(),
+            parameters: Arc::default(),
         }
     }
 }
 
-/// An ini file read as sections of options. Option names are lower case,
-/// as configparser stores them.
-type Ini = HashMap<String, HashMap<String, String>>;
-
-/// Formats a float as Python's `str()` does for ordinary values.
-fn py_float(v: f64) -> String {
-    format!("{v:?}")
-}
-
-/// Formats a whole number without a decimal point, as the original game
-/// wrote the options it reads as integers.
-fn number(v: f64) -> String {
-    if v.fract() == 0.0 && v.abs() < 1e15 {
-        format!("{}", v as i64)
+/// A number above 0: a speed or a duration.
+fn positive<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    let v = f64::deserialize(d)?;
+    if v.is_finite() && v > 0.0 {
+        Ok(v)
     } else {
-        py_float(v)
+        Err(serde::de::Error::custom(format!(
+            "{v} is not a number above 0"
+        )))
     }
 }
 
-fn parse_ini(text: &str) -> Result<Ini, String> {
-    let mut ini = Ini::new();
-    let mut section: Option<String> = None;
-    let mut last_key: Option<String> = None;
-    for (number, raw) in text.lines().enumerate() {
-        let line = raw.trim();
-        if line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if line.is_empty() {
-            last_key = None;
-            continue;
-        }
-        let indented = raw.starts_with([' ', '\t']);
-        if indented && let (Some(s), Some(k)) = (&section, &last_key) {
-            let value = ini
-                .get_mut(s)
-                .and_then(|o| o.get_mut(k))
-                .expect("known key");
-            value.push('\n');
-            value.push_str(line);
-            continue;
-        }
-        if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            if ini.contains_key(name) {
-                return Err(format!("line {}: section [{name}] repeated", number + 1));
-            }
-            ini.insert(name.to_owned(), HashMap::new());
-            section = Some(name.to_owned());
-            last_key = None;
-            continue;
-        }
-        let Some(s) = &section else {
-            return Err(format!("line {}: no section header", number + 1));
-        };
-        let split = line.find(['=', ':']);
-        let Some(at) = split else {
-            return Err(format!("line {}: not an option: {line}", number + 1));
-        };
-        let key = line[..at].trim().to_lowercase();
-        let value = line[at + 1..].trim().to_owned();
-        let options = ini.get_mut(s).expect("current section");
-        if options.contains_key(&key) {
-            return Err(format!("line {}: option {key} repeated", number + 1));
-        }
-        options.insert(key.clone(), value);
-        last_key = Some(key);
-    }
-    Ok(ini)
-}
-
-/// What reading the file found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Reading {
-    Clean,
-    /// An option this version replaced: the file is rewritten without it.
-    Outdated,
-    /// Missing or invalid values, which take their defaults: the file is
-    /// copied to `<path>.old`, then rewritten.
-    Errors,
-}
-
-/// The policies an old `verbosity` line chooses: a category whose words it
-/// names is spoken, and the others play only their sounds, as the original
-/// game did. Categories it does not cover are spoken.
-fn policies_from_verbosity(verbosity: &str) -> Policies {
-    let words: Vec<&str> = verbosity
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .filter(|w| !w.is_empty())
-        .collect();
-    let mut p = Policies::default();
-    for (category, names) in [
-        (
-            Category::Production,
-            &["unit_complete", "unit_added", "menu_changed"][..],
-        ),
-        (
-            Category::Economy,
-            &["resources", "food", "resource_exhausted"][..],
-        ),
-        (Category::Scouting, &["scout_info"][..]),
-    ] {
-        if !names.iter().any(|n| words.contains(n)) {
-            p.set(category, Policy::Sound);
-        }
-    }
-    p
-}
-
-/// What a value of the file became.
-enum Read<T> {
-    Value(T),
-    Missing,
-    Invalid(String),
-}
-
-fn read<T>(ini: &Ini, section: &str, option: &str, convert: impl Fn(&str) -> Option<T>) -> Read<T> {
-    match ini.get(section).and_then(|o| o.get(option)) {
-        None => Read::Missing,
-        Some(raw) => match convert(raw) {
-            Some(v) => Read::Value(v),
-            None => Read::Invalid(raw.clone()),
-        },
+fn percent<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+    let v = u8::deserialize(d)?;
+    if v <= 100 {
+        Ok(v)
+    } else {
+        Err(serde::de::Error::custom(format!("{v} is above 100")))
     }
 }
 
-fn int(s: &str) -> Option<i64> {
-    s.trim().replace('_', "").parse().ok()
+/// Why a settings file was refused: its first error, and the line of the
+/// error when the reader knows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Refused {
+    pub line: Option<usize>,
+    pub reason: String,
 }
 
-fn float(s: &str) -> Option<f64> {
-    s.trim().replace('_', "").parse().ok()
-}
-
-/// A float above 0: a speed or a duration.
-fn positive(s: &str) -> Option<f64> {
-    float(s).filter(|v| v.is_finite() && *v > 0.0)
-}
-
-fn percent(s: &str) -> Option<u8> {
-    int(s)
-        .and_then(|v| u8::try_from(v).ok())
-        .filter(|v| *v <= 100)
-}
-
-fn text(s: &str) -> Option<String> {
-    Some(s.to_owned())
+impl fmt::Display for Refused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.line {
+            Some(line) => write!(f, "line {line}: {}", self.reason),
+            None => f.write_str(&self.reason),
+        }
+    }
 }
 
 impl Config {
-    fn rows(&self) -> Vec<(&'static str, &'static str, String)> {
-        let mut rows = vec![
-            ("general", "login", self.login.to_string()),
-            ("general", "mods", self.mods.clone()),
-            ("general", "soundpacks", self.soundpacks.clone()),
-            ("general", "num_channels", self.num_channels.to_string()),
-            ("general", "speed", number(self.speed)),
-            ("general", "main_volume", self.main_volume.to_string()),
-            ("general", "debug_mode", self.debug_mode.to_string()),
-            (
-                "general",
-                "announce_arrivals",
-                self.announce_arrivals.to_string(),
-            ),
-            ("server", "timeout", py_float(self.timeout)),
-            ("server", "fpct_coef", py_float(self.fpct_coef)),
-            ("server", "fpct_max", self.fpct_max.to_string()),
-            ("server", "require_humans", self.require_humans.to_string()),
-            (
-                "tts",
-                "wait_delay_per_character",
-                py_float(self.wait_delay_per_character),
-            ),
-            ("tts", "nvda_direct", self.nvda_direct.to_string()),
-        ];
-        for c in Category::ALL {
-            rows.push(("news", c.name(), self.news.of(c).name().to_owned()));
-        }
-        rows
+    /// The file's text.
+    pub fn to_toml(&self) -> String {
+        toml::to_string(self).expect("the settings are always valid TOML")
     }
 
-    /// The file content, as configparser writes it.
-    pub fn to_ini(&self) -> String {
-        let mut out = String::new();
-        let mut current = "";
-        for (section, option, value) in self.rows() {
-            if section != current {
-                if !current.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str(&format!("[{section}]\n"));
-                current = section;
-            }
-            out.push_str(&format!("{option} = {value}\n"));
-        }
-        out.push('\n');
-        out
-    }
-
-    /// Reads the settings from an ini text. Each missing or invalid value
-    /// takes its default.
-    pub fn from_ini(text_: &str, log: &Log) -> (Config, Reading) {
-        let ini = match parse_ini(text_) {
-            Ok(ini) => ini,
-            Err(e) => {
-                log.warning(format!("cannot read the configuration: {e}"));
-                return (Config::default(), Reading::Errors);
-            }
-        };
-        let mut c = Config::default();
-        let mut error = false;
-        macro_rules! field {
-            ($section:literal, $name:ident, $convert:expr) => {
-                match read(&ini, $section, stringify!($name), $convert) {
-                    Read::Value(v) => c.$name = v,
-                    Read::Missing => {
-                        log.info(format!(
-                            "{:?} option is missing (will be: {:?})",
-                            stringify!($name),
-                            c.$name.to_string()
-                        ));
-                        error = true;
-                    }
-                    Read::Invalid(raw) => {
-                        log.warning(format!(
-                            "{} will be {:?} instead of {:?}",
-                            stringify!($name),
-                            c.$name.to_string(),
-                            raw
-                        ));
-                        error = true;
-                    }
-                }
-            };
-        }
-        field!("general", login, Login::parse);
-        field!("general", mods, text);
-        field!("general", soundpacks, text);
-        field!("general", num_channels, int);
-        field!("general", speed, positive);
-        field!("general", debug_mode, int);
-        field!("server", timeout, float);
-        field!("server", fpct_coef, float);
-        field!("server", fpct_max, int);
-        field!("server", require_humans, int);
-        field!("tts", wait_delay_per_character, positive);
-        // Options of the port only: the original's files lack them, so
-        // missing is not an error.
-        macro_rules! port_field {
-            ($section:literal, $name:ident, $convert:expr) => {
-                match read(&ini, $section, stringify!($name), $convert) {
-                    Read::Value(v) => c.$name = v,
-                    Read::Missing => {}
-                    Read::Invalid(raw) => {
-                        log.warning(format!(
-                            "{} will be {:?} instead of {:?}",
-                            stringify!($name),
-                            c.$name.to_string(),
-                            raw
-                        ));
-                        error = true;
-                    }
-                }
-            };
-        }
-        port_field!("general", main_volume, percent);
-        port_field!("general", announce_arrivals, int);
-        port_field!("tts", nvda_direct, int);
-        // The original's `verbosity` chooses the policies once: the file is
-        // then rewritten with a `[news]` section instead.
-        let mut outdated = false;
-        if let Some(verbosity) = ini.get("general").and_then(|o| o.get("verbosity")) {
-            outdated = true;
-            if ini.contains_key("news") {
-                log.info("verbosity is ignored: the [news] section replaces it");
-            } else {
-                c.news = policies_from_verbosity(verbosity);
-                log.info(format!(
-                    "verbosity {verbosity:?} becomes the [news] section"
-                ));
-            }
-        }
-        for category in Category::ALL {
-            match read(&ini, "news", category.name(), Policy::parse) {
-                Read::Value(p) => c.news.set(category, p),
-                Read::Missing => {}
-                Read::Invalid(raw) => {
-                    log.warning(format!(
-                        "news {} will be {:?} instead of {raw:?}",
-                        category.name(),
-                        c.news.of(category).name()
-                    ));
-                    error = true;
-                }
-            }
-        }
-        let reading = if error {
-            Reading::Errors
-        } else if outdated {
-            Reading::Outdated
-        } else {
-            Reading::Clean
-        };
-        (c, reading)
+    /// Reads the settings from the file's text. A text editor may begin
+    /// the file with a byte order mark.
+    pub fn from_toml(text: &str) -> Result<Config, Refused> {
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+        toml::from_str(text).map_err(|e| Refused {
+            line: e
+                .span()
+                .and_then(|span| text.get(..span.start))
+                .map(|before| before.matches('\n').count() + 1),
+            reason: e.message().trim_end().to_owned(),
+        })
     }
 
     /// Reads `path`. A missing file is created with the defaults. A file
-    /// with errors is copied to `<path>.old`, then rewritten. A file that
-    /// exists but cannot be read is left alone, and the defaults are used.
+    /// that is refused is copied to `<path>.old`, then rewritten with the
+    /// defaults. A file that exists but cannot be read is left alone, and
+    /// the defaults are used.
     pub fn load(path: &Path, log: &Log) -> Config {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
@@ -411,26 +188,31 @@ impl Config {
                 return c;
             }
         };
-        let (c, reading) = Config::from_ini(&String::from_utf8_lossy(&bytes), log);
-        if reading == Reading::Outdated {
-            c.save(path, log);
-        }
-        if reading == Reading::Errors {
-            log.warning(format!("Error in {}.", path.display()));
-            let mut old = path.as_os_str().to_owned();
-            old.push(".old");
-            match std::fs::copy(path, &old) {
-                Ok(_) => log.warning("made a copy of the old config file"),
-                Err(_) => log.warning("could not make a copy of the old config file"),
+        match Config::from_toml(&String::from_utf8_lossy(&bytes)) {
+            Ok(c) => c,
+            Err(refused) => {
+                log.warning(format!(
+                    "{} is refused, and the defaults are used: {refused}",
+                    path.display()
+                ));
+                let mut old = path.as_os_str().to_owned();
+                old.push(".old");
+                match std::fs::copy(path, &old) {
+                    Ok(_) => log.warning(format!(
+                        "the refused file is kept as {}",
+                        Path::new(&old).display()
+                    )),
+                    Err(e) => log.warning(format!("cannot keep the refused file: {e}")),
+                }
+                let c = Config::default();
+                c.save(path, log);
+                c
             }
-            log.warning(format!("Rewriting {}...", path.display()));
-            c.save(path, log);
         }
-        c
     }
 
     pub fn save(&self, path: &Path, log: &Log) {
-        if let Err(e) = std::fs::write(path, self.to_ini()) {
+        if let Err(e) = std::fs::write(path, self.to_toml()) {
             log.warning(format!("cannot write {}: {e}", path.display()));
         }
     }

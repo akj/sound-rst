@@ -29,7 +29,7 @@ lets the log say where the game was if it stops after an error.
 
 Where your files are
 
-%APPDATA%\SoundRTS holds your settings (SoundRTS.ini), the log
+%APPDATA%\SoundRTS holds your settings (settings.toml), the log
 (tmp\client.log) and the data of the original game (the data folder).
 Removing the game leaves this folder. Delete it yourself to remove
 everything.

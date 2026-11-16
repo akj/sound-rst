@@ -12,7 +12,6 @@ use soundrts::clock::SystemClock;
 use soundrts::config::Config;
 use soundrts::log::Log;
 use soundrts::options::Options;
-use soundrts::parameters::Parameters;
 use soundrts::paths::{self, Paths};
 use soundrts::resource::preferred_language;
 use soundrts::rodio_output::RodioOutput;
@@ -68,17 +67,8 @@ fn main() -> ExitCode {
     let log = Log::to_file(&paths.client_log());
     log.record_panics();
 
-    let config = Config::load(&paths.config_file(), &log);
-    let params = match Parameters::load(&paths.parameters_file(), &log) {
-        Ok(p) => p,
-        Err(e) => {
-            let reason = format!("cannot read {}: {e}", paths.parameters_file().display());
-            log.error(&reason);
-            notice::fatal(&reason);
-            return ExitCode::FAILURE;
-        }
-    };
-    let preferred = preferred_language(&paths.language_file(), &log);
+    let config = Config::load(&paths.settings_file(), &log);
+    let preferred = preferred_language(config.language.as_deref(), &log);
     let mods = options.mods.clone().unwrap_or_else(|| config.mods.clone());
     let soundpacks = options
         .soundpacks
@@ -101,13 +91,13 @@ fn main() -> ExitCode {
             let clock = Rc::new(SystemClock::starting_at(start));
             let res = open_resources(
                 &paths,
-                Rc::new(params),
+                config.parameters.clone(),
                 &mods,
                 &soundpacks,
                 preferred,
                 &game_log,
             );
-            let channels = usize::try_from(config.num_channels).unwrap_or(1).max(1);
+            let channels = usize::from(config.num_channels.get());
             let sound_log = game_log.clone();
             let on_sound_error = move |e| sound_log.warning(format!("sound stopped: {e}"));
             let audio: Box<dyn AudioOutput> = match RodioOutput::open(channels, on_sound_error) {
@@ -118,10 +108,7 @@ fn main() -> ExitCode {
                 }
             };
             let devices = Devices {
-                speech: Box::new(screen_reader_speech(
-                    config.nvda_direct != 0,
-                    game_log.clone(),
-                )),
+                speech: Box::new(screen_reader_speech(config.nvda_direct, game_log.clone())),
                 audio,
                 input: Box::new(input),
                 clock,

@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
@@ -89,7 +90,6 @@ fn read_help_table(res: &Resources, name: &str) -> Vec<Msg> {
 pub struct Client {
     pub paths: Paths,
     pub config: Config,
-    pub params: Rc<Parameters>,
     pub log: Log,
     pub clock: ClockRef,
     pub res: Resources,
@@ -114,15 +114,15 @@ pub struct Client {
 /// soundpacks given on the command line win over the configuration's.
 pub fn open_resources(
     paths: &Paths,
-    params: Rc<Parameters>,
+    params: Arc<Parameters>,
     mods: &str,
     soundpacks: &str,
     preferred_language: Option<String>,
     log: &Log,
 ) -> Resources {
-    let (base, additional) = params.packages();
-    let mut package_paths = vec![paths.root.join(&base)];
-    package_paths.extend(paths.additional_package_paths(&base, &additional));
+    let packages = &params.packages;
+    let mut package_paths = vec![paths.root.join(&packages.base)];
+    package_paths.extend(paths.additional_package_paths(&packages.base, &packages.additional));
     let mut res = Resources::new(
         package_paths,
         paths.downloaded(),
@@ -145,13 +145,12 @@ impl Client {
     ) -> Client {
         let clock = devices.clock;
         let rng = ClientRng::new(devices.random_seed);
-        let params = res.params();
-        let channels = usize::try_from(config.num_channels).unwrap_or(1).max(1);
+        let params = config.parameters.clone();
         let audio = Audio::new(
             devices.audio,
-            channels,
+            usize::from(config.num_channels.get()),
             clock.clone(),
-            params.flattening_factor(),
+            params.flattening_factor,
             rng.clone(),
             f64::from(config.main_volume) / 100.0,
         );
@@ -163,7 +162,7 @@ impl Client {
             clock.clone(),
             log.clone(),
             char_delay.clone(),
-            params.tts_digit_coefficient(),
+            params.tts_digit_coefficient,
         );
         let channel = VoiceChannel::new(
             tts,
@@ -171,7 +170,7 @@ impl Client {
             sounds.clone(),
             clock.clone(),
             log.clone(),
-            config.debug_mode != 0,
+            config.debug_mode,
             devices.utterances,
         );
         let voice = Voice::new(channel, input.clone(), clock.clone());
@@ -189,7 +188,6 @@ impl Client {
         Client {
             paths,
             config,
-            params,
             log,
             clock,
             res,
@@ -214,7 +212,7 @@ impl Client {
     }
 
     pub fn save_config(&self) {
-        self.config.save(&self.paths.config_file(), &self.log);
+        self.config.save(&self.paths.settings_file(), &self.log);
     }
 
     /// Stops every sound, and speech too if `voice_too`.
@@ -318,20 +316,26 @@ impl Client {
         table[h.index as usize].clone()
     }
 
-    /// Reads `cfg/parameters.toml` again and applies the sound volumes. A
-    /// file that cannot be read keeps the current parameters.
+    /// Reads the `[parameters]` of `settings.toml` again and applies the
+    /// sound volumes. A file that cannot be read or is refused keeps the
+    /// current parameters.
     pub fn reload_parameters(&mut self) {
-        match Parameters::load(&self.paths.parameters_file(), &self.log) {
-            Ok(p) => {
-                let p = Rc::new(p);
-                self.params = p.clone();
+        let path = self.paths.settings_file();
+        let read = std::fs::read(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                Config::from_toml(&String::from_utf8_lossy(&bytes)).map_err(|e| e.to_string())
+            });
+        match read {
+            Ok(c) => {
+                let p = c.parameters;
+                self.config.parameters = p.clone();
                 self.res.set_params(p.clone());
                 self.sounds.update_volumes(p);
             }
-            Err(e) => self.log.warning(format!(
-                "cannot read {}: {e}",
-                self.paths.parameters_file().display()
-            )),
+            Err(e) => self
+                .log
+                .warning(format!("cannot reload {}: {e}", path.display())),
         }
     }
 
