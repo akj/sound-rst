@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ai::script::Script;
 use crate::defs::{bounded, check_size, preprocess_within_limits};
 use crate::nofloat::{PRECISION, py_int, to_int};
 
@@ -1649,7 +1650,7 @@ fn readable_effect(
 /// The computer player scripts of `ai.txt`, by name, in definition order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AiScripts {
-    scripts: Vec<(String, Vec<String>)>,
+    scripts: Vec<(String, Script)>,
     /// What went wrong while reading.
     pub warnings: Vec<String>,
 }
@@ -1677,6 +1678,7 @@ impl AiScripts {
     }
 
     fn read(&mut self, s: &str) -> Result<(), String> {
+        let mut scripts: Vec<(String, Vec<String>)> = Vec::new();
         let mut name: Option<String> = None;
         for line in s.split('\n') {
             let words: Vec<&str> = line.split_whitespace().collect();
@@ -1689,17 +1691,17 @@ impl AiScripts {
                     continue;
                 };
                 let n = (*n).to_owned();
-                let count = self.scripts.len();
-                match self.scripts.iter_mut().find(|(k, _)| *k == n) {
+                let count = scripts.len();
+                match scripts.iter_mut().find(|(k, _)| *k == n) {
                     Some(e) => e.1.clear(),
                     None if count >= MAX_DEFINITIONS => {
                         return Err(format!("more than {MAX_DEFINITIONS} scripts"));
                     }
-                    None => self.scripts.push((n.clone(), Vec::new())),
+                    None => scripts.push((n.clone(), Vec::new())),
                 }
                 name = Some(n);
             } else if let Some(n) = &name {
-                if let Some(e) = self.scripts.iter_mut().find(|(k, _)| k == n) {
+                if let Some(e) = scripts.iter_mut().find(|(k, _)| k == n) {
                     e.1.push(line.to_owned());
                 }
             } else {
@@ -1707,15 +1709,19 @@ impl AiScripts {
                     .push("'def <AI_name>' is missing (check ai.txt)".to_owned());
             }
         }
+        self.scripts = scripts
+            .into_iter()
+            .map(|(n, lines)| {
+                let script = Script::parse(&n, lines, &mut self.warnings);
+                (n, script)
+            })
+            .collect();
         Ok(())
     }
 
-    /// `get_ai(name)`: the lines of a script.
-    pub fn get(&self, name: &str) -> Option<&[String]> {
-        self.scripts
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_slice())
+    /// `get_ai(name)`: a script.
+    pub(crate) fn get(&self, name: &str) -> Option<&Script> {
+        self.scripts.iter().find(|(k, _)| k == name).map(|(_, v)| v)
     }
 
     /// `get_ai_names()`, in definition order.
@@ -1907,7 +1913,7 @@ mod tests {
     fn a_second_ai_def_restarts_the_script() {
         let ai = AiScripts::load(&["def easy\na\nb\ndef hard\nc\n", "def easy\nd\n"]);
         assert_eq!(ai.names(), ["easy", "hard"]);
-        assert_eq!(ai.get("easy").unwrap(), ["d"]);
+        assert_eq!(ai.get("easy").unwrap().lines(), ["d"]);
     }
 
     #[test]

@@ -2,8 +2,7 @@
 //! panic. For each source file of the crate, outside its tests, it counts:
 //!
 //! - the stops raised, by kind (see `src/abort.rs`): a map's trigger that
-//!   cannot be read, a broken invariant, and a stop of the computer player
-//!   not yet given a kind;
+//!   cannot be read, and a broken invariant;
 //! - `.unwrap()`, `.expect(` and indexing with `[]`, each of which panics
 //!   when it is wrong, and a panic ends a single-player game.
 //!
@@ -16,39 +15,32 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// The counts of one file, in the order of [`COLUMNS`].
-type Counts = [usize; 6];
+type Counts = [usize; 5];
 
-const COLUMNS: [&str; 6] = [
-    "trigger",
-    "invariant",
-    "unclassified",
-    "unwrap",
-    "expect",
-    "index",
-];
+const COLUMNS: [&str; 5] = ["trigger", "invariant", "unwrap", "expect", "index"];
 
 /// The committed counts. A file not listed has none.
 #[rustfmt::skip]
 const COMMITTED: &[(&str, Counts)] = &[
-    // file                   trig inv uncl unwrap expect index
-    ("ai.rs",                 [  0,  0, 25,  0,  0, 14]),
-    ("ai/door.rs",            [  0,  0,  3,  0,  2,  0]),
-    ("map.rs",                [  0,  0,  0,  0,  7,  2]),
-    ("nofloat.rs",            [  0,  0,  0,  0,  0,  3]),
-    ("orders.rs",             [  0, 20,  0,  0, 14,  3]),
-    ("pathfinding.rs",        [  0,  1,  0,  0,  0,  3]),
-    ("player.rs",             [  0,  0,  0,  0,  0,  1]),
-    ("playerlogic.rs",        [  0,  3,  0,  0,  2,  4]),
-    ("pyrandom.rs",           [  0,  0,  0,  0,  0, 25]),
-    ("questions.rs",          [  0,  0,  0,  0,  0,  2]),
-    ("rules.rs",              [  0,  0,  0,  0,  0,  2]),
-    ("seat_view.rs",          [  0,  0,  0,  0,  1,  0]),
-    ("square.rs",             [  0,  0,  0,  0,  0,  1]),
-    ("squarelogic.rs",        [  0,  0,  0,  0,  1,  1]),
-    ("test_games.rs",         [  0,  0,  0,  3,  1,  2]),
-    ("triggers.rs",           [  9,  0,  0,  0,  0,  4]),
-    ("unit.rs",               [  0, 17,  0,  0,  3,  3]),
-    ("world.rs",              [  0,  0,  0,  0,  2,  6]),
+    // file                   trig inv unwrap expect index
+    ("ai.rs",                 [  0,  0,  0,  0,  4]),
+    ("ai/door.rs",            [  0,  0,  0,  2,  0]),
+    ("map.rs",                [  0,  0,  0,  7,  2]),
+    ("nofloat.rs",            [  0,  0,  0,  0,  3]),
+    ("orders.rs",             [  0, 20,  0, 14,  3]),
+    ("pathfinding.rs",        [  0,  1,  0,  0,  3]),
+    ("player.rs",             [  0,  0,  0,  0,  1]),
+    ("playerlogic.rs",        [  0,  3,  0,  2,  4]),
+    ("pyrandom.rs",           [  0,  0,  0,  0, 25]),
+    ("questions.rs",          [  0,  0,  0,  0,  2]),
+    ("rules.rs",              [  0,  0,  0,  0,  2]),
+    ("seat_view.rs",          [  0,  0,  0,  1,  0]),
+    ("square.rs",             [  0,  0,  0,  0,  1]),
+    ("squarelogic.rs",        [  0,  0,  0,  1,  1]),
+    ("test_games.rs",         [  0,  0,  3,  1,  2]),
+    ("triggers.rs",           [  9,  0,  0,  0,  4]),
+    ("unit.rs",               [  0, 17,  0,  3,  3]),
+    ("world.rs",              [  0,  0,  0,  2,  6]),
 ];
 
 fn src_dir() -> PathBuf {
@@ -232,7 +224,6 @@ fn counts_of(name: &str, text: &str) -> Counts {
     [
         stops("TriggerError::"),
         stops("Invariant::"),
-        stops("Abort::new("),
         count(&code, ".unwrap()"),
         count(&code, ".expect("),
         count_indexing(&code),
@@ -287,9 +278,9 @@ fn the_places_that_stop_or_panic_only_become_fewer() {
         }
     }
     let total = |m: &BTreeMap<String, Counts>| {
-        let mut t = [0; 6];
+        let mut t = [0; 5];
         for c in m.values() {
-            for k in 0..6 {
+            for k in 0..5 {
                 t[k] += c[k];
             }
         }
@@ -319,5 +310,5 @@ mod tests {
     fn t() { x[0].unwrap(); }
 }
 "#;
-    assert_eq!(counts_of("x.rs", text), [0, 0, 0, 1, 0, 2]);
+    assert_eq!(counts_of("x.rs", text), [0, 0, 1, 0, 2]);
 }

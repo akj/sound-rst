@@ -1056,10 +1056,8 @@ impl World {
         let pid = self.add_player(player);
         self.plm(pid).allied = vec![pid];
         self.plm(pid).allied_control = vec![pid];
-        if matches!(kind, PlayerKind::Computer { .. })
-            && let Err(e) = self.new_computer(pid)
-        {
-            self.warn_stopped("set-up", &self.who(pid), &e);
+        if matches!(kind, PlayerKind::Computer { .. }) {
+            self.new_computer(pid);
         }
         Ok(pid)
     }

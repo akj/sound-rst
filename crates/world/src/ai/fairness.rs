@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::tests::world;
 use super::*;
-use crate::entity::{MemoryRef, PlayerId};
+use crate::entity::{MemoryRef, PlayerId, Target};
 use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::player::{Controller, Remembrance};
@@ -63,13 +63,10 @@ fn a_computer_looks_for_a_meadow_where_it_remembers_it() {
             snapshot: Arc::clone(&snapshot),
         },
     );
-    let remembered = Target::Memory(MemoryRef { owner: p, snapshot });
-    let candidates = [Target::Entity(near), remembered];
-    let first = w
-        .door(p)
-        .remove_far_candidates(&candidates, Some(Place::Square(a1)), 1)
-        .unwrap();
-    let ids: Vec<EntityId> = first.iter().filter_map(Target::entity_id).collect();
+    let remembered = Mark::of(Target::Memory(MemoryRef { owner: p, snapshot }));
+    let candidates = [Mark::of(Target::Entity(near)), remembered];
+    let first = w.door(p).remove_far_candidates(&candidates, a1, 1);
+    let ids: Vec<EntityId> = first.iter().filter_map(Mark::entity_id).collect();
     assert_eq!(ids, [far]);
 }
 
@@ -113,7 +110,7 @@ starting_units townhall peasant
     let [a1, b1] = ["a1", "b1"].map(|n| w.square_by_name(n).unwrap());
     let townhall = w.pl(c).units[0];
     assert_eq!(&*w.e(townhall).type_name, "townhall");
-    w.update_effect_users_and_workers(c).unwrap();
+    w.update_effect_users_and_workers(c);
     w.computer_state(c).sensible_building = Some(townhall);
     let exit = w.square(a1).exits[0];
     // A footman of the other player blocks the other side of the exit from

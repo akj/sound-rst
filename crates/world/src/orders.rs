@@ -6,7 +6,9 @@
 
 use crate::abort::{Invariant, Res};
 use crate::command::{KeywordOrder, OrderTarget};
-use crate::entity::{AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target};
+use crate::entity::{
+    AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
+};
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
@@ -1043,6 +1045,37 @@ impl Order {
             .collect()
     }
 
+    /// What [`World::order_eq`] compares of it, or `None` for an order
+    /// equal to no other.
+    pub(crate) fn likeness(&self) -> Option<Likeness> {
+        let target = self.target().and_then(Target::identity);
+        match &self.kind {
+            &OrderKind::Go { creation_time, .. } => Some(Likeness::Go {
+                creation_time,
+                target,
+            }),
+            &OrderKind::Build { building, .. } => Some(Likeness::Build {
+                building,
+                target,
+                id: self.id,
+            }),
+            OrderKind::Production(_)
+            | OrderKind::Attack { .. }
+            | OrderKind::Patrol { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Use { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => None,
+        }
+    }
+
     /// The order in words, as given: `["build", "farm", "25"]`.
     pub fn words(&self, w: &World) -> Vec<String> {
         let mut words = vec![self.keyword().as_str().to_owned()];
@@ -1050,6 +1083,22 @@ impl Order {
         words.extend(self.args(w));
         words
     }
+}
+
+/// What tells an order apart from another with a different uid: a `go`
+/// order by when it was queued and its target, a `build` order by its
+/// building, its target and the command that gave it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Likeness {
+    Go {
+        creation_time: Option<i64>,
+        target: Option<TargetIdentity>,
+    },
+    Build {
+        building: TypeId,
+        target: Option<TargetIdentity>,
+        id: Option<u64>,
+    },
 }
 
 /// Costs and arguments of an order a unit could receive, for menus.
@@ -1130,30 +1179,7 @@ impl World {
     /// equal for the same target given at the same time, `build` orders for
     /// the same type, target and command; other orders are never equal.
     pub(crate) fn order_eq(&self, a: &Order, b: &Order) -> bool {
-        let same_target =
-            || a.target().and_then(Target::identity) == b.target().and_then(Target::identity);
-        match &a.kind {
-            OrderKind::Go { creation_time, .. } => {
-                matches!(&b.kind, OrderKind::Go { creation_time: tb, .. } if same_target() && creation_time == tb)
-            }
-            OrderKind::Build { building, .. } => {
-                matches!(&b.kind, OrderKind::Build { building: bb, .. } if building == bb && same_target() && a.id == b.id)
-            }
-            OrderKind::Production(_)
-            | OrderKind::Attack { .. }
-            | OrderKind::Patrol { .. }
-            | OrderKind::Gather { .. }
-            | OrderKind::AutoAttack
-            | OrderKind::AutoExplore
-            | OrderKind::Wait { .. }
-            | OrderKind::Block { .. }
-            | OrderKind::Repair { .. }
-            | OrderKind::BuildPhaseTwo { .. }
-            | OrderKind::Use { .. }
-            | OrderKind::Load { .. }
-            | OrderKind::LoadAll { .. }
-            | OrderKind::UnloadAll { .. } => false,
-        }
+        a.likeness().is_some_and(|l| b.likeness() == Some(l))
     }
 
     /// `x in list`: the same order or an equal one.
