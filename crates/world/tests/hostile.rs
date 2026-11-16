@@ -518,16 +518,26 @@ fn warnings_of_a_game(rules: &str, ai: &str) -> Vec<String> {
 }
 
 /// A farm that costs food sends the computer to build a farm for the food,
-/// which costs food, and so on: this overflowed the stack. Now the
-/// computer's update ends with a warning each turn it plays, as the
-/// original's recursion error ends it, and the game goes on.
+/// which costs food, and so on: this overflowed the stack. Now getting its
+/// workers waits with a warning each turn it plays, and it plays on: each
+/// line of its plan, which gets peasants too, is skipped with a warning.
 #[test]
-fn a_farm_that_costs_food_ends_the_computers_update_with_a_warning() {
+fn a_farm_that_costs_food_is_put_off_with_a_warning() {
+    let workers = "recursion error with easy; getting its workers";
+    let line = |l: &str| format!("recursion error with easy; current ai.txt line is: {l}");
     assert_eq!(
         warnings_of_a_game("def farm\nfood_cost 100\n", ""),
-        [0, 10, 20].map(|turn| format!(
-            "the update of player 87 stopped at turn {turn}: maximum recursion depth exceeded"
-        ))
+        [
+            workers.to_owned(),
+            line("get 8 peasant 5 footman 15 archer"),
+            workers.to_owned(),
+            line(
+                "get 9 peasant 10 knight 30 archer 5 catapult 1 new_flyingmachine 5 priest \
+                 10 mage 1 darkarcher 10 dragon 10 flyingmachine"
+            ),
+            workers.to_owned(),
+            line("get 9 peasant 20 knight 60 archer"),
+        ]
     );
 }
 

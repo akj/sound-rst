@@ -47,13 +47,31 @@ const NB_WORKERS_TO_GET: i64 = 10;
 /// recursion limit. The original's rules and scripts go 11 deep.
 const MAX_PLANNING_DEPTH: usize = 64;
 
-/// The error at [`MAX_PLANNING_DEPTH`], with Python's message.
-const RECURSION_ERROR: &str = "maximum recursion depth exceeded";
+/// Why the planning of a purchase stops before it is done.
+#[derive(Debug)]
+enum Unplanned {
+    /// The purchase asked for others, one inside another, deeper than
+    /// [`MAX_PLANNING_DEPTH`]: rules where a unit asks for itself, through
+    /// its makers, its requirements or its food. The purchase waits for a
+    /// later turn, and the computer goes on with the rest of its turn.
+    TooDeep,
+    /// The work stops.
+    Stop(Abort),
+}
 
-/// One step deeper into the planning, or [`RECURSION_ERROR`].
-fn deeper(depth: usize) -> Res<usize> {
+impl From<Abort> for Unplanned {
+    fn from(a: Abort) -> Unplanned {
+        Unplanned::Stop(a)
+    }
+}
+
+/// The result of planning a purchase.
+type Planned<T = ()> = Result<T, Unplanned>;
+
+/// One step deeper into the planning, or [`Unplanned::TooDeep`].
+fn deeper(depth: usize) -> Planned<usize> {
     if depth >= MAX_PLANNING_DEPTH {
-        return Err(Abort::new(RECURSION_ERROR));
+        return Err(Unplanned::TooDeep);
     }
     Ok(depth + 1)
 }
@@ -393,17 +411,22 @@ impl Door<'_> {
         self.raise_dead()?;
         self.build_a_warehouse_if_useful()?;
         let worker = self.role_type(Role::Worker);
-        // A recursion error here ends the player's update with a warning, as
-        // the original's ends at the world's catch.
-        self.get(NB_WORKERS_TO_GET, worker)?;
-        let planned = match self.follow_plan() {
-            // The original catches a recursion error of its plan here, and
-            // goes on with the next line of the plan at its next turn.
-            Err(Abort::Unclassified(m)) if m == RECURSION_ERROR => {
-                let ai_type = match self.kind() {
-                    PlayerKind::Computer { ai_type } => ai_type.clone(),
-                    _ => String::new(),
-                };
+        match self.get(NB_WORKERS_TO_GET, worker) {
+            Ok(_) => {}
+            Err(Unplanned::TooDeep) => {
+                let ai_type = self.ai_type();
+                self.warn(format!(
+                    "recursion error with {ai_type}; getting its workers"
+                ));
+            }
+            Err(Unplanned::Stop(a)) => return Err(a),
+        }
+        match self.follow_plan() {
+            Ok(()) => {}
+            // As the original, it goes on with the next line of the plan at
+            // its next turn.
+            Err(Unplanned::TooDeep) => {
+                let ai_type = self.ai_type();
                 let c = self.state();
                 let line = usize::try_from(c.line_nb)
                     .ok()
@@ -414,12 +437,18 @@ impl Door<'_> {
                     "recursion error with {ai_type}; current ai.txt line is: {line}"
                 ));
                 self.set_line_nb(n);
-                Ok(())
             }
-            other => other,
-        };
-        planned?;
+            Err(Unplanned::Stop(a)) => return Err(a),
+        }
         self.gather_what_is_lacking()
+    }
+
+    /// The name of its AI type, as a warning names it.
+    fn ai_type(&self) -> String {
+        match self.kind() {
+            PlayerKind::Computer { ai_type } => ai_type.clone(),
+            PlayerKind::Human | PlayerKind::Computer2 => String::new(),
+        }
     }
 
     /// The cpu intensive players play in turns, one tenth of them each turn.
@@ -431,7 +460,7 @@ impl Door<'_> {
         self.turn().rem_euclid(10) == turn
     }
 
-    fn follow_plan(&mut self) -> Res {
+    fn follow_plan(&mut self) -> Planned {
         let Some(plan) = self.state().plan.clone() else {
             return Ok(());
         };
@@ -1059,7 +1088,7 @@ impl Door<'_> {
             });
             if let Some(&exit) = exits.first()
                 && !self.exit_is_blocked(exit)
-                && self.gather(&gate_cost, 0, 0)?
+                && self.has_resources(&gate_cost)
             {
                 for w in self.state().workers.clone() {
                     let name = self.rules().ty(gate).name.clone();
@@ -1441,13 +1470,13 @@ impl Door<'_> {
 
     /// `get`: works toward having `nb` units of the type; true if they are
     /// there. Of a name that is no type, it never has any.
-    fn get(&mut self, nb: i64, t: Option<TypeId>) -> Res<bool> {
+    fn get(&mut self, nb: i64, t: Option<TypeId>) -> Planned<bool> {
         self.state_mut().safe_cnt = 0;
         self.get_types(nb, t.into_iter().collect(), 0)
     }
 
     /// `_get`. `depth` counts the planning calls this one is inside.
-    fn get_types(&mut self, nb: i64, types: Vec<TypeId>, depth: usize) -> Res<bool> {
+    fn get_types(&mut self, nb: i64, types: Vec<TypeId>, depth: usize) -> Planned<bool> {
         let depth = deeper(depth)?;
         let sel = Sel::List(types.clone());
         if self.nb(&sel) >= nb {
@@ -1476,12 +1505,9 @@ impl Door<'_> {
 
     /// `gather`: true if the resources and the food are there; asks for a
     /// farm when food is missing.
-    fn gather(&mut self, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
+    fn gather(&mut self, cost: &[i64], food: i64, depth: usize) -> Planned<bool> {
         let depth = deeper(depth)?;
-        if !self.missing_resources(cost).is_empty() {
-            self.state_mut()
-                .lacking
-                .get_or_insert_with(|| cost.to_vec());
+        if !self.has_resources(cost) {
             return Ok(false);
         }
         let limit = self.food_limit();
@@ -1489,7 +1515,7 @@ impl Door<'_> {
         if food != 0 && food > available - self.used_food() {
             if available < limit {
                 let Some(farm) = self.role_type(Role::Farm) else {
-                    return Err(Abort::new("'NoneType' object has no attribute '__name__'"));
+                    return Err(Abort::new("'NoneType' object has no attribute '__name__'").into());
                 };
                 let t = Sel::One(farm);
                 if self.future_nb(&t) == self.nb(&t) {
@@ -1502,7 +1528,20 @@ impl Door<'_> {
         }
     }
 
-    fn get_requirements(&mut self, requirements: &[String], depth: usize) -> Res<bool> {
+    /// Whether the player has the resources of `cost`. If not, the cost is
+    /// that of the first purchase of its turn that lacked a resource,
+    /// unless one lacked one before.
+    fn has_resources(&mut self, cost: &[i64]) -> bool {
+        if self.missing_resources(cost).is_empty() {
+            return true;
+        }
+        self.state_mut()
+            .lacking
+            .get_or_insert_with(|| cost.to_vec());
+        false
+    }
+
+    fn get_requirements(&mut self, requirements: &[String], depth: usize) -> Planned<bool> {
         let depth = deeper(depth)?;
         for r in requirements {
             if !self.has(r) {
@@ -1518,7 +1557,7 @@ impl Door<'_> {
         made: TypeId,
         nb: i64,
         depth: usize,
-    ) -> Res {
+    ) -> Planned {
         let depth = deeper(depth)?;
         let t = self.rules().ty(made).clone();
         let makers = self.makers(made);
@@ -1894,10 +1933,9 @@ starting_resources 0 50
         assert_eq!((door.nb(&farm), door.future_nb(&farm)), (1, 2));
     }
 
-    /// A computer of the script `easy` alone on a square with a town hall
-    /// and two peasants.
-    pub(super) fn scripted(script: &str) -> (World, PlayerId) {
-        let mut w = world(
+    /// A computer of the script `easy` alone on a square with these units.
+    pub(super) fn scripted(script: &str, units: &str) -> (World, PlayerId) {
+        let mut w = world(&format!(
             "
 square_width 12
 nb_columns 1
@@ -1908,9 +1946,10 @@ woods 1000 a1
 nb_players_min 1
 nb_players_max 1
 starting_squares a1
-starting_units townhall 2 peasant
-",
-        );
+starting_units {units}
+starting_resources 100 100
+"
+        ));
         w.ai_scripts = crate::AiScripts::load(&[script]);
         let p = w
             .populate_map(&[crate::Controller::computer("easy")], false, false)
@@ -1920,7 +1959,10 @@ starting_units townhall 2 peasant
 
     #[test]
     fn a_script_line_with_a_mistake_is_skipped_and_the_computer_plays_on() {
-        let (mut w, p) = scripted("def easy\nwatchdog soon\ngoto_random\nattack\n");
+        let (mut w, p) = scripted(
+            "def easy\nwatchdog soon\ngoto_random\nattack\n",
+            "townhall 2 peasant",
+        );
         assert_eq!(
             w.ai_scripts.warnings,
             [
@@ -1933,6 +1975,22 @@ starting_units townhall 2 peasant
             w.update();
         }
         assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+    }
+
+    #[test]
+    fn a_purchase_that_asks_for_itself_waits_and_the_computer_plays_on() {
+        // A farm that costs food asks for a farm for its food, and so on.
+        // Its food is full: getting more workers asks for a farm, and the
+        // planning goes too deep.
+        let (mut w, p) = scripted("def easy\nattack\n", "townhall farm 9 peasant");
+        w.rules.unit_type_mut("farm").unwrap().stats.food_cost = 100;
+        for _ in 0..30 {
+            w.update();
+        }
+        let warning = "recursion error with easy; getting its workers";
+        assert_eq!(w.drain_warnings(), [warning; 3]);
+        // It still followed its plan.
         assert_eq!(w.computer_state(p).constant_attacks, 1);
     }
 

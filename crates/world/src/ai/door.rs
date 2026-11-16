@@ -361,9 +361,9 @@ impl World {
     /// `get`: works toward having `nb` units of the type; true if they are
     /// there.
     #[cfg(test)]
-    pub(crate) fn ai_get(&mut self, p: PlayerId, nb: i64, type_name: &str) -> Res<bool> {
+    pub(crate) fn ai_get(&mut self, p: PlayerId, nb: i64, type_name: &str) -> Result<bool, String> {
         let t = self.rules.type_id(type_name);
-        self.door(p).get(nb, t)
+        self.door(p).get(nb, t).map_err(|e| format!("{e:?}"))
     }
 
     /// `nb`: the number of units of the type.
