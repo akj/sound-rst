@@ -51,7 +51,7 @@ Most features reach several of the places below. Before you call a change to the
 
 ## Verifying
 
-- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. It fetches the original into `vendor/soundrts-upstream` and imports it into `vendor/game-data`, which the tests read. Run it again after a change to `crates/import/src/original_names.txt`: the game reads only data that its own table imported.
+- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. It fetches the original into `vendor/soundrts-upstream` and imports it into `vendor/game-data`, which the tests read. Run it again after a change to `crates/import/src/original_names.txt`: the game reads only data that its own table imported. In a worktree the script copies the original's files from the main checkout's clone, so the worktree holds no nested Git repository. Do not clone the original into a worktree by hand.
 - Before you push, run what CI checks:
 
   ```powershell

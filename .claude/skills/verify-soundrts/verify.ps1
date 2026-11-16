@@ -151,7 +151,9 @@ function Invoke-Doctor {
     if ($have -notlike "rustc $want *") { throw "rust-toolchain.toml pins Rust $want, and rustc answers '$have'." }
     Write-Result "ok: Rust $want"
 
-    $head = if (Test-Path (Join-Path $Upstream '.git')) { "$(git -C $Upstream rev-parse HEAD)".Trim() } else { 'nothing' }
+    # The fetch script names the commit it put there, clone or worktree copy.
+    $stamp = "$Upstream.commit"
+    $head = if (Test-Path $stamp) { (Get-Content -Raw $stamp).Trim() } else { 'nothing' }
     if ($head -ne $Pin -or -not (Test-Path (Join-Path $Data 'import.txt'))) {
         throw "The original in $Upstream is at $head, scripts/upstream-commit.txt pins $Pin, and its imported data belongs in $Data. Run the launch command."
     }
