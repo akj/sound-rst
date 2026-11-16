@@ -10,11 +10,15 @@
 //!   exits and where they lead, starting squares), who plays and who is
 //!   allied with whom.
 //! - **The computer's own state:** its resources, food, upgrades, units
-//!   and their orders, and the state of its plan.
+//!   and their orders ([`Own`]), and the state of its plan.
 //! - **What it perceives now, or remembers** as its memory holds it, with
 //!   only what a player who perceives a thing is told of it ([`Seen`]),
 //!   and what the world derives from these alone: the enemy menace and
 //!   presence by square, the places with corpses or friends.
+//!
+//! A target, of an order or of the computer's plan, is a [`Mark`]: it names
+//! a square or a thing, and the computer reads the thing through the door,
+//! as [`Seen`]. A remembered thing's copy stays behind the mark.
 //! - **Paths**, as its units' path finder finds them.
 //! - **Orders**, given to its own units through the checks a human's
 //!   order goes through: the unit's menu, its requirements, its targets
@@ -24,18 +28,19 @@
 //! seed.
 
 use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::abort::{Abort, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Names, Place, PlayerId, SquareId, Target};
-use crate::orders::{Keyword, MenuEntry, Order, OrderInfo, Request};
+use crate::orders::{Keyword, Likeness, MenuEntry, Order, OrderInfo, OrderKind, Request};
 use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
 use crate::questions;
 use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{INF, TPlace, World};
 
-use super::{Computer, Tracked};
+use super::Computer;
 
 /// What a computer player may read and do: see the [module](self).
 pub(super) struct Door<'w> {
@@ -92,6 +97,209 @@ impl<'a> Seen<'a> {
     /// For a deposit, its type.
     pub(super) fn deposit_type(self) -> Option<TypeId> {
         self.e.deposit().map(|d| d.type_id)
+    }
+}
+
+/// A target as the computer holds it: a square, or a thing it perceived
+/// or remembers. A mark only names; what the computer reads of the thing
+/// goes through the door, as [`Seen`].
+#[derive(Clone, Debug, Hash)]
+pub(super) struct Mark(Target);
+
+impl Mark {
+    /// A mark of any target, for the tests.
+    #[cfg(test)]
+    pub(super) fn of(t: Target) -> Mark {
+        Mark(t)
+    }
+
+    pub(super) fn square(s: SquareId) -> Mark {
+        Mark(Target::Square(s))
+    }
+
+    /// The same square or thing, and for a remembered thing the same
+    /// memory of it.
+    pub(super) fn same(&self, other: &Mark) -> bool {
+        self.0.same(&other.0)
+    }
+
+    /// The id of the thing it names.
+    pub(super) fn entity_id(&self) -> Option<EntityId> {
+        self.0.entity_id()
+    }
+
+    /// Whether it names this thing as perceived, not as remembered.
+    pub(super) fn is_entity(&self, id: EntityId) -> bool {
+        matches!(self.0, Target::Entity(e) if e == id)
+    }
+
+    pub(super) fn as_square(&self) -> Option<SquareId> {
+        match self.0 {
+            Target::Square(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// One of the computer's own units, as it is now. The targets of its
+/// orders are [`Mark`]s.
+#[derive(Clone, Copy)]
+pub(super) struct Own<'a> {
+    e: &'a Entity,
+}
+
+impl<'a> Own<'a> {
+    pub(super) fn place(self) -> Option<Place> {
+        self.e.place
+    }
+
+    pub(super) fn xy(self) -> (i64, i64) {
+        (self.e.x, self.e.y)
+    }
+
+    pub(super) fn speed(self) -> i64 {
+        self.e.stats.speed
+    }
+
+    pub(super) fn is_a_building(self) -> bool {
+        self.e.stats.is_a_building != 0
+    }
+
+    pub(super) fn class(self) -> EntityClass {
+        self.e.class()
+    }
+
+    /// Its type in the rules. A building site has none.
+    pub(super) fn type_id(self) -> Option<TypeId> {
+        self.e.type_id()
+    }
+
+    pub(super) fn type_name(self) -> &'a str {
+        &self.e.type_name
+    }
+
+    pub(super) fn hp(self) -> i64 {
+        self.e.creature().map_or(0, |c| c.hp)
+    }
+
+    pub(super) fn airground_type(self) -> AirGround {
+        self.e.airground_type
+    }
+
+    pub(super) fn menace(self) -> i64 {
+        self.e.menace()
+    }
+
+    pub(super) fn time_limit(self) -> Option<i64> {
+        self.e.time_limit()
+    }
+
+    /// For a building site, the building it will become.
+    pub(super) fn site_type(self) -> Option<TypeId> {
+        self.e.site().map(|s| s.building_type)
+    }
+
+    /// Its orders, first to last.
+    pub(super) fn orders(self) -> impl ExactSizeIterator<Item = OwnOrder<'a>> {
+        self.e.orders().iter().map(|o| OwnOrder { o })
+    }
+
+    pub(super) fn first_order(self) -> Option<OwnOrder<'a>> {
+        self.orders().next()
+    }
+
+    pub(super) fn has_orders(self) -> bool {
+        !self.e.orders().is_empty()
+    }
+}
+
+/// An order of one of the computer's units.
+#[derive(Clone, Copy)]
+pub(super) struct OwnOrder<'a> {
+    o: &'a Order,
+}
+
+impl OwnOrder<'_> {
+    pub(super) fn keyword(self) -> Keyword {
+        self.o.keyword()
+    }
+
+    pub(super) fn is_impossible(self) -> bool {
+        self.o.is_impossible()
+    }
+
+    /// What it aims at now.
+    pub(super) fn target(self) -> Option<Mark> {
+        self.o.target().cloned().map(Mark)
+    }
+
+    /// The type it trains, researches, upgrades to or builds.
+    pub(super) fn made(self) -> Option<TypeId> {
+        match &self.o.kind {
+            OrderKind::Production(p) => Some(p.product.type_id()),
+            OrderKind::Build { building, .. } => Some(*building),
+            OrderKind::Go { .. }
+            | OrderKind::Attack { .. }
+            | OrderKind::Patrol { .. }
+            | OrderKind::Gather { .. }
+            | OrderKind::AutoAttack
+            | OrderKind::AutoExplore
+            | OrderKind::Wait { .. }
+            | OrderKind::Block { .. }
+            | OrderKind::Repair { .. }
+            | OrderKind::BuildPhaseTwo { .. }
+            | OrderKind::Use { .. }
+            | OrderKind::Load { .. }
+            | OrderKind::LoadAll { .. }
+            | OrderKind::UnloadAll { .. } => None,
+        }
+    }
+}
+
+/// An order the computer gave one of its units, followed until it is
+/// done: the order's uid, and what it needs of the order as last seen.
+#[derive(Clone, Debug)]
+pub(super) struct Followed {
+    unit: EntityId,
+    uid: u64,
+    /// The order was complete when last seen.
+    complete: bool,
+    /// An order of the unit alike to it, as last seen, is taken for it.
+    likeness: Option<Likeness>,
+    /// The order as last seen, which only the digest reads.
+    legacy: Order,
+}
+
+/// As the copy of the order it replaces.
+impl Hash for Followed {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.unit.hash(state);
+        self.legacy.hash(state);
+    }
+}
+
+impl Followed {
+    fn new(unit: EntityId, o: &Order) -> Followed {
+        Followed {
+            unit,
+            uid: o.uid,
+            complete: o.is_complete(),
+            likeness: o.likeness(),
+            legacy: o.clone(),
+        }
+    }
+}
+
+impl Names for Mark {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        self.0.names(f);
+    }
+}
+
+impl Names for Followed {
+    fn names(&self, f: &mut impl FnMut(EntityId)) {
+        f(self.unit);
+        self.legacy.names(f);
     }
 }
 
@@ -283,8 +491,11 @@ impl Door<'_> {
     }
 
     /// One of its units, as it is now. `None` for any other entity.
-    pub(super) fn unit(&self, u: EntityId) -> Option<&Entity> {
-        self.world.entity(u).filter(|e| e.player() == Some(self.me))
+    pub(super) fn unit(&self, u: EntityId) -> Option<Own<'_>> {
+        self.world
+            .entity(u)
+            .filter(|e| e.player() == Some(self.me))
+            .map(|e| Own { e })
     }
 
     pub(super) fn resources(&self) -> &[i64] {
@@ -355,9 +566,28 @@ impl Door<'_> {
         self.unit(u).is_some() && self.world.is_order_allowed(u, kw, type_name)
     }
 
-    /// Whether two orders of its units are the same order.
-    pub(super) fn order_eq(&self, a: &Order, b: &Order) -> bool {
-        self.world.order_eq(a, b)
+    /// The first order of its unit, to follow, if it has this keyword.
+    pub(super) fn follow_first(&self, u: EntityId, kw: Keyword) -> Option<Followed> {
+        let o = self.unit(u)?.e.orders().first()?;
+        (o.keyword() == kw).then(|| Followed::new(u, o))
+    }
+
+    /// Whether an order it follows is still in progress: in its unit's
+    /// queue and not complete, the unit on the map. An order that left the
+    /// queue counts while the unit has an order alike to it (see
+    /// [`Likeness`]) and it was not complete when last seen.
+    pub(super) fn still_followed(&self, f: &mut Followed) -> bool {
+        let Some(unit) = self.unit(f.unit).map(|u| u.e) else {
+            return false;
+        };
+        if let Some(live) = unit.orders().iter().find(|o| o.uid == f.uid) {
+            *f = Followed::new(f.unit, live);
+            return !live.is_complete() && unit.place.is_some();
+        }
+        !f.complete
+            && unit.place.is_some()
+            && f.likeness
+                .is_some_and(|l| unit.orders().iter().any(|o| o.likeness() == Some(l)))
     }
 
     /// An order as the words it is written with.
@@ -386,16 +616,21 @@ impl Door<'_> {
     }
 
     /// The entities it remembers, as it last perceived them, in id order,
-    /// each with a target that names the copy.
-    pub(super) fn remembered(&self) -> impl Iterator<Item = (Seen<'_>, Target)> {
+    /// each with a mark that names the memory.
+    pub(super) fn remembered(&self) -> impl Iterator<Item = (Seen<'_>, Mark)> {
         let me = self.me;
         self.world.pl(me).memory.values().map(move |r| {
             let target = Target::Memory(MemoryRef {
                 owner: me,
                 snapshot: Arc::clone(&r.snapshot),
             });
-            (Seen { e: &r.snapshot }, target)
+            (Seen { e: &r.snapshot }, Mark(target))
         })
+    }
+
+    /// A mark of a thing it perceives now.
+    pub(super) fn mark(s: Seen) -> Mark {
+        Mark(Target::Entity(s.e.id))
     }
 
     /// An entity as it knows it: perceived now, or remembered.
@@ -407,28 +642,28 @@ impl Door<'_> {
         Some(Seen { e: &r.snapshot })
     }
 
-    /// The type of what a target names: a thing it perceived when it
+    /// The type of what a mark names: a thing it perceived when it
     /// named it, whose type never changes.
-    pub(super) fn target_type(&self, t: &Target) -> Option<TypeId> {
-        match t {
+    pub(super) fn target_type(&self, t: &Mark) -> Option<TypeId> {
+        match &t.0 {
             Target::Entity(id) => self.world.entity(*id).and_then(Entity::type_id),
             Target::Memory(m) => m.snapshot.type_id(),
             Target::Square(_) | Target::Zoom(_) | Target::Xy(..) => None,
         }
     }
 
-    /// Where a target is, as it knows it.
-    pub(super) fn target_place(&self, t: &Target) -> TPlace {
-        match t {
+    /// Where a mark is, as it knows it.
+    pub(super) fn target_place(&self, t: &Mark) -> TPlace {
+        match &t.0 {
             Target::Entity(id) if !self.perceives(*id) => match self.known(*id).map(Seen::place) {
                 Some(Some(p)) => TPlace::At(p),
                 _ => TPlace::Nowhere,
             },
-            _ => self.world.t_place(t),
+            t => self.world.t_place(t),
         }
     }
 
-    pub(super) fn target_place_of(&self, t: &Target) -> Option<Place> {
+    pub(super) fn target_place_of(&self, t: &Mark) -> Option<Place> {
         match self.target_place(t) {
             TPlace::At(p) => Some(p),
             TPlace::World | TPlace::Nowhere => None,
@@ -437,8 +672,8 @@ impl Door<'_> {
 
     /// Whether it still knows the target: perceives it, or remembers it
     /// as the copy shows it.
-    pub(super) fn is_known(&self, t: &Target) -> bool {
-        match t {
+    pub(super) fn is_known(&self, t: &Mark) -> bool {
+        match &t.0 {
             Target::Entity(id) => self.perceives(*id),
             Target::Memory(m) => self.world.memory_is_current(m),
             Target::Square(_) | Target::Zoom(_) | Target::Xy(..) => false,
@@ -675,10 +910,8 @@ impl Names for Computer {
             lacking: _,
         } = self;
         attacked_places.names(f);
-        for tracked in orders.values().flatten() {
-            let Tracked { unit, order } = tracked;
-            f(*unit);
-            order.names(f);
+        for followed in orders.values().flatten() {
+            followed.names(f);
         }
         for ((_, _, place), target) in previous_choose {
             place.names(f);

@@ -199,7 +199,7 @@ fn workers_near_a_deposit_repair_the_warehouse_being_built_there() {
     // The worker sees the deposit and the site.
     w.update_perception_and_memory(c).unwrap();
     w.door(c)
-        .build_a_warehouse_for(&Target::Entity(deposit))
+        .build_a_warehouse_for(&Mark::of(crate::entity::Target::Entity(deposit)))
         .unwrap();
     assert_eq!(orders(&w, worker), [words(&["repair", &site.to_string()])]);
 }

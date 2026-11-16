@@ -74,7 +74,7 @@ pub struct ZoomTarget {
 /// What tells two targets apart when orders are compared: the same
 /// square, the same entity (perceived or remembered), or the same point
 /// given by the player.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum TargetIdentity {
     Square(SquareId),
     Entity(EntityId),

@@ -21,9 +21,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::abort::{Abort, Res};
-use crate::entity::{CreatureKind, Entity, EntityId, Place, SquareId, Target};
+use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, py_int, square_of_distance};
-use crate::orders::{Keyword, Order, OrderKind, Request, TargetRef};
+use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass, Role};
 use crate::world::TPlace;
@@ -31,7 +31,7 @@ use crate::world::TPlace;
 mod door;
 mod handicap;
 
-use door::{Door, Seen};
+use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 
@@ -100,14 +100,6 @@ impl Kind {
     }
 }
 
-/// An order given by `order`, followed until it is done.
-#[derive(Clone, Debug, Hash)]
-struct Tracked {
-    unit: EntityId,
-    /// The order as last seen in the unit's queue.
-    order: Order,
-}
-
 /// The comparison key of `_deposit_priority`: the deposit's id last, and
 /// none for a missing deposit.
 type DepositPriority = (i64, i64, Option<EntityId>);
@@ -123,12 +115,12 @@ pub(crate) struct Computer {
     constant_attacks: i64,
     research: i64,
     attacked_places: Vec<Option<Place>>,
-    orders: BTreeMap<(Sel, Vec<String>), Vec<Tracked>>,
-    previous_choose: BTreeMap<(Kind, Option<i64>, Option<Place>), Target>,
+    orders: BTreeMap<(Sel, Vec<String>), Vec<Followed>>,
+    previous_choose: BTreeMap<(Kind, Option<i64>, Option<Place>), Mark>,
     sensible_building: Option<EntityId>,
     workers: Vec<EntityId>,
     /// Workers gathering from each deposit, by the identity of the target.
-    gathered_deposits: Vec<(Option<Target>, i64)>,
+    gathered_deposits: Vec<(Option<Mark>, i64)>,
     building_sites: Vec<EntityId>,
     raise_dead_users: Vec<(EntityId, String)>,
     teleportation_users: Vec<(EntityId, String)>,
@@ -136,7 +128,7 @@ pub(crate) struct Computer {
     detector_users: Vec<(EntityId, String)>,
     summon_users: Vec<(EntityId, String)>,
     /// Whether units waiting on a target may go, by target.
-    time_has_come: Vec<(Option<Target>, bool)>,
+    time_has_come: Vec<(Option<Mark>, bool)>,
     safe_cnt: i64,
     /// The cost of the first purchase of its turn that lacked a resource.
     lacking: Option<Vec<i64>>,
@@ -145,7 +137,7 @@ pub(crate) struct Computer {
 impl Computer {
     /// Whether the units waiting on a square are strong enough.
     fn time_has_come(&self, s: SquareId) -> bool {
-        let key = Some(Target::Square(s));
+        let key = Some(Mark::square(s));
         self.time_has_come
             .iter()
             .find(|(t, _)| same_opt(t, &key))
@@ -153,7 +145,7 @@ impl Computer {
     }
 }
 
-fn same_opt(a: &Option<Target>, b: &Option<Target>) -> bool {
+fn same_opt(a: &Option<Mark>, b: &Option<Mark>) -> bool {
     match (a, b) {
         (None, None) => true,
         (Some(a), Some(b)) => a.same(b),
@@ -245,11 +237,11 @@ impl Door<'_> {
         let Some(u) = self.unit(unit) else {
             return;
         };
-        if u.orders().first().map(Order::keyword) == Some(Keyword::AutoExplore) {
+        if u.first_order().map(OwnOrder::keyword) == Some(Keyword::AutoExplore) {
             return;
         }
-        let place = u.place;
-        if u.stats.is_a_building != 0 {
+        let place = u.place();
+        if u.is_a_building() {
             self.state_mut().sensible_building = Some(unit);
         }
         let place = match self.known(attacker).filter(|_| self.perceives(attacker)) {
@@ -272,7 +264,7 @@ impl Door<'_> {
         targets.sort();
         let mut i = 0;
         while let Some(&u) = self.units().get(i) {
-            if self.unit(u).is_some_and(|e| e.orders().is_empty())
+            if self.unit(u).is_some_and(|e| !e.has_orders())
                 && let Some(order) = self.random_order(u, &targets)?
             {
                 self.give(u, order, true)?;
@@ -526,7 +518,7 @@ impl Door<'_> {
 
     fn update_effect_users_and_workers(&mut self) -> Res {
         let mut workers = Vec::new();
-        let mut gathered: Vec<(Option<Target>, i64)> = Vec::new();
+        let mut gathered: Vec<(Option<Mark>, i64)> = Vec::new();
         let mut sites = Vec::new();
         let mut raise_dead = Vec::new();
         let mut teleportation = Vec::new();
@@ -535,24 +527,23 @@ impl Door<'_> {
         let mut summon = Vec::new();
         for u in self.units().to_vec() {
             let Some(e) = self.unit(u) else { continue };
-            match e.creature().map(|c| &c.kind) {
-                Some(CreatureKind::Worker { .. }) => {
+            match e.class() {
+                EntityClass::Worker => {
                     workers.push(u);
-                    if let Some(Order {
-                        kind: OrderKind::Gather { aim, .. },
-                        ..
-                    }) = e.orders().first()
+                    if let Some(o) = e.first_order()
+                        && o.keyword() == Keyword::Gather
                     {
-                        add_count(&mut gathered, &aim.target, 1);
+                        add_count(&mut gathered, &o.target(), 1);
                     }
                 }
-                Some(CreatureKind::BuildingSite(_)) => sites.push(u),
-                Some(
-                    CreatureKind::Soldier { .. }
-                    | CreatureKind::Effect { .. }
-                    | CreatureKind::Building { .. },
-                )
-                | None => {}
+                EntityClass::BuildingSite => sites.push(u),
+                EntityClass::Soldier
+                | EntityClass::Effect
+                | EntityClass::Building
+                | EntityClass::Deposit
+                | EntityClass::Meadow
+                | EntityClass::Corpse
+                | EntityClass::Exit => {}
             }
             let abilities = e
                 .type_id()
@@ -601,27 +592,23 @@ impl Door<'_> {
 
     fn update_time_has_come(&mut self) -> Res {
         // (target, menace, units), in the order the targets first appear
-        let mut waiting: Vec<(Option<Target>, i64, Vec<EntityId>)> = Vec::new();
+        let mut waiting: Vec<(Option<Mark>, i64, Vec<EntityId>)> = Vec::new();
         for &u in self.units() {
             let Some(e) = self.unit(u) else { continue };
-            if let Some(Order {
-                kind: OrderKind::Wait { aim, .. },
-                ..
-            }) = e.orders().first()
+            if let Some(o) = e.first_order()
+                && o.keyword() == Keyword::Wait
             {
-                match waiting
-                    .iter_mut()
-                    .find(|(t, _, _)| same_opt(t, &aim.target))
-                {
+                let target = o.target();
+                match waiting.iter_mut().find(|(t, _, _)| same_opt(t, &target)) {
                     Some(w) => {
                         w.1 += e.menace();
                         w.2.push(u);
                     }
-                    None => waiting.push((aim.target.clone(), e.menace(), vec![u])),
+                    None => waiting.push((target, e.menace(), vec![u])),
                 }
             }
         }
-        let thc: Vec<(Option<Target>, bool)> = waiting
+        let thc: Vec<(Option<Mark>, bool)> = waiting
             .iter()
             .map(|(t, _, us)| {
                 let m = self.target_enemy_menace(t.as_ref());
@@ -636,7 +623,8 @@ impl Door<'_> {
             if !self.is_powerful_enough(&units, m) {
                 for &u in &units {
                     let hit = self.unit(u).is_some_and(|e| {
-                        e.orders().iter().any(|o| matches!(&o.kind, OrderKind::Wait { aim, .. } if same_opt(&aim.target, place)))
+                        e.orders()
+                            .any(|o| o.keyword() == Keyword::Wait && same_opt(&o.target(), place))
                     });
                     if hit {
                         cancel.insert(u);
@@ -662,11 +650,9 @@ impl Door<'_> {
         Ok(())
     }
 
-    fn target_enemy_menace(&self, t: Option<&Target>) -> i64 {
-        match t {
-            Some(Target::Square(s)) => self.enemy_menace(*s),
-            _ => 0,
-        }
+    fn target_enemy_menace(&self, t: Option<&Mark>) -> i64 {
+        t.and_then(Mark::as_square)
+            .map_or(0, |s| self.enemy_menace(s))
     }
 
     fn place_enemy_menace(&self, place: Option<Place>) -> i64 {
@@ -686,8 +672,8 @@ impl Door<'_> {
         let menace: i64 = units
             .iter()
             .filter_map(|&u| self.unit(u))
-            .filter(|e| e.stats.speed > 0 && e.class() == EntityClass::Soldier)
-            .map(Entity::menace)
+            .filter(|e| e.speed() > 0 && e.class() == EntityClass::Soldier)
+            .map(Own::menace)
             .sum();
         menace > floordiv(enemy_menace * ratio, 100)
     }
@@ -696,8 +682,9 @@ impl Door<'_> {
         for site in self.state().building_sites.clone() {
             let served = self.state().workers.iter().any(|&u| {
                 self.unit(u)
-                    .and_then(|e| e.orders().first())
-                    .is_some_and(|o| matches!(o.target(), Some(Target::Entity(t)) if *t == site))
+                    .and_then(Own::first_order)
+                    .and_then(OwnOrder::target)
+                    .is_some_and(|t| t.is_entity(site))
             });
             if !served {
                 let repair = Request::repair(TargetRef::Entity(site));
@@ -714,14 +701,14 @@ impl Door<'_> {
             .workers
             .iter()
             .copied()
-            .filter(|&u| self.unit(u).is_some_and(|e| e.orders().is_empty()))
+            .filter(|&u| self.unit(u).is_some_and(|e| !e.has_orders()))
             .collect();
         for u in idle {
-            let place = self.unit(u).and_then(|e| e.place);
+            let place = self.unit(u).and_then(Own::place);
             let Some(deposit) = self.choose(Kind::Deposit, None, place, true)? else {
                 return Ok(());
             };
-            let Some(id) = target_id(&deposit) else {
+            let Some(id) = deposit.entity_id() else {
                 return Ok(());
             };
             let gather = Request::gather(TargetRef::Entity(id));
@@ -743,19 +730,17 @@ impl Door<'_> {
         let Some(&first_lacking) = lacking.first() else {
             return Ok(());
         };
-        let mut gatherers: Vec<Vec<(EntityId, Target)>> = vec![Vec::new(); self.resources().len()];
+        let mut gatherers: Vec<Vec<(EntityId, Mark)>> = vec![Vec::new(); self.resources().len()];
         for &u in &self.state().workers {
             let Some(e) = self.unit(u) else { continue };
-            if let Some(Order {
-                kind: OrderKind::Gather { aim, .. },
-                ..
-            }) = e.orders().first()
-                && matches!(e.place, Some(Place::Square(_)))
-                && let Some(t) = &aim.target
-                && let Ok(rt) = self.deposit_resource_type(t)
+            if let Some(o) = e.first_order()
+                && o.keyword() == Keyword::Gather
+                && matches!(e.place(), Some(Place::Square(_)))
+                && let Some(t) = o.target()
+                && let Ok(rt) = self.deposit_resource_type(&t)
                 && let Some(g) = gatherers.get_mut(rt as usize)
             {
-                g.push((u, t.clone()));
+                g.push((u, t));
             }
         }
         let count = |r: usize| gatherers.get(r).map_or(0, Vec::len);
@@ -774,7 +759,7 @@ impl Door<'_> {
             return Ok(());
         };
         let old = old.clone();
-        let place = self.unit(u).and_then(|e| e.place);
+        let place = self.unit(u).and_then(Own::place);
         let Some(deposit) = self.choose(Kind::DepositOf(to as i64), None, place, true)? else {
             return Ok(());
         };
@@ -783,7 +768,7 @@ impl Door<'_> {
         if self.distance(start, dest, true)? == crate::INF {
             return Ok(());
         }
-        let Some(id) = target_id(&deposit) else {
+        let Some(id) = deposit.entity_id() else {
             return Ok(());
         };
         self.give(u, Request::gather(TargetRef::Entity(id)), true)?;
@@ -797,8 +782,7 @@ impl Door<'_> {
         let Some(e) = self.unit(u) else {
             return (false, 0, 0);
         };
-        let hp = e.creature().map_or(0, |c| c.hp);
-        (e.airground_type == AirGround::Air, e.stats.speed, hp)
+        (e.airground_type() == AirGround::Air, e.speed(), e.hp())
     }
 
     /// `best_explorers`: the mobile units not upgrading, best first.
@@ -809,8 +793,8 @@ impl Door<'_> {
             .copied()
             .filter(|&u| {
                 self.unit(u).is_some_and(|e| {
-                    e.stats.speed > 0
-                        && e.orders().first().map(Order::keyword) != Some(Keyword::UpgradeTo)
+                    e.speed() > 0
+                        && e.first_order().map(OwnOrder::keyword) != Some(Keyword::UpgradeTo)
                 })
             })
             .collect();
@@ -824,8 +808,8 @@ impl Door<'_> {
 
     fn is_exploring(&self, u: EntityId) -> bool {
         self.unit(u)
-            .and_then(|e| e.orders().first())
-            .map(Order::keyword)
+            .and_then(Own::first_order)
+            .map(OwnOrder::keyword)
             == Some(Keyword::AutoExplore)
     }
 
@@ -842,7 +826,7 @@ impl Door<'_> {
                 return Ok(());
             }
             let first = self.units().first().copied();
-            let t = square_target(first.and_then(|f| self.unit(f)).and_then(|e| e.place))?;
+            let t = square_target(first.and_then(|f| self.unit(f)).and_then(Own::place))?;
             self.give(explorer, Request::go(t), true)?;
         }
         self.give(best, Request::auto_explore(), true)
@@ -857,11 +841,15 @@ impl Door<'_> {
             .filter(|&u| {
                 self.unit(u).is_some_and(|e| {
                     e.class() == EntityClass::Soldier
-                        && (e.orders().is_empty()
+                        && (!e.has_orders()
                             || e.orders().len() == 1
-                                && matches!(&e.orders()[0].kind, OrderKind::Go { aim, .. }
-                                    if !matches!(&aim.target,
-                                        Some(Target::Square(s)) if self.enemy_presence().contains(s))))
+                                && e.first_order().is_some_and(|o| {
+                                    o.keyword() == Keyword::Go
+                                        && !o
+                                            .target()
+                                            .and_then(|t| t.as_square())
+                                            .is_some_and(|s| self.enemy_presence().contains(&s))
+                                }))
                 })
             })
             .collect()
@@ -891,7 +879,7 @@ impl Door<'_> {
             .copied()
             .filter(|&u| {
                 self.unit(u)
-                    .is_some_and(|e| e.time_limit().is_some_and(|t| t != 0) && e.stats.speed != 0)
+                    .is_some_and(|e| e.time_limit().is_some_and(|t| t != 0) && e.speed() != 0)
             })
             .collect();
         if !temp.is_empty() {
@@ -905,11 +893,11 @@ impl Door<'_> {
             used: false,
         };
         for (u, a) in self.state().cataclysm_users.clone() {
-            let busy = self.unit(u).is_none_or(|e| !e.orders().is_empty());
+            let busy = self.unit(u).is_none_or(Own::has_orders);
             if busy || !self.cataclysm_is_efficient(&a, &mut enemies) {
                 continue;
             }
-            let start = square_of(self.unit(u).and_then(|e| e.place))?;
+            let start = square_of(self.unit(u).and_then(Own::place))?;
             let path = self.path_through_walls(start, square_of(last)?)?;
             if let [.., before, _] = path[..]
                 && path.len() > 2
@@ -920,7 +908,7 @@ impl Door<'_> {
             let cataclysm = Request::use_ability(a.clone()).at(t);
             self.give(u, cataclysm, false)?;
             if self.first_order_is_possible(u) {
-                let t = square_target(self.unit(u).and_then(|e| e.place))?;
+                let t = square_target(self.unit(u).and_then(Own::place))?;
                 self.give(u, Request::go(t), false)?;
             }
         }
@@ -930,7 +918,7 @@ impl Door<'_> {
     /// Whether the first order of the unit has not failed.
     fn first_order_is_possible(&self, u: EntityId) -> bool {
         self.unit(u)
-            .and_then(|e| e.orders().first())
+            .and_then(Own::first_order)
             .is_some_and(|o| !o.is_impossible())
     }
 
@@ -970,7 +958,7 @@ impl Door<'_> {
             return Ok(false);
         }
         let first = units.first().and_then(|&u| self.unit(u));
-        let start = square_of(first.and_then(|e| e.place))?;
+        let start = square_of(first.and_then(Own::place))?;
         let path = self.path_through_walls(start, square_of(place)?)?;
         match path[..] {
             [] => Ok(false),
@@ -985,7 +973,7 @@ impl Door<'_> {
         };
         let units: Vec<EntityId> = units
             .into_iter()
-            .filter(|&u| self.unit(u).and_then(|e| e.place) != Some(place))
+            .filter(|&u| self.unit(u).and_then(Own::place) != Some(place))
             .collect();
         for &u in &units {
             self.stop(u)?;
@@ -1003,7 +991,7 @@ impl Door<'_> {
             used: false,
         };
         for u in units {
-            let start = square_of(self.unit(u).and_then(|e| e.place))?;
+            let start = square_of(self.unit(u).and_then(Own::place))?;
             let path = self.path_through_walls(start, square_of(Some(place))?)?;
             if !used_teleportation
                 && let [.., before, _] = path[..]
@@ -1043,7 +1031,7 @@ impl Door<'_> {
     fn builders_place(&self) -> Res<Option<Place>> {
         let mut starts: Vec<(Option<Place>, i64)> = Vec::new();
         for &u in &self.state().workers {
-            let place = self.unit(u).and_then(|e| e.place);
+            let place = self.unit(u).and_then(Own::place);
             match starts.iter_mut().find(|(pl, _)| *pl == place) {
                 Some(s) => s.1 += 1,
                 None => starts.push((place, 1)),
@@ -1082,8 +1070,8 @@ impl Door<'_> {
             let Some(e) = self.unit(b) else {
                 return Ok(());
             };
-            let s = square_of(e.place)?;
-            let (bx, by) = (e.x, e.y);
+            let s = square_of(e.place())?;
+            let (bx, by) = e.xy();
             let mut exits = self.exits(s).to_vec();
             exits.sort_by_key(|&x| {
                 let (ex, ey) = self.exit_xy(x);
@@ -1106,7 +1094,7 @@ impl Door<'_> {
     fn idle_buildings_research(&mut self) -> Res {
         for u in self.units().to_vec() {
             let Some(e) = self.unit(u) else { continue };
-            if !e.orders().is_empty() {
+            if e.has_orders() {
                 continue;
             }
             let researchable = e
@@ -1132,7 +1120,7 @@ impl Door<'_> {
 
     fn raise_dead(&mut self) -> Res {
         for (u, a) in self.state().raise_dead_users.clone() {
-            if let Some(Place::Square(s)) = self.unit(u).and_then(|e| e.place)
+            if let Some(Place::Square(s)) = self.unit(u).and_then(Own::place)
                 && self.places_with_corpses().contains(&s)
             {
                 let raise = Request::use_ability(a).at(TargetRef::Square(s));
@@ -1162,11 +1150,11 @@ impl Door<'_> {
         for &u in &self.state().workers {
             let Some(e) = self.unit(u) else { continue };
             for o in e.orders() {
-                if let OrderKind::Gather { aim, .. } = &o.kind
-                    && let Some(t) = &aim.target
-                    && self.target_place(t) != TPlace::Nowhere
+                if o.keyword() == Keyword::Gather
+                    && let Some(t) = o.target()
+                    && self.target_place(&t) != TPlace::Nowhere
                 {
-                    deposits.push(t.clone());
+                    deposits.push(t);
                 }
             }
         }
@@ -1176,13 +1164,13 @@ impl Door<'_> {
         Ok(())
     }
 
-    fn deposit_resource_type(&self, d: &Target) -> Res<i64> {
+    fn deposit_resource_type(&self, d: &Mark) -> Res<i64> {
         self.target_type(d)
             .and_then(|t| self.rules().ty(t).resource_type)
             .ok_or_else(|| Abort::new("object has no attribute 'resource_type'"))
     }
 
-    fn build_a_warehouse_for(&mut self, deposit: &Target) -> Res {
+    fn build_a_warehouse_for(&mut self, deposit: &Mark) -> Res {
         let dplace = self.target_place_of(deposit);
         let nearby: Vec<EntityId> = self
             .state()
@@ -1191,12 +1179,12 @@ impl Door<'_> {
             .copied()
             .filter(|&v| {
                 self.unit(v).is_some_and(|e| {
-                    e.place == dplace
-                        || e.orders().first().is_some_and(|o| {
-                            matches!(&o.kind, OrderKind::Gather { aim, .. } if aim
-                                .target
-                                .as_ref()
-                                .is_none_or(|t| self.target_place_of(t) == dplace && dplace.is_some()))
+                    e.place() == dplace
+                        || e.first_order().is_some_and(|o| {
+                            o.keyword() == Keyword::Gather
+                                && o.target().as_ref().is_none_or(|t| {
+                                    self.target_place_of(t) == dplace && dplace.is_some()
+                                })
                         })
                 })
             })
@@ -1234,7 +1222,7 @@ impl Door<'_> {
             let (name, _) = self
                 .best_warehouse()
                 .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'type_name'"))?;
-            let Some(id) = target_id(&meadow) else {
+            let Some(id) = meadow.entity_id() else {
                 return Ok(());
             };
             for v in nearby {
@@ -1270,7 +1258,7 @@ impl Door<'_> {
         })
     }
 
-    fn choose_is_ok(&self, o: &Target, resource_type: Option<i64>) -> bool {
+    fn choose_is_ok(&self, o: &Mark, resource_type: Option<i64>) -> bool {
         let Some(place) = self.target_place_of(o) else {
             return false;
         };
@@ -1290,11 +1278,11 @@ impl Door<'_> {
         resource_type: Option<i64>,
         starting_place: Option<Place>,
         random: bool,
-    ) -> Res<Option<Target>> {
+    ) -> Res<Option<Mark>> {
         let Some(first_place) = self
             .units()
             .first()
-            .map(|&u| self.unit(u).and_then(|e| e.place))
+            .map(|&u| self.unit(u).and_then(Own::place))
         else {
             return Ok(None);
         };
@@ -1307,10 +1295,10 @@ impl Door<'_> {
         }
         let start = starting_place.or(first_place);
         let rules = self.rules();
-        let mut candidates: Vec<(EntityId, Target)> = self
+        let mut candidates: Vec<(EntityId, Mark)> = self
             .perceived()
             .filter(|&e| kind.matches(rules, e))
-            .map(|e| (e.id(), Target::Entity(e.id())))
+            .map(|e| (e.id(), Door::mark(e)))
             .collect();
         candidates.extend(
             self.remembered()
@@ -1319,7 +1307,7 @@ impl Door<'_> {
         );
         candidates.retain(|(_, o)| self.choose_is_ok(o, resource_type));
         candidates.sort_by_key(|c| c.0);
-        let mut candidates: Vec<Target> = candidates.into_iter().map(|(_, o)| o).collect();
+        let mut candidates: Vec<Mark> = candidates.into_iter().map(|(_, o)| o).collect();
         if candidates.len() > 10 {
             candidates = self.remove_far_candidates(&candidates, start, 10)?;
         } else if !candidates.is_empty() {
@@ -1357,14 +1345,14 @@ impl Door<'_> {
     /// player knows it; on one square, in id order.
     fn remove_far_candidates(
         &self,
-        candidates: &[Target],
+        candidates: &[Mark],
         start: Option<Place>,
         limit: usize,
-    ) -> Res<Vec<Target>> {
+    ) -> Res<Vec<Mark>> {
         let start = square_of(start)?;
-        let mut on: BTreeMap<SquareId, BTreeMap<EntityId, Target>> = BTreeMap::new();
+        let mut on: BTreeMap<SquareId, BTreeMap<EntityId, Mark>> = BTreeMap::new();
         for o in candidates {
-            if let (Some(Place::Square(s)), Some(id)) = (self.target_place_of(o), target_id(o)) {
+            if let (Some(Place::Square(s)), Some(id)) = (self.target_place_of(o), o.entity_id()) {
                 on.entry(s).or_default().insert(id, o.clone());
             }
         }
@@ -1397,7 +1385,7 @@ impl Door<'_> {
         Ok(c)
     }
 
-    fn deposit_priority(&self, d: &Option<Target>) -> Res<DepositPriority> {
+    fn deposit_priority(&self, d: &Option<Mark>) -> Res<DepositPriority> {
         let Some(t) = d else {
             return Ok((-100, 0, None));
         };
@@ -1413,15 +1401,15 @@ impl Door<'_> {
             .and_then(|i| self.resources().get(i))
             .copied()
             .ok_or_else(|| Abort::new("list index out of range"))?;
-        Ok((floordiv(-r, 10), -workers, target_id(t)))
+        Ok((floordiv(-r, 10), -workers, t.entity_id()))
     }
 
     // Computer: counting and getting units
 
-    fn entity_matches(e: &Entity, sel: &Sel) -> bool {
+    fn entity_matches(e: Own, sel: &Sel) -> bool {
         match sel {
             Sel::Workers => e.class() == EntityClass::Worker,
-            _ => sel.matches_type(&e.type_name),
+            _ => sel.matches_type(e.type_name()),
         }
     }
 
@@ -1438,7 +1426,7 @@ impl Door<'_> {
         self.units()
             .iter()
             .filter_map(|&u| self.unit(u))
-            .filter(|e| Self::entity_matches(e, sel))
+            .filter(|&e| Self::entity_matches(e, sel))
             .count() as i64
     }
 
@@ -1446,32 +1434,16 @@ impl Door<'_> {
         let rules = self.rules();
         let mut n = 0;
         for e in self.units().iter().filter_map(|&u| self.unit(u)) {
-            if let Some(site) = e.site()
-                && sel.matches_type(&rules.ty(site.building_type).name)
+            if let Some(site) = e.site_type()
+                && sel.matches_type(&rules.ty(site).name)
             {
                 n += 1;
                 continue;
             }
             for o in e.orders() {
-                let made = match &o.kind {
-                    OrderKind::Production(p) => Some(p.product.type_id()),
-                    OrderKind::Build { building, .. } => Some(*building),
-                    OrderKind::Go { .. }
-                    | OrderKind::Attack { .. }
-                    | OrderKind::Patrol { .. }
-                    | OrderKind::Gather { .. }
-                    | OrderKind::AutoAttack
-                    | OrderKind::AutoExplore
-                    | OrderKind::Wait { .. }
-                    | OrderKind::Block { .. }
-                    | OrderKind::Repair { .. }
-                    | OrderKind::BuildPhaseTwo { .. }
-                    | OrderKind::Use { .. }
-                    | OrderKind::Load { .. }
-                    | OrderKind::LoadAll { .. }
-                    | OrderKind::UnloadAll { .. } => None,
-                };
-                if made.is_some_and(|t| sel.matches_type(&rules.ty(t).name)) {
+                if o.made()
+                    .is_some_and(|t| sel.matches_type(&rules.ty(t).name))
+                {
                     n += 1;
                 }
             }
@@ -1660,7 +1632,7 @@ impl Door<'_> {
                 let bp = self.builders_place()?;
                 self.choose(Kind::Meadow, None, bp, false)?
             };
-            if let Some(id) = meadow.as_ref().and_then(target_id) {
+            if let Some(id) = meadow.as_ref().and_then(Mark::entity_id) {
                 let build = Request::build(name, TargetRef::Entity(id));
                 self.order(4, maker_sel, build, true)?;
             }
@@ -1703,28 +1675,13 @@ impl Door<'_> {
     }
 
     fn worker_orders_priority(&self, u: EntityId) -> Res<(u8, Option<DepositPriority>)> {
-        Ok(match self.unit(u).and_then(|e| e.orders().first()) {
+        Ok(match self.unit(u).and_then(Own::first_order) {
             None => (0, None),
-            Some(Order {
-                kind: OrderKind::Gather { aim, .. },
-                ..
-            }) => (1, Some(self.deposit_priority(&aim.target)?)),
+            Some(o) if o.keyword() == Keyword::Gather => {
+                (1, Some(self.deposit_priority(&o.target())?))
+            }
             Some(_) => (2, None),
         })
-    }
-
-    /// Whether a followed order is still in progress.
-    fn tracked_is_alive(&self, t: &mut Tracked) -> bool {
-        let Some(unit) = self.unit(t.unit) else {
-            return false;
-        };
-        if let Some(live) = unit.orders().iter().find(|o| o.uid == t.order.uid) {
-            t.order = live.clone();
-            return !live.is_complete() && unit.place.is_some();
-        }
-        !t.order.is_complete()
-            && unit.place.is_some()
-            && unit.orders().iter().any(|o| self.order_eq(o, &t.order))
     }
 
     /// `order`: gives the order to units of a type until `nb` of them
@@ -1733,7 +1690,7 @@ impl Door<'_> {
     fn order(&mut self, nb: i64, sel: Sel, order: Request, requisition: bool) -> Res {
         let key = (sel.clone(), self.words(&order));
         let mut tracked = self.state_mut().orders.remove(&key).unwrap_or_default();
-        tracked.retain_mut(|t| self.tracked_is_alive(t));
+        tracked.retain_mut(|t| self.still_followed(t));
         let enough = tracked.len() as i64 >= nb;
         self.state_mut().orders.insert(key.clone(), tracked);
         if enough {
@@ -1760,8 +1717,8 @@ impl Door<'_> {
             }
             let first = self
                 .unit(u)
-                .and_then(|e| e.orders().first())
-                .map(|o| (o.keyword(), o.target().cloned()));
+                .and_then(Own::first_order)
+                .map(|o| (o.keyword(), o.target()));
             if requisition || first.is_none() {
                 if let Some((kw, target)) = &first {
                     if matches!(kw, Keyword::Build | Keyword::Repair) {
@@ -1776,13 +1733,7 @@ impl Door<'_> {
                     }
                 }
                 self.give(u, order.clone(), true)?;
-                if let Some(o) = self.unit(u).and_then(|e| e.orders().first())
-                    && o.keyword() == order.keyword()
-                {
-                    let t = Tracked {
-                        unit: u,
-                        order: o.clone(),
-                    };
+                if let Some(t) = self.follow_first(u, order.keyword()) {
                     let list = self.state_mut().orders.entry(key.clone()).or_default();
                     list.push(t);
                     if list.len() as i64 >= nb {
@@ -1795,12 +1746,7 @@ impl Door<'_> {
     }
 }
 
-/// The id of the entity a target of the plan names.
-fn target_id(t: &Target) -> Option<EntityId> {
-    t.entity_id()
-}
-
-fn add_count(counts: &mut Vec<(Option<Target>, i64)>, key: &Option<Target>, n: i64) {
+fn add_count(counts: &mut Vec<(Option<Mark>, i64)>, key: &Option<Mark>, n: i64) {
     match counts.iter_mut().find(|(k, _)| same_opt(k, key)) {
         Some(e) => e.1 += n,
         None => counts.push((key.clone(), n)),
@@ -1883,13 +1829,11 @@ starting_squares a1
         let mut n = vec![0; w.pl(p).resources.len()];
         let door = w.door(p);
         for &u in door.units() {
-            if let Some(Order {
-                kind: OrderKind::Gather { aim, .. },
-                ..
-            }) = door.unit(u).unwrap().orders().first()
-                && let Some(t) = &aim.target
+            if let Some(o) = door.unit(u).unwrap().first_order()
+                && o.keyword() == Keyword::Gather
+                && let Some(t) = o.target()
             {
-                n[door.deposit_resource_type(t).unwrap() as usize] += 1;
+                n[door.deposit_resource_type(&t).unwrap() as usize] += 1;
             }
         }
         n
@@ -2021,15 +1965,15 @@ starting_squares a1
             .populate_map(&[crate::Controller::computer("easy")], false, false)
             .unwrap()[0];
         let b2 = w.square_by_name("b2").unwrap();
-        let meadows: Vec<Target> = w
+        let meadows: Vec<Mark> = w
             .square(b2)
             .objects
             .iter()
             .filter(|&&o| w.e(o).is_meadow())
-            .map(|&o| Target::Entity(o))
+            .map(|&o| Mark::of(crate::entity::Target::Entity(o)))
             .collect();
         assert_eq!(meadows.len(), 3);
-        for m in meadows.iter().filter_map(Target::entity_id) {
+        for m in meadows.iter().filter_map(Mark::entity_id) {
             w.plm(p).perception.insert(m);
         }
         let a1 = w.square_by_name("a1").unwrap();
@@ -2037,8 +1981,8 @@ starting_squares a1
             .door(p)
             .remove_far_candidates(&meadows, Some(Place::Square(a1)), 10)
             .unwrap();
-        let ids: Vec<EntityId> = near.iter().filter_map(Target::entity_id).collect();
-        let expected: Vec<EntityId> = meadows.iter().filter_map(Target::entity_id).collect();
+        let ids: Vec<EntityId> = near.iter().filter_map(Mark::entity_id).collect();
+        let expected: Vec<EntityId> = meadows.iter().filter_map(Mark::entity_id).collect();
         assert_eq!(ids, expected);
     }
 

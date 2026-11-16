@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::tests::world;
 use super::*;
-use crate::entity::{MemoryRef, PlayerId};
+use crate::entity::{MemoryRef, PlayerId, Target};
 use crate::msg::{Msg, MsgPart, msg};
 use crate::msgparts as mp;
 use crate::player::{Controller, Remembrance};
@@ -63,13 +63,13 @@ fn a_computer_looks_for_a_meadow_where_it_remembers_it() {
             snapshot: Arc::clone(&snapshot),
         },
     );
-    let remembered = Target::Memory(MemoryRef { owner: p, snapshot });
-    let candidates = [Target::Entity(near), remembered];
+    let remembered = Mark::of(Target::Memory(MemoryRef { owner: p, snapshot }));
+    let candidates = [Mark::of(Target::Entity(near)), remembered];
     let first = w
         .door(p)
         .remove_far_candidates(&candidates, Some(Place::Square(a1)), 1)
         .unwrap();
-    let ids: Vec<EntityId> = first.iter().filter_map(Target::entity_id).collect();
+    let ids: Vec<EntityId> = first.iter().filter_map(Mark::entity_id).collect();
     assert_eq!(ids, [far]);
 }
 
