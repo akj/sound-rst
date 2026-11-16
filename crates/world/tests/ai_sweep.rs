@@ -20,7 +20,10 @@
 //! The environment changes what is played:
 //!
 //! - `SWEEP_MAPS`: the maps, by name in `res/multi` or by path in the
-//!   original game (`jl1,jl7,js13` by default).
+//!   original game (`jl1,jl7,js13` by default for the sweep, and
+//!   `jl1,js1,can3,js13` for the ladder). The ladder leaves out jl7: its
+//!   starts are islands that no ground army can leave, so every game there
+//!   ends in a draw.
 //! - `SWEEP_SEEDS`: the seeds, a range or a list (`1-20` by default).
 //! - `SWEEP_TURNS`: the turn limit of a game of the sweep (4,000 by
 //!   default, 20 minutes of game time).
@@ -685,7 +688,7 @@ fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, boo
 #[test]
 #[ignore = "minutes: run by hand in a release build"]
 fn ladder_each_level_beats_the_level_below() {
-    let maps: Vec<String> = env_or("SWEEP_MAPS", "jl1,jl7,js13")
+    let maps: Vec<String> = env_or("SWEEP_MAPS", "jl1,js1,can3,js13")
         .split(',')
         .map(|m| m.trim().to_owned())
         .collect();
