@@ -41,6 +41,7 @@ use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{INF, TPlace, World};
 
 use super::Computer;
+use super::script::Script;
 
 /// What a computer player may read and do: see the [module](self).
 pub(super) struct Door<'w> {
@@ -452,7 +453,7 @@ impl Door<'_> {
     }
 
     /// The script of an AI type, from `ai.txt`.
-    pub(super) fn script(&self, name: &str) -> Option<&[String]> {
+    pub(super) fn script(&self, name: &str) -> Option<&Script> {
         self.world.ai_scripts.get(name)
     }
 

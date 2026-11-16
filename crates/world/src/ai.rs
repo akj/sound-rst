@@ -31,10 +31,12 @@ use crate::world::TPlace;
 mod door;
 mod handicap;
 mod legacy;
+pub(crate) mod script;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
+use script::{Plan, Step, is_digits, is_signed_number};
 
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
@@ -149,8 +151,8 @@ type DepositPriority = (i64, i64, Option<EntityId>);
 /// The state of a scripted computer player (`Computer`).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Computer {
-    /// The lines of the script, once an AI type other than `timers` is set.
-    plan: Option<Vec<String>>,
+    /// The script, once an AI type other than `timers` is set.
+    plan: Option<Plan>,
     line_nb: i64,
     previous_linechange: i64,
     watchdog: i64,
@@ -239,9 +241,10 @@ impl Door<'_> {
             return Ok(());
         }
         let name = self.faction_ai_type(ai_type);
-        let Some(plan) = self.script(&name).map(<[String]>::to_vec) else {
+        let Some(script) = self.script(&name) else {
             return Err(Abort::new(format!("KeyError: '{name}'")));
         };
+        let plan = script.plan(self.rules(), self.faction());
         let time = self.time();
         let c = self.state_mut();
         c.plan = Some(plan);
@@ -426,7 +429,7 @@ impl Door<'_> {
                 let c = self.state();
                 let line = usize::try_from(c.line_nb)
                     .ok()
-                    .and_then(|i| c.plan.as_ref()?.get(i).cloned())
+                    .and_then(|i| c.plan.as_ref()?.lines().get(i).cloned())
                     .unwrap_or_default();
                 let n = c.line_nb + 1;
                 self.warn(format!(
@@ -466,7 +469,7 @@ impl Door<'_> {
         let Some(plan) = self.state().plan.clone() else {
             return Ok(());
         };
-        if plan.is_empty() {
+        if plan.steps().is_empty() {
             return Ok(());
         }
         let c = self.state();
@@ -474,10 +477,56 @@ impl Door<'_> {
             let n = c.line_nb + 1;
             self.set_line_nb(n);
         }
-        let n = self.state().line_nb.rem_euclid(plan.len() as i64);
+        let n = self.state().line_nb.rem_euclid(plan.steps().len() as i64);
         self.set_line_nb(n);
         let line_nb = self.state().line_nb;
-        let cmd: Vec<&str> = plan[line_nb as usize].split_whitespace().collect();
+        let next = line_nb + 1;
+        let Some(step) = plan.steps().get(n as usize) else {
+            return Ok(());
+        };
+        match step {
+            &Step::Goto(n) => self.set_line_nb(n),
+            Step::Label => self.set_line_nb(next),
+            Step::GotoRandom(lines) => {
+                if let Some(&n) = self.choice_index(lines.len()).and_then(|i| lines.get(i)) {
+                    self.set_line_nb(n);
+                }
+            }
+            Step::Attack => {
+                self.state_mut().constant_attacks = 1;
+                self.set_line_nb(next);
+            }
+            &Step::Watchdog(v) => {
+                self.state_mut().watchdog = v;
+                self.set_line_nb(next);
+            }
+            &Step::ConstantAttacks(v) => {
+                self.state_mut().constant_attacks = v;
+                self.set_line_nb(next);
+            }
+            &Step::Research(v) => {
+                self.state_mut().research = v;
+                self.set_line_nb(next);
+            }
+            Step::Get(items) => {
+                for &(n, t) in items {
+                    if !self.get(n, t)? {
+                        return Ok(());
+                    }
+                }
+                self.set_line_nb(next);
+            }
+            Step::Raw => return self.follow_raw_line(plan.lines(), line_nb),
+        }
+        Ok(())
+    }
+
+    /// Plays a line of the plan as the original reads it.
+    fn follow_raw_line(&mut self, plan: &[String], line_nb: i64) -> Res {
+        let Some(line) = plan.get(line_nb as usize) else {
+            return Ok(());
+        };
+        let cmd: Vec<&str> = line.split_whitespace().collect();
         let Some(&first) = cmd.first() else {
             return Ok(());
         };
@@ -1829,16 +1878,6 @@ fn add_count(counts: &mut Vec<(Option<Mark>, i64)>, key: &Option<Mark>, n: i64) 
         Some(e) => e.1 += n,
         None => counts.push((key.clone(), n)),
     }
-}
-
-/// `re.match("^[0-9]+$", s)`.
-fn is_digits(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// `re.match("^[+-][0-9]+$", s)`.
-fn is_signed_number(s: &str) -> bool {
-    matches!(s.as_bytes().first(), Some(b'+' | b'-')) && is_digits(&s[1..])
 }
 
 #[cfg(test)]

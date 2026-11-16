@@ -65,7 +65,7 @@ impl Hash for Computer {
         let users = |l: &[(EntityId, TypeId)]| -> Vec<(EntityId, String)> {
             l.iter().map(|&(u, a)| (u, name(a))).collect()
         };
-        plan.hash(state);
+        plan.as_ref().map(|p| p.lines()).hash(state);
         line_nb.hash(state);
         previous_linechange.hash(state);
         watchdog.hash(state);
