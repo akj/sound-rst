@@ -18,17 +18,111 @@ use soundrts::mapfile::Map;
 use soundrts::package::Package;
 use soundrts::parameters::Parameters;
 use soundrts::resource::Resources;
+use soundrts::sound_cache::Spoken;
 use soundrts::testkit::{game_root, imported_tests_dir};
-use soundrts_world::msg::MsgPart;
+use soundrts_world::msg::{MsgPart, Phrase};
 
 fn stack(path: std::path::PathBuf) -> Resources {
     Resources::new(
         vec![path],
-        imported_tests_dir().join("no-downloads"),
+        imported_tests_dir().join("no-player"),
         Some("en".into()),
         Arc::new(Parameters::default()),
         Log::silent(),
     )
+}
+
+/// The game's resources, with `player` as the player's folder holding
+/// these language files.
+fn game_with_player(
+    player: &tempfile::TempDir,
+    files: &[(&str, &str)],
+    language: &str,
+) -> Resources {
+    std::fs::create_dir_all(player.path().join("text")).unwrap();
+    for (name, text) in files {
+        std::fs::write(player.path().join("text").join(name), text).unwrap();
+    }
+    Resources::new(
+        vec![game_root().join("res")],
+        player.path().to_path_buf(),
+        Some(language.into()),
+        Arc::new(Parameters::default()),
+        Log::silent(),
+    )
+}
+
+fn said(res: &Resources, part: MsgPart) -> String {
+    match res.sounds().translate(&part) {
+        Some(Spoken::Text(t)) => t,
+        other => panic!("not words: {other:?}"),
+    }
+}
+
+#[test]
+fn the_players_language_file_overrides_the_game_and_the_port_by_id() {
+    let player = tempfile::tempdir().unwrap();
+    let own = Phrase::OWN[0];
+    let mine = format!("nothing = rien du tout\n{} = mes mots\n", own.id());
+    let res = game_with_player(&player, &[("fr.txt", &mine)], "fr");
+    assert_eq!(
+        res.sounds().text("nothing").as_deref(),
+        Some("rien du tout")
+    );
+    assert_eq!(said(&res, MsgPart::Phrase(own)), "mes mots");
+    // The rest is the game's.
+    assert_eq!(
+        res.sounds().text("what_are_your_orders").as_deref(),
+        Some("Que faites vous ?")
+    );
+    let other = Phrase::OWN[1];
+    assert_eq!(said(&res, MsgPart::Phrase(other)), other.english());
+    // The player's French changes no other language.
+    let english = game_with_player(&player, &[], "en");
+    assert_eq!(
+        english.sounds().text("nothing").as_deref(),
+        Some("nothing!")
+    );
+}
+
+#[test]
+fn a_language_that_only_the_players_folder_has_can_be_chosen() {
+    let player = tempfile::tempdir().unwrap();
+    let res = game_with_player(&player, &[("nl.txt", "nothing = niets\n")], "nl");
+    assert_eq!(res.language, "nl");
+    assert_eq!(res.sounds().text("nothing").as_deref(), Some("niets"));
+    // What Dutch lacks is said in English.
+    assert_eq!(
+        res.sounds().text("what_are_your_orders").as_deref(),
+        Some("What are your orders?")
+    );
+}
+
+#[test]
+fn what_a_language_lacks_counts_the_players_file() {
+    let player = tempfile::tempdir().unwrap();
+    let res = game_with_player(&player, &[], "cs");
+    let english = res.files_of_language("en");
+    let before = soundrts::translation::untranslated(&english, &res.files_of_language("cs"));
+    assert!(
+        !before
+            .missing
+            .iter()
+            .any(|m| m.id == "what_are_your_orders")
+    );
+    let lacking = before
+        .missing
+        .iter()
+        .find(|m| !m.is_the_ports())
+        .expect("the game's Czech lacks lines of the original")
+        .clone();
+    let own = Phrase::OWN[0];
+    assert!(before.missing.iter().any(|m| m.id == own.id()));
+    let mine = format!("{} = moje\n{} = moje slova\n", lacking.id, own.id());
+    let res = game_with_player(&player, &[("cs.txt", &mine)], "cs");
+    let after = soundrts::translation::untranslated(&english, &res.files_of_language("cs"));
+    assert_eq!(after.missing.len() + 2, before.missing.len());
+    assert!(after.unknown.is_empty());
 }
 
 fn test_stack() -> Resources {

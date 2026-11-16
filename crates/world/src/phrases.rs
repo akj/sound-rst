@@ -35,7 +35,8 @@ macro_rules! phrases {
             /// `crates/client/src/original_names.txt` gives the id.
             pub const ORIGINAL: &'static [Phrase] = &[ $( Phrase::$original, )* ];
 
-            /// The phrases that the port added. No translation has them yet.
+            /// The phrases that the port added. Their translations are in
+            /// the repository's `text` folder.
             pub const OWN: &'static [Phrase] = &[ $( Phrase::$own, )* ];
 
             /// The English words.

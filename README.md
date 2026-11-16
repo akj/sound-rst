@@ -245,6 +245,32 @@ A number that the original game has gets the game's name for it. A number that o
 
 Put the result in the `mods`, `single` or `multi` folder of the settings folder. `<from>` can also be the folder of the original game itself: the result is then a data folder for `--root`.
 
+## Translate the game
+
+You can translate the game into your language, or correct a translation, with a text editor such as Notepad. You write your words in a file in the settings folder, and you hear them the next time you start the game.
+
+1. Find out what your language lacks. In a terminal, run this command with the code of your language in place of `cs`:
+
+   ```powershell
+   soundrts --untranslated cs > untranslated.txt
+   ```
+
+   In a development checkout, run `cargo run -p soundrts -- --root vendor/game-data --untranslated cs > untranslated.txt`. The command starts no game and says nothing. Open `untranslated.txt` in your editor. The first line says how many phrases your language lacks, and names the file to write them in. Then each missing phrase is one line, `name = English words`. Many phrases are a part of a sentence that the game puts together. A line that starts with `#` above a phrase is a note that says where the game uses it.
+
+2. Open the settings folder: `%APPDATA%\SoundRTS`, or the folder `user` in the data folder if it exists. Make a folder `text` in it, if it has none.
+
+3. In the `text` folder, make a text file named after your language's code, such as `cs.txt`. Save it as UTF-8, which is the default of Notepad.
+
+4. Copy into your file the lines that you translate. In each line, keep the name before `=` as it is, and put your words after it in place of the English. A line that starts with `#` is a comment, and you can leave the notes out.
+
+5. If the game does not speak your language yet, write `language = "cs"` in `settings.toml`. Start the game. It says your words, and the phrases that your file lacks in the game's words for your language, else in English.
+
+Run the command of step 1 again to see what is left. A line of your file wins over the game's words for the same name, so you can also correct a phrase: find its line in `res/text/cs.txt` in the data folder, copy it into your file, and change the words. A language that the game does not have needs only your file: the game uses it as soon as `settings.toml` names it.
+
+If a line of your file is not `name = words`, the game ignores the whole file. The command of step 1 says which line it is, at the top, and so does the log `tmp/client.log`. At the end, the command lists each name of your file that names nothing the game says, which is usually a typing mistake in the name.
+
+To give your translation to every player, attach your file to an issue on [the project's GitHub page](https://github.com/akj/sound-rst/issues). To see how much each language lacks, run `soundrts --untranslated all`.
+
 ## Play with others
 
 Choose Multiplayer in the main menu. If your login is still `player`, the game asks for a new one first: the other players hear your login.
@@ -472,6 +498,7 @@ The check speaks nothing and opens no window. It fetches the data into a tempora
 
 - `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world. After a seat's first message, what changed since its last one is enough to make the next.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
+- `text/` holds the words of the port's own phrases in each language but English, one file a language, which the program carries inside it. Their English and the notes for translators are in `crates/world/src/phrases.rs`. The original's phrases come from its translations, through the import. A test fails on a line of `text/` that is not a phrase of the port.
 - `crates/import` is the importer: it converts the original's files into the files the game reads, as a library that the game runs at its first start and for `--import`, and as the `soundrts-import` program that the fetch script runs. `crates/import/src/original_names.txt` is its table: the name of each numbered phrase and sound of the original. Only the importer knows the numbers.
 - `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.

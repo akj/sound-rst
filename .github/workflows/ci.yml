@@ -62,6 +62,10 @@ jobs:
       # nextest does not run documentation tests.
       - name: Test the documentation
         run: cargo test --workspace --doc
+      # A line of the port's language files that is not one of its phrases
+      # fails the tests. What each language still lacks is only reported.
+      - name: Report the phrases each language lacks
+        run: cargo run -p soundrts -- --root vendor/game-data --untranslated all
 
   # The simulation and the server must also build and pass on Linux, where
   # a server is likely to run. The client needs Windows.

@@ -22,6 +22,7 @@ use crate::package::{Package, PackageStack, TextFile};
 use crate::parameters::Parameters;
 use crate::sound_cache::{SOUNDS_FOLDER, SoundCache, Sounds, TEXT_FOLDER};
 use crate::style::Style;
+use crate::translation::{PORT_LANGUAGE_FILES, port_language_file};
 
 /// The folder of a package that holds what differs in a language: its
 /// own `ui/style.txt`, help files and recordings.
@@ -36,6 +37,16 @@ pub fn localized_paths(path: &str, language: Option<&str>) -> Vec<String> {
         result.push(format!("{}/{path}", language_folder(lang)));
     }
     result
+}
+
+/// The language file of `language` in `package`, named by the package.
+fn language_file(package: &Package, language: &str) -> Option<TextFile> {
+    let name = format!("{TEXT_FOLDER}/{language}.txt");
+    let text = package.read_text(&name)?;
+    Some(TextFile {
+        path: format!("{}/{name}", package.name),
+        text,
+    })
 }
 
 /// The available language that best matches the preferred one: the same
@@ -87,6 +98,9 @@ pub type ChangeListener = Box<dyn FnMut(&str, &str)>;
 /// The resource stack.
 pub struct Resources {
     package_paths: Vec<PathBuf>,
+    /// The player's folder, whose language files come after every layer's.
+    player: PathBuf,
+    /// The player's folder of maps that came from a server.
     downloaded: PathBuf,
     pub packages: PackageStack,
     layers: Vec<Package>,
@@ -113,10 +127,12 @@ pub struct Resources {
 
 impl Resources {
     /// The stack for these package paths (the base package first).
-    /// `downloaded` is the player's folder of downloaded maps.
+    /// `player` is the player's folder: its `downloaded` folder holds the
+    /// maps that came from a server, and its `text` folder the player's
+    /// own language files.
     pub fn new(
         package_paths: Vec<PathBuf>,
-        downloaded: PathBuf,
+        player: PathBuf,
         preferred_language: Option<String>,
         params: Arc<Parameters>,
         log: Log,
@@ -125,7 +141,8 @@ impl Resources {
         let mut r = Resources {
             packages: PackageStack::new(&package_paths),
             package_paths,
-            downloaded,
+            downloaded: player.join("downloaded"),
+            player,
             layers: Vec::new(),
             previous_layers: None,
             mods: String::new(),
@@ -211,19 +228,36 @@ impl Resources {
         }
     }
 
-    fn available_languages(&self) -> Vec<String> {
+    /// The player's folder, as a package named by its path, if it exists.
+    fn player_package(&self) -> Option<Package> {
+        let name = self.player.display().to_string();
+        Package::from_path(&self.player)
+            .ok()
+            .map(|p| p.with_name(&name))
+    }
+
+    /// The languages that have a language file: in a layer, among the
+    /// port's own, or in the player's folder.
+    pub fn available_languages(&self) -> Vec<String> {
         let mut result = vec!["en".to_owned()];
-        for package in self.interface_layers() {
+        let mut add = |lang: &str| {
+            if !result.iter().any(|r| r == lang) {
+                result.push(lang.to_owned());
+            }
+        };
+        let player = self.player_package();
+        for package in self.interface_layers().iter().chain(&player) {
             let Some(texts) = package.subpackage(TEXT_FOLDER) else {
                 continue;
             };
             for name in texts.filenames() {
-                if let Some(lang) = name.strip_suffix(".txt")
-                    && !result.iter().any(|r| r == lang)
-                {
-                    result.push(lang.to_owned());
+                if let Some(lang) = name.strip_suffix(".txt") {
+                    add(lang);
                 }
             }
+        }
+        for (lang, _) in PORT_LANGUAGE_FILES {
+            add(lang);
         }
         result
     }
@@ -402,30 +436,54 @@ impl Resources {
             .collect()
     }
 
-    /// The language files of `root`, or else of the interface's layers, in
-    /// priority order: for each layer the English, then the language's.
+    /// The language files of `root`, or else of the interface, in priority
+    /// order: for each layer the English, then the language's. The
+    /// interface's start with the port's own phrases in the language, and
+    /// end with the player's folder, which overrides every layer.
     fn language_files(&self, root: Option<&Package>) -> Vec<TextFile> {
-        let roots: Vec<&Package> = match root {
-            Some(r) => vec![r],
-            None => self.interface_layers().iter().collect(),
-        };
         let mut languages = vec!["en"];
         if self.language != "en" {
             languages.push(&self.language);
         }
-        let mut files = Vec::new();
+        let player = self.player_package();
+        let (mut files, roots): (Vec<TextFile>, Vec<&Package>) = match root {
+            Some(r) => (Vec::new(), vec![r]),
+            None => (
+                languages
+                    .iter()
+                    .filter_map(|l| port_language_file(l))
+                    .collect(),
+                self.interface_layers().iter().chain(&player).collect(),
+            ),
+        };
         for package in roots {
             for language in &languages {
-                let name = format!("{TEXT_FOLDER}/{language}.txt");
-                if let Some(text) = package.read_text(&name) {
-                    files.push(TextFile {
-                        path: format!("{}/{name}", package.name),
-                        text,
-                    });
-                }
+                files.extend(language_file(package, language));
             }
         }
         files
+    }
+
+    /// The interface's files of one language, in priority order: the
+    /// port's own, each layer's, then the player's.
+    pub fn files_of_language(&self, language: &str) -> Vec<TextFile> {
+        let player = self.player_package();
+        port_language_file(language)
+            .into_iter()
+            .chain(
+                self.interface_layers()
+                    .iter()
+                    .chain(&player)
+                    .filter_map(|p| language_file(p, language)),
+            )
+            .collect()
+    }
+
+    /// The player's language file of `language`, which may not exist yet.
+    pub fn player_language_file(&self, language: &str) -> PathBuf {
+        self.player
+            .join(TEXT_FOLDER)
+            .join(format!("{language}.txt"))
     }
 
     /// Every `<name>.txt` of `root`, or else of the interface's layers, in
@@ -664,7 +722,7 @@ mod tests {
                     }
                 })
                 .collect(),
-            dir.join("no-downloads"),
+            dir.join("no-player"),
             Some("en".into()),
             Arc::new(Parameters::default()),
             Log::silent(),
@@ -785,7 +843,7 @@ mod tests {
         let root = game_root();
         let mut r = Resources::new(
             vec![root.join("res"), root.clone()],
-            root.join("no-downloads"),
+            root.join("no-player"),
             Some("en".into()),
             Arc::new(Parameters::default()),
             Log::silent(),
@@ -842,7 +900,7 @@ mod tests {
         let root = game_root();
         Resources::new(
             vec![root.join("res"), root.clone()],
-            root.join("no-downloads"),
+            root.join("no-player"),
             Some("en".into()),
             Arc::new(Parameters::default()),
             Log::silent(),
@@ -974,7 +1032,7 @@ mod tests {
         log.keep_errors();
         let mut r = Resources::new(
             vec![root.join("res"), root.clone()],
-            root.join("no-downloads"),
+            root.join("no-player"),
             Some("en".into()),
             Arc::new(Parameters::default()),
             log.clone(),
@@ -1021,7 +1079,7 @@ mod tests {
         let root = game_root();
         let mut r = Resources::new(
             vec![root.join("res")],
-            root.join("no-downloads"),
+            root.join("no-player"),
             Some("en".into()),
             Arc::new(Parameters::default()),
             log.clone(),
@@ -1059,8 +1117,8 @@ mod tests {
         // The folder of downloaded maps is also a package, as when the
         // settings folder is inside the game folder.
         let mut r = Resources::new(
-            vec![root.join("res"), mine, downloaded.clone()],
-            downloaded,
+            vec![root.join("res"), mine, downloaded],
+            user.path().to_path_buf(),
             Some("en".into()),
             Arc::new(Parameters::default()),
             Log::silent(),
