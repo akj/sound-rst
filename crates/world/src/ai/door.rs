@@ -483,10 +483,6 @@ impl Door<'_> {
 
     /// How well it plays. A player other than a scripted computer plays
     /// at the normal level.
-    #[expect(
-        dead_code,
-        reason = "the levels play alike until they are given their own play"
-    )]
     pub(super) fn skill(&self) -> Skill {
         match self.kind() {
             PlayerKind::Computer { skill, .. } => *skill,

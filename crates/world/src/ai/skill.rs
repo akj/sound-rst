@@ -42,6 +42,116 @@ impl Skill {
     pub fn from_number(n: u8) -> Option<Skill> {
         Skill::ALL.into_iter().find(|s| s.number() == n)
     }
+
+    /// How the computer plays at this level. The engine applies these
+    /// settings around any script of `ai.txt`, so that a mod's scripts
+    /// have every level too.
+    pub(super) fn settings(self) -> Settings {
+        match self {
+            Skill::Level1 => Settings {
+                grace: 600_000,
+                workers: Workers::AtMost(6),
+                attack_ratio: 120,
+                turns_between_decisions: 40,
+                ..Settings::NORMAL
+            },
+            Skill::Level2 => Settings {
+                grace: 300_000,
+                workers: Workers::AtMost(8),
+                attack_ratio: 150,
+                turns_between_decisions: 30,
+                ..Settings::NORMAL
+            },
+            Skill::Level3 => Settings::NORMAL,
+            Skill::Level4 => Settings {
+                workers: Workers::WithSpare {
+                    kept: 10,
+                    spare: 15,
+                },
+                ..Settings::NORMAL
+            },
+            Skill::Level5 => Settings {
+                workers: Workers::WithSpare {
+                    kept: 10,
+                    spare: 15,
+                },
+                more_makers_at: 3,
+                ..Settings::NORMAL
+            },
+        }
+    }
+}
+
+/// How a computer plays at a skill level.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Settings {
+    /// The game time, in milliseconds, before which the computer starts no
+    /// attack: neither the attacks of its script nor its constant attacks.
+    /// It still defends a place of its own that is attacked, and still
+    /// explores.
+    pub(super) grace: i64,
+    /// How many workers it gets.
+    pub(super) workers: Workers,
+    /// The menace, in percent of the enemy's, that its soldiers must pass
+    /// before they fight, while it is below the map's food limit and could
+    /// still make more of them.
+    pub(super) attack_ratio: i64,
+    /// It decides once in this many turns. The computers that decide at
+    /// the same rate share these turns between them.
+    pub(super) turns_between_decisions: i64,
+    /// When it wants more than three units of a type for each of their
+    /// makers it has, it builds one more maker if it could pay for more
+    /// than this many units of the type for each maker.
+    pub(super) more_makers_at: i64,
+}
+
+impl Settings {
+    /// The settings of [`Skill::NORMAL`]: the original's computer.
+    const NORMAL: Settings = Settings {
+        grace: 0,
+        workers: Workers::AtLeast(10),
+        attack_ratio: 180,
+        turns_between_decisions: 10,
+        more_makers_at: 100,
+    };
+}
+
+/// How many workers a computer gets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Workers {
+    /// It keeps this many, and gets more when its script asks for more.
+    AtLeast(i64),
+    /// It keeps this many, and gets no more when its script asks for more.
+    AtMost(i64),
+    /// It keeps `kept`, and gets more when its script asks for more. After
+    /// the purchases of its turn, while it could still pay for two workers,
+    /// it gets up to `spare`.
+    WithSpare { kept: i64, spare: i64 },
+}
+
+impl Workers {
+    /// The number it keeps getting.
+    pub(super) fn kept(self) -> i64 {
+        match self {
+            Workers::AtLeast(n) | Workers::AtMost(n) | Workers::WithSpare { kept: n, .. } => n,
+        }
+    }
+
+    /// The number of workers it gets when its script asks for `asked`.
+    pub(super) fn asked(self, asked: i64) -> i64 {
+        match self {
+            Workers::AtLeast(_) | Workers::WithSpare { .. } => asked,
+            Workers::AtMost(n) => asked.min(n),
+        }
+    }
+
+    /// The number it gets from resources to spare, if it does.
+    pub(super) fn spare(self) -> Option<i64> {
+        match self {
+            Workers::WithSpare { spare, .. } => Some(spare),
+            Workers::AtLeast(_) | Workers::AtMost(_) => None,
+        }
+    }
 }
 
 #[cfg(test)]
