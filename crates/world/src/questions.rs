@@ -17,19 +17,11 @@ use crate::orders::{
     BuildStep, GatherStep, Keyword, MenuEntry, Order, OrderInfo, OrderKind, TargetRef,
 };
 use crate::player::Upgrades;
-use crate::rules::{EffectTarget, EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
+use crate::rules::{
+    Effect, EffectTarget, EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType,
+};
 use crate::seat_view::Comrades;
 use crate::world::World;
-
-/// The effects of an ability that its `use` order may always be given for.
-const EFFECTS: &[&str] = &[
-    "teleportation",
-    "recall",
-    "conversion",
-    "summon",
-    "raise_dead",
-    "resurrection",
-];
 
 /// An order as the rules read it.
 pub(crate) trait OrderFacts {
@@ -603,13 +595,7 @@ fn additional_condition<'a, K: Knowledge<'a>>(
             !researching
         }
         Keyword::UpgradeTo => unit.orders().is_empty(),
-        Keyword::Use => k
-            .rules()
-            .ty(t)
-            .effect
-            .as_ref()
-            .and_then(|e| e.first())
-            .is_some_and(|e| EFFECTS.contains(&e.as_str())),
+        Keyword::Use => k.rules().ty(t).effect.as_ref().is_some_and(Effect::is_used),
         _ => true,
     }
 }

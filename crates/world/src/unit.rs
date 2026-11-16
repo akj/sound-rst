@@ -9,14 +9,13 @@ use crate::entity::{
 use crate::events::{EntityEvent, Reason};
 use crate::known::Activity;
 use crate::nofloat::{
-    PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, py_int,
-    square_of_distance,
+    PRECISION, floordiv, int_angle, int_cos_1000, int_distance, int_sin_1000, square_of_distance,
 };
 use crate::orders::{Keyword, OrderKind, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, Effect, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
@@ -342,59 +341,50 @@ impl World {
     }
 
     fn apply_upgrade_effect(&mut self, upgrade: TypeId, unit: EntityId, start_level: i64) -> Res {
-        // An upgrade without an effect has none. The rules drop an effect
-        // they cannot read, so what follows reads one they could.
+        // An upgrade without an effect has none.
         let Some(effect) = self.rules.ty(upgrade).effect.clone() else {
             return Ok(());
         };
-        let arg = |i: usize| -> Res<&String> { Ok(effect.get(i).ok_or(Invariant::EffectUnread)?) };
-        let int = |s: &str| -> Res<i64> { Ok(py_int(s).map_err(|_| Invariant::EffectUnread)?) };
-        match effect.first().map(String::as_str) {
-            Some("bonus") => {
-                let stat = arg(1)?.clone();
-                let base = int(arg(2)?)?;
-                let incr = match effect.get(3) {
-                    Some(s) => int(s)?,
-                    None => 0,
-                };
-                self.effect_bonus(unit, start_level, &stat, base, incr)
+        match effect {
+            Effect::Bonus {
+                stat,
+                value,
+                per_level,
+            } => {
+                self.effect_bonus(unit, stat, value + per_level * start_level);
+                Ok(())
             }
-            Some("apply_bonus") => {
-                let stat = arg(1)?.clone();
-                let base = self
+            Effect::ApplyBonus(stat) => {
+                let value = self
                     .e(unit)
                     .type_id()
-                    .zip(Stat::parse(&stat))
-                    .map_or(0, |(t, s)| self.rules.ty(t).bonus(s));
-                self.effect_bonus(unit, start_level, &stat, base, 0)?;
-                if stat == "damage"
+                    .map_or(0, |t| self.rules.ty(t).bonus(stat));
+                self.effect_bonus(unit, stat, value);
+                if stat == Stat::Damage
                     && let Some(c) = self.cm(unit)
                 {
                     c.damage_level += 1;
                 }
                 Ok(())
             }
-            _ => Err(Invariant::EffectUnread.into()),
+            // The rules give an upgrade only the effects above.
+            Effect::Teleportation
+            | Effect::Recall
+            | Effect::Conversion
+            | Effect::Summon { .. }
+            | Effect::RaiseDead { .. }
+            | Effect::Resurrection { .. } => Err(Invariant::EffectUnread.into()),
         }
     }
 
-    fn effect_bonus(
-        &mut self,
-        unit: EntityId,
-        start_level: i64,
-        stat: &str,
-        base: i64,
-        incr: i64,
-    ) -> Res {
+    fn effect_bonus(&mut self, unit: EntityId, stat: Stat, value: i64) {
         let e = self.em(unit);
-        let stat = Stat::parse(stat).ok_or(Invariant::EffectUnread)?;
-        e.stats.add(stat, base + incr * start_level);
+        e.stats.add(stat, value);
         if stat == Stat::Damage
             && let Some(c) = e.creature_mut()
         {
             c.damage_level += 1;
         }
-        Ok(())
     }
 
     // type lists

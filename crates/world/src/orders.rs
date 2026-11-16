@@ -10,9 +10,9 @@ use crate::entity::{
     AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
 };
 use crate::events::{EntityEvent, Event, Reason};
-use crate::nofloat::{py_int, square_of_distance, to_int};
+use crate::nofloat::{py_int, square_of_distance};
 use crate::questions;
-use crate::rules::{AirGround, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, Effect, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// The most orders a unit can queue.
@@ -2840,8 +2840,7 @@ impl World {
         }
         let t = self.rules.ty(ability).clone();
         let effect = t.effect.clone().ok_or(Invariant::UnknownAbility)?;
-        let kind = effect.first().cloned().unwrap_or_default();
-        match self.use_need(unit, uid, &kind, &t)? {
+        match self.use_need(unit, uid, &effect, &t)? {
             UseNeed::Effect => {}
             UseNeed::Nothing => {
                 self.mark_as_complete(unit, uid);
@@ -2865,7 +2864,7 @@ impl World {
             return Ok(());
         }
         self.stop(unit);
-        if kind == "conversion" && matches!(target, Target::Memory(_)) {
+        if effect == Effect::Conversion && matches!(target, Target::Memory(_)) {
             self.mark_as_impossible(unit, uid, None);
             return Ok(());
         }
@@ -2873,7 +2872,7 @@ impl World {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughMana));
             return Ok(());
         }
-        if !self.use_effect_execute(unit, uid, &kind, &t, &effect)? {
+        if !self.use_effect_execute(unit, uid, &effect, &t)? {
             self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
             return Ok(());
         }
@@ -2889,36 +2888,39 @@ impl World {
     fn effect_targets(
         &self,
         unit: EntityId,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
         target: &Target,
     ) -> Vec<EntityId> {
         let p = self.e(unit).player();
         let r = t.stats.effect_radius;
-        match kind {
-            "teleportation" => {
+        match effect {
+            Effect::Teleportation => {
                 let (x, y) = (self.e(unit).x, self.e(unit).y);
                 self.get_objects(x, y, r, |e| {
                     e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
-            "recall" => {
+            Effect::Recall => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
                     e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
-            "raise_dead" => {
+            Effect::RaiseDead { .. } => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| e.is_corpse())
             }
-            "resurrection" => {
+            Effect::Resurrection { .. } => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
                     e.corpse().is_some_and(|c| c.unit.kind.player == p)
                 })
             }
-            _ => Vec::new(),
+            Effect::Bonus { .. }
+            | Effect::ApplyBonus(_)
+            | Effect::Conversion
+            | Effect::Summon { .. } => Vec::new(),
         }
     }
 
@@ -2928,13 +2930,13 @@ impl World {
         &mut self,
         unit: EntityId,
         uid: u64,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
     ) -> Res<UseNeed> {
         let target = self.target_of(unit, uid).expect("checked");
-        match kind {
-            "teleportation" => {
-                let units = self.effect_targets(unit, kind, t, &target);
+        match effect {
+            Effect::Teleportation => {
+                let units = self.effect_targets(unit, effect, t, &target);
                 let mut types: Vec<AirGround> = Vec::new();
                 for u in &units {
                     let a = self.e(*u).airground_type;
@@ -2964,8 +2966,8 @@ impl World {
                 }
                 Ok(UseNeed::Effect)
             }
-            "recall" => {
-                let units = self.effect_targets(unit, kind, t, &target);
+            Effect::Recall => {
+                let units = self.effect_targets(unit, effect, t, &target);
                 if units.is_empty() {
                     return Ok(UseNeed::Nothing);
                 }
@@ -2988,17 +2990,18 @@ impl World {
                 }
                 Ok(UseNeed::Effect)
             }
-            "conversion" if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
-            "conversion" => Ok(UseNeed::Nothing),
-            "summon" => Ok(UseNeed::Effect),
-            "raise_dead" | "resurrection" => {
-                if self.effect_targets(unit, kind, t, &target).is_empty() {
+            Effect::Conversion if self.is_an_enemy(unit, &target) => Ok(UseNeed::Effect),
+            Effect::Conversion => Ok(UseNeed::Nothing),
+            Effect::Summon { .. } => Ok(UseNeed::Effect),
+            Effect::RaiseDead { .. } | Effect::Resurrection { .. } => {
+                if self.effect_targets(unit, effect, t, &target).is_empty() {
                     Ok(UseNeed::Nothing)
                 } else {
                     Ok(UseNeed::Effect)
                 }
             }
-            _ => Err(Invariant::UnknownAbility.into()),
+            // An upgrade's effect: the order is not allowed.
+            Effect::Bonus { .. } | Effect::ApplyBonus(_) => Err(Invariant::UnknownAbility.into()),
         }
     }
 
@@ -3006,34 +3009,28 @@ impl World {
         &mut self,
         unit: EntityId,
         uid: u64,
-        kind: &str,
+        effect: &Effect,
         t: &crate::rules::UnitType,
-        effect: &[String],
     ) -> Res<bool> {
         let target = self.target_of(unit, uid).expect("checked");
         let Some(p) = self.e(unit).player() else {
             return Ok(true);
         };
-        // The rules drop an effect whose numbers they cannot read.
-        let decay = || -> Res<i64> {
-            let s = effect.get(1).ok_or(Invariant::EffectUnread)?;
-            Ok(to_int(s).map_err(|_| Invariant::EffectUnread)?)
-        };
-        match kind {
-            "teleportation" => {
+        match effect {
+            Effect::Teleportation => {
                 let Target::Square(s) = target else {
                     return Ok(true);
                 };
-                for u in self.effect_targets(unit, kind, t, &Target::Entity(unit)) {
+                for u in self.effect_targets(unit, effect, t, &Target::Entity(unit)) {
                     let a = self.e(u).airground_type;
                     if self.can_receive(s, a, None) {
                         let _ = self.move_to(u, Some(Place::Square(s)), None, 90);
                     }
                 }
             }
-            "recall" => {
+            Effect::Recall => {
                 let nearest_water = self.nearest_water(unit);
-                for u in self.effect_targets(unit, kind, t, &target) {
+                for u in self.effect_targets(unit, effect, t, &target) {
                     let Some(Place::Square(mut place)) = self.e(unit).place else {
                         continue;
                     };
@@ -3049,31 +3046,23 @@ impl World {
                     }
                 }
             }
-            "conversion" => {
+            Effect::Conversion => {
                 if let Some(id) = target.entity_id() {
                     self.set_player(id, Some(p));
                 }
             }
-            "summon" => {
-                let d = decay()?;
-                let items = effect.get(2..).unwrap_or(&[]).to_vec();
-                self.lang_add_units(p, &items, Some(&target), d, None, false);
+            Effect::Summon { decay, items } => {
+                self.lang_add_units(p, items, Some(&target), *decay, None, false);
             }
-            "raise_dead" => {
-                let d = decay()?;
+            Effect::RaiseDead { decay, items } => {
                 let (tx, ty) = self.t_xy(&target);
-                let mut corpses = self.effect_targets(unit, kind, t, &target);
+                let mut corpses = self.effect_targets(unit, effect, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
-                let items = effect.get(2..).unwrap_or(&[]).to_vec();
-                self.lang_add_units(p, &items, None, d, Some(corpses), false);
+                self.lang_add_units(p, items, None, *decay, Some(corpses), false);
             }
-            "resurrection" => {
-                let n = effect
-                    .get(1)
-                    .and_then(|s| crate::nofloat::py_int(s).ok())
-                    .ok_or(Invariant::EffectUnread)?;
+            &Effect::Resurrection { count: n } => {
                 let (tx, ty) = self.t_xy(&target);
-                let mut corpses = self.effect_targets(unit, kind, t, &target);
+                let mut corpses = self.effect_targets(unit, effect, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
                 let mut risen = false;
                 for _ in 0..n {

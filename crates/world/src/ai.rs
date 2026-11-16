@@ -27,7 +27,7 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, EffectTarget, EntityClass, Role, TypeId};
+use crate::rules::{AirGround, Effect, EffectTarget, EntityClass, Role, TypeId};
 use crate::world::TPlace;
 
 mod door;
@@ -558,16 +558,11 @@ impl Door<'_> {
                     continue;
                 }
                 let rules = self.rules();
-                let Some(effect) = self.effect(a) else {
-                    continue;
-                };
-                let mut words = effect.iter().map(String::as_str);
-                match words.next() {
-                    None => continue,
-                    Some("raise_dead") => raise_dead.push((u, a)),
-                    Some("teleportation") => teleportation.push((u, a)),
-                    Some("summon") => {
-                        for item in words {
+                match &rules.ty(a).effect {
+                    Some(Effect::RaiseDead { .. }) => raise_dead.push((u, a)),
+                    Some(Effect::Teleportation) => teleportation.push((u, a)),
+                    Some(Effect::Summon { items, .. }) => {
+                        for item in items {
                             if rules.get_is_truthy(item, "harm_level") {
                                 cataclysm.push((u, a));
                             }
@@ -579,7 +574,7 @@ impl Door<'_> {
                             }
                         }
                     }
-                    Some(_) => {}
+                    _ => {}
                 }
             }
         }
@@ -968,12 +963,8 @@ impl Door<'_> {
                 }
             }
         }
-        let Some(effect) = self.effect(a) else {
-            return false;
-        };
-        let mut words = effect.iter();
-        if words.next().map(String::as_str) == Some("summon") {
-            for item in words {
+        if let Some(Effect::Summon { items, .. }) = self.rules().ty(a).effect.clone() {
+            for item in &items {
                 if self.rules().get_is_truthy(item, "harm_level") {
                     for &t in &types {
                         if self.can_harm(item, t) {
@@ -1688,10 +1679,11 @@ impl Door<'_> {
             }
         } else {
             for a in self.listed(Some(maker), |t| &t.can_use) {
-                let Some(effect) = self.effect(a) else {
-                    continue;
-                };
-                if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
+                let summons = matches!(
+                    &self.rules().ty(a).effect,
+                    Some(Effect::Summon { items, .. }) if items.contains(&name)
+                );
+                if summons {
                     let mut target = None;
                     if self.rules().ty(a).effect_target == Some(EffectTarget::Ask) {
                         // The maker is one of its units: an upgrade, which a
@@ -1733,12 +1725,6 @@ impl Door<'_> {
             .flatten()
             .filter_map(|n| rules.type_id(n))
             .collect()
-    }
-
-    /// The words of an ability's effect, as the rules give them.
-    fn effect(&self, a: TypeId) -> Option<Vec<String>> {
-        let rules = self.rules();
-        rules.get_words(&rules.ty(a).name, "effect")
     }
 
     /// The type that plays a role for the player's faction, if the rules

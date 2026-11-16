@@ -23,7 +23,10 @@ use crate::ai::script::Script;
 use crate::defs::{bounded, check_size, preprocess_within_limits};
 use crate::nofloat::{PRECISION, py_int, to_int};
 
+mod effect;
 mod properties;
+
+pub use effect::Effect;
 
 use properties::Written;
 
@@ -811,8 +814,9 @@ pub struct UnitType {
     pub bonuses: Vec<(Stat, i64)>,
     /// Deposits: the resource it holds.
     pub resource_type: Option<i64>,
-    /// Upgrades and abilities: the effect and its arguments.
-    pub effect: Option<Vec<String>>,
+    /// Upgrades and abilities: the effect. `None` for an upgrade that
+    /// does nothing, or an ability that cannot be used.
+    pub effect: Option<Effect>,
     /// Abilities: where it aims. `None` for an ability that names no
     /// target the simulation knows: it aims at nothing.
     pub effect_target: Option<EffectTarget>,
@@ -1193,15 +1197,12 @@ impl Rules {
             .iter()
             .any(|l| l.contains(&t));
             if !can {
-                for ability in &uc.can_use {
-                    if let Some(effect) = self.get_words(ability, "effect")
-                        && effect.first().map(String::as_str) == Some("summon")
-                        && effect.contains(&t)
-                    {
-                        can = true;
-                        break;
-                    }
-                }
+                can = uc.can_use.iter().any(|ability| {
+                    matches!(
+                        self.unit_type(ability).and_then(|a| a.effect.as_ref()),
+                        Some(Effect::Summon { items, .. }) if items.contains(&t)
+                    )
+                });
             }
             if can {
                 result.push(c.to_owned());
@@ -1435,7 +1436,16 @@ fn build_type(
                 t.harm_target_type = known_words(name, k, &words(), warnings, HarmTarget::parse);
             }
             "speed_on_terrain" => t.speed_on_terrain = words(),
-            "effect" => t.effect = Some(words()),
+            "effect" => {
+                let w = words();
+                t.effect = Effect::parse(base, &w);
+                if t.effect.is_none() {
+                    warnings.push(format!(
+                        "in {name}: the effect '{}' cannot be applied",
+                        w.join(" ")
+                    ));
+                }
+            }
             "effect_target" => {
                 let w = words();
                 t.effect_target = EffectTarget::parse(&w);
@@ -1491,7 +1501,6 @@ fn build_type(
             }
         }
     }
-    t.effect = readable_effect(name, base, t.effect.take(), warnings);
     t
 }
 
@@ -1512,40 +1521,6 @@ fn known_words<T>(
         }
     }
     known
-}
-
-/// The effect of an upgrade or an ability, if the simulation can apply it.
-/// One it cannot read is dropped with a warning: an upgrade without an
-/// effect has none, and an ability without one is never allowed.
-fn readable_effect(
-    name: &str,
-    base: BaseClass,
-    effect: Option<Vec<String>>,
-    warnings: &mut Vec<String>,
-) -> Option<Vec<String>> {
-    let effect = effect?;
-    let stat = |i: usize| effect.get(i).is_some_and(|s| Stat::parse(s).is_some());
-    let integer = |i: usize| effect.get(i).is_some_and(|s| py_int(s).is_ok());
-    let readable = match (base, effect.first().map(String::as_str)) {
-        (BaseClass::Upgrade, Some("bonus")) => {
-            stat(1) && integer(2) && (effect.len() < 4 || integer(3))
-        }
-        (BaseClass::Upgrade, Some("apply_bonus")) => stat(1),
-        (BaseClass::Upgrade, _) => false,
-        (BaseClass::Ability, Some("summon" | "raise_dead")) => {
-            effect.get(1).is_some_and(|s| to_int(s).is_ok())
-        }
-        (BaseClass::Ability, Some("resurrection")) => integer(1),
-        _ => true,
-    };
-    if readable {
-        return Some(effect);
-    }
-    warnings.push(format!(
-        "in {name}: the effect '{}' cannot be applied",
-        effect.join(" ")
-    ));
-    None
 }
 
 /// The computer player scripts of `ai.txt`, by name, in definition order.
@@ -1664,8 +1639,66 @@ mod tests {
     fn effect_bonus_values_of_decimal_stats_are_converted() {
         let r = Rules::load(&["def u\nclass upgrade\neffect bonus damage 1.5\n"]);
         assert_eq!(
-            r.unit_type("u").unwrap().effect.as_deref(),
-            Some(&["bonus".to_owned(), "damage".to_owned(), "1500".to_owned()][..])
+            r.unit_type("u").unwrap().effect,
+            Some(Effect::Bonus {
+                stat: Stat::Damage,
+                value: 1500,
+                per_level: 0
+            })
+        );
+    }
+
+    #[test]
+    fn each_kind_of_effect_is_read_with_its_arguments() {
+        let r = Rules::load(&["def u\nclass upgrade\neffect apply_bonus armor\n\
+             def s\nclass ability\neffect summon 120 2 dragon\n\
+             def d\nclass ability\neffect raise_dead 600 zombie\n\
+             def r\nclass ability\neffect resurrection 6\n\
+             def c\nclass ability\neffect conversion\n"]);
+        let effect = |name: &str| r.unit_type(name).unwrap().effect.clone().unwrap();
+        assert_eq!(effect("u"), Effect::ApplyBonus(Stat::Armor));
+        assert_eq!(
+            effect("s"),
+            Effect::Summon {
+                decay: 120_000,
+                items: vec!["2".into(), "dragon".into()]
+            }
+        );
+        assert_eq!(
+            effect("d"),
+            Effect::RaiseDead {
+                decay: 600_000,
+                items: vec!["zombie".into()]
+            }
+        );
+        assert_eq!(effect("r"), Effect::Resurrection { count: 6 });
+        assert_eq!(effect("c"), Effect::Conversion);
+        assert_eq!(r.warnings, Vec::<String>::new());
+    }
+
+    /// An effect the simulation cannot apply: of an unknown kind, of the
+    /// other base class, or with an argument it cannot read.
+    #[test]
+    fn an_effect_that_cannot_be_applied_is_dropped_with_a_warning() {
+        let r = Rules::load(&["def a\nclass ability\neffect fly\n\
+             def b\nclass ability\neffect bonus armor 1\n\
+             def c\nclass upgrade\neffect recall\n\
+             def d\nclass upgrade\neffect bonus nothing 1\n\
+             def e\nclass ability\neffect summon soon dragon\n\
+             def f\nclass ability\neffect resurrection 1.5\n"]);
+        for name in ["a", "b", "c", "d", "e", "f"] {
+            assert_eq!(r.unit_type(name).unwrap().effect, None, "{name}");
+        }
+        assert_eq!(
+            r.warnings,
+            [
+                "in a: the effect 'fly' cannot be applied",
+                "in b: the effect 'bonus armor 1000' cannot be applied",
+                "in c: the effect 'recall' cannot be applied",
+                "in d: the effect 'bonus nothing 1' cannot be applied",
+                "in e: the effect 'summon soon dragon' cannot be applied",
+                "in f: the effect 'resurrection 1.5' cannot be applied",
+            ]
         );
     }
 
@@ -1804,15 +1837,12 @@ mod tests {
         ]);
         assert_eq!(r.unit_type("boost").unwrap().effect, None);
         assert_eq!(
-            r.unit_type("plus").unwrap().effect.as_deref(),
-            Some(
-                &[
-                    "bonus".to_owned(),
-                    "collision".to_owned(),
-                    "1".to_owned(),
-                    "2".to_owned()
-                ][..]
-            )
+            r.unit_type("plus").unwrap().effect,
+            Some(Effect::Bonus {
+                stat: Stat::Collision,
+                value: 1,
+                per_level: 2
+            })
         );
         assert_eq!(
             r.warnings,
