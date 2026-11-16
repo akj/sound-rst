@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::nofloat::py_int;
-use crate::rules::{FactionId, Rules, TypeId};
+use crate::rules::{Rules, TypeId};
 
 /// One line of a script.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -40,8 +40,9 @@ pub(crate) struct Script {
     steps: Vec<Step<String>>,
 }
 
-/// A script as a computer plays it: each unit a type of its rules, as its
-/// faction has it.
+/// A script as a computer plays it: each unit a type of its rules, as the
+/// script writes it. The computer plays the type its faction has instead,
+/// as it has it when the line is played: a map's trigger may change it.
 #[derive(Clone, Debug, Hash)]
 pub(crate) struct Plan {
     lines: Arc<[String]>,
@@ -119,27 +120,12 @@ impl Script {
         &self.lines
     }
 
-    /// The script as a player of `faction` plays it with `rules`, with a
-    /// warning for each unit to get that the rules lack. Such a unit is
-    /// left out of its line.
-    pub(crate) fn plan(
-        &self,
-        rules: &Rules,
-        faction: Option<FactionId>,
-        warnings: &mut Vec<String>,
-    ) -> Plan {
+    /// The script as played with `rules`, with a warning for each unit to
+    /// get that the rules lack. Such a unit is left out of its line.
+    pub(crate) fn plan(&self, rules: &Rules, warnings: &mut Vec<String>) -> Plan {
         // A class the rules have and that is not a type, such as a faction,
         // is a unit the computer never has.
-        let unit = |name: &String| -> Option<Option<TypeId>> {
-            if !rules.has_class(name) {
-                return None;
-            }
-            let equivalent = match rules.type_id(name) {
-                Some(t) => rules.ty(rules.equivalent(faction, t)).name.clone(),
-                None => rules.equivalent_name(faction, name),
-            };
-            Some(rules.type_id(&equivalent))
-        };
+        let unit = |name: &String| rules.has_class(name).then(|| rules.type_id(name));
         let steps = self
             .steps
             .iter()
@@ -288,17 +274,13 @@ mod tests {
     }
 
     /// The warnings of loading the scripts of the layers, then of planning
-    /// each for every faction of the rules.
+    /// each with the rules.
     fn warnings(rules: &[&str], ai: &[&str]) -> Vec<String> {
         let rules = Rules::load(&rules.iter().map(|f| read(f)).collect::<Vec<_>>());
         let ai = AiScripts::load(&ai.iter().map(|f| read(f)).collect::<Vec<_>>());
         let mut warnings = ai.warnings.clone();
-        let mut factions: Vec<Option<FactionId>> = vec![None];
-        factions.extend((0..rules.factions().len()).map(|i| rules.faction_at(i)));
         for name in ai.names() {
-            for &f in &factions {
-                ai.get(name).unwrap().plan(&rules, f, &mut warnings);
-            }
+            ai.get(name).unwrap().plan(&rules, &mut warnings);
         }
         warnings
     }
@@ -431,7 +413,7 @@ mod tests {
         let rules = Rules::load(&[read("res/rules.txt")]);
         let mut warnings = Vec::new();
         let lines = vec!["get 5 dancer 2 footman".to_owned()];
-        let plan = Script::parse("s", lines, &mut warnings).plan(&rules, None, &mut warnings);
+        let plan = Script::parse("s", lines, &mut warnings).plan(&rules, &mut warnings);
         let footman = rules.type_id("footman");
         assert_eq!(plan.steps(), [Step::Get(vec![(2, footman)])]);
         assert_eq!(

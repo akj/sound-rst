@@ -258,7 +258,7 @@ impl Door<'_> {
         let name = self.faction_ai_type(ai_type);
         let mut warnings = Vec::new();
         let plan = match self.script(&name) {
-            Some(script) => Some(script.plan(self.rules(), self.faction(), &mut warnings)),
+            Some(script) => Some(script.plan(self.rules(), &mut warnings)),
             None => {
                 warnings.push(format!(
                     "no script '{name}' in ai.txt: the computer plays without one"
@@ -507,6 +507,8 @@ impl Door<'_> {
             }
             Step::Get(items) => {
                 for &(n, t) in items {
+                    // What its faction uses instead, as it is now.
+                    let t = t.map(|t| self.rules().equivalent(self.faction(), t));
                     if !self.get(n, t)? {
                         return Ok(());
                     }
@@ -706,6 +708,10 @@ impl Door<'_> {
             .collect();
         for u in idle {
             let place = self.unit(u).and_then(Own::place);
+            // A worker inside a unit gathers nothing.
+            if square_of(place).is_none() {
+                continue;
+            }
             let Some(deposit) = self.choose(Kind::Deposit, None, place, true)? else {
                 return Ok(());
             };
@@ -2240,6 +2246,52 @@ starting_squares a1
         w.load(transport, store);
         let r = w.door(p).nearest_warehouse(a1, 0, true);
         assert_eq!(r.ok(), Some(None));
+    }
+
+    #[test]
+    fn a_script_gets_the_units_of_the_faction_the_computer_has_now() {
+        // A map's trigger makes it orc after it took up its script, as in
+        // the orc campaign's first chapter: its footman is a grunt.
+        let rules = format!(
+            "{}\n{}",
+            read("res/rules.txt"),
+            read("single/orc/rules.txt")
+        );
+        let (mut w, p) = scripted_with_rules(
+            &rules,
+            "def easy\nget 1 footman\nattack\n",
+            "townhall 2 peasant grunt",
+        );
+        w.plm(p).faction = w.rules.faction_id("human_faction");
+        w.computer_set_ai(p, "easy");
+        w.plm(p).faction = w.rules.faction_id("orc_faction");
+        for _ in 0..30 {
+            w.update();
+        }
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+    }
+
+    #[test]
+    fn a_worker_inside_a_unit_leaves_the_others_to_gather() {
+        let (mut w, p) = scripted("def easy\n", "townhall 3 peasant");
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let flyer = w.rules.type_id("new_flyingmachine").unwrap();
+        let transport = w
+            .create_creature(flyer, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        let peasants: Vec<EntityId> = w.pl(p).units[1..4].to_vec();
+        w.load(transport, peasants[0]);
+        w.update_effect_users_and_workers(p);
+        w.update_perception_and_memory(p).unwrap();
+        w.door(p).idle_workers_gather().unwrap();
+        let gathering = peasants[1..]
+            .iter()
+            .filter(|&&u| {
+                w.e(u).orders().first().map(crate::orders::Order::keyword) == Some(Keyword::Gather)
+            })
+            .count();
+        assert_eq!(gathering, 2);
     }
 
     #[test]
