@@ -478,7 +478,8 @@ impl Resources {
                 match multi.open_binary(&n).and_then(|b| Map::from_bytes(b, &n)) {
                     Ok(mut m) => {
                         // The heal sound tells the player this map is not official.
-                        m.title.insert(0, crate::mapfile::CUSTOM_MAP_SOUND.into());
+                        m.title
+                            .insert(0, soundrts_world::msg::Cue::CustomMap.into());
                         m.downloaded = is_downloaded;
                         maps.push(m);
                     }
@@ -504,15 +505,14 @@ impl Resources {
             .chain(self.custom_multiplayer_maps())
             .map(Arc::new)
             .collect();
-        // Custom maps come after official maps: a sound number sorts after
-        // any letter.
+        // Custom maps come after official maps: a sound sorts after any
+        // letter.
         let key = |m: &Arc<Map>| -> Vec<String> {
             m.title
                 .iter()
                 .map(|p| match p {
-                    soundrts_world::msg::MsgPart::Text(s)
-                    | soundrts_world::msg::MsgPart::Literal(s) => s.to_lowercase(),
-                    soundrts_world::msg::MsgPart::Num(_) => "{".to_owned(),
+                    soundrts_world::msg::MsgPart::Literal(s) => s.to_lowercase(),
+                    _ => "{".to_owned(),
                 })
                 .collect()
         };

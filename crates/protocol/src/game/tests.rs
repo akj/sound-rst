@@ -436,3 +436,28 @@ fn an_own_number_out_of_range_is_refused() {
     let change = TurnChange::between(&fine, &hostile);
     assert!(apply_change(&encode_change(&change).unwrap(), &fine, &start).is_err());
 }
+
+/// A part of a message names its phrase by its id, in a save, in a record
+/// and on the wire. A part that names no phrase is refused, and so is a
+/// kind of part that does not exist.
+#[test]
+fn a_message_part_that_names_no_phrase_is_refused() {
+    use soundrts_world::msg::{MsgPart, Phrase};
+
+    let welcome = MsgPart::Phrase(Phrase::Welcome);
+    let text = serde_json::to_string(&welcome).unwrap();
+    assert_eq!(text, r#"{"Phrase":"welcome"}"#);
+    assert_eq!(serde_json::from_str::<MsgPart>(&text).unwrap(), welcome);
+    assert!(serde_json::from_str::<MsgPart>(r#"{"Phrase":"no_such_phrase"}"#).is_err());
+    assert!(serde_json::from_str::<MsgPart>(r#"{"Phrase":"Welcome"}"#).is_err());
+    assert!(serde_json::from_str::<MsgPart>(r#"{"Phrase":4056}"#).is_err());
+    assert!(serde_json::from_str::<MsgPart>(r#"{"Num":4056}"#).is_err());
+
+    let bytes = postcard::to_allocvec(&welcome).unwrap();
+    assert_eq!(postcard::from_bytes::<MsgPart>(&bytes).unwrap(), welcome);
+    // The kind of part, the length of the id, and the id.
+    assert_eq!(bytes, b"\x00\x07welcome");
+    assert!(postcard::from_bytes::<MsgPart>(b"\x00\x07welcomf").is_err());
+    assert!(postcard::from_bytes::<MsgPart>(b"\x00\x00").is_err());
+    assert!(postcard::from_bytes::<MsgPart>(b"\xc8\x00").is_err());
+}

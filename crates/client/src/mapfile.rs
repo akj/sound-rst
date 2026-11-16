@@ -43,20 +43,15 @@ pub struct Map {
     pub bytes: Option<Arc<Vec<u8>>>,
 }
 
-/// The sound said first in the title of a map that is not official.
-pub const CUSTOM_MAP_SOUND: u64 = 1097;
-
 /// The title of a map from what a host said of it: its name, said as
 /// written, then the sounds of its `title` line.
 pub fn title_of(info: &MapInfo) -> Msg {
-    let mut title = vec![crate::sound_cache::literal(&name_from_path(
-        info.file_name.as_str(),
-    ))];
+    let mut title = vec![MsgPart::literal(name_from_path(info.file_name.as_str()))];
     title.extend(
         info.title_sounds
             .iter()
             .filter_map(|&n| u64::try_from(n).ok())
-            .map(MsgPart::Num),
+            .map(MsgPart::original_number),
     );
     title
 }
@@ -152,7 +147,7 @@ impl Map {
             .iter()
             .skip(1)
             .filter_map(|p| match p {
-                MsgPart::Num(n) if *n != CUSTOM_MAP_SOUND => i64::try_from(*n).ok(),
+                MsgPart::Original(n) => n.parse().ok(),
                 _ => None,
             })
             .take(MAX_TITLE_SOUNDS)
@@ -184,12 +179,12 @@ impl Map {
     }
 
     fn from_definition(definition: String, name: String, resources: Option<Package>) -> Map {
-        let mut title: Msg = vec![MsgPart::Text(name.clone())];
+        let mut title: Msg = vec![MsgPart::literal(name.as_str())];
         if let Some(line) = find_a_line_with(&definition, "title") {
             title.extend(
                 line.split(' ')
                     .filter_map(|x| x.parse().ok())
-                    .map(MsgPart::Num)
+                    .map(MsgPart::original_number)
                     .take(MAX_TITLE_SOUNDS),
             );
         }
@@ -227,7 +222,10 @@ mod tests {
     fn a_text_map_has_its_name_title_and_player_counts() {
         let m = Map::from_path(&upstream_tests_dir().join("jl1.txt")).unwrap();
         assert_eq!(m.name, "jl1");
-        assert_eq!(m.title, vec![MsgPart::from("jl1"), MsgPart::Num(3001)]);
+        assert_eq!(
+            m.title,
+            vec![MsgPart::literal("jl1"), MsgPart::original_number(3001)]
+        );
         assert_eq!((m.nb_players_min, m.nb_players_max), (2, 2));
     }
 
@@ -239,7 +237,11 @@ mod tests {
             assert_eq!(m.definition, "title 11 22\n");
             assert_eq!(
                 m.title,
-                vec![MsgPart::from("map1"), MsgPart::Num(11), MsgPart::Num(22)]
+                vec![
+                    MsgPart::literal("map1"),
+                    MsgPart::original_number(11),
+                    MsgPart::original_number(22)
+                ]
             );
             assert_eq!(m.resources.as_ref().unwrap().name, "map1");
         }

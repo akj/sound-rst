@@ -26,19 +26,16 @@ use soundrts_protocol::{
     Channel, ChatText, ClientMsg, ContentHash, Invalid, LobbySnapshot, Login, MapData, MapHash,
     MapInfo, Refusal, RoomExit, RoomId, SeatToken, ServerMsg, Speed,
 };
-use soundrts_world::msg::{Msg, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, cue, msg, period};
 
 use self::chat::{ChatLog, line_msg, line_news};
 use self::conn::{Connection, NetEvent, Opening};
 use self::lobby::{LobbyModel, MapState, RoomModel, TooMany, check_room, check_watchers};
-use self::words::text;
 use crate::client::Client;
 use crate::mapfile::{Map, name_from_path, title_of};
 use crate::menu::{Exit, input_string};
 use crate::message::{Category, News, Subject};
 use crate::package::{NETWORK_MAP_LIMITS, check_expansion};
-use crate::sound_cache::literal;
 
 /// How the multiplayer menus reach the network. The defaults are those of
 /// a player; tests change them.
@@ -232,7 +229,7 @@ impl Net {
     fn give_up(&mut self, cx: &mut Client, too_many: TooMany) {
         cx.log
             .warning(format!("the server sent {too_many}; disconnecting"));
-        cx.voice.alert(&msg(mp::UNEXPECTED_REPLY));
+        cx.voice.alert(&msg(Phrase::UnexpectedReply));
         self.conn.close();
         self.handle(cx, NetEvent::Closed(too_many.to_string()));
     }
@@ -269,7 +266,12 @@ impl Net {
                         .warning(format!("invited to an unknown room: {}", room.0));
                     return;
                 };
-                let m = [vec![literal(by.as_str())], msg(mp::INVITES_YOU), title].concat();
+                let m = [
+                    vec![MsgPart::literal(by.as_str())],
+                    msg(Phrase::InvitesYou),
+                    title,
+                ]
+                .concat();
                 cx.news(News::new(Category::System, m));
                 self.invitations.retain(|i| i.room != room);
                 self.invitations.push(Invitation { room, by });
@@ -288,7 +290,7 @@ impl Net {
                             self.send(ClientMsg::GetMap {
                                 hash: room.map.hash.clone(),
                             });
-                            cx.news(News::new(Category::System, msg(words::DOWNLOADING)));
+                            cx.news(News::new(Category::System, msg(Phrase::Downloading)));
                             MapState::Downloading
                         }
                     };
@@ -307,11 +309,11 @@ impl Net {
                 self.room = None;
                 let said = match reason {
                     RoomExit::Left => None,
-                    RoomExit::Removed => Some(words::YOU_HAVE_BEEN_REMOVED),
-                    RoomExit::Closed => Some(words::ROOM_CLOSED),
+                    RoomExit::Removed => Some(Phrase::YouHaveBeenRemoved),
+                    RoomExit::Closed => Some(Phrase::RoomClosed),
                 };
                 if let Some(said) = said {
-                    cx.news(News::new(Category::System, text(said)));
+                    cx.news(News::new(Category::System, msg(said)));
                     self.interrupts += 1;
                 }
                 self.changed();
@@ -343,22 +345,24 @@ impl Net {
                     self.changed();
                 }
                 let m = match reason {
-                    Refusal::TooManyRooms => msg(mp::TOO_MANY_GAMES),
+                    Refusal::TooManyRooms => msg(Phrase::TooManyGames),
                     Refusal::CannotStart => {
-                        let mut m = msg(mp::BEEP);
+                        let mut m = cue(Cue::Beep);
                         if let Some(r) = &self.room {
                             for name in r.not_ready() {
                                 m.extend(name);
-                                m.extend(text(words::NOT_READY));
-                                m.extend(msg(mp::PERIOD));
+                                m.extend(msg(Phrase::IsNotReady));
+                                m.extend(period());
                             }
                         }
                         m
                     }
-                    Refusal::NoWatchers => [msg(mp::BEEP), text(words::NO_WATCHERS)].concat(),
-                    Refusal::WatchersFull => [msg(mp::BEEP), text(words::WATCHERS_FULL)].concat(),
-                    Refusal::SlowDown => [msg(mp::BEEP), text(words::TOO_FAST)].concat(),
-                    _ => msg(mp::BEEP),
+                    Refusal::NoWatchers => {
+                        [cue(Cue::Beep), msg(Phrase::GameTakesNoWatchers)].concat()
+                    }
+                    Refusal::WatchersFull => [cue(Cue::Beep), msg(Phrase::WatchersFull)].concat(),
+                    Refusal::SlowDown => [cue(Cue::Beep), msg(Phrase::TooFast)].concat(),
+                    _ => cue(Cue::Beep),
                 };
                 cx.news(News::new(Category::System, m));
             }
@@ -454,7 +458,7 @@ impl Net {
             && let Err(e) = check_expansion(&bytes, NETWORK_MAP_LIMITS)
         {
             cx.log.warning(format!("refused the map received: {e}"));
-            let m = [msg(mp::BEEP), text(words::MAP_REFUSED)].concat();
+            let m = [cue(Cue::Beep), msg(Phrase::MapRefused)].concat();
             cx.news(News::new(Category::System, m));
             room.map = MapState::Refused;
             return;
@@ -463,7 +467,7 @@ impl Net {
             Ok(m) => Arc::new(m),
             Err(e) => {
                 cx.log.warning(format!("cannot read the map received: {e}"));
-                let m = [msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat();
+                let m = [cue(Cue::Beep), msg(Phrase::GameCannotStart)].concat();
                 cx.news(News::new(Category::System, m));
                 room.map = MapState::Refused;
                 return;
@@ -534,7 +538,7 @@ pub fn chat_char(c: char) -> bool {
 /// without a server.
 pub fn chat_in_menus(cx: &mut Client) -> Result<(), Exit> {
     let Some(net) = &cx.net else {
-        cx.voice.item(&msg(mp::BEEP));
+        cx.voice.item(&cue(Cue::Beep));
         return Ok(());
     };
     let channel = if net.game.is_some() {
@@ -544,7 +548,7 @@ pub fn chat_in_menus(cx: &mut Client) -> Result<(), Exit> {
     } else {
         Channel::Lobby
     };
-    if let Some(line) = input_string(cx, &msg(mp::ENTER_MESSAGE), chat_char, "", false)? {
+    if let Some(line) = input_string(cx, &msg(Phrase::EnterMessage), chat_char, "", false)? {
         send_chat(cx, channel, &line);
     }
     Ok(())
@@ -560,7 +564,7 @@ pub fn send_chat(cx: &mut Client, channel: Channel, line: &str) {
 fn say_chat_line(cx: &mut Client, line: Option<Msg>) {
     match line {
         Some(m) => cx.voice.item(&m),
-        None => cx.voice.item(&msg(mp::BEEP)),
+        None => cx.voice.item(&cue(Cue::Beep)),
     }
 }
 

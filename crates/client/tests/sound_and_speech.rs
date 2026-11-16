@@ -9,9 +9,8 @@ use soundrts::input::{Key, Mods};
 use soundrts::log::Log;
 use soundrts::mainmenu::main_menu;
 use soundrts::message::{Category, News, Policy};
-use soundrts::net::words;
 use soundrts::testkit::{AudioEvent, Harness, LiveKeys, Script};
-use soundrts_world::msg::MsgPart;
+use soundrts_world::msg::{MsgPart, Phrase};
 
 /// Key presses 20 seconds apart: time enough for every message, so that
 /// no press is dropped as piled up.
@@ -168,10 +167,8 @@ fn a_volume_key_interrupts_with_the_level_only_and_the_sentence_is_said_in_full(
     h.client
         .audio
         .play_stereo(sound, soundrts::sound::StereoVolume::Both(1.0), 0.0);
-    h.client.news(News::new(
-        Category::System,
-        vec![MsgPart::from(words::SERVER_FULL)],
-    ));
+    h.client
+        .news(News::new(Category::System, vec![Phrase::ServerFull.into()]));
     h.clock.advance(0.5);
     let before = h.audio.events().len();
     h.client.modify_volume(1);
@@ -271,7 +268,7 @@ const HOW: &str =
 fn the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key() {
     // The sentence has 130 characters; the key comes 7.8 seconds after it
     // starts: 0.06 seconds a character, or 17 characters a second.
-    assert_eq!(words::MEASURE_SENTENCE.chars().count(), 130);
+    assert_eq!(Phrase::MeasureSentence.english().chars().count(), 130);
     let script = to_speech_rate()
         .tap(Key::Return)
         .tap_after(5.0, Key::Space)
@@ -286,7 +283,7 @@ fn the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key() {
         [
             SPEECH_RATE_10,
             HOW,
-            words::MEASURE_SENTENCE,
+            Phrase::MeasureSentence.english(),
             "measured: 17 characters a second . to measure again, press Enter",
             BACK,
         ]
@@ -296,7 +293,7 @@ fn the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key() {
 
     // The estimate of the end of speech uses it at once: ten characters
     // now take 0.6 seconds, not 1.
-    h.client.voice.item(&vec![MsgPart::from("abcdefghij")]);
+    h.client.voice.item(&vec![MsgPart::original("abcdefghij")]);
     h.clock.advance(0.59);
     assert!(h.client.voice.is_busy());
     h.clock.advance(0.02);
@@ -330,15 +327,15 @@ fn a_key_too_early_or_too_late_is_refused_and_escape_cancels() {
         [
             SPEECH_RATE_10,
             HOW,
-            words::MEASURE_SENTENCE,
+            Phrase::MeasureSentence.english(),
             "the key came too early to be the end of the sentence , nothing changed . to try again, press Enter",
             HOW,
-            words::MEASURE_SENTENCE,
+            Phrase::MeasureSentence.english(),
             "the key came too late to be the end of the sentence , nothing changed . to try again, press Enter",
             HOW,
             "nothing changed",
             HOW,
-            words::MEASURE_SENTENCE,
+            Phrase::MeasureSentence.english(),
             "nothing changed",
         ]
     );
@@ -369,7 +366,7 @@ fn a_held_key_that_starts_the_sentence_does_not_end_it_by_repeating() {
     assert_eq!(
         said[11..13],
         [
-            words::MEASURE_SENTENCE,
+            Phrase::MeasureSentence.english(),
             "measured: 20 characters a second . to measure again, press Enter",
         ]
     );

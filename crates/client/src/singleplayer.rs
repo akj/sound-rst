@@ -5,8 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{MsgPart, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{MsgPart, Phrase, msg};
 use soundrts_world::{Rules, computer_name};
 
 use crate::campaign::run_campaign;
@@ -14,7 +13,6 @@ use crate::client::Client;
 use crate::game::style_msg;
 use crate::mapfile::Map;
 use crate::menu::{Action, Choice, Exit, Flow, Menu};
-use crate::net::words::{self, text};
 use crate::session::Session;
 
 /// The campaigns, a training game, loading a saved game if there is one,
@@ -42,28 +40,28 @@ pub(crate) fn build_single_player_menu(cx: &Client) -> Menu {
         ));
     }
     choices.push(Choice::new(
-        msg(mp::START_A_GAME_ON),
+        msg(Phrase::StartAGameOn),
         Action::run(|cx| training_menu(cx).map(|()| Flow::Stay)),
     ));
     if crate::saves::any_save(&cx.paths.saves()) {
         choices.push(Choice::new(
-            text(words::LOAD_A_GAME),
+            msg(Phrase::LoadAGame),
             Action::run(|cx| crate::saves::load::load_menu(cx).map(|()| Flow::Stay)),
         ));
     }
     if crate::saves::listen::any_to_listen(cx) {
         choices.push(Choice::new(
-            text(words::LISTEN_TO_A_GAME),
+            msg(Phrase::ListenToAGame),
             Action::run(|cx| crate::saves::listen::listen_menu(cx).map(|()| Flow::Stay)),
         ));
     }
-    choices.push(Choice::new(msg(mp::BACK), Action::CloseMenu));
-    Menu::new(msg(mp::MAKE_A_SELECTION), choices)
+    choices.push(Choice::new(msg(Phrase::Back), Action::CloseMenu));
+    Menu::new(msg(Phrase::MakeASelection), choices)
 }
 
 /// The maps; the choice is remembered for next time.
 pub fn training_menu(cx: &mut Client) -> Result<(), Exit> {
-    let mut menu = Menu::remembering(cx, msg(mp::START_A_GAME_ON), "mapmenu");
+    let mut menu = Menu::remembering(cx, msg(Phrase::StartAGameOn), "mapmenu");
     for m in cx.res.multiplayer_maps() {
         let title = m.title.clone();
         menu.append(
@@ -72,7 +70,7 @@ pub fn training_menu(cx: &mut Client) -> Result<(), Exit> {
             None,
         );
     }
-    menu.append(msg(mp::QUIT2), Action::Nothing, None);
+    menu.append(msg(Phrase::QuitMenuItem), Action::Nothing, None);
     menu.run(cx)
 }
 
@@ -137,14 +135,14 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
     if n < map.nb_players_max {
         for ai_type in ["easy", "aggressive", "ai2"] {
             menu.append(
-                [msg(mp::INVITE), computer_name(ai_type)].concat(),
+                [msg(Phrase::Invite), computer_name(ai_type)].concat(),
                 add_ai(t, ai_type),
                 None,
             );
         }
     }
     if n >= map.nb_players_min {
-        menu.append(msg(mp::START), run_game(t), None);
+        menu.append(msg(Phrase::Start), run_game(t), None);
     }
     let rule_factions = Rules::load(&[cx.res.rules_text()]).factions();
     if rule_factions.len() > 1 {
@@ -152,7 +150,7 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
             for r in std::iter::once("random_faction".to_owned()).chain(rule_factions.clone()) {
                 if r != *pr {
                     let label = [
-                        vec![MsgPart::Text(p.clone())],
+                        vec![MsgPart::literal(p.as_str())],
                         style_msg(cx.res.style(), &r, "title"),
                     ]
                     .concat();
@@ -162,9 +160,9 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
         }
     }
     menu.append(
-        msg(mp::CANCEL),
+        msg(Phrase::Cancel),
         Action::CloseMenu,
-        Some(msg(mp::CANCEL_THIS_GAME)),
+        Some(msg(Phrase::CancelThisGame)),
     );
     menu
 }

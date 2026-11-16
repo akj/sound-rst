@@ -162,29 +162,19 @@ foreach ($package in $packagePaths.Keys) {
     }
 }
 
-# The numbers the code names: number -> the name of its constant. A
-# constant of one number proposes the name of that number.
-$codeNames = @{}
-$sources = 'crates/world/src/msgparts.rs', 'crates/client/src/net/words.rs', 'crates/client/src/menu.rs',
-    'crates/client/src/game/mod.rs', 'crates/client/src/game/alerts.rs', 'crates/client/src/mapfile.rs',
-    'crates/client/src/sound_cache.rs'
-foreach ($source in $sources) {
-    $code = Get-Content -Raw (Join-Path $Repo $source)
-    foreach ($m in [regex]::Matches($code, 'const ([A-Z0-9_]+): &\[u64\] = &\[([0-9, ]+)\]')) {
-        $numbers = @($m.Groups[2].Value -split '[, ]+' | Where-Object { $_ })
-        foreach ($n in $numbers) {
-            if (-not $codeNames.ContainsKey($n)) {
-                $codeNames[$n] = if ($numbers.Count -eq 1) { $m.Groups[1].Value.ToLowerInvariant() } else { '' }
-            }
-        }
-    }
-    foreach ($m in [regex]::Matches($code, 'const [A-Z0-9_]+: (?:&str|u64) = "?([0-9]+)"?;')) {
-        if (-not $codeNames.ContainsKey($m.Groups[1].Value)) { $codeNames[$m.Groups[1].Value] = '' }
-    }
+# The names the code says and plays, in crates/world/src/phrases.rs: the id
+# of each phrase, which is its name in snake case, and the sound of each
+# cue. The silences are parts of a message of their own, and a style can
+# still name them.
+$codeNames = @{ 'silence/short' = $true; 'silence/long' = $true }
+$phrases = Get-Content -Raw (Join-Path $Repo 'crates/world/src/phrases.rs')
+foreach ($m in [regex]::Matches($phrases, '(?m)^\s+([A-Z][A-Za-z0-9]*) = "')) {
+    $id = [regex]::Replace($m.Groups[1].Value, '(?<!^)([A-Z])', '_$1').ToLowerInvariant()
+    $codeNames[$id] = $true
 }
-# The title of a square starts with the letter of its column: 5000 and the
-# column, in crates/world/src/square.rs.
-foreach ($n in 5000..5025) { $codeNames["$n"] = '' }
+foreach ($m in [regex]::Matches($phrases, 'Cue::[A-Za-z]+ => "([a-z0-9_/]+)"')) {
+    $codeNames[$m.Groups[1].Value] = $true
+}
 
 # The table as it is: package -> number -> name.
 $kept = @{}
@@ -208,7 +198,6 @@ function Get-Slug([string]$English) {
 # A proposed name for a number without a row.
 function Get-Proposal([string]$Number, $Info) {
     if ($Info.Kind -eq 'phrase') {
-        if ($codeNames.ContainsKey($Number) -and $codeNames[$Number]) { return $codeNames[$Number] }
         $slug = Get-Slug $Info.English
         if ($slug) { return $slug }
         return "phrase_$Number"
@@ -275,7 +264,7 @@ foreach ($package in $defined.Keys) {
         if ($isSound -ne ($info.Kind -eq 'sound')) {
             throw "$package ${key}: '$name' is not the name of a $($info.Kind). A sound has a slash and a phrase has none."
         }
-        $used = $uses.ContainsKey($key) -or $codeNames.ContainsKey($key)
+        $used = $uses.ContainsKey($key) -or $codeNames.ContainsKey($name)
         $comment = if ($isSound) {
             if ($uses.ContainsKey($key)) {
                 (@($uses[$key] | Sort-Object { -not $_.StartsWith('style ') } -Stable) | Select-Object -First 3) -join ', '

@@ -152,6 +152,8 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::path::Path;
 
+    use soundrts_world::msg::{Cue, Phrase};
+
     use super::*;
     use crate::package::Package;
     use crate::testkit::upstream_root;
@@ -258,5 +260,59 @@ mod tests {
                 unused: true
             }]
         );
+    }
+
+    /// The English lines of the game's `ui/tts.txt`, by number, as the
+    /// sound cache reads them.
+    fn english_of_the_original() -> BTreeMap<u32, String> {
+        let text = std::fs::read_to_string(upstream_root().join("res/ui/tts.txt")).unwrap();
+        let mut table = std::collections::HashMap::new();
+        crate::sound_cache::update_text_table(&mut table, &text, &crate::log::Log::silent());
+        table
+            .into_iter()
+            .filter_map(|(key, words)| Some((key.parse().ok()?, words)))
+            .collect()
+    }
+
+    #[test]
+    fn every_phrase_of_the_original_has_its_number_and_its_english() {
+        let english = english_of_the_original();
+        for &phrase in Phrase::ORIGINAL {
+            let id = phrase.id();
+            let number = names().game_number(id);
+            let number = number.unwrap_or_else(|| panic!("{id} has no row"));
+            assert_eq!(
+                english.get(&number).map(String::as_str),
+                Some(phrase.english()),
+                "{id}"
+            );
+        }
+        assert_eq!(
+            names().game_number(Phrase::AwaitingYourOrders.id()),
+            Some(4202)
+        );
+        assert_eq!(names().game_number(Phrase::AtDistance.id()), Some(54));
+        assert_eq!(names().game_number(Phrase::LetterZ.id()), Some(5025));
+    }
+
+    #[test]
+    fn no_phrase_of_the_port_takes_a_name_of_the_original() {
+        for &phrase in Phrase::OWN {
+            for (package, rows) in names().packages() {
+                let taken = rows.iter().any(|r| r.name == phrase.id());
+                assert!(!taken, "{} is a name of {package}", phrase.id());
+            }
+        }
+    }
+
+    #[test]
+    fn every_cue_is_a_sound_of_the_game() {
+        let game = names().rows(GAME);
+        for cue in Cue::ALL {
+            let row = game.iter().find(|r| r.name == cue.sound());
+            assert!(row.is_some_and(Row::is_sound), "{}", cue.sound());
+        }
+        assert_eq!(names().game_number(Cue::Beep.sound()), Some(1029));
+        assert_eq!(names().game_number(Cue::Select.sound()), Some(6115));
     }
 }

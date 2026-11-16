@@ -177,7 +177,7 @@ fn test_campaign_cutscene() {
         else {
             panic!("chapter 0 is a cut scene");
         };
-        assert_eq!(title, &vec![MsgPart::Num(4272)]);
+        assert_eq!(title, &vec![MsgPart::original_number(4272)]);
         assert_eq!(sequence, &vec!["7500".to_owned()]);
         assert_eq!(text0(&res).as_deref(), Some("campaign1"));
         res.set_campaign(None);
@@ -194,7 +194,10 @@ fn test_campaign_map() {
             panic!("chapter 2 is a mission");
         };
         assert_eq!(map.name, "campaign1/2");
-        assert_eq!(chapter.title(), vec![MsgPart::Num(11), MsgPart::Num(22)]);
+        assert_eq!(
+            chapter.title(),
+            vec![MsgPart::original_number(11), MsgPart::original_number(22)]
+        );
         assert!(map.resources.is_none());
         res.set_map(Some(map));
         assert_eq!(

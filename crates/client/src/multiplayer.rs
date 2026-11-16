@@ -19,8 +19,7 @@ use soundrts_protocol::{
 };
 use soundrts_server::{ServerConfig, ServerHandle, UpnpOutcome};
 use soundrts_world::Rules;
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, comma, cue, msg, nb2msg, period};
 
 use crate::client::Client;
 use crate::config::DEFAULT_LOGIN;
@@ -31,10 +30,8 @@ use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, string_to_msg}
 use crate::net::conn::{self, BadCertificate, ConnectError, Connection, ServerAddress, Transport};
 use crate::net::lobby::{MapState, computer_name, player_name};
 use crate::net::servers::{self, ListedServer};
-use crate::net::words::{self, text};
 use crate::net::{self, Net, discovery};
 use crate::session;
-use crate::sound_cache::literal;
 
 /// How long to wait for a server's welcome.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -50,25 +47,25 @@ const MAP_WAIT: f64 = 30.0;
 /// by its address, or a server of one's own.
 pub fn multiplayer_menu(cx: &mut Client) -> Result<(), Exit> {
     if cx.config.login.as_str() == DEFAULT_LOGIN {
-        cx.voice.alert(&msg(mp::ENTER_NEW_LOGIN));
+        cx.voice.alert(&msg(Phrase::EnterNewLogin));
         modify_login(cx)?;
     }
     loop {
         let mut menu = Menu::new(
-            msg(mp::MAKE_A_SELECTION),
+            msg(Phrase::MakeASelection),
             vec![
                 Choice::new(
-                    msg(mp::CHOOSE_SERVER_IN_LIST),
+                    msg(Phrase::ChooseServerInList),
                     Action::run(|cx| server_list(cx).map(|()| Flow::CloseMenu)),
                 ),
                 Choice::new(
-                    msg(mp::ENTER_SERVER_IP),
+                    msg(Phrase::EnterServerIp),
                     Action::run(|cx| enter_address(cx).map(|()| Flow::CloseMenu)),
                 ),
                 Choice::explained(
-                    msg(mp::SERVER),
+                    msg(Phrase::Server),
                     Action::run(|cx| host(cx).map(|()| Flow::CloseMenu)),
-                    msg(mp::SERVER_EXPLANATION),
+                    msg(Phrase::ServerExplanation),
                 ),
                 Choice::new(
                     arrivals_label(cx),
@@ -78,7 +75,7 @@ pub fn multiplayer_menu(cx: &mut Client) -> Result<(), Exit> {
                         Ok(Flow::Stay)
                     }),
                 ),
-                Choice::new(msg(mp::CANCEL), Action::CloseMenu),
+                Choice::new(msg(Phrase::Cancel), Action::CloseMenu),
             ],
         );
         menu.run(cx)?;
@@ -91,51 +88,47 @@ pub fn multiplayer_menu(cx: &mut Client) -> Result<(), Exit> {
 /// The arrivals option and its state.
 fn arrivals_label(cx: &Client) -> Msg {
     let state = if cx.config.announce_arrivals {
-        words::ON
+        Phrase::TurnedOn
     } else {
-        words::OFF
+        Phrase::TurnedOff
     };
-    [text(words::ANNOUNCE_ARRIVALS), msg(mp::COMMA), text(state)].concat()
+    [msg(Phrase::AnnounceArrivals), comma(), msg(state)].concat()
 }
 
 /// The servers of the local network, of the public list, and the recent
 /// and favorite ones.
 fn server_list(cx: &mut Client) -> Result<(), Exit> {
-    cx.voice.item(&msg(words::PROCESSING));
+    cx.voice.item(&msg(Phrase::Processing));
     let config = cx.net_config.clone();
-    let mut listed: Vec<(ListedServer, &[u64], &str)> = Vec::new();
+    let mut listed: Vec<(ListedServer, Phrase)> = Vec::new();
     for f in discovery::discover(&config.discovery_targets, DISCOVERY_WAIT) {
         let s = ListedServer {
             address: ServerAddress::from(f.addr),
             name: Some(f.name),
         };
-        listed.push((s, words::LOCAL, ""));
+        listed.push((s, Phrase::Local));
     }
     for s in servers::favorites(&cx.paths) {
-        listed.push((s, &[], words::FAVORITE));
+        listed.push((s, Phrase::Favorite));
     }
     for s in servers::recent(&cx.paths) {
-        listed.push((s, &[], words::RECENT));
+        listed.push((s, Phrase::Recent));
     }
     if let Some(url) = &config.public_list_url {
         match servers::public(url) {
-            Ok(list) => listed.extend(list.into_iter().map(|s| (s, words::INTERNET, ""))),
+            Ok(list) => listed.extend(list.into_iter().map(|s| (s, Phrase::Internet))),
             Err(e) => cx.log.warning(format!("no public list of servers: {e}")),
         }
     }
-    let mut menu = Menu::new(msg(mp::CHOOSE_SERVER_IN_LIST), Vec::new());
+    let mut menu = Menu::new(msg(Phrase::ChooseServerInList), Vec::new());
     let mut seen: Vec<ServerAddress> = Vec::new();
-    for (s, number, phrase) in listed {
+    for (s, kind) in listed {
         if seen.contains(&s.address) {
             continue;
         }
         seen.push(s.address.clone());
-        let explanation = if phrase.is_empty() {
-            msg(number)
-        } else {
-            text(phrase)
-        };
-        let label = vec![literal(&s.label())];
+        let explanation = msg(kind);
+        let label = vec![MsgPart::literal(s.label())];
         menu.append(
             label,
             Action::run(move |cx| connect(cx, &s.address, None).map(|()| Flow::Stay)),
@@ -143,12 +136,12 @@ fn server_list(cx: &mut Client) -> Result<(), Exit> {
         );
     }
     if seen.is_empty() {
-        cx.voice.item(&text(words::NO_SERVER_FOUND));
+        cx.voice.item(&msg(Phrase::NoServerFound));
     }
     menu.append(
-        msg(mp::CANCEL2),
+        msg(Phrase::CancelBack),
         Action::Nothing,
-        Some(msg(mp::GO_BACK_TO_PREVIOUS_MENU)),
+        Some(msg(Phrase::CancelBackExplanation)),
     );
     menu.run(cx)
 }
@@ -159,7 +152,7 @@ fn address_char(c: char) -> bool {
 }
 
 fn enter_address(cx: &mut Client) -> Result<(), Exit> {
-    if let Some(typed) = input_string(cx, &msg(mp::ENTER_SERVER_IP), address_char, "", true)? {
+    if let Some(typed) = input_string(cx, &msg(Phrase::EnterServerIp), address_char, "", true)? {
         let typed = if typed.is_empty() {
             "localhost".to_owned()
         } else {
@@ -169,7 +162,7 @@ fn enter_address(cx: &mut Client) -> Result<(), Exit> {
             Some(address) => connect(cx, &address, None)?,
             None => {
                 cx.log.warning(format!("not a server's address: {typed}"));
-                cx.voice.alert(&msg(mp::SERVER_UNREACHABLE));
+                cx.voice.alert(&msg(Phrase::ServerUnreachable));
             }
         }
     }
@@ -180,7 +173,7 @@ fn enter_address(cx: &mut Client) -> Result<(), Exit> {
 /// other players and copies it, then joins it. The server stops when the
 /// player leaves it.
 fn host(cx: &mut Client) -> Result<(), Exit> {
-    cx.voice.item(&msg(words::PROCESSING));
+    cx.voice.item(&msg(Phrase::Processing));
     let config = ServerConfig {
         name: ServerName::new(cx.config.login.as_str()).expect("a login is a server name"),
         ip: cx.net_config.host_ip,
@@ -192,7 +185,7 @@ fn host(cx: &mut Client) -> Result<(), Exit> {
         Ok(s) => s,
         Err(e) => {
             cx.log.warning(format!("cannot start the server: {e}"));
-            cx.voice.alert(&msg(words::SERVER_COULD_NOT_START));
+            cx.voice.alert(&msg(Phrase::ServerCouldNotStart));
             return Ok(());
         }
     };
@@ -203,16 +196,16 @@ fn host(cx: &mut Client) -> Result<(), Exit> {
     let address = shared.to_string();
     cx.desktop.set_clipboard(&address);
     let mut said = [
-        text(words::SHARE_ADDRESS),
+        msg(Phrase::ShareAddress),
         string_to_msg(&address, true),
-        msg(mp::PERIOD),
-        text(words::ADDRESS_COPIED),
+        period(),
+        msg(Phrase::AddressCopied),
     ]
     .concat();
     if let UpnpOutcome::Failed { reason } = server.upnp() {
         cx.log.warning(format!("no port forwarding: {reason}"));
-        said.extend(msg(mp::PERIOD));
-        said.extend(text(words::NO_PORT_FORWARDING));
+        said.extend(period());
+        said.extend(msg(Phrase::NoPortForwarding));
     }
     cx.voice.important(&said);
     let to = SocketAddr::new(
@@ -298,18 +291,20 @@ pub fn connect(
 
 fn connect_error_msg(e: &ConnectError) -> Msg {
     match e {
-        ConnectError::Unreachable(_) => msg(mp::SERVER_UNREACHABLE),
-        ConnectError::NotAServer(_) => msg(mp::UNEXPECTED_REPLY),
-        ConnectError::Certificate(why) => text(match why {
-            BadCertificate::OtherName => words::CERTIFICATE_FOR_ANOTHER_NAME,
-            BadCertificate::OutOfDate => words::CERTIFICATE_OUT_OF_DATE,
-            BadCertificate::NotTrusted => words::CERTIFICATE_NOT_TRUSTED,
+        ConnectError::Unreachable(_) => msg(Phrase::ServerUnreachable),
+        ConnectError::NotAServer(_) => msg(Phrase::UnexpectedReply),
+        ConnectError::Certificate(why) => msg(match why {
+            BadCertificate::OtherName => Phrase::CertificateForAnotherName,
+            BadCertificate::OutOfDate => Phrase::CertificateOutOfDate,
+            BadCertificate::NotTrusted => Phrase::CertificateNotTrusted,
         }),
-        ConnectError::Rejected(Rejection::ProtocolMismatch { .. }) => msg(mp::VERSION_ERROR),
-        ConnectError::Rejected(Rejection::ServerFull) => text(words::SERVER_FULL),
-        ConnectError::Rejected(Rejection::NoHello) => {
-            [msg(mp::CONNECTION_REJECTED), msg(mp::OR_LOGIN_REJECTED)].concat()
-        }
+        ConnectError::Rejected(Rejection::ProtocolMismatch { .. }) => msg(Phrase::VersionError),
+        ConnectError::Rejected(Rejection::ServerFull) => msg(Phrase::ServerFull),
+        ConnectError::Rejected(Rejection::NoHello) => [
+            msg(Phrase::ConnectionRejected),
+            msg(Phrase::OrLoginRejected),
+        ]
+        .concat(),
     }
 }
 
@@ -327,15 +322,15 @@ pub fn play_on(
     redial: net::Redial,
 ) -> Result<(), Exit> {
     let mut welcome = [
-        msg(mp::WELCOME),
-        vec![literal(snapshot.you.as_str())],
-        msg(mp::ON_THE_SERVER_OF),
-        vec![literal(snapshot.server_name.as_str())],
+        msg(Phrase::Welcome),
+        vec![MsgPart::literal(snapshot.you.as_str())],
+        msg(Phrase::OnTheServerOf),
+        vec![MsgPart::literal(snapshot.server_name.as_str())],
     ]
     .concat();
     if conn.transport() == Transport::Encrypted {
-        welcome.extend(msg(mp::COMMA));
-        welcome.extend(text(words::ENCRYPTED));
+        welcome.extend(comma());
+        welcome.extend(msg(Phrase::Encrypted));
     }
     cx.net = Some(Net::new(conn, snapshot, content, redial));
     cx.voice.important(&welcome);
@@ -399,7 +394,7 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
     let mut say_title = true;
     loop {
         if say_title {
-            cx.voice.menu(&msg(mp::MAKE_A_SELECTION2));
+            cx.voice.menu(&msg(Phrase::MakeASelectionReminder));
         }
         let build = |cx: &mut Client| build_lobby(cx, favorite);
         let stop = |cx: &Client| {
@@ -408,7 +403,7 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
         };
         let left = run_live(cx, &build, &stop)?;
         if closed(cx) {
-            cx.voice.alert(&msg(mp::CONNECTION_INTERRUPTED));
+            cx.voice.alert(&msg(Phrase::ConnectionInterrupted));
             return Ok(());
         }
         // A game the server started while the player was leaving its room:
@@ -423,7 +418,7 @@ fn lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Result<(), Exit> {
         }
         say_title = !room(cx)?;
         if closed(cx) {
-            cx.voice.alert(&msg(mp::CONNECTION_INTERRUPTED));
+            cx.voice.alert(&msg(Phrase::ConnectionInterrupted));
             return Ok(());
         }
     }
@@ -451,8 +446,8 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
             && !r.started
         {
             let label = [
-                msg(mp::ACCEPT_INVITATION_FROM),
-                vec![literal(i.by.as_str())],
+                msg(Phrase::AcceptInvitationFrom),
+                vec![MsgPart::literal(i.by.as_str())],
                 title_of(&r.map),
             ]
             .concat();
@@ -468,14 +463,14 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
             && !net.invitations.iter().any(|i| i.room == r.id);
         if can_join {
             let label = [
-                msg(words::JOIN),
-                vec![literal(r.host.as_str())],
+                msg(Phrase::Join),
+                vec![MsgPart::literal(r.host.as_str())],
                 title_of(&r.map),
             ]
             .concat();
             let explanation = [
                 nb2msg(r.players.len() as i64),
-                msg(mp::PLAYERS_ON),
+                msg(Phrase::PlayersOn),
                 nb2msg(i64::from(r.map.nb_players_max)),
             ]
             .concat();
@@ -491,14 +486,14 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
             r.takes_watchers && r.content == net.content && (r.open || (invited && !r.started));
         if can_watch {
             let label = [
-                text(words::WATCH),
-                vec![literal(r.host.as_str())],
+                msg(Phrase::Watch),
+                vec![MsgPart::literal(r.host.as_str())],
                 title_of(&r.map),
             ]
             .concat();
             let explanation = [
                 nb2msg(r.players.len() as i64),
-                msg(mp::PLAYERS_ON),
+                msg(Phrase::PlayersOn),
                 nb2msg(i64::from(r.map.nb_players_max)),
             ]
             .concat();
@@ -506,22 +501,22 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
         }
     }
     choices.push(Choice::new(
-        msg(mp::START_A_GAME_ON),
+        msg(Phrase::StartAGameOn),
         Action::run(|cx| create_menu(cx, false).map(|()| Flow::Stay)),
     ));
     choices.push(Choice::new(
-        msg(mp::START_A_PUBLIC_GAME_ON),
+        msg(Phrase::StartAPublicGameOn),
         Action::run(|cx| create_menu(cx, true).map(|()| Flow::Stay)),
     ));
     if let Some(s) = favorite {
         let label = if servers::is_favorite(&cx.paths, &s.address) {
-            words::REMOVE_FROM_FAVORITES
+            Phrase::RemoveFromFavorites
         } else {
-            words::ADD_TO_FAVORITES
+            Phrase::AddToFavorites
         };
         let s = s.clone();
         choices.push(Choice::new(
-            text(label),
+            msg(label),
             Action::run(move |cx| {
                 if let Err(e) = servers::toggle_favorite(&cx.paths, s.clone()) {
                     cx.log.warning(format!("cannot save the favorites: {e}"));
@@ -531,7 +526,7 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
             }),
         ));
     }
-    choices.push(Choice::new(msg(mp::QUIT2), Action::CloseMenu));
+    choices.push(Choice::new(msg(Phrase::QuitMenuItem), Action::CloseMenu));
     Menu::new(Vec::new(), choices)
 }
 
@@ -539,9 +534,9 @@ fn build_lobby(cx: &mut Client, favorite: Option<&ListedServer>) -> Menu {
 /// `open`: anyone can join, else only the invited.
 fn create_menu(cx: &mut Client, open: bool) -> Result<(), Exit> {
     let title = msg(if open {
-        mp::START_A_PUBLIC_GAME_ON
+        Phrase::StartAPublicGameOn
     } else {
-        mp::START_A_GAME_ON
+        Phrase::StartAGameOn
     });
     let mut menu = Menu::remembering(cx, title.clone(), "mapmenu");
     for m in cx.res.multiplayer_maps() {
@@ -555,7 +550,7 @@ fn create_menu(cx: &mut Client, open: bool) -> Result<(), Exit> {
             None,
         );
     }
-    menu.append(msg(mp::CANCEL), Action::Nothing, None);
+    menu.append(msg(Phrase::Cancel), Action::Nothing, None);
     menu.run(cx)
 }
 
@@ -584,17 +579,17 @@ fn speed_menu(cx: &mut Client, map: Arc<Map>, open: bool, title: &Msg) -> Result
         })
     };
     let welcome = |on: bool| {
-        text(if on {
-            words::WELCOME
+        msg(if on {
+            Phrase::AreWelcome
         } else {
-            words::NOT_WELCOME
+            Phrase::AreNotWelcome
         })
     };
     let watchers_setting = {
         let (shown, set) = (watchers.clone(), watchers.clone());
         let changed = changed.clone();
         Choice::setting(
-            text(words::WATCHERS),
+            msg(Phrase::Watchers),
             move |_| welcome(shown.get()),
             move |_| {
                 set.set(!set.get());
@@ -606,18 +601,18 @@ fn speed_menu(cx: &mut Client, map: Arc<Map>, open: bool, title: &Msg) -> Result
     let mut menu = Menu::new(
         title.clone(),
         vec![
-            Choice::new(msg(mp::SET_SPEED_TO_SLOW), create(Speed::Slow)),
-            Choice::new(msg(mp::SET_SPEED_TO_NORMAL), create(Speed::Normal)),
+            Choice::new(msg(Phrase::SetSpeedToSlow), create(Speed::Slow)),
+            Choice::new(msg(Phrase::SetSpeedToNormal), create(Speed::Normal)),
             Choice::new(
-                [msg(mp::SET_SPEED_TO_FAST), nb2msg(2)].concat(),
+                [msg(Phrase::SetSpeedToFast), nb2msg(2)].concat(),
                 create(Speed::Fast2),
             ),
             Choice::new(
-                [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
+                [msg(Phrase::SetSpeedToFast), nb2msg(4)].concat(),
                 create(Speed::Fast4),
             ),
             watchers_setting,
-            Choice::new(msg(mp::CANCEL), Action::Nothing),
+            Choice::new(msg(Phrase::Cancel), Action::Nothing),
         ],
     );
     menu.default_choice_index = 1;
@@ -740,7 +735,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
     let Some(room) = &net.room else {
         return Menu::new(
             Vec::new(),
-            vec![Choice::new(msg(mp::QUIT2), Action::CloseMenu)],
+            vec![Choice::new(msg(Phrase::QuitMenuItem), Action::CloseMenu)],
         );
     };
     let you = net.lobby.you.clone();
@@ -750,14 +745,14 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
     if room.is_host(&you) {
         if slots.len() < usize::from(map.nb_players_max) {
             for p in net.lobby.available_players() {
-                let label = [msg(mp::INVITE), vec![literal(p.as_str())]].concat();
+                let label = [msg(Phrase::Invite), vec![MsgPart::literal(p.as_str())]].concat();
                 choices.push(Choice::new(
                     label,
                     send_action(ClientMsg::Invite { login: p }),
                 ));
             }
             for level in [AiLevel::Easy, AiLevel::Aggressive, AiLevel::Ai2] {
-                let label = [msg(mp::INVITE), computer_name(level)].concat();
+                let label = [msg(Phrase::Invite), computer_name(level)].concat();
                 choices.push(Choice::new(
                     label,
                     send_action(ClientMsg::AddComputer { level }),
@@ -765,7 +760,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
             }
         }
         if slots.len() >= usize::from(map.nb_players_min) {
-            choices.push(Choice::new(msg(mp::START), Action::run(start_game)));
+            choices.push(Choice::new(msg(Phrase::Start), Action::run(start_game)));
         }
         for (i, slot) in slots.iter().enumerate() {
             let name = player_name(&slot.player);
@@ -773,9 +768,9 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
             for a in 1..=alliances as u8 {
                 if a != slot.alliance {
                     let label = [
-                        msg(mp::MOVE),
+                        msg(Phrase::Move),
                         name.clone(),
-                        msg(mp::TO_ALLIANCE),
+                        msg(Phrase::ToAlliance),
                         nb2msg(i64::from(a)),
                     ]
                     .concat();
@@ -801,7 +796,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
         }
         for (i, slot) in slots.iter().enumerate() {
             if slot.player != SlotPlayer::Human(you.clone()) {
-                let label = [text(words::REMOVE), player_name(&slot.player)].concat();
+                let label = [msg(Phrase::Remove), player_name(&slot.player)].concat();
                 choices.push(Choice::new(
                     label,
                     slot_action(i, &slot.player, |slot| ClientMsg::RemoveSlot { slot }),
@@ -819,21 +814,21 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                 factions,
             ));
             choices.push(match room.map {
-                MapState::Downloading => Choice::new(msg(words::DOWNLOADING), Action::Nothing),
-                MapState::Refused => Choice::new(text(words::GAME_CANNOT_START), Action::Nothing),
+                MapState::Downloading => Choice::new(msg(Phrase::Downloading), Action::Nothing),
+                MapState::Refused => Choice::new(msg(Phrase::GameCannotStart), Action::Nothing),
                 MapState::Ready(_) if slot.ready => Choice::new(
-                    text(words::I_AM_NOT_READY),
+                    msg(Phrase::IAmNotReady),
                     send_action(ClientMsg::SetReady { ready: false }),
                 ),
                 MapState::Ready(_) => Choice::new(
-                    text(words::I_AM_READY),
+                    msg(Phrase::IAmReady),
                     send_action(ClientMsg::SetReady { ready: true }),
                 ),
             });
         }
     }
     choices.push(Choice::new(
-        [msg(mp::QUIT2), msg(mp::LEAVE_THIS_GAME)].concat(),
+        [msg(Phrase::QuitMenuItem), msg(Phrase::LeaveThisGame)].concat(),
         Action::CloseMenu,
     ));
     Menu::new(room.title(), choices)
@@ -852,7 +847,7 @@ fn start_game(cx: &mut Client) -> Result<Flow, Exit> {
         Some(texts) => net::send(cx, ClientMsg::Start { texts }),
         None => cx
             .voice
-            .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat()),
+            .alert(&[cue(Cue::Beep), msg(Phrase::GameCannotStart)].concat()),
     }
     Ok(Flow::Stay)
 }
@@ -907,7 +902,7 @@ fn play(cx: &mut Client, seated: net::Seated) -> Result<(), Exit> {
             cx.log.warning("cannot play the game: no map");
             session::leave_server_game(cx);
             cx.voice
-                .alert(&[msg(mp::BEEP), text(words::GAME_CANNOT_START)].concat());
+                .alert(&[cue(Cue::Beep), msg(Phrase::GameCannotStart)].concat());
             Ok(())
         }
     };

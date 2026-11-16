@@ -8,9 +8,9 @@ use crate::abort::{Invariant, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
 use crate::msg::{Msg, msg};
-use crate::msgparts as mp;
 use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
 use crate::orders::{Order, OrderKind, TargetRef};
+use crate::phrases::Phrase;
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
 use crate::rules::{AirGround, ClassId, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
@@ -898,7 +898,7 @@ impl World {
         self.push(p, Event::Quit);
         if self.true_players().contains(&p) {
             let mut m = self.pl(p).name();
-            m.extend(msg(mp::HAS_JUST_QUIT_GAME));
+            m.extend(msg(Phrase::HasJustQuitGame));
             self.broadcast_to_others_only(p, &m);
         }
         for u in self.pl(p).units.clone() {
@@ -920,7 +920,7 @@ impl World {
         self.plm(p).stats.freeze(time);
         if self.true_players().contains(&p) {
             let mut m = self.pl(p).name();
-            m.extend(msg(mp::HAS_BEEN_DEFEATED));
+            m.extend(msg(Phrase::HasBeenDefeated));
             self.broadcast_to_others_only(p, &m);
         }
         for u in self.pl(p).units.clone() {
@@ -929,9 +929,9 @@ impl World {
         if force_quit {
             self.quit_game(p);
         } else if self.pl(p).observer_if_defeated && !self.true_playing_players().is_empty() {
-            let mut m = msg(mp::YOU_HAVE_BEEN_DEFEATED);
+            let mut m = msg(Phrase::YouHaveBeenDefeated);
             if self.at_least_two_camps() {
-                m.extend(msg(mp::YOU_ARE_NOW_IN_OBSERVER_MODE));
+                m.extend(msg(Phrase::YouAreNowInObserverMode));
             }
             self.send_voice_important(p, m);
         } else {

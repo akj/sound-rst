@@ -60,8 +60,7 @@ use std::sync::Arc;
 
 use indexmap::{IndexMap, IndexSet};
 use soundrts_world::events::{EntityEvent, Event};
-use soundrts_world::msg::{Msg, MsgPart, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, cue, msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::player::Objective;
 use soundrts_world::{
@@ -73,7 +72,6 @@ use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, Mods};
 use crate::menu::{Exit, TextEntry};
 use crate::message::{Category, News, Subject};
-use crate::net::words;
 use crate::sound::Listener;
 use crate::style::{Style, StyleValue};
 use crate::voice::EntryId;
@@ -91,8 +89,6 @@ pub const ALERT_LIMIT: f64 = 0.5;
 /// Entity events this many seconds late play no sound: their news is
 /// still told.
 pub const EVENT_LIMIT: f64 = 3.0;
-pub const BEEP_SOUND: &str = "1029";
-pub const POSITIONAL_BEEP_SOUND: &str = "1003";
 
 /// Whether an entity event reaches the interface in time for its sounds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,11 +182,11 @@ impl Story {
 /// to the console) is about the game itself.
 fn important_category(m: &Msg) -> Category {
     let story = [
-        mp::NEW_OBJECTIVE,
-        mp::OBJECTIVE_COMPLETE,
-        mp::MISSION_COMPLETE,
+        Phrase::NewObjective,
+        Phrase::ObjectiveComplete,
+        Phrase::MissionComplete,
     ];
-    if story.iter().any(|s| m.starts_with(&msg(s))) {
+    if story.iter().any(|s| m.starts_with(&msg(*s))) {
         Category::Story
     } else {
         Category::System
@@ -202,8 +198,8 @@ fn important_category(m: &Msg) -> Category {
 pub fn style_msg(style: &Style, obj: &str, attr: &str) -> Msg {
     style
         .words(obj, attr)
-        .into_iter()
-        .map(MsgPart::Text)
+        .iter()
+        .map(|w| MsgPart::original(w))
         .collect()
 }
 
@@ -211,7 +207,7 @@ pub fn style_msg(style: &Style, obj: &str, attr: &str) -> Msg {
 pub fn style_msg_quiet(style: &Style, obj: &str, attr: &str) -> Msg {
     match style.get_or_warn(obj, attr, false) {
         Some(StyleValue::Words(w)) | Some(StyleValue::IfMe(w, _)) => {
-            w.iter().cloned().map(MsgPart::Text).collect()
+            w.iter().map(|w| MsgPart::original(w)).collect()
         }
         _ => Vec::new(),
     }
@@ -223,7 +219,7 @@ pub fn compute_title(style: &Style, type_name: &str) -> Msg {
         .words(type_name, "title")
         .iter()
         .filter_map(|w| w.parse::<u64>().ok())
-        .map(MsgPart::Num)
+        .map(MsgPart::original_number)
         .collect()
 }
 
@@ -757,7 +753,7 @@ impl GameInterface {
     /// Turns key help on.
     pub(crate) fn start_key_help(&mut self, cx: &mut Client) {
         self.mode = Mode::KeyHelp;
-        cx.voice.item(&words::text(words::KEY_HELP_ON));
+        cx.voice.item(&msg(Phrase::KeyHelpOn));
     }
 
     /// A key pressed while key help is on: Escape, or the key that turns
@@ -772,13 +768,16 @@ impl GameInterface {
             key: Key::Escape,
         };
         if chord == escape || command == Some(&GameCommand::KeyHelp) {
-            cx.voice.item(&words::text(words::KEY_HELP_OFF));
+            cx.voice.item(&msg(Phrase::KeyHelpOff));
             return;
         }
         self.mode = Mode::KeyHelp;
-        let what = command.map_or_else(|| words::NO_COMMAND.to_owned(), GameCommand::description);
-        cx.voice
-            .item(&words::text(&format!("{}: {what}", chord.spoken())));
+        let what = command.map_or_else(
+            || msg(Phrase::NoCommand),
+            |c| vec![MsgPart::literal(c.description())],
+        );
+        let key = vec![MsgPart::literal(format!("{}:", chord.spoken()))];
+        cx.voice.item(&[key, what].concat());
     }
 
     /// A key pressed while a story is told: the keys of the game menu,
@@ -819,7 +818,7 @@ impl GameInterface {
             Some(c) => self.execute(cx, &c),
             // A key bound to nothing.
             None => {
-                cx.voice.item(&msg(mp::BEEP));
+                cx.voice.item(&cue(Cue::Beep));
                 Ok(())
             }
         }
@@ -837,10 +836,7 @@ impl GameInterface {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
             SrvEvent::VoiceImportant(m) => cx.news(News::new(important_category(&m), m)),
             SrvEvent::Sequence(names) => {
-                let story = names
-                    .iter()
-                    .map(|n| vec![MsgPart::from(n.as_str())])
-                    .collect();
+                let story = names.iter().map(|n| vec![MsgPart::original(n)]).collect();
                 self.tell_story(cx, story);
             }
             // On a server, the server keeps the time; in a record, the
@@ -981,8 +977,8 @@ impl GameInterface {
     pub fn objective(&self) -> Option<Msg> {
         let objective = self.view().map_objective();
         (!objective.is_empty()).then(|| {
-            let mut m = msg(mp::OBJECTIVE);
-            m.extend(objective.iter().map(|&n| MsgPart::Num(n as u64)));
+            let mut m = msg(Phrase::Objective);
+            m.extend(objective.iter().map(|n| MsgPart::original(&n.to_string())));
             m
         })
     }

@@ -44,8 +44,7 @@ use soundrts_protocol::{
     Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId,
     RoomState, SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
-use soundrts_world::msg::msg;
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Phrase, cue, msg};
 use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
 
 use super::GameInterface;
@@ -54,7 +53,7 @@ use crate::client::Client;
 use crate::message::{Category, News, RoomTopic, Subject};
 use crate::net::conn::{Connection, NetEvent, Opening};
 use crate::net::lobby::{LobbyModel, check_watchers, player_name};
-use crate::net::words::{self, text};
+use crate::net::words;
 use crate::net::{Incoming, PUMP_LIMIT, Seated};
 
 /// How long the start of the game may take to come after the seat.
@@ -364,7 +363,7 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
                     cx.log.warning(format!(
                         "cannot play the game: its rules are {rules:?}, ours {ours:?}"
                     ));
-                    cx.news(News::new(Category::System, text(words::RULES_DIFFER)));
+                    cx.news(News::new(Category::System, msg(Phrase::RulesDiffer)));
                     return Err(None);
                 }
                 let loaded = Rules::load(&[ours_text]);
@@ -718,7 +717,7 @@ impl GameInterface {
     /// up the orders not sent, and starts returning to the seat at once.
     fn start_return(&mut self, cx: &mut Client, room: RoomId, login: Login) {
         cx.log.info("the connection is lost: returning to the game");
-        cx.news(News::new(Category::System, text(words::CONNECTION_LOST)));
+        cx.news(News::new(Category::System, msg(Phrase::ConnectionLost)));
         self.silence_noises(cx);
         self.pending_commands.clear();
         let now = cx.clock.now();
@@ -806,11 +805,11 @@ impl GameInterface {
         };
         if r.orders == Orders::Given {
             r.orders = Orders::Told;
-            cx.voice.item(&text(words::ORDERS_NOT_TAKEN));
+            cx.voice.item(&msg(Phrase::OrderNotTaken));
         }
         if r.unsent == Orders::Given {
             r.unsent = Orders::Told;
-            cx.voice.item(&text(words::NOT_SENT));
+            cx.voice.item(&msg(Phrase::NotSentNotConnected));
         }
         match r.attempt(&server.seat, &self.seat, cx) {
             Outcome::Waiting => {}
@@ -874,7 +873,7 @@ impl GameInterface {
             }
         }
         cx.log.info("back in the game");
-        cx.news(News::new(Category::System, text(words::BACK_IN_THE_GAME)));
+        cx.news(News::new(Category::System, msg(Phrase::BackInTheGame)));
         // A watcher moved on to another player meanwhile follows that one.
         if message.seat != self.me {
             if let Err(why) = self.follow(cx, message) {
@@ -922,7 +921,10 @@ impl GameInterface {
     fn cannot_be_right(&mut self, cx: &mut Client, why: &str) {
         cx.log
             .warning(format!("the server's stream cannot be right: {why}"));
-        cx.news(News::new(Category::System, text(words::CANNOT_BE_RIGHT)));
+        cx.news(News::new(
+            Category::System,
+            msg(Phrase::ServerSentWhatCannotBeRight),
+        ));
         self.srv_quit(cx);
     }
 
@@ -1142,19 +1144,19 @@ impl GameInterface {
     /// still in the game, says why and sends nothing.
     pub(crate) fn flare(&mut self, cx: &mut Client) {
         if !self.on_a_server() {
-            cx.voice.item(&text(words::NOBODY_TO_TELL));
+            cx.voice.item(&msg(Phrase::NobodyToTell));
             return;
         }
         if self.refuse_while_watching() || self.refuse_unsent_while_returning() {
             return;
         }
         let Some(square) = self.place else {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
             return;
         };
         let (me, view) = (self.me, self.view());
         if !view.players().iter().any(|&p| p != me && view.is_ally(p)) {
-            cx.voice.item(&text(words::NO_ALLY));
+            cx.voice.item(&msg(Phrase::NoAlly));
             return;
         }
         crate::net::send(cx, ClientMsg::Flare { square });
@@ -1206,8 +1208,7 @@ impl GameInterface {
         if is_room_host(cx) {
             crate::net::send(cx, ClientMsg::SetGameSpeed { speed });
         } else {
-            cx.voice
-                .item(&text(words::ONLY_THE_ORGANIZER_SETS_THE_SPEED));
+            cx.voice.item(&msg(Phrase::OnlyTheOrganizerSetsTheSpeed));
         }
     }
 }

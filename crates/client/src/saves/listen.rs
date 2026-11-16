@@ -20,8 +20,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Msg, MsgPart, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg};
 use soundrts_world::record::MAX_RECORD_BYTES;
 use soundrts_world::{Completeness, ReadError, Record};
 
@@ -34,7 +33,6 @@ use crate::game::GameInterface;
 use crate::game::replay::{Keep, Replay};
 use crate::mapfile::Map;
 use crate::menu::{Action, Exit, Flow, Menu};
-use crate::net::words::{self, text};
 use crate::package::read_file;
 
 /// The extension of a record a server writes.
@@ -131,11 +129,11 @@ fn list_records(dir: &Path) -> Vec<Listenable> {
 /// name and how long ago it was written.
 pub fn spoken(entry: &Listenable, now: u64) -> Msg {
     match &entry.what {
-        What::Save(h) => spoken_entry_with(h, now, words::LAST_GAME),
-        What::Kept(h) => spoken_entry_with(h, now, words::LAST_FINISHED_GAME),
+        What::Save(h) => spoken_entry_with(h, now, Phrase::LastGame),
+        What::Kept(h) => spoken_entry_with(h, now, Phrase::LastFinishedGame),
         What::Record { modified } => [
             readable_name(&entry.path),
-            msg(mp::COMMA),
+            comma(),
             age(now.saturating_sub(*modified)),
         ]
         .concat(),
@@ -155,7 +153,7 @@ fn readable_name(path: &Path) -> Msg {
         .filter(|c| c.is_ascii_alphanumeric() || *c == ' ')
         .take(MAX_TITLE_WORD_CHARS)
         .collect();
-    vec![MsgPart::Literal(words.trim().to_owned())]
+    vec![MsgPart::literal(words.trim())]
 }
 
 /// The games to listen to, newest first, then back. Choosing one plays it
@@ -163,11 +161,11 @@ fn readable_name(path: &Path) -> Msg {
 pub fn listen_menu(cx: &mut Client) -> Result<(), Exit> {
     let list = list_listenable(&cx.paths.saves(), &cx.paths.records());
     if list.is_empty() {
-        cx.voice.item(&msg(words::THE_LIST_IS_EMPTY));
+        cx.voice.item(&msg(Phrase::TheListIsEmpty));
         return Ok(());
     }
     let now = wall_now();
-    let mut menu = Menu::new(text(words::LISTEN_TO_A_GAME), Vec::new());
+    let mut menu = Menu::new(msg(Phrase::ListenToAGame), Vec::new());
     for entry in list {
         let label = spoken(&entry, now);
         let entry = Rc::new(entry);
@@ -177,7 +175,7 @@ pub fn listen_menu(cx: &mut Client) -> Result<(), Exit> {
             None,
         );
     }
-    menu.append(msg(mp::BACK), Action::CloseMenu, None);
+    menu.append(msg(Phrase::Back), Action::CloseMenu, None);
     menu.run(cx)
 }
 
@@ -338,7 +336,7 @@ fn play(cx: &mut Client, read: Read) -> Result<(), Exit> {
         game.view()
             .map_intro()
             .iter()
-            .map(|n| vec![MsgPart::from(n.to_string().as_str())])
+            .map(|n| vec![MsgPart::original(&n.to_string())])
             .collect()
     } else {
         Vec::new()

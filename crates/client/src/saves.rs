@@ -23,14 +23,12 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg};
 use soundrts_world::record::MAX_RECORD_BYTES;
 use soundrts_world::{
     Cheat, Command, Completeness, EntityId, PlayerId, ReadError, Record, SIM_VERSION, SquareId,
 };
 
-use crate::net::words::{self, text};
 use crate::package::read_file;
 
 /// The name and version of the format, on a save's first line.
@@ -333,11 +331,11 @@ fn clean_title(title: &Msg) -> Msg {
         .iter()
         .take(MAX_TITLE_PARTS)
         .map(|p| match p {
-            MsgPart::Num(n) => MsgPart::Num(*n),
-            MsgPart::Text(s) => MsgPart::Text(clean(s)),
+            MsgPart::Original(s) => MsgPart::Original(clean(s)),
             MsgPart::Literal(s) => MsgPart::Literal(clean(s)),
+            other => other.clone(),
         })
-        .filter(|p| !matches!(p, MsgPart::Text(s) | MsgPart::Literal(s) if s.is_empty()))
+        .filter(|p| !matches!(p, MsgPart::Original(s) | MsgPart::Literal(s) if s.is_empty()))
         .collect()
 }
 
@@ -366,10 +364,12 @@ impl LoadError {
     /// What the player hears: why, in a few words.
     pub fn spoken(&self) -> Msg {
         let why = match self {
-            LoadError::Record(ReadError::OtherVersion { .. }) => words::ANOTHER_VERSION,
-            LoadError::Unreadable(_) | LoadError::NotASave | LoadError::Record(_) => words::DAMAGED,
+            LoadError::Record(ReadError::OtherVersion { .. }) => Phrase::AnotherVersion,
+            LoadError::Unreadable(_) | LoadError::NotASave | LoadError::Record(_) => {
+                Phrase::FileDamaged
+            }
         };
-        [text(words::CANNOT_LOAD), msg(mp::COMMA), text(why)].concat()
+        [msg(Phrase::CannotLoad), comma(), msg(why)].concat()
     }
 }
 
@@ -427,26 +427,26 @@ pub fn played_seat(record: &Record, first: PlayerId) -> PlayerId {
 /// when the player quit, its title, its game time, and how long ago it was
 /// saved, as of `now` (seconds since 1970).
 pub fn spoken_entry(header: &SaveHeader, now: u64) -> Msg {
-    spoken_entry_with(header, now, words::LAST_GAME)
+    spoken_entry_with(header, now, Phrase::LastGame)
 }
 
 /// As [`spoken_entry`], with `last` for the game kept by itself.
-pub fn spoken_entry_with(header: &SaveHeader, now: u64, last: &str) -> Msg {
+pub fn spoken_entry_with(header: &SaveHeader, now: u64, last: Phrase) -> Msg {
     let mut m = Vec::new();
     if header.last_game {
-        m.extend(text(last));
-        m.extend(msg(mp::COMMA));
+        m.extend(msg(last));
+        m.extend(comma());
     }
     m.extend(header.title.iter().cloned());
-    m.extend(msg(mp::COMMA));
+    m.extend(comma());
     let minutes = header.game_time_ms / 60_000;
     m.extend(nb2msg(i64::try_from(minutes).unwrap_or(i64::MAX)));
-    m.extend(msg(mp::MINUTES));
-    m.extend(msg(mp::COMMA));
+    m.extend(msg(Phrase::Minutes));
+    m.extend(comma());
     m.extend(age(now.saturating_sub(header.saved_at)));
     if header.sim_version != SIM_VERSION {
-        m.extend(msg(mp::COMMA));
-        m.extend(text(words::ANOTHER_VERSION));
+        m.extend(comma());
+        m.extend(msg(Phrase::AnotherVersion));
     }
     m
 }
@@ -454,15 +454,15 @@ pub fn spoken_entry_with(header: &SaveHeader, now: u64, last: &str) -> Msg {
 /// "saved just now", "saved 3 hours ago"...
 fn age(seconds: u64) -> Msg {
     let (n, unit) = match seconds {
-        0..60 => return text(words::SAVED_JUST_NOW),
-        60..3600 => (seconds / 60, words::MINUTES_AGO),
-        3600..86_400 => (seconds / 3600, words::HOURS_AGO),
-        _ => (seconds / 86_400, words::DAYS_AGO),
+        0..60 => return msg(Phrase::SavedJustNow),
+        60..3600 => (seconds / 60, Phrase::MinutesAgo),
+        3600..86_400 => (seconds / 3600, Phrase::HoursAgo),
+        _ => (seconds / 86_400, Phrase::DaysAgo),
     };
     [
-        text(words::SAVED_WORD),
+        msg(Phrase::SavedAgo),
         nb2msg(i64::try_from(n).unwrap_or(i64::MAX)),
-        text(unit),
+        msg(unit),
     ]
     .concat()
 }

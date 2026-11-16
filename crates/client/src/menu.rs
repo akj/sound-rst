@@ -3,16 +3,12 @@
 
 use std::rc::Rc;
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Pause, Phrase, comma, cue, msg, nb2msg, period};
 
 use crate::client::Client;
 use crate::input::{Event, InputPoint, Key, KeyDown};
 use crate::sound::StereoVolume;
 use crate::sound_cache::Spoken;
-
-pub const CONFIRM_SOUND: &str = "6116";
-pub const SELECT_SOUND: &str = "6115";
 
 /// The program must end: the window was closed, or an action asked to
 /// quit. It travels up through every menu.
@@ -104,13 +100,20 @@ impl Choice {
     }
 }
 
-/// A message as Python's `repr()` wrote it, for the remembered choice file.
+/// A message as the remembered choice file holds it. A map's title, a name
+/// said as written and then numbers, is written as Python's `repr()` wrote
+/// it.
 pub fn py_repr(m: &Msg) -> String {
     let parts: Vec<String> = m
         .iter()
         .map(|p| match p {
-            MsgPart::Num(n) => n.to_string(),
-            MsgPart::Text(s) | MsgPart::Literal(s) => {
+            MsgPart::Phrase(p) => p.id().to_owned(),
+            MsgPart::Sound(c) => c.sound().to_owned(),
+            MsgPart::Count(n) => format!("count {n}"),
+            MsgPart::Pause(Pause::Short) => "comma".to_owned(),
+            MsgPart::Pause(Pause::Long) => "period".to_owned(),
+            MsgPart::Original(s) if s.parse::<u64>().is_ok() => s.clone(),
+            MsgPart::Literal(s) | MsgPart::Original(s) => {
                 let quote = if s.contains('\'') && !s.contains('"') {
                     '"'
                 } else {
@@ -213,19 +216,16 @@ impl Menu {
     }
 
     fn say_choice(&self, cx: &mut Client) {
-        cx.audio.play_stereo(
-            cx.sounds.get_sound(SELECT_SOUND),
-            StereoVolume::Both(1.0),
-            0.0,
-        );
+        cx.audio
+            .play_stereo(cx.sounds.cue(Cue::Select), StereoVolume::Both(1.0), 0.0);
         let choice = &self.choices[self.index(self.choice_index.unwrap_or(0))];
         let mut m = choice.label.clone();
         if let Some(value) = &choice.value {
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
             m.extend(value(cx));
         }
         if let Some(explanation) = &choice.explanation {
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
             m.extend(explanation.iter().cloned());
         }
         cx.voice.item(&m);
@@ -267,11 +267,8 @@ impl Menu {
     }
 
     fn confirm_choice(&mut self, cx: &mut Client) {
-        cx.audio.play_stereo(
-            cx.sounds.get_sound(CONFIRM_SOUND),
-            StereoVolume::Both(1.0),
-            0.0,
-        );
+        cx.audio
+            .play_stereo(cx.sounds.cue(Cue::Confirm), StereoVolume::Both(1.0), 0.0);
         if self.choice_exists() {
             let choice = &self.choices[self.index(self.choice_index.unwrap_or(0))];
             // A setting says its new value instead.
@@ -326,7 +323,7 @@ impl Menu {
             }
             _ if !e.unicode.is_empty() => self.select_next_choice(cx, Some(&e.unicode), 1),
             Key::LShift | Key::RShift => {}
-            _ => cx.voice.item(&msg(mp::SELECT_AND_CONFIRM_EXPLANATION)),
+            _ => cx.voice.item(&msg(Phrase::SelectAndConfirmExplanation)),
         }
         Ok(())
     }
@@ -463,7 +460,7 @@ impl Menu {
     /// Says the title, or asks for a selection if there is none.
     pub fn say_title(&self, cx: &mut Client) {
         if self.title.is_empty() {
-            cx.voice.menu(&msg(mp::MAKE_A_SELECTION2));
+            cx.voice.menu(&msg(Phrase::MakeASelectionReminder));
         } else {
             let title = self.title.clone();
             cx.voice.menu(&title);
@@ -516,16 +513,16 @@ pub fn first_letter_of(cx: &Client, choice: &Choice) -> Option<String> {
 /// `spell`, the whole string is said as a word.
 pub fn string_to_msg(s: &str, spell: bool) -> Msg {
     if !spell {
-        return vec![MsgPart::Literal(s.to_owned())];
+        return vec![MsgPart::literal(s)];
     }
     let mut out = Vec::new();
     for c in s.chars() {
         if c == '.' {
-            out.extend(msg(mp::DOT));
+            out.extend(msg(Phrase::Dot));
         } else if let Some(d) = c.to_digit(10) {
             out.extend(nb2msg(i64::from(d)));
         } else {
-            out.push(MsgPart::Text(c.to_string()));
+            out.push(MsgPart::literal(c));
         }
     }
     out
@@ -606,14 +603,14 @@ impl TextEntry {
                     .take(room)
                     .collect();
                 let mut m = if pasted.is_empty() {
-                    msg(mp::BEEP)
+                    cue(Cue::Beep)
                 } else {
                     string_to_msg(&pasted, spell)
                 };
                 let was_empty = s.is_empty();
                 s.push_str(&pasted);
                 if pasted.is_empty() || !was_empty {
-                    m.extend(msg(mp::PERIOD));
+                    m.extend(period());
                     m.extend(string_to_msg(s, spell));
                 }
                 cx.voice.item(&m);
@@ -626,9 +623,9 @@ impl TextEntry {
                         s.push(c);
                         string_to_msg(&c.to_string(), true)
                     }
-                    _ => msg(mp::BEEP),
+                    _ => cue(Cue::Beep),
                 };
-                m.extend(msg(mp::PERIOD));
+                m.extend(period());
                 m.extend(string_to_msg(s, spell));
                 cx.voice.item(&m);
                 Typed::Typing

@@ -5,14 +5,12 @@
 //! Each is answered in one sentence, the most important word first, from
 //! what the player knows.
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg, period};
 use soundrts_world::orders::Keyword;
 use soundrts_world::rules::{Effect, Stats};
 use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
-use crate::net::words::{self, text};
 
 use super::command::UnitFilter;
 use super::order::{PRECISION, substitute_args};
@@ -42,11 +40,11 @@ impl Balance {
         }
     }
 
-    fn word(self) -> &'static str {
+    fn word(self) -> Phrase {
         match self {
-            Balance::Stronger => words::STRONGER,
-            Balance::Even => words::EVEN,
-            Balance::Weaker => words::WEAKER,
+            Balance::Stronger => Phrase::Stronger,
+            Balance::Even => Phrase::EvenlyMatched,
+            Balance::Weaker => Phrase::Weaker,
         }
     }
 }
@@ -73,9 +71,9 @@ impl GameInterface {
                 m.extend(style_msg(style, "messages", "production_deferred"));
             } else {
                 m.extend(nb2msg((left + 999) / 1000));
-                m.extend(msg(mp::SECONDS));
+                m.extend(msg(Phrase::Seconds));
             }
-            m.extend(msg(mp::AT));
+            m.extend(msg(Phrase::At));
             m.extend(self.title(cx, v));
             productions.push(((o.is_deferred, left), m));
         }
@@ -102,7 +100,7 @@ impl GameInterface {
             .filter(|v| types.iter().any(|t| t == v.type_name()))
             .collect();
         if workers.is_empty() {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         }
         let mut idle = 0;
@@ -136,12 +134,12 @@ impl GameInterface {
                 _ => {}
             }
         }
-        let mut m = [nb2msg(idle), text(words::IDLE)].concat();
+        let mut m = [nb2msg(idle), msg(Phrase::Idle)].concat();
         for (i, &n) in gathering.iter().enumerate() {
             if n > 0 {
-                m.extend(msg(mp::COMMA));
+                m.extend(comma());
                 m.extend(nb2msg(n));
-                m.extend(msg(words::ON2));
+                m.extend(msg(Phrase::On));
                 m.extend(style_msg(
                     cx.res.style(),
                     "parameters",
@@ -150,9 +148,9 @@ impl GameInterface {
             }
         }
         if building > 0 {
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
             m.extend(nb2msg(building));
-            m.extend(msg(words::BUILDING));
+            m.extend(msg(Phrase::Building));
         }
         cx.voice.item(&m);
     }
@@ -169,9 +167,13 @@ impl GameInterface {
                 continue;
             }
             let mut m = view.player_name(p);
-            m.extend(msg(if view.is_ally(p) { mp::ALLY } else { mp::ENEMY }));
+            m.extend(msg(if view.is_ally(p) {
+                Phrase::Ally
+            } else {
+                Phrase::Enemy
+            }));
             if defeated.contains(&p) {
-                m.extend(msg(mp::HAS_BEEN_DEFEATED));
+                m.extend(msg(Phrase::HasBeenDefeated));
             }
             players.push(m);
         }
@@ -247,21 +249,21 @@ impl GameInterface {
             }
         }
         if ours.is_empty() && theirs.is_empty() {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         }
         let side = |titles: &[Msg]| {
             if titles.is_empty() {
-                msg(mp::NOTHING)
+                msg(Phrase::Nothing)
             } else {
                 summary(titles, false)
             }
         };
         let m = [
-            text(Balance::of(our_threat, their_threat).word()),
-            msg(mp::COMMA),
+            msg(Balance::of(our_threat, their_threat).word()),
+            comma(),
             side(&ours),
-            msg(words::AGAINST),
+            msg(Phrase::Against),
             side(&theirs),
         ]
         .concat();
@@ -275,32 +277,32 @@ impl GameInterface {
         let view = self.view();
         let unit = self.group.first().and_then(|&u| view.perceived(u));
         let Some((e, s)) = unit.and_then(|e| combat_stats(view, &e).map(|s| (e, s))) else {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         };
         let mut m = compute_title(cx.res.style(), &e.type_name);
-        m.extend(msg(mp::COMMA));
+        m.extend(comma());
         if s.damage > 0 {
-            m.extend(text(words::DAMAGE));
+            m.extend(msg(Phrase::Damage));
             m.extend(decimal(s.damage));
-            m.extend(text(words::EVERY));
+            m.extend(msg(Phrase::Every));
             m.extend(decimal(s.cooldown));
-            m.extend(msg(mp::SECONDS));
-            m.extend(msg(mp::COMMA));
-            m.extend(text(words::RANGE));
+            m.extend(msg(Phrase::Seconds));
+            m.extend(comma());
+            m.extend(msg(Phrase::Range));
             m.extend(decimal(s.range));
         } else {
-            m.extend(text(words::NO_ATTACK));
+            m.extend(msg(Phrase::NoAttack));
         }
-        m.extend(msg(mp::COMMA));
-        m.extend(text(words::ARMOR));
+        m.extend(comma());
+        m.extend(msg(Phrase::Armor));
         m.extend(decimal(s.armor));
-        m.extend(msg(mp::PERIOD));
+        m.extend(period());
         m.extend(nb2msg(e.hp_max / PRECISION));
-        m.extend(text(words::HIT_POINTS));
+        m.extend(msg(Phrase::HitPoints));
         if s.speed > 0 {
-            m.extend(msg(mp::COMMA));
-            m.extend(msg(mp::SPEED));
+            m.extend(comma());
+            m.extend(msg(Phrase::Speed));
             m.extend(decimal(s.speed));
         }
         cx.voice.item(&m);
@@ -332,7 +334,7 @@ fn decimal(thousandths: i64) -> Msg {
     if thousandths % PRECISION == 0 {
         nb2msg(thousandths / PRECISION)
     } else {
-        vec![MsgPart::Text(
+        vec![MsgPart::literal(
             (thousandths as f64 / PRECISION as f64).to_string(),
         )]
     }
@@ -359,11 +361,15 @@ fn join(messages: impl Iterator<Item = Msg>) -> Msg {
     let mut m = Vec::new();
     for x in messages {
         if !m.is_empty() {
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
         }
         m.extend(x);
     }
-    if m.is_empty() { msg(mp::NOTHING) } else { m }
+    if m.is_empty() {
+        msg(Phrase::Nothing)
+    } else {
+        m
+    }
 }
 
 #[cfg(test)]

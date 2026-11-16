@@ -1,8 +1,7 @@
 //! The orders a group may receive, as the order menu says them: title,
 //! comment, requirements and costs, shortcut and place in the menu.
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, msg, nb2msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::rules::{ClassId, TypeId};
 use soundrts_world::{EntityId, KeywordOrder, SeatView};
@@ -17,7 +16,7 @@ pub const PRECISION: i64 = 1000;
 /// A count said in the feminine when it is 1 ("une ration").
 pub fn nb2msg_f(n: i64) -> Msg {
     if n == 1 {
-        return msg(mp::ONE_F);
+        return msg(Phrase::OneF);
     }
     nb2msg(n)
 }
@@ -26,7 +25,7 @@ pub fn nb2msg_f(n: i64) -> Msg {
 pub fn substitute_args(t: Msg, arg: &Msg) -> Msg {
     let mut out = Vec::with_capacity(t.len() + arg.len());
     for part in t {
-        if part == MsgPart::Text("$1".into()) {
+        if part == MsgPart::original("$1") {
             out.extend(arg.iter().cloned());
         } else {
             out.push(part);
@@ -238,22 +237,30 @@ mod tests {
     use super::*;
 
     fn t(s: &str) -> MsgPart {
-        MsgPart::from(s)
+        MsgPart::original(s)
     }
 
     #[test]
     fn each_dollar_one_becomes_the_argument() {
         let title = vec![t("101"), t("$1"), t("119")];
         assert_eq!(
-            substitute_args(title, &vec![MsgPart::Num(5), MsgPart::Num(6)]),
-            vec![t("101"), MsgPart::Num(5), MsgPart::Num(6), t("119")]
+            substitute_args(
+                title,
+                &vec![MsgPart::original_number(5), MsgPart::original_number(6)]
+            ),
+            vec![
+                t("101"),
+                MsgPart::original_number(5),
+                MsgPart::original_number(6),
+                t("119")
+            ]
         );
         assert_eq!(
             substitute_args(vec![t("$1"), t("$1")], &vec![t("x")]),
             vec![t("x"), t("x")]
         );
         assert_eq!(substitute_args(vec![t("$1")], &Vec::new()), Vec::new());
-        assert_eq!(nb2msg_f(1), msg(mp::ONE_F));
+        assert_eq!(nb2msg_f(1), msg(Phrase::OneF));
         assert_eq!(nb2msg_f(2), nb2msg(2));
     }
 

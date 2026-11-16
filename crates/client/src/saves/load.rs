@@ -9,8 +9,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, Phrase, comma, cue, msg, nb2msg};
 use soundrts_world::{Completeness, ControllerKind, Host, Record, ReplayError};
 
 use super::{InterfaceState, SaveInfo, Saved, SavedGame, list_saves, played_seat, read_save};
@@ -19,7 +18,6 @@ use crate::client::Client;
 use crate::input::{Event, InputPoint, Key};
 use crate::mapfile::Map;
 use crate::menu::{Action, Choice, Exit, Flow, Menu};
-use crate::net::words::{self, text};
 use crate::session::{LoadedGame, Session, SessionKind};
 
 /// How many turns are replayed between two looks at the keys.
@@ -34,12 +32,12 @@ pub fn load_menu(cx: &mut Client) -> Result<(), Exit> {
     loop {
         let list = list_saves(&cx.paths.saves());
         if list.is_empty() {
-            cx.voice.item(&msg(words::THE_LIST_IS_EMPTY));
+            cx.voice.item(&msg(Phrase::TheListIsEmpty));
             return Ok(());
         }
         let now = wall_now();
         let again = Rc::new(Cell::new(false));
-        let mut menu = Menu::new(text(words::LOAD_A_GAME), Vec::new());
+        let mut menu = Menu::new(msg(Phrase::LoadAGame), Vec::new());
         for entry in list {
             let path = Rc::new(entry.path);
             let load = {
@@ -59,7 +57,7 @@ pub fn load_menu(cx: &mut Client) -> Result<(), Exit> {
                 ..Choice::new(spoken_entry(&entry.header, now), load)
             });
         }
-        menu.append(msg(mp::BACK), Action::CloseMenu, None);
+        menu.append(msg(Phrase::Back), Action::CloseMenu, None);
         menu.run(cx)?;
         if !again.take() {
             return Ok(());
@@ -70,25 +68,25 @@ pub fn load_menu(cx: &mut Client) -> Result<(), Exit> {
 /// Asks to confirm, then deletes the save and says so.
 fn confirm_and_delete(cx: &mut Client, path: &Path) -> Result<(), Exit> {
     let yes = Rc::new(Cell::new(false));
-    let mut menu = Menu::new(text(words::DELETE_THIS_SAVE), Vec::new());
+    let mut menu = Menu::new(msg(Phrase::DeleteThisSave), Vec::new());
     let chosen = yes.clone();
     menu.append(
-        text(words::DELETE),
+        msg(Phrase::Delete),
         Action::run(move |_| {
             chosen.set(true);
             Ok(Flow::CloseMenu)
         }),
         None,
     );
-    menu.append(msg(mp::CANCEL), Action::Nothing, None);
+    menu.append(msg(Phrase::Cancel), Action::Nothing, None);
     menu.run(cx)?;
     if yes.get() {
         match std::fs::remove_file(path) {
-            Ok(()) => cx.voice.item(&text(words::DELETED)),
+            Ok(()) => cx.voice.item(&msg(Phrase::Deleted)),
             Err(e) => {
                 cx.log
                     .warning(format!("cannot delete {}: {e}", path.display()));
-                cx.voice.item(&msg(mp::BEEP));
+                cx.voice.item(&cue(Cue::Beep));
             }
         }
     }
@@ -156,12 +154,7 @@ pub(crate) fn cannot_load(cx: &mut Client) -> Result<(), Exit> {
 }
 
 fn cannot_load_msg() -> Msg {
-    [
-        text(words::CANNOT_LOAD),
-        msg(mp::COMMA),
-        text(words::DAMAGED),
-    ]
-    .concat()
+    [msg(Phrase::CannotLoad), comma(), msg(Phrase::FileDamaged)].concat()
 }
 
 /// The map of a save from its record alone, when the game's own files no
@@ -218,7 +211,7 @@ pub fn replayed(
 /// Escape gives up ("loading stopped"); a record the game cannot replay is
 /// said to be damaged. Closing the window stops it too.
 fn replay_with_progress(cx: &mut Client, record: &Record) -> Result<Option<Host>, Exit> {
-    cx.voice.item(&msg(mp::LOADING));
+    cx.voice.item(&msg(Phrase::Loading));
     let total = record.turns_run().max(1);
     let mut said_at = cx.clock.now();
     let mut closed = false;
@@ -244,7 +237,7 @@ fn replay_with_progress(cx: &mut Client, record: &Record) -> Result<Option<Host>
             let percent = done.saturating_mul(100).checked_div(total).unwrap_or(100);
             let m = [
                 nb2msg(i64::try_from(percent).unwrap_or(100)),
-                text(words::PERCENT),
+                msg(Phrase::Percent),
             ]
             .concat();
             cx.voice.item(&m);
@@ -258,7 +251,7 @@ fn replay_with_progress(cx: &mut Client, record: &Record) -> Result<Option<Host>
     match result {
         Ok(host) => Ok(Some(host)),
         Err(ReplayError::Stopped) => {
-            cx.voice.item(&text(words::LOADING_STOPPED));
+            cx.voice.item(&msg(Phrase::LoadingStopped));
             Ok(None)
         }
         Err(e) => {

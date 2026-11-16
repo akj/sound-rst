@@ -5,8 +5,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, msg, nb2msg};
 
 use crate::audio::AudioOutput;
 use crate::clock::ClockRef;
@@ -82,7 +81,7 @@ fn read_help_table(res: &Resources, name: &str) -> Vec<Msg> {
         .unwrap_or_default()
         .split('\n')
         .filter(|l| !l.trim().is_empty())
-        .map(|l| l.split_whitespace().map(MsgPart::from).collect())
+        .map(|l| l.split_whitespace().map(MsgPart::original).collect())
         .collect()
 }
 
@@ -230,7 +229,7 @@ impl Client {
         let percent = (i32::from(self.config.main_volume) + 10 * incr).clamp(0, 100);
         self.set_main_volume(percent as u8);
         self.voice
-            .item(&[nb2msg(i64::from(percent)), msg(mp::PERCENT_VOLUME)].concat());
+            .item(&[nb2msg(i64::from(percent)), msg(Phrase::PercentVolume)].concat());
     }
 
     /// Sets the main volume, in percent, and saves it.
@@ -255,9 +254,9 @@ impl Client {
     pub fn toggle_fullscreen(&mut self) {
         self.fullscreen = !self.fullscreen;
         let m = if self.fullscreen {
-            mp::DISPLAY_ON
+            Phrase::DisplayOn
         } else {
-            mp::DISPLAY_OFF
+            Phrase::DisplayOff
         };
         self.voice.item(&msg(m));
     }
@@ -276,7 +275,7 @@ impl Client {
         }
         let story = names
             .iter()
-            .map(|name| News::new(Category::Story, vec![MsgPart::from(name.as_str())]))
+            .map(|name| News::new(Category::Story, vec![MsgPart::original(name)]))
             .collect();
         self.voice.tell_now(story, policy);
     }

@@ -1,28 +1,27 @@
 //! The zoom: one of the nine subsquares of the current square.
 
 use soundrts_world::MapSquare;
-use soundrts_world::msg::{Msg, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, Phrase, msg};
 
 /// The subsquares in the order the zoom tries them when it looks for a
 /// unit, with their names.
-pub const SUBZONES: [((i64, i64), &[u64]); 9] = [
-    ((0, 0), mp::AT_THE_CENTER),
-    ((0, 1), mp::NORTH),
-    ((0, -1), mp::SOUTH),
-    ((1, 0), mp::EAST),
-    ((-1, 0), mp::WEST),
-    ((1, 1), mp::NORTHEAST),
-    ((-1, 1), mp::NORTHWEST),
-    ((1, -1), mp::SOUTHEAST),
-    ((-1, -1), mp::SOUTHWEST),
+pub const SUBZONES: [((i64, i64), Phrase); 9] = [
+    ((0, 0), Phrase::AtTheCenter),
+    ((0, 1), Phrase::North),
+    ((0, -1), Phrase::South),
+    ((1, 0), Phrase::East),
+    ((-1, 0), Phrase::West),
+    ((1, 1), Phrase::Northeast),
+    ((-1, 1), Phrase::Northwest),
+    ((1, -1), Phrase::Southeast),
+    ((-1, -1), Phrase::Southwest),
 ];
 
 fn subzone_name(sub: (i64, i64)) -> Msg {
     SUBZONES
         .iter()
         .find(|(k, _)| *k == sub)
-        .map(|(_, m)| msg(m))
+        .map(|(_, m)| msg(*m))
         .unwrap_or_default()
 }
 
@@ -165,7 +164,7 @@ mod tests {
         );
         assert_eq!(
             z.title(sq),
-            [sq.title().clone(), msg(mp::AT_THE_CENTER)].concat()
+            [sq.title().clone(), msg(Phrase::AtTheCenter)].concat()
         );
         assert_eq!(z.point(sq), (18000, 30000));
         assert!(z.contains(16000, 28000) && !z.contains(20000, 30000));
@@ -173,7 +172,10 @@ mod tests {
         assert_eq!(z.step(1, 0), None);
         z.update_coords(sq);
         assert_eq!(z.point(sq), (22000, 30000));
-        assert_eq!(z.title(sq), [sq.title().clone(), msg(mp::EAST)].concat());
+        assert_eq!(
+            z.title(sq),
+            [sq.title().clone(), msg(Phrase::East)].concat()
+        );
         // Past the east edge: the west subsquare of the next square.
         assert_eq!(z.step(1, 0), Some((1, 0)));
         assert_eq!((z.sub_x, z.sub_y), (-1, 0));

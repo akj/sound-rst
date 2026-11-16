@@ -1,15 +1,13 @@
 //! What the player learns without asking: the fog of war kept up to date,
 //! and the news about resources, food, menus, units and attacks.
 
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, msg, nb2msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::{EntityId, KnownEntity, Place, PlayerId, SquareId};
 
-use crate::audio::stereo;
+use crate::audio::{Sound, stereo};
 use crate::client::Client;
 use crate::message::{Category, News, Subject};
-use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 
 use super::entity::EntityView;
@@ -32,11 +30,11 @@ enum UnitsNews {
 }
 
 impl UnitsNews {
-    fn end(self) -> &'static [u64] {
+    fn end(self) -> Phrase {
         match self {
-            UnitsNews::Neutralized => mp::NEUTRALIZED,
-            UnitsNews::Lost => mp::LOST,
-            UnitsNews::Sighted => mp::ENEMY,
+            UnitsNews::Neutralized => Phrase::Neutralized,
+            UnitsNews::Lost => Phrase::Lost,
+            UnitsNews::Sighted => Phrase::Enemy,
         }
     }
 
@@ -60,10 +58,6 @@ impl UnitsNews {
         }
     }
 }
-
-/// The sound of an ally's flare, from its square: the alert of holy
-/// vision, an ability that shows a place.
-const FLARE_SOUND: &str = "1339";
 
 /// Orders that do not make a menu richer.
 const IRRELEVANT_ORDERS: &[Keyword] = &[
@@ -117,7 +111,7 @@ impl GameInterface {
         [
             nb2msg_f(self.available_food()),
             style_msg(cx.res.style(), "parameters", "food_title"),
-            msg(mp::TO),
+            msg(Phrase::To),
             nb2msg(self.used_food()),
         ]
         .concat()
@@ -184,7 +178,7 @@ impl GameInterface {
                 }
                 Some(previous) => {
                     if menu.iter().any(|i| !previous.contains(i)) {
-                        let m = [msg(mp::MENU_OF), title, msg(mp::CHANGED)].concat();
+                        let m = [msg(Phrase::MenuOf), title, msg(Phrase::Changed)].concat();
                         let subject = Subject::Menu(type_name.clone());
                         cx.news(News::new(Category::Production, m).about(subject));
                     }
@@ -216,8 +210,8 @@ impl GameInterface {
         if !enemies.is_empty() {
             let m = [
                 summary(&enemies, true),
-                msg(mp::ENEMY),
-                msg(mp::AT),
+                msg(Phrase::Enemy),
+                msg(Phrase::At),
                 self.alert_place_title(cx, place),
             ]
             .concat();
@@ -256,7 +250,7 @@ impl GameInterface {
                 let m = [
                     s,
                     msg(kind.end()),
-                    msg(mp::AT),
+                    msg(Phrase::At),
                     self.alert_place_title(cx, place),
                 ]
                 .concat();
@@ -292,8 +286,8 @@ impl GameInterface {
         self.attacks.insert(place, now);
         if new {
             let m = [
-                msg(mp::ALERT),
-                msg(mp::AT),
+                msg(Phrase::Alert),
+                msg(Phrase::At),
                 self.alert_place_title(cx, place),
             ]
             .concat();
@@ -325,14 +319,14 @@ impl GameInterface {
             return;
         }
         if from == self.me && !self.is_watching() {
-            cx.voice.item(&text(words::FLARE_SENT));
+            cx.voice.item(&msg(Phrase::FlareSent));
             return;
         }
-        self.launch_alert(cx, Some(square), FLARE_SOUND);
+        self.launch_alert(cx, Some(square), cx.sounds.cue(Cue::Flare));
         let m = [
             view.player_name(from),
-            text(":"),
-            text(words::FLARE_AT),
+            vec![MsgPart::literal(":")],
+            msg(Phrase::FlareAt),
             self.alert_place_title(cx, Place::Square(square)),
         ]
         .concat();
@@ -347,7 +341,7 @@ impl GameInterface {
             let square = self.outer_square(Some(place));
             let s = self.place_summary(cx, square, false, None, true);
             if !s.is_empty() {
-                let m = [s, msg(mp::AT), self.alert_place_title(cx, place)].concat();
+                let m = [s, msg(Phrase::At), self.alert_place_title(cx, place)].concat();
                 cx.news(News::new(Category::Scouting, m).at(square));
             }
         }
@@ -451,13 +445,10 @@ impl GameInterface {
     }
 
     /// Plays an alert sound from a square, at most every half second.
-    pub fn launch_alert(&self, cx: &Client, place: Option<SquareId>, sound: &str) {
+    pub fn launch_alert(&self, cx: &Client, place: Option<SquareId>, sound: Option<Sound>) {
         let (l, r) = self.minimap_stereo(place);
-        cx.audio.play_stereo(
-            cx.sounds.get_sound(sound),
-            StereoVolume::Split(l, r),
-            ALERT_LIMIT,
-        );
+        cx.audio
+            .play_stereo(sound, StereoVolume::Split(l, r), ALERT_LIMIT);
     }
 }
 
@@ -549,7 +540,7 @@ mod tests {
         h.run_until_voice_idle(&mut g);
         let title = |g: &TestGame, s: SquareId| {
             let t = g.game.view().square(s).title().clone();
-            [msg(mp::ALERT), msg(mp::AT), t].concat()
+            [msg(Phrase::Alert), msg(Phrase::At), t].concat()
         };
         let alerts: Vec<Msg> = h
             .client
@@ -591,7 +582,7 @@ mod tests {
         drain(&mut h);
         let square = g.game.place.unwrap();
         let place = Place::Square(square);
-        let peasant = || (msg(mp::NOTHING), Some(place));
+        let peasant = || (msg(Phrase::Nothing), Some(place));
         cx_news(&mut h, "a long message of news");
         g.game.lost_units.push(peasant());
         g.game.units_alert_if_needed(&mut h.client, None);
@@ -608,7 +599,7 @@ mod tests {
 
     /// Queues news that keeps the voice busy for a while.
     fn cx_news(h: &mut Harness, s: &str) {
-        let m = vec![soundrts_world::msg::MsgPart::from(s)];
+        let m = vec![soundrts_world::msg::MsgPart::original(s)];
         h.client.news(News::new(Category::Production, m));
     }
 
@@ -619,7 +610,7 @@ mod tests {
         g.game.last_virtual_time = 1.0;
         cx_news(&mut h, "a long message of news");
         // Food news waits to be said...
-        let old = News::new(Category::Economy, msg(mp::NOTHING)).about(Subject::Food);
+        let old = News::new(Category::Economy, msg(Phrase::Nothing)).about(Subject::Food);
         h.client.news(old);
         // ...when the food changes, even to no shortage.
         g.game.previous_used_food += 1;
@@ -633,7 +624,7 @@ mod tests {
         drain(&mut h);
         g.game.last_virtual_time = 1.0;
         cx_news(&mut h, "a long message of news");
-        let old = News::new(Category::Economy, msg(mp::NOTHING)).about(Subject::Food);
+        let old = News::new(Category::Economy, msg(Phrase::Nothing)).about(Subject::Food);
         h.client.news(old);
         // The usage goes down: the news follows, and so does the usage
         // seen, so that going back up is seen too.
@@ -659,12 +650,12 @@ mod tests {
 
     #[test]
     fn the_worlds_messages_said_now_are_story_or_system_news() {
-        let objective = [msg(mp::OBJECTIVE_COMPLETE), msg(mp::OK)].concat();
+        let objective = [msg(Phrase::ObjectiveComplete), msg(Phrase::Ok)].concat();
         assert_eq!(
             super::super::important_category(&objective),
             Category::Story
         );
-        let defeated = [msg(mp::YOU_HAVE_BEEN_DEFEATED)].concat();
+        let defeated = [msg(Phrase::YouHaveBeenDefeated)].concat();
         assert_eq!(
             super::super::important_category(&defeated),
             Category::System
@@ -688,7 +679,7 @@ mod tests {
                 .voice
                 .log()
                 .filter(|e| {
-                    e.category() == Some(Category::Alert) && e.parts()[0] == msg(mp::ALERT)[0]
+                    e.category() == Some(Category::Alert) && e.parts()[0] == msg(Phrase::Alert)[0]
                 })
                 .count()
         };

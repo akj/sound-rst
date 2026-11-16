@@ -7,7 +7,7 @@ use super::tests::world;
 use super::*;
 use crate::entity::{MemoryRef, PlayerId, Target};
 use crate::msg::{Msg, MsgPart, msg};
-use crate::msgparts as mp;
+use crate::phrases::Phrase;
 use crate::player::{Controller, Remembrance};
 use crate::world::World;
 
@@ -185,8 +185,8 @@ fn a_computer_is_named_for_its_handicap() {
             "with unlimited resources and no requirements"
         ]
     );
-    assert_eq!(computer_name("aggressive"), msg(mp::AGGRESSIVE_COMPUTER));
-    assert_eq!(computer_name("easy"), msg(mp::QUIET_COMPUTER));
+    assert_eq!(computer_name("aggressive"), msg(Phrase::AggressiveComputer));
+    assert_eq!(computer_name("easy"), msg(Phrase::QuietComputer));
 }
 
 #[test]

@@ -10,6 +10,7 @@
 //! what that player is told. An order is not given, and the watcher hears
 //! it once.
 
+use soundrts_world::msg::{Phrase, msg};
 use std::sync::Arc;
 
 use soundrts_protocol::Step;
@@ -18,7 +19,6 @@ use soundrts_world::{GameStart, SeatView, TurnMessage};
 use super::{GameInterface, Source};
 use crate::client::Client;
 use crate::message::{Category, News};
-use crate::net::words::{self, text};
 
 /// Whether the player gave orders (or sent something) where none is
 /// taken, and heard that they are not taken.
@@ -69,7 +69,7 @@ impl GameInterface {
             && *orders == Orders::Given
         {
             *orders = Orders::Told;
-            cx.voice.item(&text(words::WATCHING_NO_ORDERS));
+            cx.voice.item(&msg(Phrase::WatchingNoOrders));
         }
     }
 
@@ -82,7 +82,7 @@ impl GameInterface {
             Source::Server(s) if s.watching() => self.ask_server_to_follow(cx, step),
             Source::Replay(_) => self.follow_in_record(cx, step),
             Source::Server(_) | Source::Local(_) => {
-                cx.voice.item(&text(words::NOT_WATCHING));
+                cx.voice.item(&msg(Phrase::OnlyAWatcherFollows));
             }
         }
     }
@@ -257,7 +257,7 @@ impl GameInterface {
         cx.log.info(format!("watching player {}", me.0));
         cx.news(News::new(
             Category::System,
-            [text(words::WATCHING), name].concat(),
+            [msg(Phrase::Watching), name].concat(),
         ));
     }
 }

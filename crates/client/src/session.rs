@@ -6,8 +6,7 @@
 use std::sync::Arc;
 
 use soundrts_protocol::ClientMsg;
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, cue, msg, nb2msg};
 use soundrts_world::{
     Controller, DefaultTrigger, GameSetup, Host, PlayerId, multiplayer_default_triggers,
 };
@@ -20,7 +19,6 @@ use crate::mapfile::Map;
 use crate::menu::Exit;
 use crate::message::{Category, News};
 use crate::net::Seated;
-use crate::net::words::{self, text};
 use crate::saves::{InterfaceState, SaveInfo, SavedGame};
 
 /// The kind of a session, which decides its rules of victory, whether
@@ -211,7 +209,7 @@ impl Session {
             Err(e) => {
                 let e = format!("map error: {e}");
                 cx.log.warning(&e);
-                let m: Msg = [msg(mp::BEEP), vec![MsgPart::Text(e)]].concat();
+                let m: Msg = [cue(Cue::Beep), vec![MsgPart::literal(e)]].concat();
                 cx.voice.alert(&m);
                 return None;
             }
@@ -235,7 +233,7 @@ impl Session {
         game.view()
             .map_intro()
             .iter()
-            .map(|n| vec![MsgPart::from(n.to_string().as_str())])
+            .map(|n| vec![MsgPart::original(&n.to_string())])
             .collect()
     }
 
@@ -282,7 +280,10 @@ pub fn join_server_game(cx: &mut Client, seated: &Seated) -> Option<GameInterfac
         Err(why) => {
             if let Some(why) = why {
                 cx.log.warning(format!("cannot play the game: {why}"));
-                cx.news(News::new(Category::System, text(words::CANNOT_BE_RIGHT)));
+                cx.news(News::new(
+                    Category::System,
+                    msg(Phrase::ServerSentWhatCannotBeRight),
+                ));
             }
             leave_server_game(cx);
             None
@@ -314,7 +315,7 @@ fn play_server_game(cx: &mut Client, seated: &Seated) -> Result<(), Exit> {
         n.game = None;
     }
     cx.voice
-        .menu(&[msg(mp::MENU), msg(mp::MAKE_A_SELECTION)].concat());
+        .menu(&[msg(Phrase::Menu), msg(Phrase::MakeASelection)].concat());
     Ok(())
 }
 

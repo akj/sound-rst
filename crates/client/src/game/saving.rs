@@ -2,11 +2,11 @@
 //! by itself when the player leaves it before it is over (see
 //! [`crate::saves`]).
 
+use soundrts_world::msg::{Phrase, comma, msg};
 use std::path::PathBuf;
 
 use super::{GameInterface, Source};
 use crate::client::Client;
-use crate::net::words::{self, text};
 use crate::saves::{self, InterfaceState, SaveInfo, Slot};
 
 impl GameInterface {
@@ -79,11 +79,11 @@ impl GameInterface {
         match self.save_game(cx, Slot::New) {
             Ok(path) => {
                 cx.log.info(format!("saved the game to {}", path.display()));
-                cx.voice.item(&text(words::SAVED));
+                cx.voice.item(&msg(Phrase::Saved));
             }
             Err(e) => {
                 cx.log.warning(format!("cannot save the game: {e}"));
-                cx.voice.item(&text(words::CANNOT_SAVE));
+                cx.voice.item(&msg(Phrase::CannotSave));
             }
         }
     }
@@ -142,9 +142,9 @@ impl GameInterface {
         if let Source::Local(l) = &mut self.source {
             l.selection_to_restore = ui.selection;
         }
-        let mut told = text(words::LOADED);
+        let mut told = msg(Phrase::Loaded);
         if let Some(s) = self.place {
-            told.extend(soundrts_world::msg::msg(soundrts_world::msgparts::COMMA));
+            told.extend(comma());
             told.extend(self.view().square(s).title().iter().cloned());
         }
         told

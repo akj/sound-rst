@@ -3,8 +3,7 @@
 //! happens to it.
 
 use soundrts_world::events::{EntityEvent, Reason};
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::rules::AirGround;
 use soundrts_world::{EntityId, KnownEntity, KnownOrder, KnownTarget, Place, PlayerId, SquareId};
@@ -24,7 +23,7 @@ use super::{GameInterface, Timing, compute_title, style_msg};
 pub const FOOTSTEP_LIMIT: f64 = 0.1;
 
 /// The compass point nearest to `o` degrees (0 is east, 90 north).
-pub fn direction_to_msgpart(o: f64) -> &'static [u64] {
+pub fn direction_to_msgpart(o: f64) -> Phrase {
     let mut o = (o / 45.0).round_ties_even() * 45.0;
     while o >= 360.0 {
         o -= 360.0;
@@ -33,14 +32,14 @@ pub fn direction_to_msgpart(o: f64) -> &'static [u64] {
         o += 360.0;
     }
     match o as i64 {
-        0 => mp::EAST,
-        45 => mp::NORTHEAST,
-        90 => mp::NORTH,
-        135 => mp::NORTHWEST,
-        180 => mp::WEST,
-        225 => mp::SOUTHWEST,
-        270 => mp::SOUTH,
-        _ => mp::SOUTHEAST,
+        0 => Phrase::East,
+        45 => Phrase::Northeast,
+        90 => Phrase::North,
+        135 => Phrase::Northwest,
+        180 => Phrase::West,
+        225 => Phrase::Southwest,
+        270 => Phrase::South,
+        _ => Phrase::Southeast,
     }
 }
 
@@ -49,15 +48,15 @@ pub fn direction_to_msgpart(o: f64) -> &'static [u64] {
 pub fn direction_msg(center: (f64, f64), square_width: f64, x: f64, y: f64) -> Msg {
     let (cx, cy) = center;
     if distance(cx, cy, x, y) < square_width / 3.0 / 2.0 {
-        return msg(mp::AT_THE_CENTER);
+        return msg(Phrase::AtTheCenter);
     }
     let d = direction_to_msgpart(angle(cx, cy, x, y, 0.0).to_degrees());
-    if d == mp::EAST {
-        msg(mp::TO_THE_EAST)
-    } else if d == mp::WEST {
-        msg(mp::TO_THE_WEST)
+    if d == Phrase::East {
+        msg(Phrase::ToTheEast)
+    } else if d == Phrase::West {
+        msg(Phrase::ToTheWest)
     } else {
-        [msg(mp::TO_THE), msg(d)].concat()
+        [msg(Phrase::ToThe), msg(d)].concat()
     }
 }
 
@@ -217,29 +216,29 @@ impl GameInterface {
                 }
             } else {
                 if self.view().is_ally(p) {
-                    title.extend(msg(mp::ALLY));
+                    title.extend(msg(Phrase::Ally));
                 } else {
-                    title.extend(msg(mp::ENEMY));
+                    title.extend(msg(Phrase::Enemy));
                 }
-                title.extend(msg(mp::COMMA));
+                title.extend(comma());
                 title.extend(self.view().player_name(p));
-                title.extend(msg(mp::COMMA));
+                title.extend(comma());
             }
         }
         if let Some(ts) = v.model.last_seen {
-            title.extend(msg(mp::IN_THE_FOG));
-            title.extend(msg(mp::COMMA));
+            title.extend(msg(Phrase::InTheFog));
+            title.extend(comma());
             if v.model.is_mobile {
                 let s = (self.view().time() - ts).div_euclid(1000);
                 let m = s.div_euclid(60);
                 if m != 0 {
                     title.extend(nb2msg(m));
-                    title.extend(msg(mp::MINUTES));
+                    title.extend(msg(Phrase::Minutes));
                 } else if s != 0 {
                     title.extend(nb2msg(s));
-                    title.extend(msg(mp::SECONDS));
+                    title.extend(msg(Phrase::Seconds));
                 }
-                title.extend(msg(mp::COMMA));
+                title.extend(comma());
             }
         }
         title
@@ -250,7 +249,7 @@ impl GameInterface {
     pub fn ext_title(&self, cx: &Client, v: &EntityView) -> Msg {
         let mut t = self.title(cx, v);
         if let Some(place) = v.place() {
-            t.extend(msg(mp::AT));
+            t.extend(msg(Phrase::At));
             t.extend(self.place_title(cx, place));
         }
         t
@@ -276,8 +275,8 @@ impl GameInterface {
         let style = cx.res.style();
         let mut d = Vec::new();
         if v.qty() != 0 {
-            d.extend(msg(mp::COMMA));
-            d.extend(msg(mp::CONTAINS));
+            d.extend(comma());
+            d.extend(msg(Phrase::Contains));
             d.extend(nb2msg(v.qty()));
             let rt = self
                 .resource_type(&v.model)
@@ -289,33 +288,33 @@ impl GameInterface {
             ));
         }
         if v.is_creature() {
-            d.extend(msg(mp::COMMA));
+            d.extend(comma());
             d.extend(nb2msg(v.hp()));
-            d.extend(msg(mp::HITPOINTS_ON));
+            d.extend(msg(Phrase::HitPointsOn));
             d.extend(nb2msg(v.hp_max()));
-            d.extend(msg(mp::COMMA));
+            d.extend(comma());
             if v.mana_max() > 0 {
                 d.extend(nb2msg(v.mana()));
-                d.extend(msg(mp::MANA_POINTS_ON));
+                d.extend(msg(Phrase::ManaPointsOn));
                 d.extend(nb2msg(v.mana_max()));
             }
             if v.player().is_some() {
-                d.extend(msg(mp::COMMA));
+                d.extend(comma());
                 d.extend(self.upgrades_status(cx, v));
             }
         }
         let e = &v.model;
         if e.is_invisible || e.is_cloaked {
-            d.extend(msg(mp::COMMA));
-            d.extend(msg(mp::INVISIBLE));
+            d.extend(comma());
+            d.extend(msg(Phrase::Invisible));
         }
         if e.is_a_detector {
-            d.extend(msg(mp::COMMA));
-            d.extend(msg(mp::DETECTOR));
+            d.extend(comma());
+            d.extend(msg(Phrase::Detector));
         }
         if e.is_a_cloaker {
-            d.extend(msg(mp::COMMA));
-            d.extend(msg(mp::CLOAKER));
+            d.extend(comma());
+            d.extend(msg(Phrase::Cloaker));
         }
         d
     }
@@ -337,9 +336,9 @@ impl GameInterface {
     pub fn positional_description(&self, cx: &Client, v: &EntityView) -> Msg {
         let mut d = self.title(cx, v);
         if self.immersion {
-            d.extend(msg(mp::AT2));
+            d.extend(msg(Phrase::AtDistance));
             d.extend(nb2msg(self.distance_to(v) as i64));
-            d.extend(msg(mp::METERS));
+            d.extend(msg(Phrase::Meters));
         }
         if let Some(center) = self.place_xy() {
             d.extend(direction_msg(center, self.square_width(), v.x(), v.y()));
@@ -367,7 +366,7 @@ impl GameInterface {
         if let Some(targets) = &order.patrol {
             for place in targets {
                 result.extend(self.place_view_title(cx, *place));
-                result.extend(msg(mp::COMMA));
+                result.extend(comma());
             }
         } else if let Some(t) = &order.target {
             if order.keyword == Keyword::BuildPhaseTwo {
@@ -380,7 +379,7 @@ impl GameInterface {
                 result.extend(self.target_title(cx, t));
             }
         }
-        [msg(mp::COMMA), result].concat()
+        [comma(), result].concat()
     }
 
     /// The entity an order's target shows: as the player perceives or
@@ -457,7 +456,7 @@ impl GameInterface {
         if let Some(p) = prev {
             t.extend(self.order_title_msg(cx, p, nb));
         }
-        t.extend(msg(mp::COMMA));
+        t.extend(comma());
         t
     }
 
@@ -539,8 +538,8 @@ impl GameInterface {
 
     fn style_text(&self, cx: &Client, v: &EntityView, attr: &str) -> Msg {
         self.get_style_words(cx, v, attr)
-            .into_iter()
-            .map(MsgPart::Text)
+            .iter()
+            .map(|w| MsgPart::original(w))
             .collect()
     }
 
@@ -622,7 +621,7 @@ impl GameInterface {
             Some(Place::Inside(c)) => self.container_place(c),
             p => p,
         };
-        self.launch_alert(cx, self.outer_square(place), sound);
+        self.launch_alert(cx, self.outer_square(place), cx.sounds.get_sound(sound));
     }
 
     // reactions to events
@@ -697,7 +696,7 @@ impl GameInterface {
                 if cx.cue(Category::Economy) {
                     self.event_sound(cx, v, "exhausted", false, timing);
                 }
-                let m = [self.title(cx, v), msg(mp::EXHAUSTED)].concat();
+                let m = [self.title(cx, v), msg(Phrase::Exhausted)].concat();
                 cx.news(News::new(Category::Economy, m));
             }
             EntityEvent::Added => {
@@ -1176,32 +1175,32 @@ mod tests {
 
     #[test]
     fn directions_round_to_the_nearest_compass_point_as_python_does() {
-        assert_eq!(direction_to_msgpart(0.0), mp::EAST);
-        assert_eq!(direction_to_msgpart(22.5), mp::EAST); // round(0.5) == 0
-        assert_eq!(direction_to_msgpart(67.5), mp::NORTH); // round(1.5) == 2
-        assert_eq!(direction_to_msgpart(90.0), mp::NORTH);
-        assert_eq!(direction_to_msgpart(-90.0), mp::SOUTH);
-        assert_eq!(direction_to_msgpart(-157.5), mp::WEST); // round(-3.5) == -4
-        assert_eq!(direction_to_msgpart(-112.5), mp::SOUTH); // round(-2.5) == -2
-        assert_eq!(direction_to_msgpart(-130.0), mp::SOUTHWEST);
-        assert_eq!(direction_to_msgpart(180.0), mp::WEST);
-        assert_eq!(direction_to_msgpart(405.0), mp::NORTHEAST);
-        assert_eq!(direction_to_msgpart(315.0), mp::SOUTHEAST);
+        assert_eq!(direction_to_msgpart(0.0), Phrase::East);
+        assert_eq!(direction_to_msgpart(22.5), Phrase::East); // round(0.5) == 0
+        assert_eq!(direction_to_msgpart(67.5), Phrase::North); // round(1.5) == 2
+        assert_eq!(direction_to_msgpart(90.0), Phrase::North);
+        assert_eq!(direction_to_msgpart(-90.0), Phrase::South);
+        assert_eq!(direction_to_msgpart(-157.5), Phrase::West); // round(-3.5) == -4
+        assert_eq!(direction_to_msgpart(-112.5), Phrase::South); // round(-2.5) == -2
+        assert_eq!(direction_to_msgpart(-130.0), Phrase::Southwest);
+        assert_eq!(direction_to_msgpart(180.0), Phrase::West);
+        assert_eq!(direction_to_msgpart(405.0), Phrase::Northeast);
+        assert_eq!(direction_to_msgpart(315.0), Phrase::Southeast);
     }
 
     #[test]
     fn positions_are_said_from_the_center_of_the_square() {
         let c = (6.0, 6.0);
-        assert_eq!(direction_msg(c, 12.0, 7.9, 6.0), msg(mp::AT_THE_CENTER));
-        assert_eq!(direction_msg(c, 12.0, 10.0, 6.0), msg(mp::TO_THE_EAST));
-        assert_eq!(direction_msg(c, 12.0, 2.0, 6.0), msg(mp::TO_THE_WEST));
+        assert_eq!(direction_msg(c, 12.0, 7.9, 6.0), msg(Phrase::AtTheCenter));
+        assert_eq!(direction_msg(c, 12.0, 10.0, 6.0), msg(Phrase::ToTheEast));
+        assert_eq!(direction_msg(c, 12.0, 2.0, 6.0), msg(Phrase::ToTheWest));
         assert_eq!(
             direction_msg(c, 12.0, 6.0, 10.0),
-            [msg(mp::TO_THE), msg(mp::NORTH)].concat()
+            [msg(Phrase::ToThe), msg(Phrase::North)].concat()
         );
         assert_eq!(
             direction_msg(c, 12.0, 2.0, 2.0),
-            [msg(mp::TO_THE), msg(mp::SOUTHWEST)].concat()
+            [msg(Phrase::ToThe), msg(Phrase::Southwest)].concat()
         );
     }
 

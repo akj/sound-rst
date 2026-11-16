@@ -13,10 +13,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{MsgPart, NB_ENCODE_SHIFT};
+use soundrts_world::msg::{Cue, MsgPart, Pause, Phrase};
 
 use crate::audio::{Sound, SoundBuffer};
 use crate::log::Log;
+use crate::original_names::names;
 use crate::package::Package;
 use crate::parameters::Parameters;
 
@@ -79,12 +80,6 @@ pub fn update_text_table(table: &mut HashMap<String, String>, txt: &str, log: &L
     }
 }
 
-/// A part said as written, never looked up as a sound or a phrase: what
-/// other players wrote, and their logins.
-pub fn literal(s: &str) -> MsgPart {
-    MsgPart::Literal(s.to_owned())
-}
-
 /// The texts and sounds of the resource layers, merged: a later layer
 /// replaces an earlier one, a translation replaces the original. Sounds are
 /// decoded when first used.
@@ -103,10 +98,18 @@ fn is_all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// A key that names a sound or a text: digits below the numbers the game
-/// encodes to be said as numbers.
-fn is_sound_number(key: &str) -> bool {
-    is_all_digits(key) && key.parse::<u64>().is_ok_and(|n| n < NB_ENCODE_SHIFT)
+/// The key of a phrase of the original in the texts and the sounds: its
+/// number, from the table of names. None for a phrase the port added.
+fn phrase_key(phrase: Phrase) -> Option<String> {
+    let number = names().game_number(phrase.id())?;
+    Some(number.to_string())
+}
+
+/// The key of a sound the code plays by itself: the original's number for
+/// it, from the table of names. A test checks that each cue has one.
+fn cue_key(cue: Cue) -> String {
+    let number = names().game_number(cue.sound());
+    number.map_or_else(|| cue.sound().to_owned(), |n| n.to_string())
 }
 
 impl SoundCache {
@@ -164,7 +167,7 @@ impl SoundCache {
             update_text_table(&mut txt, t, &self.log);
         }
         let taken = |cache: &SoundCache, key: &str| {
-            cache.txt.contains_key(key) || cache.sounds.contains_key(key) || !is_sound_number(key)
+            cache.txt.contains_key(key) || cache.sounds.contains_key(key) || !is_all_digits(key)
         };
         for (key, value) in txt {
             if taken(self, &key) {
@@ -231,30 +234,44 @@ impl SoundCache {
         self.txt.get(key).map(String::as_str)
     }
 
-    /// What a message part becomes: its text, else the number it encodes,
-    /// else its sound, else its key said as text.
-    pub fn translate(&mut self, part: &MsgPart) -> Spoken {
-        if let MsgPart::Literal(t) = part {
-            return Spoken::Text(t.clone());
+    /// What a name of the texts and the sounds becomes: its text, else its
+    /// sound.
+    fn named(&mut self, key: &str) -> Option<Spoken> {
+        if let Some(t) = self.text(key) {
+            return Some(Spoken::Text(t.to_owned()));
         }
-        let key = part.key();
-        if let Some(t) = self.text(&key) {
-            return Spoken::Text(t.to_owned());
-        }
-        if is_all_digits(&key)
-            && let Ok(n) = key.parse::<u64>()
-            && let Some(n) = n.checked_sub(NB_ENCODE_SHIFT)
-        {
-            return Spoken::Text(n.to_string());
-        }
-        if let Some(s) = self.get_sound(&key, false) {
-            return Spoken::Sound(s);
+        self.get_sound(key, false).map(Spoken::Sound)
+    }
+
+    /// As [`SoundCache::named`], for a name that should exist: without it,
+    /// the name is said as written, and a number is logged as missing.
+    fn named_or_said(&mut self, key: String) -> Spoken {
+        if let Some(spoken) = self.named(&key) {
+            return spoken;
         }
         if is_all_digits(&key) {
             self.log
                 .warning(format!("this sound may be missing: {key}"));
         }
         Spoken::Text(key)
+    }
+
+    /// What a message part becomes: words to speak or a sound to play. A
+    /// phrase of the original is the text or the recording that the
+    /// resources have for it, in the player's language, and else its
+    /// English words.
+    pub fn translate(&mut self, part: &MsgPart) -> Spoken {
+        match part {
+            MsgPart::Phrase(p) => phrase_key(*p)
+                .and_then(|key| self.named(&key))
+                .unwrap_or_else(|| Spoken::Text(p.english().to_owned())),
+            MsgPart::Sound(c) => self.named_or_said(cue_key(*c)),
+            MsgPart::Count(n) => Spoken::Text(n.to_string()),
+            MsgPart::Pause(Pause::Short) => Spoken::Text(",".to_owned()),
+            MsgPart::Pause(Pause::Long) => Spoken::Text(".".to_owned()),
+            MsgPart::Literal(t) => Spoken::Text(t.clone()),
+            MsgPart::Original(name) => self.named_or_said(name.clone()),
+        }
     }
 
     /// Applies the parameters' volumes again to the loaded sounds.
@@ -282,6 +299,11 @@ impl Sounds {
         self.0.borrow_mut().get_sound(name, true)
     }
 
+    /// The sound of a cue.
+    pub fn cue(&self, cue: Cue) -> Option<Sound> {
+        self.get_sound(&cue_key(cue))
+    }
+
     pub fn text(&self, key: &str) -> Option<String> {
         self.0.borrow().text(key).map(str::to_owned)
     }
@@ -305,18 +327,41 @@ mod tests {
         let params = Arc::new(Parameters::default());
         let mut cache =
             SoundCache::new(&["5 What are your orders?\n".to_owned()], &[], params, log);
-        let added = format!(
-            "5 Press Alt F4.\n9000 golem\n{} six\nhello bye\n",
-            NB_ENCODE_SHIFT + 5
-        );
-        assert_eq!(cache.add_downloaded(&[added], &[]), 3);
+        let added = "5 Press Alt F4.\n9000 golem\n1000005 six\nhello bye\n".to_owned();
+        assert_eq!(cache.add_downloaded(&[added], &[]), 2);
         let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
             Spoken::Text(t) => t,
             Spoken::Sound(_) => "a sound".to_owned(),
         };
-        assert_eq!(said(&mut cache, MsgPart::Num(5)), "What are your orders?");
-        assert_eq!(said(&mut cache, MsgPart::Num(9000)), "golem");
-        assert_eq!(said(&mut cache, MsgPart::Num(NB_ENCODE_SHIFT + 5)), "5");
-        assert_eq!(said(&mut cache, MsgPart::from("hello")), "hello");
+        let original = MsgPart::original;
+        assert_eq!(said(&mut cache, original("5")), "What are your orders?");
+        assert_eq!(said(&mut cache, original("9000")), "golem");
+        // A count is never looked up, in the code or in a file.
+        assert_eq!(said(&mut cache, MsgPart::Count(5)), "5");
+        assert_eq!(said(&mut cache, original("1000005")), "5");
+        assert_eq!(said(&mut cache, original("hello")), "hello");
+    }
+
+    #[test]
+    fn a_phrase_is_its_text_in_the_resources_and_else_its_english() {
+        let log = Log::silent();
+        let params = Arc::new(Parameters::default());
+        let french = "4202 en attente de vos ordres\n".to_owned();
+        let mut cache = SoundCache::new(&[french], &[], params, log);
+        let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
+            Spoken::Text(t) => t,
+            Spoken::Sound(_) => "a sound".to_owned(),
+        };
+        assert_eq!(
+            said(&mut cache, Phrase::AwaitingYourOrders.into()),
+            "en attente de vos ordres"
+        );
+        // The resources lack this line of the original.
+        assert_eq!(said(&mut cache, Phrase::Welcome.into()), "welcome");
+        // The port's own phrase has no number, so no text can replace it.
+        assert_eq!(said(&mut cache, Phrase::AreWelcome.into()), "welcome");
+        assert_eq!(said(&mut cache, Pause::Short.into()), ",");
+        assert_eq!(said(&mut cache, Pause::Long.into()), ".");
+        assert_eq!(said(&mut cache, MsgPart::literal("4202")), "4202");
     }
 }

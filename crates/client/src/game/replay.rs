@@ -31,8 +31,7 @@ use std::sync::Arc;
 
 use soundrts_protocol::Step;
 use soundrts_world::events::Event;
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, Phrase, comma, cue, msg, nb2msg};
 use soundrts_world::{
     Completeness, ControllerKind, GameEnd, GameStart, PlayerId, Record, ReplayError, Replayer,
     TurnMessage, VIRTUAL_TIME_INTERVAL,
@@ -42,7 +41,6 @@ use super::watching::Orders;
 use super::{GameInterface, Source, TURN};
 use crate::client::Client;
 use crate::message::{Category, News};
-use crate::net::words::{self, text};
 use crate::saves::{InterfaceState, SaveInfo, Slot};
 
 /// How many turns are replayed silently at each pass of the loop, while
@@ -103,14 +101,14 @@ impl Pace {
     /// "speed fast 2".
     pub fn spoken(self) -> Msg {
         let what = match self {
-            Pace::Slow => text(words::SLOW),
-            Pace::Normal => text(words::NORMAL),
-            Pace::Fast2 => [text(words::FAST), nb2msg(2)].concat(),
-            Pace::Fast4 => [text(words::FAST), nb2msg(4)].concat(),
-            Pace::Fast8 => [text(words::FAST), nb2msg(8)].concat(),
-            Pace::Fastest => text(words::FASTEST),
+            Pace::Slow => msg(Phrase::Slow),
+            Pace::Normal => msg(Phrase::Normal),
+            Pace::Fast2 => [msg(Phrase::Fast), nb2msg(2)].concat(),
+            Pace::Fast4 => [msg(Phrase::Fast), nb2msg(4)].concat(),
+            Pace::Fast8 => [msg(Phrase::Fast), nb2msg(8)].concat(),
+            Pace::Fastest => msg(Phrase::Fastest),
         };
-        [text(words::SPEED), what].concat()
+        [msg(Phrase::GameSpeed), what].concat()
     }
 }
 
@@ -269,9 +267,9 @@ impl Replay {
 fn time_msg(seconds: i64) -> Msg {
     [
         nb2msg(seconds.div_euclid(60)),
-        msg(mp::MINUTES),
+        msg(Phrase::Minutes),
         nb2msg(seconds.rem_euclid(60)),
-        msg(mp::SECONDS),
+        msg(Phrase::Seconds),
     ]
     .concat()
 }
@@ -422,7 +420,7 @@ impl GameInterface {
         if let Some(percent) = progress {
             let m = [
                 nb2msg(i64::try_from(percent).unwrap_or(100)),
-                text(words::PERCENT),
+                msg(Phrase::Percent),
             ]
             .concat();
             cx.voice.item(&m);
@@ -531,14 +529,14 @@ impl GameInterface {
         };
         r.run = Run::Over;
         let words = match r.completeness {
-            Completeness::Whole => words::RECORDING_ENDED,
-            Completeness::CutShort => words::RECORDING_DAMAGED,
+            Completeness::Whole => Phrase::RecordingEnded,
+            Completeness::CutShort => Phrase::RecordingDamaged,
         };
         cx.log.info(format!(
             "the recording ended after {} turns",
             r.replayer.turns_run()
         ));
-        cx.news(News::new(Category::System, text(words)));
+        cx.news(News::new(Category::System, msg(words)));
         self.srv_quit(cx);
     }
 
@@ -550,7 +548,7 @@ impl GameInterface {
         if let Some(r) = self.replay() {
             r.run = Run::Broken;
         }
-        cx.news(News::new(Category::System, text(words::RECORDING_DAMAGED)));
+        cx.news(News::new(Category::System, msg(Phrase::RecordingDamaged)));
     }
 
     /// "3 minutes 20 seconds of 12 minutes 0 seconds": where the replay
@@ -558,7 +556,7 @@ impl GameInterface {
     fn where_the_replay_is(&mut self) -> Msg {
         let now = self.last_virtual_time as i64;
         let total = self.replay().map_or(0, |r| r.total_seconds());
-        [time_msg(now), text(words::OF), time_msg(total)].concat()
+        [time_msg(now), msg(Phrase::OutOf), time_msg(total)].concat()
     }
 
     /// F3 while listening: where the replay is, of the whole record, then
@@ -569,11 +567,11 @@ impl GameInterface {
         };
         let (pace, paused) = (r.pace, r.paused);
         let mut m = self.where_the_replay_is();
-        m.extend(msg(mp::COMMA));
+        m.extend(comma());
         m.extend(pace.spoken());
         if paused {
-            m.extend(msg(mp::COMMA));
-            m.extend(text(words::PAUSED));
+            m.extend(comma());
+            m.extend(msg(Phrase::Paused));
         }
         cx.voice.item(&m);
         true
@@ -584,7 +582,7 @@ impl GameInterface {
     /// can.
     pub(crate) fn listen_speed(&mut self, cx: &mut Client, step: i64) {
         let Some(r) = self.replay() else {
-            cx.voice.item(&text(words::NOT_LISTENING));
+            cx.voice.item(&msg(Phrase::OnlyWhileListening));
             return;
         };
         let pace = r.pace.step(step);
@@ -622,13 +620,13 @@ impl GameInterface {
     pub(crate) fn listen_pause(&mut self, cx: &mut Client) {
         let now = cx.clock.now();
         let Some(r) = self.replay() else {
-            cx.voice.item(&text(words::NOT_LISTENING));
+            cx.voice.item(&msg(Phrase::OnlyWhileListening));
             return;
         };
         r.paused = !r.paused;
         r.next_update = now;
         let m = if r.paused {
-            text(words::PAUSED)
+            msg(Phrase::Paused)
         } else {
             r.pace.spoken()
         };
@@ -651,7 +649,7 @@ impl GameInterface {
     pub(crate) fn listen_jump(&mut self, cx: &mut Client, minutes: i64) {
         let now = cx.clock.now();
         let Some(r) = self.replay() else {
-            cx.voice.item(&text(words::NOT_LISTENING));
+            cx.voice.item(&msg(Phrase::OnlyWhileListening));
             return;
         };
         let end = r.replayer.record().turns_run();
@@ -660,7 +658,7 @@ impl GameInterface {
             .unwrap_or(0)
             .min(end);
         if r.run == Run::Broken && target >= r.replayer.turns_run() {
-            cx.voice.item(&text(words::RECORDING_DAMAGED));
+            cx.voice.item(&msg(Phrase::RecordingDamaged));
             return;
         }
         if target < r.replayer.turns_run() {
@@ -684,7 +682,7 @@ impl GameInterface {
         let me = self.me;
         let players = self.view().players().to_vec();
         let Some(next) = after(&players, me, step).into_iter().next() else {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
             return;
         };
         let Some(r) = self.replay() else {
@@ -694,10 +692,10 @@ impl GameInterface {
             Ok(m) => {
                 if let Err(why) = self.follow(cx, m) {
                     cx.log.warning(format!("cannot follow: {why}"));
-                    cx.voice.item(&msg(mp::BEEP));
+                    cx.voice.item(&cue(Cue::Beep));
                 }
             }
-            Err(_) => cx.voice.item(&text(words::RECORDING_DAMAGED)),
+            Err(_) => cx.voice.item(&msg(Phrase::RecordingDamaged)),
         }
     }
 
@@ -710,7 +708,7 @@ impl GameInterface {
         };
         let (info, saved_at) = match &r.keep {
             Keep::AlreadyKept | Keep::Kept => {
-                cx.voice.item(&text(words::KEPT));
+                cx.voice.item(&msg(Phrase::KeptInTheRecordsFolder));
                 return;
             }
             Keep::Save { info, saved_at } => (info.clone(), *saved_at),
@@ -728,11 +726,11 @@ impl GameInterface {
                 r.keep = Keep::Kept;
                 cx.log
                     .info(format!("kept the record in {}", path.display()));
-                cx.voice.item(&text(words::KEPT));
+                cx.voice.item(&msg(Phrase::KeptInTheRecordsFolder));
             }
             Err(e) => {
                 cx.log.warning(format!("cannot keep the record: {e}"));
-                cx.voice.item(&text(words::CANNOT_KEEP));
+                cx.voice.item(&msg(Phrase::CannotKeepIt));
             }
         }
     }
