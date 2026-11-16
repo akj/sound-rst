@@ -455,6 +455,19 @@ pub enum BaseClass {
 }
 
 impl BaseClass {
+    /// The word of the rules for it.
+    fn name(self) -> &'static str {
+        match self {
+            BaseClass::Worker => "worker",
+            BaseClass::Soldier => "soldier",
+            BaseClass::Building => "building",
+            BaseClass::Effect => "effect",
+            BaseClass::Deposit => "deposit",
+            BaseClass::Upgrade => "upgrade",
+            BaseClass::Ability => "ability",
+        }
+    }
+
     fn from_name(s: &str) -> Option<BaseClass> {
         Some(match s {
             "worker" => BaseClass::Worker,
@@ -1028,8 +1041,11 @@ impl Rules {
     /// Rules over one of the limits ([`crate::defs::MAX_TEXT_BYTES`],
     /// [`MAX_DEFINITIONS`], [`MAX_ANCESTORS`]...) are refused: they load as
     /// empty rules with a warning that says which limit. So are rules in
-    /// which a type names a type or a class they lack, with a warning that
-    /// gives the line: the text's, or with several texts, its number too.
+    /// which a type names a type or a class they lack, or has a property
+    /// that its kind does not have, with a warning that gives the line:
+    /// in its file if the texts name their files
+    /// ([`crate::defs::with_file_name`]), else the text's, or with several
+    /// texts, its number too.
     pub fn load<S: AsRef<str>>(texts: &[S]) -> Rules {
         let mut warnings = Vec::new();
         let mut raw = Definitions::default();
@@ -1064,7 +1080,14 @@ impl Rules {
             let Some(&class) = names.classes.get(name.as_str()) else {
                 continue;
             };
-            interpret(d, base, name, nb_res, &mut warnings);
+            if let Err(property) = interpret(d, base, nb_res) {
+                let name = name.clone();
+                let place = Unknown::new(&name, &property, "").place(&raw, &set_at, texts);
+                return refused(format!(
+                    "{place}error in {name}.{property}: a {} has no such property",
+                    base.name()
+                ));
+            }
             match build_type(name, class, base, d, nb_res, &names, &mut warnings) {
                 Ok(t) => types.push(t),
                 Err(unknown) => {
@@ -1401,9 +1424,11 @@ impl Unknown {
         }
     }
 
-    /// Where the property was written, as `line 12: `, or with several
-    /// texts `text 2, line 12: `: in the class, or else in the nearest of
-    /// its ancestors that has it. Empty if no line has it.
+    /// Where the property was written, as `orc/rules.txt, line 12: ` if
+    /// the texts name their files ([`crate::defs::FILE_LINE`]), else as
+    /// `line 12: `, or with several texts `text 2, line 12: `: in the
+    /// class, or else in the nearest of its ancestors that has it. Empty if
+    /// no line has it.
     fn place<S: AsRef<str>>(&self, raw: &Definitions, set_at: &SetAt, texts: &[S]) -> String {
         let ancestors = match raw
             .def(&self.class)
@@ -1418,8 +1443,9 @@ impl Unknown {
         let Some(&line) = line else {
             return String::new();
         };
-        if texts.len() < 2 {
-            return format!("line {line}: ");
+        let joined = join_layers(texts);
+        if joined.contains(crate::defs::FILE_LINE) || texts.len() < 2 {
+            return format!("{}: ", crate::defs::place_of_line(&joined, line));
         }
         // The texts are joined with a line break, each line end counted
         // as one.
@@ -1529,7 +1555,8 @@ fn normalized(lst: &[i64], n: usize) -> Vec<i64> {
 
 /// `Rules.interpret` and `Creature.interpret`, applied to the definition
 /// itself, like the original.
-fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: &mut Vec<String>) {
+/// The error is the first property that instances of `base` do not have.
+fn interpret(d: &mut Def, base: BaseClass, nb_res: usize) -> Result<(), String> {
     if base.is_creature() {
         for vs_attr in ["damage_vs", "armor_vs"] {
             let words = match def_get(d, vs_attr) {
@@ -1574,10 +1601,7 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
             continue;
         }
         if !properties::is_held_by(&k, base) {
-            def_remove(d, &k);
-            warnings.push(format!(
-                "in {name}: {base:?} doesn't have any attribute called '{k}'"
-            ));
+            return Err(k);
         } else if k == "cost"
             && let Some(RawValue::IntList(l)) = def_get(d, "cost")
         {
@@ -1585,6 +1609,7 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
             def_set(d, "cost", RawValue::IntList(l));
         }
     }
+    Ok(())
 }
 
 /// The type a class of the rules defines, or the first name in its
@@ -1829,10 +1854,15 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_attribute_is_dropped_with_a_warning() {
+    fn an_unknown_property_refuses_the_rules_where_the_original_dropped_it() {
         let r = Rules::load(&["def p\nclass worker\nextraction_qty 1\nmana_cost 2\n"]);
-        assert_eq!(r.get("p", "extraction_qty"), None);
-        assert_eq!(r.warnings.len(), 2);
+        assert!(r.types().is_empty());
+        assert_eq!(
+            r.warnings,
+            [
+                "the rules are refused: line 3: error in p.extraction_qty: a worker has no such property"
+            ]
+        );
     }
 
     #[test]
@@ -2109,6 +2139,59 @@ mod tests {
             [r.type_id("a").unwrap()]
         );
         assert_eq!(r.warnings, ["error in f.b: w doesn't exist"]);
+    }
+
+    /// A property that the kind of its class does not have refuses the
+    /// rules, with the line that wrote it. A misspelt property is one.
+    #[test]
+    fn a_property_that_its_kind_lacks_refuses_the_rules_with_its_line() {
+        assert_eq!(
+            refused("def a\nclass soldier\nhp_maxx 10\n"),
+            "the rules are refused: line 3: error in a.hp_maxx: a soldier has no such property"
+        );
+        // A property of another kind, and one that a child inherits.
+        assert_eq!(
+            refused("def a\nclass upgrade\n; fast\nspeed 2\n"),
+            "the rules are refused: line 4: error in a.speed: a upgrade has no such property"
+        );
+        assert_eq!(
+            refused("def parent\nmana_costt 5\ndef a\nclass soldier\nis_a parent\n"),
+            "the rules are refused: line 2: error in a.mana_costt: a soldier has no such property"
+        );
+        // A class of no kind is not a type: it only holds what its
+        // children inherit.
+        let r = Rules::load(&["def parent\nanything 5\ndef a\nclass soldier\n"]);
+        assert_eq!(r.warnings, Vec::<String>::new());
+    }
+
+    /// The texts of several layers can name their files: a refusal then
+    /// names the file, and the line in it.
+    #[test]
+    fn a_refusal_names_the_file_that_the_text_names() {
+        use crate::defs::with_file_name;
+        let text = [
+            with_file_name("default/rules.txt", "def a\nclass soldier\n"),
+            with_file_name(
+                "orc/rules.txt",
+                "def b\nclass soldier\n\ncan_train a dragoon\n",
+            ),
+            with_file_name("jl4/rules.txt", "def c\nclass soldier\nhp_maxx 4\n"),
+        ];
+        assert_eq!(
+            refused(&text.join("\n")),
+            "the rules are refused: orc/rules.txt, line 4: error in b.can_train: dragoon doesn't exist"
+        );
+        assert_eq!(
+            refused(&[&text[0], &text[2]].map(String::as_str).join("\n")),
+            "the rules are refused: jl4/rules.txt, line 3: error in c.hp_maxx: a soldier has no such property"
+        );
+        // The same, given as texts and not as one.
+        let r = Rules::load(&text);
+        assert!(
+            r.warnings[0].contains("orc/rules.txt, line 4: "),
+            "{:?}",
+            r.warnings
+        );
     }
 
     /// A name in a type's properties that the rules lack refuses the

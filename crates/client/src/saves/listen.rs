@@ -336,7 +336,7 @@ fn play(cx: &mut Client, read: Read) -> Result<(), Exit> {
         game.view()
             .map_intro()
             .iter()
-            .map(|n| vec![MsgPart::original(&n.to_string())])
+            .map(|part| vec![part.clone()])
             .collect()
     } else {
         Vec::new()

@@ -163,7 +163,7 @@ fn enter_on_the_volume_goes_from_the_top_back_to_silence() {
 #[test]
 fn a_volume_key_interrupts_with_the_level_only_and_the_sentence_is_said_in_full() {
     let mut h = Harness::new("en", Script::new().keep_open());
-    let sound = h.client.sounds.get_sound("1029");
+    let sound = h.client.sounds.get_sound("ui/beep");
     h.client
         .audio
         .play_stereo(sound, soundrts::sound::StereoVolume::Both(1.0), 0.0);
@@ -293,7 +293,7 @@ fn the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key() {
 
     // The estimate of the end of speech uses it at once: ten characters
     // now take 0.6 seconds, not 1.
-    h.client.voice.item(&vec![MsgPart::original("abcdefghij")]);
+    h.client.voice.item(&vec![MsgPart::literal("abcdefghij")]);
     h.clock.advance(0.59);
     assert!(h.client.voice.is_busy());
     h.clock.advance(0.02);

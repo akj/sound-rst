@@ -26,25 +26,45 @@ impl fmt::Display for RootError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "SoundRTS cannot find its game data (the folder that holds res/rules.txt)."
+            "SoundRTS cannot find its game data (the folder that holds res/rules.txt and \
+             import.txt)."
         )?;
         for path in &self.tried {
-            writeln!(f, "  not found in: {}", path.display())?;
+            if soundrts_import::is_original_game(path) {
+                writeln!(
+                    f,
+                    "  {} holds the files of the original game, which the game imports before \
+                     it reads them. Run: soundrts --import \"{}\" <a new folder>",
+                    path.display(),
+                    path.display()
+                )?;
+            } else if path.join(ROOT_MARKER).is_file() {
+                writeln!(
+                    f,
+                    "  {} holds game data that another version of the game imported. Import \
+                     the original game again.",
+                    path.display()
+                )?;
+            } else {
+                writeln!(f, "  not found in: {}", path.display())?;
+            }
         }
         write!(
             f,
             "To download it, run: soundrts --fetch-data\n\
              Or pass --root <folder>, or set the SOUNDRTS_ROOT environment variable, or put the \
-             res, cfg, mods and single folders next to the program. In a development checkout, \
-             run scripts/fetch-upstream.ps1, then use --root vendor/soundrts-upstream."
+             res, mods and single folders and import.txt next to the program. In a development \
+             checkout, run scripts/fetch-upstream.ps1, then use --root vendor/game-data."
         )
     }
 }
 
 impl std::error::Error for RootError {}
 
-fn is_root(dir: &Path) -> bool {
-    dir.join(ROOT_MARKER).is_file()
+/// Whether `dir` holds the game data: the rules, as this program's
+/// importer wrote them.
+pub fn is_root(dir: &Path) -> bool {
+    dir.join(ROOT_MARKER).is_file() && soundrts_import::is_imported(dir)
 }
 
 /// Finds the game root: `--root`, else `SOUNDRTS_ROOT`, else the
@@ -228,11 +248,18 @@ impl Paths {
 mod tests {
     use super::*;
 
+    /// Makes `dir` a game root: the rules and the importer's stamp.
+    fn make_root(dir: &Path) {
+        std::fs::create_dir_all(dir.join("res")).unwrap();
+        std::fs::write(dir.join("res/rules.txt"), "").unwrap();
+        let stamp = soundrts_import::stamp();
+        std::fs::write(dir.join(soundrts_import::STAMP_FILE), stamp).unwrap();
+    }
+
     #[test]
     fn the_explicit_root_wins_and_must_hold_the_data() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("res")).unwrap();
-        std::fs::write(dir.path().join("res/rules.txt"), "").unwrap();
+        make_root(dir.path());
         let other = tempfile::tempdir().unwrap();
         assert_eq!(
             find_root(
@@ -259,8 +286,7 @@ mod tests {
     #[test]
     fn a_relative_root_becomes_absolute_with_the_platforms_separators() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("a/b/res")).unwrap();
-        std::fs::write(dir.path().join("a/b/res/rules.txt"), "").unwrap();
+        make_root(&dir.path().join("a/b"));
         let root = find_root(Some(Path::new("a/b")), None, None, dir.path(), None).unwrap();
         assert_eq!(root, dir.path().join("a").join("b"));
         #[cfg(windows)]
@@ -272,8 +298,7 @@ mod tests {
         let exe = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
         for d in [exe.path(), cwd.path()] {
-            std::fs::create_dir_all(d.join("res")).unwrap();
-            std::fs::write(d.join("res/rules.txt"), "").unwrap();
+            make_root(d);
         }
         assert_eq!(
             find_root(None, None, Some(exe.path()), cwd.path(), None),
@@ -287,6 +312,32 @@ mod tests {
     }
 
     #[test]
+    fn the_originals_files_and_another_versions_data_are_no_root_and_the_error_says_so() {
+        let original = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(original.path().join("res/ui")).unwrap();
+        std::fs::write(original.path().join("res/rules.txt"), "").unwrap();
+        std::fs::write(original.path().join("res/ui/tts.txt"), "5 hello").unwrap();
+        let error = find_root(Some(original.path()), None, None, original.path(), None);
+        let error = error.unwrap_err().to_string();
+        assert!(
+            error.contains("holds the files of the original game"),
+            "{error}"
+        );
+        assert!(error.contains("soundrts --import"), "{error}");
+
+        let other = tempfile::tempdir().unwrap();
+        make_root(other.path());
+        let stamp = other.path().join(soundrts_import::STAMP_FILE);
+        std::fs::write(stamp, "soundrts-import 0 0").unwrap();
+        let error = find_root(Some(other.path()), None, None, other.path(), None);
+        let error = error.unwrap_err().to_string();
+        assert!(
+            error.contains("another version of the game imported"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn a_missing_root_error_says_how_to_get_the_data() {
         let empty = tempfile::tempdir().unwrap();
         let error = find_root(None, None, None, empty.path(), None).unwrap_err();
@@ -296,10 +347,6 @@ mod tests {
 
     #[test]
     fn the_downloaded_data_is_found_last_and_never_replaces_an_explicit_root() {
-        let make_root = |d: &Path| {
-            std::fs::create_dir_all(d.join("res")).unwrap();
-            std::fs::write(d.join("res/rules.txt"), "").unwrap();
-        };
         let exe = tempfile::tempdir().unwrap();
         let cwd = tempfile::tempdir().unwrap();
         let fetched = tempfile::tempdir().unwrap();

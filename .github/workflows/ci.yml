@@ -44,12 +44,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - name: Fetch the original game
-        shell: pwsh
-        run: ./scripts/fetch-upstream.ps1
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+      # The script builds the importer and runs it, so it comes after the
+      # compiled dependencies are restored.
+      - name: Fetch the original game and import it
+        shell: pwsh
+        run: ./scripts/fetch-upstream.ps1
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
@@ -68,16 +70,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - name: Fetch the original game
-        shell: pwsh
-        run: ./scripts/fetch-upstream.ps1
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
+      - name: Fetch the original game and import it
+        shell: pwsh
+        run: ./scripts/fetch-upstream.ps1
       - uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Test the simulation, the protocol and the server
-        run: cargo nextest run -p soundrts-world -p soundrts-protocol -p soundrts-server --no-fail-fast
+      - name: Test the simulation, the importer, the protocol and the server
+        run: cargo nextest run -p soundrts-world -p soundrts-import -p soundrts-protocol -p soundrts-server --no-fail-fast
       - name: Test the documentation
-        run: cargo test -p soundrts-world -p soundrts-protocol -p soundrts-server --doc
+        run: cargo test -p soundrts-world -p soundrts-import -p soundrts-protocol -p soundrts-server --doc

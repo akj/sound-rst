@@ -197,7 +197,7 @@ pub enum PlayerKind {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Objective {
     pub number: String,
-    pub description: Vec<i64>,
+    pub description: Msg,
 }
 
 /// A trigger of the map: when the condition holds, the action runs once.

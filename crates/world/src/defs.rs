@@ -27,6 +27,38 @@ pub const MAX_LINE_BYTES: usize = 4096;
 /// multiplies these numbers in 64 bits, which hold the product of any two.
 pub const MAX_NUMBER: i64 = i32::MAX as i64;
 
+/// The start of a comment line that names the file of the lines after it,
+/// up to the next such line. Whoever joins the files of several layers into
+/// the one text that the simulation takes writes it, so that a refusal can
+/// name the file and the line in it. See [`with_file_name`].
+pub const FILE_LINE: &str = "; file: ";
+
+/// `text` under a line that names its file. The name keeps letters, digits
+/// and `._-/`, so it cannot end the line or the comment.
+pub fn with_file_name(file: &str, text: &str) -> String {
+    let file: String = file
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+        .take(200)
+        .collect();
+    format!("{FILE_LINE}{file}\n{text}")
+}
+
+/// Where line `line` of `text` is, counted from 1: `orc/rules.txt, line 3`
+/// if a [`FILE_LINE`] above it names its file, else `line 12`.
+pub fn place_of_line(text: &str, line: usize) -> String {
+    let mut file = None;
+    for (i, l) in text.split('\n').enumerate().take(line) {
+        if let Some(name) = l.strip_prefix(FILE_LINE) {
+            file = Some((name.trim(), i.saturating_add(1)));
+        }
+    }
+    match file {
+        Some((name, at)) => format!("{name}, line {}", line.saturating_sub(at)),
+        None => format!("line {line}"),
+    }
+}
+
 /// `n`, if it is within [`MAX_NUMBER`].
 pub fn bounded(n: i64) -> Option<i64> {
     (n.unsigned_abs() <= MAX_NUMBER.unsigned_abs()).then_some(n)
@@ -179,6 +211,21 @@ mod tests {
         assert_eq!(super::source_lines(s), [1, 4, 7]);
         assert_eq!(super::source_lines("a\n"), [1, 2]);
         assert_eq!(super::source_lines("a\\\n"), [1]);
+    }
+
+    #[test]
+    fn a_line_is_placed_in_the_file_named_above_it() {
+        use super::{place_of_line, with_file_name};
+        let orc = with_file_name("orc/rules.txt", "def a\nclass soldier\n");
+        assert_eq!(orc, "; file: orc/rules.txt\ndef a\nclass soldier\n");
+        let text = format!("def z\n{orc}{}", with_file_name("jl4/rules.txt", "def b\n"));
+        assert_eq!(place_of_line(&text, 1), "line 1");
+        assert_eq!(place_of_line(&text, 3), "orc/rules.txt, line 1");
+        assert_eq!(place_of_line(&text, 4), "orc/rules.txt, line 2");
+        assert_eq!(place_of_line(&text, 6), "jl4/rules.txt, line 1");
+        // A name cannot end its line, and the text stays a comment.
+        assert_eq!(with_file_name("a\ndef evil ; x", ""), "; file: adefevilx\n");
+        assert_eq!(super::preprocess(&orc), "def a\nclass soldier\n");
     }
 
     #[test]

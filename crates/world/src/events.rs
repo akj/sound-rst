@@ -127,8 +127,8 @@ pub enum Event {
     },
     /// A message to say now.
     VoiceImportant(Msg),
-    /// A cut scene: the sounds to play in order.
-    Sequence(Vec<String>),
+    /// A cut scene: what to say and play, one part after the other.
+    Sequence(Msg),
     /// The game speed changed.
     Speed(f64),
     /// The player left the game.

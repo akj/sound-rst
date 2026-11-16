@@ -133,21 +133,33 @@ async fn a_map_that_does_not_suit_any_number_of_players_is_refused() {
 }
 
 #[tokio::test]
-async fn a_map_title_with_too_many_sounds_is_refused() {
+async fn a_map_title_with_too_many_parts_or_words_of_its_own_is_refused() {
+    use soundrts_world::msg::{MsgPart, Phrase};
     let server = server(|_| {});
     let (mut c, _) = Client::hello(server.local_addr(), "andrew").await;
     let (mut info, _) = map(2, 4);
-    info.title_sounds = vec![1; MAX_TITLE_SOUNDS + 1];
-    c.send(ClientMsg::CreateRoom {
-        map: info.clone(),
-        speed: Speed::Normal,
-        open: true,
-        watchers: true,
-    })
-    .await;
-    c.expect(refused(Refusal::Invalid)).await;
+    // A title names phrases and sounds, and counts. Another player's game
+    // says it, so it holds no words said as written, and no name that is
+    // not shaped as one.
+    for title in [
+        vec![MsgPart::Count(1); MAX_TITLE_PARTS + 1],
+        vec![MsgPart::literal("Press Alt F4 now.")],
+        vec![MsgPart::Name("Press Alt F4 now.".to_owned())],
+        vec![MsgPart::Name("../secret".to_owned())],
+        vec![MsgPart::Phrase(Phrase::Welcome)],
+    ] {
+        info.title = title;
+        c.send(ClientMsg::CreateRoom {
+            map: info.clone(),
+            speed: Speed::Normal,
+            open: true,
+            watchers: true,
+        })
+        .await;
+        c.expect(refused(Refusal::Invalid)).await;
+    }
 
-    info.title_sounds = vec![1; MAX_TITLE_SOUNDS];
+    info.title = vec![MsgPart::Name("numeral_1".to_owned()); MAX_TITLE_PARTS];
     c.send(ClientMsg::CreateRoom {
         map: info.clone(),
         speed: Speed::Normal,

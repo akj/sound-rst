@@ -25,7 +25,7 @@ use soundrts::log::Log;
 use soundrts::mainmenu::main_menu;
 use soundrts::paths::Paths;
 use soundrts::sound::{SoundEvent, SoundLog, StereoVolume};
-use soundrts::testkit::{RecordingSpeech, upstream_root};
+use soundrts::testkit::{RecordingSpeech, game_root};
 use soundrts::voice::{UtteranceLog, UtterancePart, VoiceEvent};
 
 /// The virtual epoch: 10^9 s, in microseconds.
@@ -316,7 +316,9 @@ impl Replay {
                         line.push(' ');
                         match p {
                             UtterancePart::Text(t) => line.push_str(&json_str(&t)),
-                            UtterancePart::Sound(s) => line.push_str(&format!("[{s}]")),
+                            UtterancePart::Sound(s) => {
+                                line.push_str(&format!("[{}]", recorded(&s)))
+                            }
                         }
                     }
                     if (lv, rv) != (DEFAULT_VOLUME, DEFAULT_VOLUME) {
@@ -489,6 +491,7 @@ fn sound_line(e: &SoundEvent) -> String {
             started,
             ..
         } => {
+            let sound = recorded(sound);
             let gains = |g: &Option<(f64, f64)>| match g {
                 Some((l, r)) => format!(" gains={},{}", fmt3(*l), fmt3(*r)),
                 None => String::new(),
@@ -532,6 +535,7 @@ fn sound_line(e: &SoundEvent) -> String {
             started,
             ..
         } => {
+            let sound = recorded(sound);
             let v = match volume {
                 StereoVolume::Both(v) => fmt3(*v),
                 StereoVolume::Split(l, r) => format!("{},{}", fmt3(*l), fmt3(*r)),
@@ -601,6 +605,16 @@ struct ReplayAudio {
     lengths: Rc<RefCell<BTreeMap<String, i64>>>,
 }
 
+/// A sound as the recordings name it. They were recorded from the original,
+/// which names a sound with a number, and the game now names it with the
+/// name the import gives that number. Writing the number shows that the
+/// game plays the same sounds as before.
+fn recorded(sound: &str) -> String {
+    soundrts_import::names::names()
+        .game_number(sound)
+        .map_or_else(|| sound.to_owned(), |n| n.to_string())
+}
+
 /// The length as pygame's `Sound.get_length()` gives it with the mixer at
 /// 44100 Hz (a single precision division), in microseconds.
 fn length_us(sound: &Sound) -> i64 {
@@ -614,9 +628,10 @@ impl AudioOutput for ReplayAudio {
         let len = length_us(sound);
         {
             let mut lengths = self.lengths.borrow_mut();
-            let known = *lengths.entry(sound.key.clone()).or_insert(len);
+            let key = recorded(&sound.key);
+            let known = *lengths.entry(key.clone()).or_insert(len);
             if known != len {
-                lengths.insert(format!("{}@{}", sound.key, sound.mod_name), len);
+                lengths.insert(format!("{key}@{}", sound.mod_name), len);
             }
         }
         let end = (!looping).then(|| self.us.get() + len);
@@ -667,7 +682,7 @@ impl Desktop for TitleDesk {
 fn run(s: &Scenario) -> String {
     let user_dir = tempfile::tempdir().expect("temporary folder");
     let paths = Paths {
-        root: upstream_root(),
+        root: game_root(),
         user: user_dir.path().to_path_buf(),
     };
     paths.create_user_folders(&Log::silent());

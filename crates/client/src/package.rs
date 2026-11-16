@@ -39,6 +39,14 @@ pub const MAX_ENTRIES: usize = 20_000;
 /// deepest folder is 5 below the game folder.
 const MAX_FOLDER_DEPTH: usize = 32;
 
+/// A text file of a layer: where it is, for a message about one of its
+/// lines, and its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextFile {
+    pub path: String,
+    pub text: String,
+}
+
 /// A zip file held in memory, with its entry names in archive order.
 struct ZipData {
     filename: String,
@@ -48,85 +56,11 @@ struct ZipData {
     depth: u32,
 }
 
-/// Where the fields of a zip end record lie: its size, the offsets of its
-/// two disk numbers and of its two entry counts (on this disk, in all), and
-/// the size of each.
-struct EndRecord {
-    size: usize,
-    disks: [usize; 2],
-    disk_len: usize,
-    counts: [usize; 2],
-    count_len: usize,
-}
-
-const END_32: EndRecord = EndRecord {
-    size: 22,
-    disks: [4, 6],
-    disk_len: 2,
-    counts: [8, 10],
-    count_len: 2,
-};
-
-const END_64: EndRecord = EndRecord {
-    size: 56,
-    disks: [16, 20],
-    disk_len: 4,
-    counts: [24, 32],
-    count_len: 8,
-};
-
-/// The entries an end record at `at` states, if a reader could use it: the
-/// whole record is in the file, both disk numbers are 0 and both counts
-/// agree. A reader skips any other record before it reserves room for its
-/// entries (zip 9.5.1, `find_central_directory_end` and
-/// `read_central_header`).
-fn stated_entries(bytes: &[u8], at: usize, record: &EndRecord) -> Option<u64> {
-    let field = |offset: usize, len: usize| -> Option<u64> {
-        let start = at.checked_add(offset)?;
-        let b = bytes.get(start..start.checked_add(len)?)?;
-        Some(b.iter().rev().fold(0, |n, &x| (n << 8) | u64::from(x)))
-    };
-    bytes.get(at..at.checked_add(record.size)?)?;
-    let [d1, d2] = record.disks;
-    if field(d1, record.disk_len)? != 0 || field(d2, record.disk_len)? != 0 {
-        return None;
-    }
-    let [c1, c2] = record.counts;
-    let on_this_disk = field(c1, record.count_len)?;
-    (on_this_disk == field(c2, record.count_len)?).then_some(on_this_disk)
-}
-
 /// Whether a zip file can have more than [`MAX_ENTRIES`] entries, checked
-/// before an index of them is built, whichever directory a reader picks:
-/// - each entry of a central directory starts with its signature, so the
-///   signatures anywhere in the file are at least the entries read, those
-///   that share a name included;
-/// - a reader reserves room for the count an end record states, so no end
-///   record a reader could use, anywhere in the file, may state more. A
-///   32-bit record stating 0xFFFF defers to a 64-bit record and is let
-///   through, which bounds what a reader reserves at 65,535 entries.
-///
-/// The signature of an end record can also turn up inside an entry's data
-/// or the file's comment; there it is held to the limit only if it reads
-/// as a record a reader could use.
+/// before an index of them is built (see
+/// [`soundrts_import::too_many_entries`]).
 pub(crate) fn too_many_entries(bytes: &[u8]) -> bool {
-    let limit = u64::try_from(MAX_ENTRIES).unwrap_or(u64::MAX);
-    let mut entries = 0_usize;
-    for (at, w) in bytes.windows(4).enumerate() {
-        let stated = match w {
-            b"PK\x01\x02" => {
-                entries = entries.saturating_add(1);
-                None
-            }
-            b"PK\x05\x06" => stated_entries(bytes, at, &END_32).filter(|&n| n != 0xFFFF),
-            b"PK\x06\x06" => stated_entries(bytes, at, &END_64),
-            _ => None,
-        };
-        if entries > MAX_ENTRIES || stated.is_some_and(|n| n > limit) {
-            return true;
-        }
-    }
-    false
+    soundrts_import::too_many_entries(bytes, MAX_ENTRIES)
 }
 
 fn too_large(what: &str, limit: u64) -> std::io::Error {
@@ -295,14 +229,8 @@ pub fn universal_newlines(s: &str) -> String {
     }
 }
 
-/// Decodes a text file of the game data. `tts.txt` files may start with a
-/// UTF-8 signature, which is skipped; the other files keep it, as upstream.
-pub fn decode_text(bytes: &[u8], name: &str) -> String {
-    let is_tts = name.rsplit(['/', '\\']).next() == Some("tts.txt");
-    let bytes = match bytes.strip_prefix(b"\xef\xbb\xbf") {
-        Some(rest) if is_tts => rest,
-        _ => bytes,
-    };
+/// Decodes a text file of the game data.
+pub fn decode_text(bytes: &[u8]) -> String {
     universal_newlines(&String::from_utf8_lossy(bytes))
 }
 
@@ -389,7 +317,7 @@ impl Package {
     /// cannot be read.
     pub fn read_text(&self, name: &str) -> Option<String> {
         let bytes = self.open_binary(name).ok()?;
-        Some(decode_text(&bytes, name))
+        Some(decode_text(&bytes))
     }
 
     pub fn isfile(&self, name: &str) -> bool {
@@ -834,12 +762,8 @@ mod tests {
     }
 
     #[test]
-    fn text_gets_unix_line_ends_and_tts_files_lose_their_signature() {
-        assert_eq!(
-            decode_text(b"\xef\xbb\xbfa\r\nb\rc", "ui/tts.txt"),
-            "a\nb\nc"
-        );
-        assert_eq!(decode_text(b"\xef\xbb\xbfa", "ui/style.txt"), "\u{feff}a");
+    fn text_gets_unix_line_ends() {
+        assert_eq!(decode_text(b"a\r\nb\rc"), "a\nb\nc");
     }
 
     /// `bytes` with the uncompressed size of every entry, in its local and

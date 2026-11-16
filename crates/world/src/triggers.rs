@@ -98,11 +98,10 @@ fn is_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
-fn msg_of(numbers: &[i64]) -> Msg {
-    numbers
-        .iter()
-        .map(|n| MsgPart::original(&n.to_string()))
-        .collect()
+/// What the words of an action that says something name. The map was
+/// refused when it loaded if one of them named nothing.
+fn named(words: &[&str]) -> Msg {
+    words.iter().filter_map(|w| MsgPart::named(w)).collect()
 }
 
 impl World {
@@ -231,23 +230,17 @@ impl World {
                 Ok(false)
             }
             "cut_scene" => {
-                let words: Vec<String> = args
-                    .iter()
-                    .map(|e| e.word().map(str::to_owned))
-                    .collect::<Res<_>>()?;
-                self.push(p, Event::Sequence(words));
+                let words: Vec<&str> = args.iter().map(Expr::word).collect::<Res<_>>()?;
+                self.push(p, Event::Sequence(named(&words)));
                 Ok(false)
             }
             "add_objective" => {
                 let n = arg_word(0)?;
-                let mut description = Vec::new();
-                for x in &args[1..] {
-                    let x = x.word()?;
-                    description.push(py_int(x).map_err(|_| number(x))?);
-                }
+                let words: Vec<&str> = args[1..].iter().map(Expr::word).collect::<Res<_>>()?;
+                let description = named(&words);
                 if !self.pl(p).objectives.iter().any(|o| o.number == n) {
                     let mut m = msg(Phrase::NewObjective);
-                    m.extend(msg_of(&description));
+                    m.extend(description.iter().cloned());
                     self.plm(p).objectives.push(Objective {
                         number: n,
                         description,
@@ -260,7 +253,7 @@ impl World {
                 let n = arg_word(0)?;
                 if let Some(i) = self.pl(p).objectives.iter().position(|o| o.number == n) {
                     let mut m = msg(Phrase::ObjectiveComplete);
-                    m.extend(msg_of(&self.pl(p).objectives[i].description));
+                    m.extend(self.pl(p).objectives[i].description.iter().cloned());
                     self.send_voice_important(p, m);
                     self.plm(p).objectives.remove(i);
                     if self.pl(p).objectives.is_empty() {

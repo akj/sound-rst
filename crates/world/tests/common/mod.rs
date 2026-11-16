@@ -1,25 +1,31 @@
-//! Helpers for the tests that read the original game's data.
+//! Helpers for the tests that read the game's data, as imported from the
+//! original.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
 
 use soundrts_world::{AiScripts, Controller, EntityId, PlayerId, Rules, World};
 
-/// The pinned original game, fetched by `scripts/fetch-upstream.ps1`.
+/// The pinned original game, fetched and imported by
+/// `scripts/fetch-upstream.ps1`.
 pub fn upstream() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
     assert!(
         dir.join("res/rules.txt").is_file(),
-        "the original game is missing from {}: run scripts/fetch-upstream.ps1",
+        "the imported game data is missing from {}: run scripts/fetch-upstream.ps1",
         dir.display()
     );
     dir
 }
 
-/// A text file of the original, decoded as the original does (UTF-8, bad
+/// A text file of the game data, decoded as the original does (UTF-8, bad
 /// bytes replaced).
 pub fn read(relative: &str) -> String {
-    let path = upstream().join(relative);
+    // The original's own test maps stay in its checkout.
+    let path = match relative.strip_prefix("original/") {
+        Some(relative) => upstream().join("../soundrts-upstream").join(relative),
+        None => upstream().join(relative),
+    };
     let bytes =
         std::fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     String::from_utf8_lossy(&bytes).into_owned()

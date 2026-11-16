@@ -30,7 +30,16 @@ answer different questions:
 Multiplayer games and the record check compare the digest, so a change of
 the digest files also needs a new `SIM_VERSION` (see Record again).
 
-The cases are listed in `cases.txt`. A player is a login or `ai_<type>`,
+The cases are listed in `cases.txt`. A map path there is relative to
+`vendor/game-data`, the imported game. A path that starts with `original/`
+is relative to `vendor/soundrts-upstream`: three cases run on the
+original's own test maps, read as they are.
+
+The dump of a built map holds the map's title and objective as the
+original's numbers. The maps now hold names, so the test writes each name
+as the number that `crates/import/src/original_names.txt` gives it
+(`dump_static` in `../traces.rs`): the hashes in `static_hashes.txt` still
+compare with the maps the original built. A player is a login or `ai_<type>`,
 then optionally `:<alliance>`. Computers are allied with each other by
 default.
 

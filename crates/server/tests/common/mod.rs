@@ -65,7 +65,7 @@ fn map_of(bytes: Vec<u8>, min: u8, max: u8) -> (MapInfo, MapData) {
     let info = MapInfo {
         file_name: file_name.clone(),
         hash: MapHash::of(&bytes),
-        title_sounds: vec![1000],
+        title: vec![soundrts_world::msg::MsgPart::Name("ambience/path".into())],
         nb_players_min: min,
         nb_players_max: max,
     };
@@ -425,7 +425,7 @@ pub async fn ready(clients: &mut [Client], who: usize, members: &[usize]) {
 /// A file of the original game.
 pub fn read(relative: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../vendor/soundrts-upstream")
+        .join("../../vendor/game-data")
         .join(relative);
     let bytes = std::fs::read(&path)
         .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"));

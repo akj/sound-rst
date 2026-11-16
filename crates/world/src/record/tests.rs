@@ -15,7 +15,7 @@ use crate::world::multiplayer_default_triggers;
 
 fn read(relative: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../vendor/soundrts-upstream")
+        .join("../../vendor/game-data")
         .join(relative);
     let bytes = std::fs::read(&path)
         .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"));

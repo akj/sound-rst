@@ -52,6 +52,24 @@ fn main() -> ExitCode {
             }
         };
     }
+    if let Some((from, to)) = &options.import {
+        return match soundrts_import::import(from, to) {
+            Ok(report) => {
+                let mut text = report.warnings.join("\n");
+                text.push_str(&format!(
+                    "\n{} files written to {}\n",
+                    report.files,
+                    to.display()
+                ));
+                notice::print(text.trim_start());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                notice::fatal(&format!("Not imported: {e}"));
+                ExitCode::FAILURE
+            }
+        };
+    }
     if options.fetch_data {
         return if upstream::fetch_data(options.root.as_deref()) {
             ExitCode::SUCCESS

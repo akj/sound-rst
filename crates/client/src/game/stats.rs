@@ -8,7 +8,6 @@ use soundrts_world::player::{StatEvent, StatTarget};
 use crate::style::Style;
 
 use super::order::PRECISION;
-use super::style_msg;
 
 /// The messages of the score: the outcome and the duration, units and
 /// buildings, each resource, then the score. None before the game is over
@@ -67,7 +66,7 @@ pub fn score_msgs_of(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg>
         msgs.push(
             [
                 nb2msg(floordiv(gathered, PRECISION)),
-                style_msg(style, "parameters", &format!("resource_{i}_title")),
+                style.get("parameters").resource_title_msg(i),
                 msg(Phrase::Gathered),
                 comma(),
                 nb2msg(floordiv(stats.consumed(i, resources), PRECISION)),

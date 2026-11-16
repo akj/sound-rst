@@ -14,7 +14,7 @@ use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
 use crate::voice::Heard;
 
 fn t(s: &str) -> Msg {
-    vec![MsgPart::original(s)]
+    vec![MsgPart::literal(s)]
 }
 
 /// Runs the loop until `n` utterances have started since the `from`th.
@@ -39,7 +39,7 @@ fn turns_while_said(h: &mut Harness, g: &mut TestGame) -> i64 {
 }
 
 fn story(texts: &[&str]) -> SrvEvent {
-    SrvEvent::Sequence(texts.iter().map(|s| s.to_string()).collect())
+    SrvEvent::Sequence(texts.iter().map(|s| MsgPart::literal(*s)).collect())
 }
 
 #[test]

@@ -47,7 +47,7 @@ fn jl1() -> SaveInfo {
         game: SavedGame::Training {
             map: "jl1".to_owned(),
         },
-        title: vec![MsgPart::Original("jl1".to_owned())],
+        title: vec![MsgPart::literal("jl1")],
     }
 }
 

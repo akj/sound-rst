@@ -32,7 +32,7 @@ Preconditions:
 
 For Andrew, with NVDA running. Each step passes when NVDA says the quoted words.
 
-1. In a terminal, run `cargo run -p soundrts -- --root vendor/soundrts-upstream`. You hear "SoundRTS 1.3.8.1, please make a selection".
+1. In a terminal, run `cargo run -p soundrts -- --root vendor/game-data`. You hear "SoundRTS 1.3.8.1, please make a selection".
 2. Press Down three times, with a pause after each. You hear a click and "single player, play on your computer", then "multiplayer, play on the Internet", then "options, modify your parameters".
 3. Press Down twice quickly. The second item cuts the first one off.
 4. Press O, then Enter. You hear "options, modify your parameters", then "options", then "options menu".

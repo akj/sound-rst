@@ -2,8 +2,8 @@
 # opens a window.
 #
 # 1. The game in the folder that scripts/stage-release.ps1 made fetches the
-#    original game's data, finds it, and the data has the same bytes as the
-#    checkout that scripts/fetch-upstream.ps1 makes.
+#    original game's data, imports it, finds it, and the data has the same
+#    bytes as the imported data that scripts/fetch-upstream.ps1 makes.
 # 2. With -Installer: the installer installs without a question, the
 #    installed game finds the same data, and the uninstaller removes the
 #    program and its Start menu entry.
@@ -24,9 +24,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $Repo = Split-Path -Parent $PSScriptRoot
-$Upstream = Join-Path $Repo 'vendor/soundrts-upstream'
+$Upstream = Join-Path $Repo 'vendor/game-data'
 $Commit = (Get-Content (Join-Path $PSScriptRoot 'upstream-commit.txt') -Raw).Trim()
-$DataFolders = 'res', 'cfg', 'mods', 'single'
+$DataFolders = 'res', 'mods', 'single'
 
 if (-not (Test-Path (Join-Path $Upstream 'res/rules.txt'))) {
     throw "$Upstream is missing: run scripts/fetch-upstream.ps1 first."
@@ -95,7 +95,10 @@ $different = @($checkout.Keys | Where-Object { $fetched[$_] -ne $checkout[$_] })
 if ($different.Count -gt 0) {
     throw "The fetched data differs from $Upstream in $($different.Count) files, for example $($different[0])."
 }
-Write-Output "The fetched data is the checkout's: $($fetched.Count) files, the same bytes."
+if ((Get-Content (Join-Path $ExpectedRoot 'import.txt') -Raw) -ne (Get-Content (Join-Path $Upstream 'import.txt') -Raw)) {
+    throw "The fetched data and $Upstream were imported with different tables of names."
+}
+Write-Output "The fetched data is the checkout's imported data: $($fetched.Count) files, the same bytes."
 
 $server = Invoke-Program (Join-Path $Folder 'soundrts-server.exe') @('--help')
 if ($server -notlike '*--port*') { throw "soundrts-server.exe --help does not describe --port:`n$server" }

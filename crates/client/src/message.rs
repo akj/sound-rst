@@ -224,7 +224,10 @@ pub fn translate_and_collapse(parts: &Msg, sounds: &Sounds, which: Parts) -> Vec
     let mut result: Vec<Spoken> = Vec::new();
     let mut after_text = false;
     for part in parts {
-        match sounds.translate(part) {
+        let Some(spoken) = sounds.translate(part) else {
+            continue;
+        };
+        match spoken {
             Spoken::Sound(s) => {
                 after_text = false;
                 if which != Parts::Texts {

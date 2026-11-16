@@ -106,7 +106,7 @@ fn join<T>(name: &str, t: std::thread::JoinHandle<T>) -> T {
 
 /// jl1 with a comment added: a map only Andrew has.
 fn private_map() -> Vec<u8> {
-    let root = soundrts::testkit::upstream_root();
+    let root = soundrts::testkit::game_root();
     let mut bytes = std::fs::read(root.join("res/multi/jl1.txt")).unwrap();
     bytes.extend_from_slice(b"\n; a map of Andrew's own\n");
     bytes
@@ -132,7 +132,7 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         // the private map is remembered: the menu opens on it
         s = s.at(1.2).tap(Key::Down).at(1.5).tap(Key::Return);
         // The map's sound plays before the speed menu.
-        s = s.wait_for("start a game on <1097> zzmap 1");
+        s = s.wait_for("start a game on <event/healed> zzmap 1");
         s = keys(s, &[Key::Down, Key::Return]);
         s = s.wait_for_exact("zzmap 1");
         let in_room = s.wait_count();
@@ -210,13 +210,13 @@ fn a_player_hosts_another_joins_by_address_and_they_chat() {
         "{andrew_said:#?}"
     );
     assert!(
-        has(&andrew_said, "<6114> bob says salut à tous"),
+        has(&andrew_said, "<magic/conversion> bob says salut à tous"),
         "{andrew_said:#?}"
     );
     // Bob downloaded the map, kept it, and heard Andrew's line.
     assert!(has(&bob_said, "Downloading..."), "{bob_said:#?}");
     assert!(
-        has(&bob_said, "<6114> andrew says héllo bob"),
+        has(&bob_said, "<magic/conversion> andrew says héllo bob"),
         "{bob_said:#?}"
     );
     let expected = format!("zzmap_{}.txt", &map_hash.as_str()[..8]);

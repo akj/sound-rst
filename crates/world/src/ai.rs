@@ -1832,8 +1832,7 @@ mod tests {
     /// A world with the original's rules and this map.
     /// A file of the original game.
     fn read(f: &str) -> String {
-        let dir =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
         let bytes = std::fs::read(dir.join(f))
             .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
         String::from_utf8_lossy(&bytes).into_owned()

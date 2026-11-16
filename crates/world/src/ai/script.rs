@@ -266,8 +266,12 @@ mod tests {
     use crate::AiScripts;
 
     fn read(f: &str) -> String {
-        let dir =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        // The original's own test files stay in its checkout.
+        let (dir, f) = match f.strip_prefix("original/") {
+            Some(f) => ("../../vendor/soundrts-upstream", f),
+            None => ("../../vendor/game-data", f),
+        };
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
         let bytes = std::fs::read(dir.join(f))
             .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
         String::from_utf8_lossy(&bytes).replace("\r\n", "\n")
@@ -296,7 +300,7 @@ mod tests {
             let ai = ["res/ai.txt", &format!("{layer}/ai.txt")];
             assert_eq!(warnings(&rules, &ai), Vec::<String>::new(), "{layer}");
         }
-        let jl4 = "soundrts/tests/res/multi/jl4";
+        let jl4 = "original/soundrts/tests/res/multi/jl4";
         assert_eq!(
             warnings(
                 &["res/rules.txt", &format!("{jl4}/rules.txt")],

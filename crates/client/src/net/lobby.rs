@@ -4,14 +4,12 @@
 use std::sync::Arc;
 
 use soundrts_protocol::{
-    Computer, Income, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_TITLE_SOUNDS, MapInfo,
-    RoomChange, RoomId, RoomState, RoomSummary, ServerName, Skill, Slot, SlotIndex, SlotPlayer,
-    Whereabouts,
+    Computer, Income, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MapInfo, RoomChange, RoomId,
+    RoomState, RoomSummary, ServerName, Skill, Slot, SlotIndex, SlotPlayer, Whereabouts,
 };
 use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg, period};
 
 use super::words;
-use crate::game::style_msg;
 use crate::mapfile::{Map, title_of};
 use crate::message::RoomTopic;
 use crate::style::Style;
@@ -57,8 +55,10 @@ pub fn check_watchers(watchers: usize) -> Result<(), TooMany> {
 pub fn check_room(map: &MapInfo, slots: usize) -> Result<(), TooMany> {
     if slots > MAX_ROOM_SLOTS {
         Err(TooMany("players in a room"))
-    } else if map.title_sounds.len() > MAX_TITLE_SOUNDS {
-        Err(TooMany("sounds in a map title"))
+    } else if !map.title_is_valid() {
+        Err(TooMany(
+            "parts in a map title, or a part that is no name and no count",
+        ))
     } else {
         Ok(())
     }
@@ -439,11 +439,7 @@ impl RoomModel {
             RoomChange::Faction { slot } => {
                 let s = self.state.slots.get(*slot)?;
                 (
-                    [
-                        slot_name(*slot),
-                        style_msg(style, s.faction.as_str(), "title"),
-                    ]
-                    .concat(),
+                    [slot_name(*slot), style.get(s.faction.as_str()).title_msg()].concat(),
                     RoomTopic::Faction(*slot),
                 )
             }

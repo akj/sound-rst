@@ -16,6 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use soundrts_world::msg::MsgPart;
 pub use soundrts_world::{Income, Skill};
 
 pub mod game;
@@ -61,8 +62,8 @@ pub const MAX_COMMAND_BYTES: usize = 4096;
 /// The length of a [`SeatToken`], in hex digits: 128 random bits.
 pub const SEAT_TOKEN_CHARS: usize = 32;
 
-/// The most sounds in [`MapInfo::title_sounds`].
-pub const MAX_TITLE_SOUNDS: usize = 16;
+/// The most parts in [`MapInfo::title`].
+pub const MAX_TITLE_PARTS: usize = 16;
 
 /// The largest map file.
 pub const MAX_MAP_BYTES: usize = 16 * 1024 * 1024;
@@ -566,11 +567,26 @@ impl Computer {
 pub struct MapInfo {
     pub file_name: MapFileName,
     pub hash: MapHash,
-    /// The sound numbers of the map's `title` line, said after its name.
-    /// At most [`MAX_TITLE_SOUNDS`]; a server refuses a room with more.
-    pub title_sounds: Vec<i64>,
+    /// What the map's `title` line names, said after the map's name:
+    /// names of phrases and sounds, and counts. A server refuses a room
+    /// whose title [`MapInfo::title_is_valid`] refuses.
+    pub title: Vec<MsgPart>,
     pub nb_players_min: u8,
     pub nb_players_max: u8,
+}
+
+impl MapInfo {
+    /// Whether the title is at most [`MAX_TITLE_PARTS`] parts, each the
+    /// name of a phrase or of a sound, or a count. A title holds no words
+    /// said as written: another player's client says it.
+    pub fn title_is_valid(&self) -> bool {
+        self.title.len() <= MAX_TITLE_PARTS
+            && self.title.iter().all(|part| match part {
+                MsgPart::Name(name) => soundrts_world::msg::is_name(name),
+                MsgPart::Count(_) => true,
+                _ => false,
+            })
+    }
 }
 
 /// A map file, sent to the server by a host or to a client that lacks it.

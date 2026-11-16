@@ -46,7 +46,7 @@ res = 1.0
 soundpack = 0.8
 
 [parameters.volume]
-1000 = 0.5
+"ambience/path" = 0.5
 
 [parameters.packages]
 base = "res"
@@ -104,7 +104,11 @@ fn every_setting_changed() -> Config {
             play_movement_sound: false,
             observer_reactivity: 5.0,
             default_volume: [("res".into(), 0.9)].into(),
-            volume: [("1001".into(), 0.25), ("1000".into(), 0.75)].into(),
+            volume: [
+                ("ambience/wood_1".into(), 0.25),
+                ("ambience/path".into(), 0.75),
+            ]
+            .into(),
             packages: Packages {
                 base: "base".into(),
                 additional: vec!["more".into()],
@@ -178,9 +182,9 @@ fn a_file_may_leave_settings_out_and_they_take_their_defaults() {
         },
         Config::default()
     );
-    let c = Config::from_toml("[parameters.volume]\n2000 = 0.1\n").unwrap();
-    assert_eq!(c.parameters.sound_volume("2000", "res"), 0.1);
-    assert_eq!(c.parameters.sound_volume("1000", "res"), 1.0);
+    let c = Config::from_toml("[parameters.volume]\n\"ui/beep\" = 0.1\n").unwrap();
+    assert_eq!(c.parameters.sound_volume("ui/beep", "res"), 0.1);
+    assert_eq!(c.parameters.sound_volume("ambience/path", "res"), 1.0);
     assert_eq!(c.parameters.flattening_factor, 2.0);
     // A file saved by a text editor may start with a byte order mark.
     let c = Config::from_toml("\u{feff}login = \"bo2\"\n").unwrap();

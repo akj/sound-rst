@@ -1,9 +1,11 @@
 //! The data of the original game (rules, maps, sounds, translations),
-//! downloaded at the pinned commit when the game finds none.
+//! downloaded at the pinned commit when the game finds none, and imported.
 //!
 //! It is not part of this program, so the game fetches GitHub's zip of the
 //! commit into the player's folder. The zip comes from outside: every read
-//! is bounded, and only the four folders the game reads are extracted.
+//! is bounded, and only the three folders the game imports are extracted.
+//! The importer (`soundrts-import`) then converts them into the files the
+//! game reads.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -28,12 +30,10 @@ use crate::tts::{SpeechBackend, screen_reader_speech};
 /// The commit of the original game whose data the port reads.
 pub const COMMIT: &str = include_str!("../../../scripts/upstream-commit.txt").trim_ascii();
 
-/// The folders of the zip that the game reads. The zip also has a `user`
-/// folder, which would become the settings folder inside the game root.
-const FOLDERS: [&str; 4] = ["res", "cfg", "mods", "single"];
-
-/// The file that marks a folder as the game root.
-const ROOT_MARKER: &str = "res/rules.txt";
+/// The folders of the zip that the game imports. The zip also has a
+/// `user` folder, which would become the settings folder inside the game
+/// root.
+const FOLDERS: [&str; 3] = ["res", "mods", "single"];
 
 /// The most parts an entry's path may have, top folder included. The data
 /// has at most 6. It bounds the folders one entry can make.
@@ -119,14 +119,17 @@ pub fn fetch(player: &Path, progress: &mut dyn FnMut(u64)) -> Result<PathBuf, St
 }
 
 /// Installs the zip that `reader` gives as `<data>/<commit>` and returns
-/// that folder. It is extracted into `<data>/<commit>.partial` first, which
-/// is removed on any failure, so the data folder is complete or absent.
-/// Safe to rerun, also after a run that stopped halfway.
+/// that folder. The zip is extracted into `<data>/<commit>.original`, and
+/// imported from there into `<data>/<commit>.partial`, which becomes the
+/// data folder. Both are removed on any failure, so the data folder is
+/// complete or absent. Safe to rerun, also after a run that stopped
+/// halfway.
 ///
 /// One game installs at a time: a second is refused while the first works,
 /// and finds the data there afterwards. Data that is complete is never
 /// replaced: a running game may be reading it. The data of an older pin is
-/// left for the same reason.
+/// left for the same reason. Data that another version of the importer
+/// made is not complete for this game, and is replaced.
 pub fn install(
     reader: impl Read,
     data: &Path,
@@ -135,26 +138,30 @@ pub fn install(
     progress: &mut dyn FnMut(u64),
 ) -> Result<PathBuf, String> {
     let target = data.join(commit);
-    let partial = data.join(format!("{commit}.partial"));
+    let original = data.join(format!("{commit}.original"));
     fs::create_dir_all(data).map_err(|e| format!("cannot make {}: {e}", data.display()))?;
     let _lock = lock(data)?;
-    if target.join(ROOT_MARKER).is_file() {
+    if paths::is_root(&target) {
         return Ok(target);
     }
-    remove_dir(&partial)?;
+    remove_dir(&original)?;
     let result = read_limited(reader, limits.download, progress)
-        .and_then(|bytes| extract(bytes, &partial, limits))
+        .and_then(|bytes| extract(bytes, &original, limits))
         .and_then(|()| {
-            if !partial.join(ROOT_MARKER).is_file() {
-                return Err(format!("the download holds no {ROOT_MARKER}"));
+            if !soundrts_import::is_original_game(&original) {
+                return Err("the download holds no res/rules.txt and res/ui/tts.txt".to_owned());
             }
-            // At most what an install that failed left: it has no rules.
+            // At most what an install that failed left, or the data of
+            // another version of the importer.
             remove_dir(&target)?;
-            fs::rename(&partial, &target)
-                .map_err(|e| format!("cannot move the data to {}: {e}", target.display()))
+            // What an import that stopped left. This folder is the game's
+            // own, and the lock is held.
+            remove_dir(&data.join(format!("{commit}.partial")))?;
+            soundrts_import::import_game(&original, &target).map(|_| ())
         });
+    let _ = fs::remove_dir_all(&original);
     if let Err(e) = result {
-        let _ = fs::remove_dir_all(&partial);
+        let _ = fs::remove_dir_all(data.join(format!("{commit}.partial")));
         return Err(e);
     }
     Ok(target)
@@ -244,7 +251,7 @@ fn top_of(name: &str) -> Option<&str> {
     safe.then_some(top)
 }
 
-/// Extracts the entries under `<top folder>/{res,cfg,mods,single}/` into
+/// Extracts the entries under `<top folder>/{res,mods,single}/` into
 /// `dest`, without the top folder. The limits hold for what is actually
 /// extracted, whatever sizes the zip states.
 fn extract(bytes: Vec<u8>, dest: &Path, limits: &Limits) -> Result<(), String> {
@@ -485,6 +492,10 @@ mod tests {
             ("soundrts-c0ffee/README.md", b"readme"),
             ("soundrts-c0ffee/res/", b""),
             ("soundrts-c0ffee/res/rules.txt", b"rules"),
+            (
+                "soundrts-c0ffee/res/ui/tts.txt",
+                b"5 What are your orders?\n86 footman\n",
+            ),
             ("soundrts-c0ffee/res/ui/bindings.txt", b"keys"),
             ("soundrts-c0ffee/cfg/language.txt", b"en"),
             ("soundrts-c0ffee/mods/orc/rules.txt", b"orc"),
@@ -535,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_four_folders_are_installed_without_the_top_folder() {
+    fn only_the_three_folders_are_imported_without_the_top_folder() {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().join("data");
         let bytes = game_zip();
@@ -548,14 +559,20 @@ mod tests {
         assert_eq!(
             files(&root),
             [
-                "cfg/language.txt",
+                "import.txt",
                 "mods/orc/rules.txt",
                 "res/rules.txt",
+                "res/text/en.txt",
                 "res/ui/bindings.txt",
                 "single/campaign/0.txt",
             ]
         );
         assert_eq!(fs::read(root.join("res/rules.txt")).unwrap(), b"rules");
+        assert_eq!(
+            fs::read_to_string(root.join("res/text/en.txt")).unwrap(),
+            "what_are_your_orders = What are your orders?\nfootman = footman\n"
+        );
+        assert!(paths::is_root(&root));
         assert_eq!(entries(&data), ["c0ffee", "install.lock"]);
         assert_eq!(received.last(), Some(&(bytes.len() as u64)));
         // The installed folder is what the game finds.
@@ -575,7 +592,11 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             let data = dir.path().join("data");
-            let bytes = zip_of(&[("soundrts-c0ffee/res/rules.txt", b"rules"), (name, b"evil")]);
+            let bytes = zip_of(&[
+                ("soundrts-c0ffee/res/rules.txt", b"rules"),
+                ("soundrts-c0ffee/res/ui/tts.txt", b"5 hello\n"),
+                (name, b"evil"),
+            ]);
             let error = install_bytes(&bytes, &data, &SMALL).unwrap_err();
             assert!(error.contains("unsafe path"), "{name}: {error}");
             assert_eq!(entries(&data), ["install.lock"], "{name}");
@@ -603,10 +624,18 @@ mod tests {
         let zeros = vec![0_u8; 3000];
         let one_big = zip_of(&[
             ("soundrts-c0ffee/res/rules.txt", b"rules"),
+            (
+                "soundrts-c0ffee/res/ui/tts.txt",
+                b"5 What are your orders?\n86 footman\n",
+            ),
             ("soundrts-c0ffee/res/big.ogg", &zeros),
         ]);
         let many = zip_of(&[
             ("soundrts-c0ffee/res/rules.txt", b"rules"),
+            (
+                "soundrts-c0ffee/res/ui/tts.txt",
+                b"5 What are your orders?\n86 footman\n",
+            ),
             ("soundrts-c0ffee/res/a", &zeros[..1000]),
             ("soundrts-c0ffee/res/b", &zeros[..1000]),
             ("soundrts-c0ffee/res/c", &zeros[..1000]),
@@ -704,10 +733,17 @@ mod tests {
         // Another game finished installing while this one was asking.
         fs::create_dir_all(data.join("c0ffee/res")).unwrap();
         fs::write(data.join("c0ffee/res/rules.txt"), "theirs").unwrap();
+        let stamp = data.join("c0ffee").join(soundrts_import::STAMP_FILE);
+        fs::write(&stamp, soundrts_import::stamp()).unwrap();
         let root = install_bytes(&game_zip(), &data, &SMALL).unwrap();
         assert_eq!(root, data.join("c0ffee"));
         assert_eq!(fs::read(root.join("res/rules.txt")).unwrap(), b"theirs");
-        assert_eq!(files(&root), ["res/rules.txt"]);
+        assert_eq!(files(&root), ["import.txt", "res/rules.txt"]);
+        // Data that another version of the importer made is replaced.
+        fs::write(&stamp, "soundrts-import 0 0").unwrap();
+        let root = install_bytes(&game_zip(), &data, &SMALL).unwrap();
+        assert_eq!(fs::read(root.join("res/rules.txt")).unwrap(), b"rules");
+        assert!(paths::is_root(&root));
     }
 
     #[test]
@@ -747,7 +783,11 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             let data = dir.path().join("data");
-            let bytes = zip_of(&[("soundrts-c0ffee/res/rules.txt", b"rules"), (name, b"x")]);
+            let bytes = zip_of(&[
+                ("soundrts-c0ffee/res/rules.txt", b"rules"),
+                ("soundrts-c0ffee/res/ui/tts.txt", b"5 hello\n"),
+                (name, b"x"),
+            ]);
             let error = install_bytes(&bytes, &data, &SMALL).unwrap_err();
             assert!(error.contains("unsafe path"), "{name}: {error}");
             assert_eq!(entries(&data), ["install.lock"], "{name}");
@@ -757,6 +797,10 @@ mod tests {
         let data = dir.path().join("data");
         let bytes = zip_of(&[
             ("soundrts-c0ffee/res/rules.txt", b"rules"),
+            (
+                "soundrts-c0ffee/res/ui/tts.txt",
+                b"5 What are your orders?\n86 footman\n",
+            ),
             ("soundrts-c0ffee/res/console.txt", b"a"),
             ("soundrts-c0ffee/res/com10.txt", b"b"),
             (
@@ -768,10 +812,12 @@ mod tests {
         assert_eq!(
             files(&root),
             [
+                "import.txt",
                 "res/1/2/3/4/5/6/7/8/9/10/11/12/13/x.txt",
                 "res/com10.txt",
                 "res/console.txt",
-                "res/rules.txt"
+                "res/rules.txt",
+                "res/text/en.txt"
             ]
         );
     }

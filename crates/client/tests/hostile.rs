@@ -1,8 +1,7 @@
 //! Hostile interface files and hostile games on a server.
 //!
-//! Every style, key bindings and translation file of the original's
-//! `res/ui*` folders, its mods and its folder map
-//! (`soundrts/tests/res/multi/jl4`) is changed at random many times over,
+//! Every style, key bindings and language file of the game, its mods and
+//! its campaigns is changed at random many times over,
 //! and each changed text must be read without a panic within
 //! [`CASE_BOUND`]: as an installed layer, then as the layer of a map that
 //! came from a server.
@@ -17,7 +16,6 @@
 //! cases run on a stack of 1 MiB, the size of a Windows program's main
 //! thread.
 
-use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,10 +24,11 @@ use std::time::{Duration, Instant};
 use soundrts::bindings::{BindingError, Bindings, Chord};
 use soundrts::clock::Clock;
 use soundrts::log::Log;
+use soundrts::package::TextFile;
 use soundrts::parameters::Parameters;
-use soundrts::sound_cache::{SoundCache, update_text_table};
+use soundrts::sound_cache::{SoundCache, read_language_file};
 use soundrts::style::Style;
-use soundrts::testkit::{FakeStream, Harness, Script, TestGame, slot, upstream_root};
+use soundrts::testkit::{FakeStream, Harness, Script, TestGame, game_root, slot};
 use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
 use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, Speed};
 use soundrts_world::msg::MsgPart;
@@ -41,7 +40,7 @@ use soundrts_world::{Event, Place};
 /// The original's files take a few milliseconds in a debug build.
 const CASE_BOUND: Duration = Duration::from_secs(2);
 
-/// Changed texts per file. With the 39 files, 3,120 cases.
+/// Changed texts per file. With the 47 files, 3760 cases.
 const CASES_PER_FILE: u64 = 80;
 
 const SEED: u64 = 0x50_756e_6453;
@@ -231,13 +230,9 @@ enum Kind {
 
 /// The files changed, in a fixed order.
 fn files() -> Vec<(PathBuf, Kind)> {
-    let root = upstream_root();
+    let root = game_root();
     let mut found = Vec::new();
-    let mut dirs = vec![
-        root.join("res"),
-        root.join("mods"),
-        root.join("soundrts/tests/res/multi/jl4"),
-    ];
+    let mut dirs = vec![root.join("res"), root.join("mods"), root.join("single")];
     while let Some(dir) = dirs.pop() {
         for e in std::fs::read_dir(&dir).unwrap().flatten() {
             let path = e.path();
@@ -245,19 +240,16 @@ fn files() -> Vec<(PathBuf, Kind)> {
                 dirs.push(path);
                 continue;
             }
-            let in_ui = path
-                .parent()
-                .and_then(Path::file_name)
-                .is_some_and(|d| d.to_string_lossy().starts_with("ui"));
-            let kind = match path.file_name().and_then(|n| n.to_str()) {
-                Some("style.txt") => Kind::Style,
-                Some("bindings.txt") => Kind::Bindings,
-                Some("tts.txt") => Kind::Translation,
+            let folder = path.parent().and_then(Path::file_name);
+            let folder = folder.map(|d| d.to_string_lossy().into_owned());
+            let name = path.file_name().and_then(|n| n.to_str());
+            let kind = match (folder.as_deref(), name) {
+                (Some("ui"), Some("style.txt")) => Kind::Style,
+                (Some("ui"), Some("bindings.txt")) => Kind::Bindings,
+                (Some("text"), Some(_)) => Kind::Translation,
                 _ => continue,
             };
-            if in_ui {
-                found.push((path, kind));
-            }
+            found.push((path, kind));
         }
     }
     found.sort();
@@ -275,12 +267,18 @@ fn read(kind: Kind, base: &str, text: &str) {
     let log = Log::silent();
     match kind {
         Kind::Style => {
+            let file = |text: &str| TextFile {
+                path: "ui/style.txt".to_owned(),
+                text: text.to_owned(),
+            };
+            // Some names exist and some do not.
+            let exists = |name: &str| !name.len().is_multiple_of(3);
             let mut style = Style::new(log.clone());
-            style.load(&[base, text]);
+            style.load(&[file(base), file(text)], &exists);
             look_up(&style);
             let mut style = Style::new(log);
-            style.load(&[base]);
-            style.add_downloaded(&[text]);
+            style.load(&[file(base)], &exists);
+            style.add_downloaded(&[file(text)], &exists);
             look_up(&style);
         }
         Kind::Bindings => {
@@ -294,39 +292,32 @@ fn read(kind: Kind, base: &str, text: &str) {
             assert!(b.len() < 100_000);
         }
         Kind::Translation => {
-            let mut table = HashMap::new();
-            update_text_table(&mut table, text, &log);
+            let _ = read_language_file(text);
+            let file = |text: &str| TextFile {
+                path: "text/en.txt".to_owned(),
+                text: text.to_owned(),
+            };
             let params = Arc::new(Parameters::default());
-            let mut cache = SoundCache::new(
-                &[base.to_owned(), text.to_owned()],
-                &[],
-                params.clone(),
-                log.clone(),
-            );
+            let mut cache =
+                SoundCache::new(&[file(base), file(text)], &[], params.clone(), log.clone());
             translate(&mut cache);
-            let mut cache = SoundCache::new(&[base.to_owned()], &[], params, log);
-            cache.add_downloaded(&[text.to_owned()], &[]);
+            let mut cache = SoundCache::new(&[file(base)], &[], params, log);
+            cache.add_downloaded(&[file(text)], &[]);
             translate(&mut cache);
         }
     }
 }
 
 fn look_up(style: &Style) {
-    let objects: Vec<String> = style.objects().map(str::to_owned).collect();
-    for o in objects.iter().take(300) {
-        for attr in [
-            "title",
-            "noise",
-            "is_a",
-            "attack_hit_level_2",
-            "x_level_",
-            "é_level_1",
-        ] {
-            let _ = style.get_or_warn(o, attr, false);
-        }
-        let _ = style.noise(o, "noise_when_moving");
-        let _ = style.words(o, "alert");
+    for (name, object) in style.objects().take(300) {
+        assert_eq!(style.get(name), object);
+        let _ = (object.title_msg(), object.title_names());
+        let _ = (object.attack_hit_at(2), object.attack_hit_at(10));
+        let _ = object.refusal_msg(&soundrts_world::events::Reason::NotEnoughResource(3));
+        let _ = object.resource_title_msg(0);
+        let _ = soundrts::style::mine(&object.alert);
     }
+    let _ = style.get("é_level_1").title_msg();
 }
 
 fn translate(cache: &mut SoundCache) {
@@ -338,18 +329,24 @@ fn translate(cache: &mut SoundCache) {
         "999999999999",
         "18446744073709551616",
         "é",
+        "../../secret",
+        "what_are_your_orders",
     ] {
-        let _ = cache.translate(&MsgPart::original(key));
+        let _ = cache.translate(&MsgPart::Name(key.to_owned()));
     }
 }
 
 #[test]
 fn hostile_interface_files_are_read_without_a_panic() {
     let files = files();
-    assert_eq!(files.len(), 39, "{files:#?}");
-    let root = upstream_root();
-    let base = |name: &str| std::fs::read_to_string(root.join("res/ui").join(name)).unwrap();
-    let bases = [base("style.txt"), base("bindings.txt"), base("tts.txt")];
+    assert_eq!(files.len(), 47, "{files:#?}");
+    let root = game_root();
+    let base = |name: &str| std::fs::read_to_string(root.join("res").join(name)).unwrap();
+    let bases = [
+        base("ui/style.txt"),
+        base("ui/bindings.txt"),
+        base("text/en.txt"),
+    ];
     let worker = std::thread::Builder::new()
         .stack_size(1024 * 1024)
         .spawn(move || {
@@ -559,7 +556,7 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
             m.state.objectives = (0..=soundrts_world::MAX_OBJECTIVES)
                 .map(|i| Objective {
                     number: i.to_string(),
-                    description: vec![1],
+                    description: soundrts_world::msg::nb2msg(1),
                 })
                 .collect();
             s[2] = encoded(SeatFrame::Whole(m));

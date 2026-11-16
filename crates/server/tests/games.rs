@@ -31,7 +31,7 @@ fn jl2() -> (MapInfo, MapData) {
     let info = MapInfo {
         file_name: file_name.clone(),
         hash: MapHash::of(&bytes),
-        title_sounds: vec![3002],
+        title: vec![soundrts_world::msg::MsgPart::Name("numeral_2".into())],
         nb_players_min: 2,
         nb_players_max: 4,
     };

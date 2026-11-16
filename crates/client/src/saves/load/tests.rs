@@ -159,7 +159,7 @@ fn the_load_menu_lists_the_saves_newest_first_and_delete_asks_first() {
         game: SavedGame::Training {
             map: "jl1".to_owned(),
         },
-        title: vec![MsgPart::Original("jl1".to_owned())],
+        title: vec![MsgPart::literal("jl1")],
     };
     let now = wall_now();
     let ui = InterfaceState::default();
@@ -352,7 +352,7 @@ fn a_save_without_a_local_player_first_is_refused() {
         game: SavedGame::Training {
             map: "jl1".to_owned(),
         },
-        title: vec![MsgPart::Original("jl1".to_owned())],
+        title: vec![MsgPart::literal("jl1")],
     };
     let dir = h.client.paths.saves();
     let ui = InterfaceState::default();

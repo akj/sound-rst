@@ -33,13 +33,26 @@ use soundrts_protocol::{
 };
 use soundrts_world::{Command, Controller, GameSetup, Host, PlayerId, TurnMessage};
 
-/// The upstream checkout the tests read the game data from. Panics with
-/// instructions if it is missing.
+/// The imported game data the tests read. Panics with instructions if it
+/// is missing, or if another table of names made it.
+pub fn game_root() -> PathBuf {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
+    assert!(
+        crate::paths::is_root(&root),
+        "The imported game data is missing at {}, or is not this checkout's. Run \
+         scripts/fetch-upstream.ps1.",
+        root.display()
+    );
+    root
+}
+
+/// The checkout of the original, for the tests that read its own test
+/// files. Panics with instructions if it is missing.
 pub fn upstream_root() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
     assert!(
         root.join("res/rules.txt").is_file(),
-        "The upstream game data is missing at {}. Run scripts/fetch-upstream.ps1 first.",
+        "The original game is missing at {}. Run scripts/fetch-upstream.ps1 first.",
         root.display()
     );
     root
@@ -48,6 +61,69 @@ pub fn upstream_root() -> PathBuf {
 /// The upstream test data folder.
 pub fn upstream_tests_dir() -> PathBuf {
     upstream_root().join("soundrts/tests")
+}
+
+/// The original's small test packages, imported: `res`, `res.zip`,
+/// `jl1.txt` and what `single` holds, under the same names. They are
+/// imported once for each test program, into a temporary folder.
+pub fn imported_tests_dir() -> PathBuf {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let dir = DIR.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("temporary folder");
+        let from = upstream_tests_dir();
+        std::fs::create_dir_all(dir.path().join("single")).expect("folder");
+        let jl1 = std::fs::read(from.join("jl1.txt")).expect("jl1.txt");
+        let jl1 = soundrts_import::import_map_text(&jl1, &mut Default::default());
+        std::fs::write(dir.path().join("jl1.txt"), jl1).expect("jl1.txt");
+        for name in [
+            "res",
+            "res.zip",
+            "single/map1",
+            "single/map1.zip",
+            "single/campaign1",
+            "single/campaign1.zip",
+        ] {
+            let (from, to) = (from.join(name), dir.path().join(name));
+            let files = if from.is_dir() {
+                soundrts_import::read_folder(&from)
+            } else {
+                soundrts_import::read_zip(&std::fs::read(&from).expect("zip file"))
+            };
+            let files =
+                files.and_then(|f| soundrts_import::import_files(&f, &mut Default::default()));
+            let files = with_a_real_attribute(files.unwrap_or_else(|e| panic!("{name}: {e}")));
+            let written = if name.ends_with(".zip") {
+                soundrts_import::write_zip(&files)
+                    .and_then(|zip| std::fs::write(&to, zip).map_err(|e| e.to_string()))
+            } else {
+                soundrts_import::write_folder(&to, &files)
+            };
+            written.unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+        dir
+    });
+    dir.path().to_path_buf()
+}
+
+/// The original's test styles give their types an attribute `test`, which
+/// the game does not have. This gives them `shortcut` instead, in every
+/// style of the files and of the zip files inside them.
+fn with_a_real_attribute(files: soundrts_import::Files) -> soundrts_import::Files {
+    files
+        .into_iter()
+        .map(|(path, bytes)| {
+            let bytes = if path.ends_with("ui/style.txt") {
+                let text = String::from_utf8_lossy(&bytes);
+                text.replace("\ntest ", "\nshortcut ").into_bytes()
+            } else if path.ends_with(".zip") {
+                let inside = soundrts_import::read_zip(&bytes).expect("zip file");
+                soundrts_import::write_zip(&with_a_real_attribute(inside)).expect("zip file")
+            } else {
+                bytes
+            };
+            (path, bytes)
+        })
+        .collect()
 }
 
 /// A copy of upstream's `tests/res2` folder in a temporary folder, with the
@@ -1161,7 +1237,7 @@ impl Harness {
     pub fn with_config(language: &str, script: Script, config: Config) -> Harness {
         let user_dir = tempfile::tempdir().expect("temporary folder");
         let paths = Paths {
-            root: upstream_root(),
+            root: game_root(),
             user: user_dir.path().to_path_buf(),
         };
         paths.create_user_folders(&Log::silent());
@@ -1227,10 +1303,10 @@ impl Harness {
     }
 
     /// The text of `key` in the active language's `tts.txt`.
-    pub fn text(&self, key: u64) -> String {
+    pub fn text(&self, key: &str) -> String {
         self.client
             .sounds
-            .text(&key.to_string())
+            .text(key)
             .unwrap_or_else(|| panic!("no text for {key}"))
     }
 

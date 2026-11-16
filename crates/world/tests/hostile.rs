@@ -604,6 +604,11 @@ fn a_type_name_the_rules_lack_refuses_the_rules_with_its_line() {
             "def footman\nis_a infantry\n",
             "text 2, line 2: error in footman.is_a: infantry doesn't exist",
         ),
+        // A property that a soldier does not have, such as a misspelt one.
+        (
+            "def footman\n\nhp_maxx 900\n",
+            "text 2, line 3: error in footman.hp_maxx: a soldier has no such property",
+        ),
     ] {
         let rules = Rules::load(&[base.clone(), layer.to_owned()]);
         assert_eq!(

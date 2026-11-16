@@ -33,7 +33,7 @@ Preconditions:
 For Andrew, with NVDA running at your usual speech rate.
 
 1. In `%APPDATA%\SoundRTS\settings.toml`, set `debug_mode = true`.
-2. In a terminal, run `cargo run -p soundrts -- --root vendor/soundrts-upstream`. NVDA's own voice says "SoundRTS 1.3.8.1, please make a selection".
+2. In a terminal, run `cargo run -p soundrts -- --root vendor/game-data`. NVDA's own voice says "SoundRTS 1.3.8.1, please make a selection".
 3. Press Down four times, with a pause after each. You hear a click, then the whole item, each time.
 4. Press Down four times quickly. Each item silences the one before it at once.
 5. Open `options`, then `sound and speech`. Press End, then Home. You hear the new level each time, for example "40 percent of the volume", then "50 percent of the volume". The click is quieter after End.

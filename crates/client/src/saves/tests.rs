@@ -166,10 +166,7 @@ fn header(title: Msg) -> SaveHeader {
 #[test]
 fn the_list_says_the_title_the_game_time_and_the_age() {
     let (mut h, _g) = training();
-    let title = vec![
-        MsgPart::Original("jl1".to_owned()),
-        MsgPart::original_number(3001),
-    ];
+    let title = vec![MsgPart::literal("jl1"), MsgPart::Name("numeral_1".into())];
     let mut e = header(title);
     let at = |h: &mut Harness, e: &SaveHeader, now| said(h, &spoken_entry(e, now));
     assert_eq!(
@@ -219,20 +216,23 @@ fn a_damaged_or_hostile_save_is_refused_and_its_title_kept_to_words() {
         Err(LoadError::NotASave)
     ));
     let mut e = header(vec![
-        MsgPart::Original("<b>jl1\u{202e}</b>".to_owned()),
+        MsgPart::literal("<b>jl1\u{202e}</b>"),
         MsgPart::Literal("x".repeat(500)),
-        MsgPart::Original("!!!".to_owned()),
+        MsgPart::literal("!!!"),
+        MsgPart::Name("../Press Alt F4".to_owned()),
+        MsgPart::Name("numeral_1".to_owned()),
     ]);
     let line = serde_json::to_string(&e).unwrap();
     let read = parse_header(line.as_bytes()).unwrap();
     assert_eq!(
         read.title,
         [
-            MsgPart::Original("bjl1b".to_owned()),
-            MsgPart::Literal("x".repeat(MAX_TITLE_WORD_CHARS))
+            MsgPart::literal("bjl1b"),
+            MsgPart::Literal("x".repeat(MAX_TITLE_WORD_CHARS)),
+            MsgPart::Name("numeral_1".to_owned())
         ]
     );
-    e.title = vec![MsgPart::original_number(1); MAX_TITLE_PARTS + 5];
+    e.title = vec![MsgPart::Name("you_are_capitalized".into()); MAX_TITLE_PARTS + 5];
     let line = serde_json::to_string(&e).unwrap();
     assert_eq!(
         parse_header(line.as_bytes()).unwrap().title.len(),

@@ -36,7 +36,7 @@ Preconditions:
 
 For Andrew, with NVDA running. Steps 1 to 5 need one computer. Steps 6 to 9 need a second player on another computer of the same network.
 
-1. In a terminal, run `cargo run -p soundrts -- --root vendor/soundrts-upstream`. Wait for the main menu.
+1. In a terminal, run `cargo run -p soundrts -- --root vendor/game-data`. Wait for the main menu.
 2. Press Down twice, then Enter. You hear "multiplayer", then the multiplayer menu.
 3. Choose the server item. You hear "the address to give to the other players is" and an address, then "welcome", your login, and "on the server of" your login.
 4. Create a game on any map, invite a computer, and start. You hear the game start.

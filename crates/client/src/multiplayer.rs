@@ -23,7 +23,6 @@ use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, comma, cue, msg, nb2msg, pe
 
 use crate::client::Client;
 use crate::config::DEFAULT_LOGIN;
-use crate::game::style_msg;
 use crate::mainmenu::modify_login;
 use crate::mapfile::{Map, title_of};
 use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, string_to_msg};
@@ -719,7 +718,7 @@ fn faction_choices(cx: &Client, index: usize, slot: &Slot, factions: &[String]) 
         .filter(|f| f != slot.faction.as_str())
         .filter_map(|f| {
             let faction = Faction::new(f.as_str()).ok()?;
-            let label = [name.clone(), style_msg(cx.res.style(), &f, "title")].concat();
+            let label = [name.clone(), cx.res.style().get(&f).title_msg()].concat();
             Some(Choice::new(
                 label,
                 slot_action(index, player, move |slot| ClientMsg::SetFaction {

@@ -18,6 +18,7 @@ testkit = ["dep:tempfile"]
 soundrts-world = { path = "../world" }
 soundrts-protocol = { path = "../protocol" }
 soundrts-server = { path = "../server" }
+soundrts-import = { path = "../import" }
 futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
 tokio = { version = "1.54.1", features = ["rt", "net", "time", "sync", "macros"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }

@@ -9,11 +9,10 @@ use soundrts::input::{Key, Mods};
 use soundrts::rng::ClientRng;
 use soundrts::testkit::{Harness, Script};
 
-/// What the client may log during such a game: upstream's own style
-/// warnings for objects without some sounds. A warning of the world is a
-/// stop of a unit's or a player's update, which an ordinary game must not
-/// reach.
-const EXPECTED_WARNINGS: &[&str] = &["no value found for "];
+/// What the client may log during such a game: nothing. A warning of the
+/// world is a stop of a unit's or a player's update, which an ordinary
+/// game must not reach.
+const EXPECTED_WARNINGS: &[&str] = &[];
 
 const TURNS: i64 = 2000;
 

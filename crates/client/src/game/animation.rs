@@ -165,7 +165,7 @@ mod tests {
                 fog_of_war_factor: 0.5,
             };
             let style = Noise::Loop {
-                sound: "1016".into(),
+                sound: "building/damaged".into(),
                 volume: 0.5,
                 ambient: false,
             };
@@ -195,7 +195,7 @@ mod tests {
         let cx = &h.client;
         let style = Noise::Repeat {
             interval: 5.0,
-            sounds: vec!["1016".into()],
+            sounds: vec!["building/damaged".into()],
             ambient: false,
         };
         let mut n = NoiseSource::new("noise", &style).unwrap();

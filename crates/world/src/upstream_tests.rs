@@ -454,10 +454,10 @@ starting_resources 10 10
     fn objective_test_init() {
         let o = Objective {
             number: "1".into(),
-            description: vec![12, 13, 14],
+            description: crate::msg::nb2msg(12),
         };
         assert_eq!(o.number, "1");
-        assert_eq!(o.description, [12, 13, 14]);
+        assert_eq!(o.description, crate::msg::nb2msg(12));
     }
 
     fn tiny_set_up() -> (World, PlayerId) {

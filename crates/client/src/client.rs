@@ -76,13 +76,37 @@ struct Help {
     index: i64,
 }
 
-fn read_help_table(res: &Resources, name: &str) -> Vec<Msg> {
-    res.text(name, false)
-        .unwrap_or_default()
-        .split('\n')
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.split_whitespace().map(MsgPart::original).collect())
-        .collect()
+/// The lines of a help file: each word names a phrase or a sound, or is a
+/// count. A word that names nothing is refused, with its file and its line.
+fn read_help_table(res: &Resources, name: &str, log: &Log) -> Vec<Msg> {
+    let Some(file) = res.files(name, false, None).pop() else {
+        return Vec::new();
+    };
+    let sounds = res.sounds();
+    let mut lines = Vec::new();
+    for (i, line) in file.text.split('\n').enumerate() {
+        let refuse = |what: String| {
+            log.error(format!(
+                "{} line {}: {what}",
+                file.path,
+                i.saturating_add(1)
+            ));
+        };
+        let mut msg = Vec::new();
+        for word in line.split_whitespace() {
+            match MsgPart::named(word) {
+                Some(MsgPart::Name(n)) if !sounds.has(&n) => {
+                    refuse(format!("{n} names no phrase and no sound"))
+                }
+                Some(part) => msg.push(part),
+                None => refuse(format!("{word} is not a name or a count")),
+            }
+        }
+        if !line.trim().is_empty() {
+            lines.push(msg);
+        }
+    }
+    lines
 }
 
 /// The client: settings, resources, sound, voice and keyboard.
@@ -179,8 +203,8 @@ impl Client {
             title_desktop.set_title(&app_title(mods, soundpacks));
         }));
         let help = Help {
-            game: read_help_table(&res, "ui/game_help"),
-            menu: read_help_table(&res, "ui/menu_help"),
+            game: read_help_table(&res, "ui/game_help", &log),
+            menu: read_help_table(&res, "ui/menu_help", &log),
             context: String::new(),
             index: -1,
         };
@@ -268,14 +292,14 @@ impl Client {
     /// Says the sounds or texts of a campaign's cut scene, outside a game,
     /// in order, as the story's policy says: a key skips a line, Escape the
     /// rest (see [`crate::voice::Voice::tell_now`]).
-    pub fn play_sequence(&mut self, names: &[String]) {
+    pub fn play_sequence(&mut self, parts: &Msg) {
         let policy = self.config.news.of(Category::Story);
         if policy == Policy::Speak {
             self.stop_sound(true);
         }
-        let story = names
+        let story = parts
             .iter()
-            .map(|name| News::new(Category::Story, vec![MsgPart::original(name)]))
+            .map(|part| News::new(Category::Story, vec![part.clone()]))
             .collect();
         self.voice.tell_now(story, policy);
     }

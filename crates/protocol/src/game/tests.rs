@@ -206,7 +206,7 @@ fn a_seat_frame_comes_back_as_it_was_sent() {
             map: crate::MapInfo {
                 file_name: crate::MapFileName::new("jl1.txt").unwrap(),
                 hash: crate::MapHash::of(b""),
-                title_sounds: Vec::new(),
+                title: Vec::new(),
                 nb_players_min: 2,
                 nb_players_max: 2,
             },

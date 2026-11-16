@@ -2597,6 +2597,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soundrts",
+ "soundrts-import",
  "soundrts-protocol",
  "soundrts-server",
  "soundrts-world",
@@ -2613,6 +2614,15 @@ dependencies = [
  "webpki-roots",
  "windows-sys 0.52.0",
  "winit",
+ "zip",
+]
+
+[[package]]
+name = "soundrts-import"
+version = "0.1.0"
+dependencies = [
+ "soundrts-world",
+ "tempfile",
  "zip",
 ]
 
@@ -2655,6 +2665,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "soundrts-import",
  "soundrts-world",
 ]
 

@@ -72,7 +72,7 @@ fn control_held_with_tab_does_not_examine() {
     run(&mut h, &mut g, 1.0);
     assert_eq!(
         said(&h, from, start),
-        ["200 <1003> a meadow to the northwest"]
+        ["200 <ui/positional_beep> a meadow to the northwest"]
     );
 }
 
@@ -93,7 +93,7 @@ fn a_held_modifier_does_not_repeat() {
 fn shift_and_an_arrow_do_not_skip_the_news_being_said() {
     let (mut h, mut g, live) = game(0.5, 0.1);
     let (from, start) = (h.utterance_log.len(), h.clock.now());
-    let news = News::new(Category::Production, vec![MsgPart::original("aaaaaaaaaa")]);
+    let news = News::new(Category::Production, vec![MsgPart::literal("aaaaaaaaaa")]);
     h.client.voice.news(news, Policy::Speak);
     live.down_at(start + 0.3, Key::LShift, Mods::SHIFT);
     live.tap_at(start + 0.4, Key::Up, Mods::SHIFT);
@@ -104,7 +104,7 @@ fn shift_and_an_arrow_do_not_skip_the_news_being_said() {
         said(&h, from, start),
         [
             "0 aaaaaaaaaa",
-            "400 <1027> b 1 , meadows , 1 town hall , 1 farm and 1 peasant",
+            "400 <ui/blocked> b 1 , meadows , 1 town hall , 1 farm and 1 peasant",
             "6394 aaaaaaaaaa"
         ]
     );
@@ -121,10 +121,10 @@ fn a_held_key_repeats_at_the_systems_delay_and_rate() {
     assert_eq!(
         said(&h, from, start),
         [
-            "0 <1091> a 1 , meadows , in the fog of war , 1 gold mine",
-            "300 <1027> a 1 , meadows , in the fog of war , 1 gold mine",
-            "500 <1027> a 1 , meadows , in the fog of war , 1 gold mine",
-            "700 <1027> a 1 , meadows , in the fog of war , 1 gold mine"
+            "0 <move/through_path> a 1 , meadows , in the fog of war , 1 gold mine",
+            "300 <ui/blocked> a 1 , meadows , in the fog of war , 1 gold mine",
+            "500 <ui/blocked> a 1 , meadows , in the fog of war , 1 gold mine",
+            "700 <ui/blocked> a 1 , meadows , in the fog of war , 1 gold mine"
         ]
     );
 }

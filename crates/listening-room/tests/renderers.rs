@@ -233,8 +233,7 @@ mod binaural {
 
     /// The game's own sounds, as the script plays them.
     fn game_sounds() -> Sounds {
-        let root =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
         let sounds = Sounds::load(Some(&root));
         assert!(
             matches!(sounds.origin, Origin::Game(_)),

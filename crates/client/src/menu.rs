@@ -112,8 +112,8 @@ pub fn py_repr(m: &Msg) -> String {
             MsgPart::Count(n) => format!("count {n}"),
             MsgPart::Pause(Pause::Short) => "comma".to_owned(),
             MsgPart::Pause(Pause::Long) => "period".to_owned(),
-            MsgPart::Original(s) if s.parse::<u64>().is_ok() => s.clone(),
-            MsgPart::Literal(s) | MsgPart::Original(s) => {
+            MsgPart::Name(s) => s.clone(),
+            MsgPart::Literal(s) => {
                 let quote = if s.contains('\'') && !s.contains('"') {
                     '"'
                 } else {
@@ -503,7 +503,7 @@ pub fn first_letter_of(cx: &Client, choice: &Choice) -> Option<String> {
     choice
         .label
         .iter()
-        .find_map(|part| match cx.sounds.translate(part) {
+        .find_map(|part| match cx.sounds.translate(part)? {
             Spoken::Text(t) => t.chars().next().map(|c| c.to_lowercase().collect()),
             Spoken::Sound(_) => None,
         })

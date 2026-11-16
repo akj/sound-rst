@@ -73,7 +73,7 @@ use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, 
 use crate::menu::{Exit, TextEntry};
 use crate::message::{Category, News, Subject};
 use crate::sound::Listener;
-use crate::style::{Style, StyleValue};
+
 use crate::voice::EntryId;
 
 use self::animation::NoiseSource;
@@ -106,7 +106,7 @@ pub enum SrvEvent {
         event: EntityEvent,
     },
     VoiceImportant(Msg),
-    Sequence(Vec<String>),
+    Sequence(Msg),
     Speed(f64),
     Quit,
     /// The turn is over: the message of the turn, whose entities and
@@ -191,36 +191,6 @@ fn important_category(m: &Msg) -> Category {
     } else {
         Category::System
     }
-}
-
-/// The words of `obj.attr` in style as text parts (with a warning, once,
-/// if it is missing). For an `if_me` value, the words for the player.
-pub fn style_msg(style: &Style, obj: &str, attr: &str) -> Msg {
-    style
-        .words(obj, attr)
-        .iter()
-        .map(|w| MsgPart::original(w))
-        .collect()
-}
-
-/// As [`style_msg`], without the warning.
-pub fn style_msg_quiet(style: &Style, obj: &str, attr: &str) -> Msg {
-    match style.get_or_warn(obj, attr, false) {
-        Some(StyleValue::Words(w)) | Some(StyleValue::IfMe(w, _)) => {
-            w.iter().map(|w| MsgPart::original(w)).collect()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// The title of a type: its style `title` as sound numbers.
-pub fn compute_title(style: &Style, type_name: &str) -> Msg {
-    style
-        .words(type_name, "title")
-        .iter()
-        .filter_map(|w| w.parse::<u64>().ok())
-        .map(MsgPart::original_number)
-        .collect()
 }
 
 /// Where the game's turns come from.
@@ -835,8 +805,8 @@ impl GameInterface {
         match e {
             SrvEvent::Entity { entity, event } => self.srv_event(cx, *entity, &event),
             SrvEvent::VoiceImportant(m) => cx.news(News::new(important_category(&m), m)),
-            SrvEvent::Sequence(names) => {
-                let story = names.iter().map(|n| vec![MsgPart::original(n)]).collect();
+            SrvEvent::Sequence(parts) => {
+                let story = parts.into_iter().map(|part| vec![part]).collect();
                 self.tell_story(cx, story);
             }
             // On a server, the server keeps the time; in a record, the
@@ -953,7 +923,7 @@ impl GameInterface {
             Place::Inside(c) => self
                 .view()
                 .known(c)
-                .map(|e| style_msg(cx.res.style(), &e.type_name, "title"))
+                .map(|e| cx.res.style().get(&e.type_name).title_msg())
                 .unwrap_or_default(),
         }
     }
@@ -978,7 +948,7 @@ impl GameInterface {
         let objective = self.view().map_objective();
         (!objective.is_empty()).then(|| {
             let mut m = msg(Phrase::Objective);
-            m.extend(objective.iter().map(|n| MsgPart::original(&n.to_string())));
+            m.extend(objective.iter().cloned());
             m
         })
     }

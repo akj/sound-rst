@@ -49,7 +49,15 @@ fn the_main_menu_says_its_title_and_the_arrows_walk_its_items() {
     let sounds: Vec<String> = h.audio.played().into_iter().map(|(_, s)| s).collect();
     assert_eq!(
         sounds,
-        ["6115", "6115", "6115", "6115", "6115", "6115", "6116"]
+        [
+            "ui/select",
+            "ui/select",
+            "ui/select",
+            "ui/select",
+            "ui/select",
+            "ui/select",
+            "ui/confirm"
+        ]
     );
     assert!(h.audio.played().iter().all(|(channel, _)| *channel != 0));
 }
@@ -156,7 +164,7 @@ fn options_then_modify_login_with_typed_characters() {
         ]
     );
     assert!(
-        h.audio.played().contains(&(0, "1029".to_owned())),
+        h.audio.played().contains(&(0, "ui/beep".to_owned())),
         "the beep plays on the voice channel"
     );
     assert_eq!(h.client.config.login.as_str(), "bo2");
@@ -303,26 +311,33 @@ fn test_first_letter() {
     let first =
         |label: Vec<MsgPart>| first_letter_of(&h.client, &Choice::new(label, Action::Nothing));
     assert_eq!(
-        first(vec![MsgPart::original_number(4031)]).as_deref(),
+        first(vec![MsgPart::Name("single_player".into())]).as_deref(),
         Some("s")
     );
-    assert_eq!(first(vec![MsgPart::original("4267")]).as_deref(), Some("c"));
-    assert_eq!(first(vec![MsgPart::original("orc")]).as_deref(), Some("o"));
-    assert_eq!(first(vec![MsgPart::original("Orc")]).as_deref(), Some("o"));
     assert_eq!(
-        first(vec![MsgPart::original("4267"), MsgPart::original("editor")]).as_deref(),
+        first(vec![MsgPart::Name("campaign".into())]).as_deref(),
+        Some("c")
+    );
+    assert_eq!(first(vec![MsgPart::literal("orc")]).as_deref(), Some("o"));
+    assert_eq!(first(vec![MsgPart::literal("Orc")]).as_deref(), Some("o"));
+    assert_eq!(
+        first(vec![
+            MsgPart::Name("campaign".into()),
+            MsgPart::literal("editor")
+        ])
+        .as_deref(),
         Some("c")
     );
     assert_eq!(
-        first(vec![MsgPart::original("orc"), MsgPart::original("editor")]).as_deref(),
+        first(vec![MsgPart::literal("orc"), MsgPart::literal("editor")]).as_deref(),
         Some("o")
     );
     // 1000 is a sound, not a text: it is skipped.
     assert_eq!(
         first(vec![
-            MsgPart::original_number(1000),
-            MsgPart::original("orc"),
-            MsgPart::original("editor")
+            MsgPart::Name("ambience/path".into()),
+            MsgPart::literal("orc"),
+            MsgPart::literal("editor")
         ])
         .as_deref(),
         Some("o")
@@ -372,7 +387,7 @@ fn the_window_title_follows_the_mods() {
     );
     assert!(
         h.client.res.rules_text().contains(
-            &std::fs::read_to_string(soundrts::testkit::upstream_root().join("mods/orc/rules.txt"))
+            &std::fs::read_to_string(soundrts::testkit::game_root().join("mods/orc/rules.txt"))
                 .unwrap()
         )
     );
@@ -384,12 +399,12 @@ fn remembering_menu_said(script: Script) -> Vec<String> {
     let mut h = Harness::new("en", script);
     std::fs::write(
         h.client.paths.tmp().join("test_menu.txt"),
-        py_repr(&vec![MsgPart::original("bravo")]),
+        py_repr(&vec![MsgPart::literal("bravo")]),
     )
     .unwrap();
-    let mut menu = Menu::remembering(&h.client, vec![MsgPart::original("pick")], "test_menu");
+    let mut menu = Menu::remembering(&h.client, vec![MsgPart::literal("pick")], "test_menu");
     for label in ["alpha", "mike", "bravo", "mars", "quit"] {
-        menu.append(vec![MsgPart::original(label)], Action::Nothing, None);
+        menu.append(vec![MsgPart::literal(label)], Action::Nothing, None);
     }
     assert_eq!(menu.run(&mut h.client), Ok(()));
     h.spoken()
@@ -487,7 +502,7 @@ fn control_v_pastes_into_the_login_only_what_a_login_allows() {
 fn chat_entry(h: &mut Harness) -> TextEntry {
     TextEntry::start(
         &mut h.client,
-        &vec![MsgPart::original("chat")],
+        &vec![MsgPart::literal("chat")],
         chat_char,
         "",
         false,
@@ -541,8 +556,8 @@ fn a_paste_fills_the_line_up_to_its_longest_and_no_further() {
         [
             "chat".to_owned(),
             full.clone(),
-            format!("<1029> . {full}"),
-            format!("<1029> . {full}"),
+            format!("<ui/beep> . {full}"),
+            format!("<ui/beep> . {full}"),
             full
         ]
     );
@@ -555,14 +570,14 @@ fn pasting_an_empty_clipboard_beeps_and_says_the_line() {
     entry.key(&mut h.client, &press(Key::H, Mods::NONE));
     assert_eq!(paste(&mut h, &mut entry), Typed::Typing);
     // The beep is a recorded sound, then the line is said.
-    assert_eq!(h.said_since(0), ["chat", "h . h", "<1029> . h"]);
+    assert_eq!(h.said_since(0), ["chat", "h . h", "<ui/beep> . h"]);
 }
 
 #[test]
 fn a_remembered_choice_is_written_by_what_its_parts_name() {
     use soundrts_world::msg::{Cue, Phrase};
-    let title = vec![MsgPart::literal("jl1"), MsgPart::original("3001")];
-    assert_eq!(py_repr(&title), "['jl1', 3001]");
+    let title = vec![MsgPart::literal("jl1"), MsgPart::Name("numeral_1".into())];
+    assert_eq!(py_repr(&title), "['jl1', numeral_1]");
     let item = vec![Phrase::Back.into(), Cue::Beep.into(), MsgPart::Count(2)];
     assert_eq!(py_repr(&item), "[back, ui/beep, count 2]");
 }

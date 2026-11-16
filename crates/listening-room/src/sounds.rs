@@ -23,11 +23,12 @@ pub enum Origin {
 }
 
 pub struct Sounds {
-    /// Two footsteps on grass (the game's 1053 and 1054).
+    /// Two footsteps on grass (the game's `footstep/grass_1` and
+    /// `footstep/grass_2`).
     pub footsteps: [Clip; 2],
-    /// A dragon's wings (1317 and 1318).
+    /// A dragon's wings (`move/wings_1` and `move/wings_2`).
     pub wings: [Clip; 2],
-    /// A blacksmith at work (1300).
+    /// A blacksmith at work (`ambience/blacksmith`).
     pub building: Clip,
     /// A short burst of white noise with a fast attack: unlike the game's
     /// footsteps, most of its energy is above 6 kHz, where the head
@@ -58,10 +59,10 @@ impl Sounds {
     }
 
     fn from_game(root: &Path) -> Result<Sounds, String> {
-        let effect = |n: u32| {
-            let path = root.join("res/ui/effects").join(format!("{n}.ogg"));
+        let effect = |name: &str| {
+            let path = root.join("res/sounds").join(format!("{name}.ogg"));
             let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-            let buffer = SoundBuffer::decode(bytes, &n.to_string(), "default", 1.0)
+            let buffer = SoundBuffer::decode(bytes, name, "default", 1.0)
                 .map_err(|e| format!("{}: {e}", path.display()))?;
             let mono: Vec<f32> = buffer
                 .samples
@@ -73,9 +74,9 @@ impl Sounds {
             Ok::<Clip, String>(resample(&mono, buffer.sample_rate))
         };
         Ok(Sounds {
-            footsteps: [effect(1053)?, effect(1054)?],
-            wings: [effect(1317)?, effect(1318)?],
-            building: effect(1300)?,
+            footsteps: [effect("footstep/grass_1")?, effect("footstep/grass_2")?],
+            wings: [effect("move/wings_1")?, effect("move/wings_2")?],
+            building: effect("ambience/blacksmith")?,
             bright: bright(),
             origin: Origin::Game(root.to_path_buf()),
         })

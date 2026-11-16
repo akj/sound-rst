@@ -1620,7 +1620,7 @@ mod tests {
 
     fn read(relative: &str) -> String {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../vendor/soundrts-upstream")
+            .join("../../vendor/game-data")
             .join(relative);
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("{relative}: {e}: run scripts/fetch-upstream.ps1"))
