@@ -856,7 +856,7 @@ starting_resources 10 10
         assert!(keywords(w, p).is_empty());
         assert_eq!(w.computer_nb(s.cp, "blacksmith"), 0);
         assert!(w.has(s.cp, "townhall"));
-        w.update_effect_users_and_workers(s.cp).unwrap();
+        w.update_effect_users_and_workers(s.cp);
         w.update_buckets();
         w.update_perception(s.cp).unwrap();
         assert!(!w.ai_get(s.cp, 1, "blacksmith").unwrap()); // requires a townhall

@@ -305,7 +305,8 @@ impl World {
         self.plm(p).kind = PlayerKind::Computer {
             ai_type: ai_type.to_owned(),
         };
-        self.computer_set_ai(p, ai_type)
+        self.computer_set_ai(p, ai_type);
+        Ok(())
     }
 
     fn lang_order(&mut self, p: PlayerId, args: &[Expr]) -> Res {

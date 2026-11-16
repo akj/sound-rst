@@ -247,29 +247,35 @@ impl Door<'_> {
     // state
 
     /// `set_ai`, after the AI type of the player changed: loads the script
-    /// and resets the script's settings.
-    fn set_ai(&mut self, ai_type: &str) -> Res {
+    /// and resets the script's settings. Without a script of that name, it
+    /// plays as with an empty script: its routine, and no plan.
+    fn set_ai(&mut self, ai_type: &str) {
         if ai_type == "timers" || !self.has_state() {
-            return Ok(());
+            return;
         }
         let name = self.faction_ai_type(ai_type);
-        let Some(script) = self.script(&name) else {
-            return Err(Abort::new(format!("KeyError: '{name}'")));
-        };
         let mut warnings = Vec::new();
-        let plan = script.plan(self.rules(), self.faction(), &mut warnings);
+        let plan = match self.script(&name) {
+            Some(script) => Some(script.plan(self.rules(), self.faction(), &mut warnings)),
+            None => {
+                warnings.push(format!(
+                    "no script '{name}' in ai.txt: the computer plays without one"
+                ));
+                None
+            }
+        };
         for w in warnings {
             self.warn(w);
         }
         let time = self.time();
         let c = self.state_mut();
-        c.plan = Some(plan);
+        c.plan = plan;
         c.line_nb = 0;
         c.previous_linechange = time;
         c.watchdog = 0;
         c.constant_attacks = 0;
         c.research = 0;
-        self.update_effect_users_and_workers()
+        self.update_effect_users_and_workers();
     }
 
     fn set_line_nb(&mut self, n: i64) {
@@ -362,8 +368,9 @@ impl Door<'_> {
             kw.nb_args() > 0
         };
         if args {
+            // Knowing nothing to aim at, it gives the unit no order.
             let Some(j) = self.choice_index(targets.len()) else {
-                return Err(Abort::new("Cannot choose from an empty sequence"));
+                return Ok(None);
             };
             order = order.at(TargetRef::Entity(targets[j]));
         }
@@ -377,7 +384,7 @@ impl Door<'_> {
             return Ok(());
         }
         self.state_mut().lacking = None;
-        self.update_effect_users_and_workers()?;
+        self.update_effect_users_and_workers();
         self.update_time_has_come()?;
         self.send_workers_to_forgotten_building_sites()?;
         self.idle_workers_gather()?;
@@ -511,7 +518,7 @@ impl Door<'_> {
 
     // Computer: units and their tasks
 
-    fn update_effect_users_and_workers(&mut self) -> Res {
+    fn update_effect_users_and_workers(&mut self) {
         let mut workers = Vec::new();
         let mut gathered: Vec<(Option<Mark>, i64)> = Vec::new();
         let mut sites = Vec::new();
@@ -581,7 +588,6 @@ impl Door<'_> {
         c.cataclysm_users = cataclysm;
         c.detector_users = detector;
         c.summon_users = summon;
-        Ok(())
     }
 
     fn update_time_has_come(&mut self) -> Res {
@@ -1127,8 +1133,9 @@ impl Door<'_> {
                 .map(|t| self.rules().ty(t).can_research.clone())
                 .unwrap_or_default();
             for name in researchable {
+                // The rules warned of a name of no type when they loaded.
                 let Some(t) = self.rules().type_id(&name) else {
-                    return Err(Abort::new("'NoneType' object has no attribute 'cost'"));
+                    continue;
                 };
                 let cost = self.rules().ty(t).cost.clone();
                 if self.future_nb(&Sel::List(vec![t])) == 0
@@ -1537,8 +1544,9 @@ impl Door<'_> {
         let available = self.available_food();
         if food != 0 && food > available - self.used_food() {
             if available < limit {
+                // With rules that have no farm, it cannot raise its food.
                 let Some(farm) = self.role_type(Role::Farm) else {
-                    return Err(Abort::new("'NoneType' object has no attribute '__name__'").into());
+                    return Ok(false);
                 };
                 let t = Sel::One(farm);
                 if self.future_nb(&t) == self.nb(&t) {
@@ -1827,15 +1835,22 @@ mod tests {
     use crate::world::World;
 
     /// A world with the original's rules and this map.
-    pub(super) fn world(map: &str) -> World {
+    /// A file of the original game.
+    fn read(f: &str) -> String {
         let dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
-        let read = |f: &str| {
-            let bytes = std::fs::read(dir.join(f))
-                .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
-            String::from_utf8_lossy(&bytes).into_owned()
-        };
-        let rules = crate::Rules::load(&[read("res/rules.txt")]);
+        let bytes = std::fs::read(dir.join(f))
+            .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// A world with the original's rules and this map.
+    pub(super) fn world(map: &str) -> World {
+        world_with_rules(&read("res/rules.txt"), map)
+    }
+
+    fn world_with_rules(rules: &str, map: &str) -> World {
+        let rules = crate::Rules::load(&[rules]);
         let ai = crate::AiScripts::load(&[read("res/ai.txt")]);
         let mut w = World::new(rules, ai, Vec::new(), 0);
         w.load_and_build_map(map).unwrap();
@@ -1963,8 +1978,14 @@ starting_resources 0 50
 
     /// A computer of the script `easy` alone on a square with these units.
     pub(super) fn scripted(script: &str, units: &str) -> (World, PlayerId) {
-        let mut w = world(&format!(
-            "
+        scripted_with_rules(&read("res/rules.txt"), script, units)
+    }
+
+    fn scripted_with_rules(rules: &str, script: &str, units: &str) -> (World, PlayerId) {
+        let mut w = world_with_rules(
+            rules,
+            &format!(
+                "
 square_width 12
 nb_columns 1
 nb_lines 1
@@ -1977,7 +1998,8 @@ starting_squares a1
 starting_units {units}
 starting_resources 100 100
 "
-        ));
+            ),
+        );
         w.ai_scripts = crate::AiScripts::load(&[script]);
         let p = w
             .populate_map(&[crate::Controller::computer("easy")], false, false)
@@ -2053,6 +2075,83 @@ starting_resources 100 100
         let before = w.e(theirs).orders().len();
         assert!(w.door(p).give(theirs, Request::stop(), true).is_ok());
         assert_eq!(w.e(theirs).orders().len(), before);
+    }
+
+    #[test]
+    fn an_ai_type_without_a_script_plays_without_one() {
+        let (mut w, p) = scripted("def easy\nattack\n", "townhall 2 peasant");
+        for _ in 0..10 {
+            w.update();
+        }
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+        // A map's trigger changes its AI type to one without a script.
+        w.computer_set_ai(p, "dance");
+        assert_eq!(
+            w.drain_warnings(),
+            ["no script 'dance' in ai.txt: the computer plays without one"]
+        );
+        assert!(w.computer_state(p).plan.is_none());
+        assert_eq!(w.computer_state(p).constant_attacks, 0);
+    }
+
+    #[test]
+    fn a_research_the_rules_lack_is_left_out() {
+        let (mut w, p) = scripted(
+            "def easy\nresearch 1\nattack\n",
+            "townhall blacksmith 2 peasant",
+        );
+        let blacksmith = w.rules.unit_type_mut("blacksmith").unwrap();
+        blacksmith.can_research.insert(0, "dance".to_owned());
+        for _ in 0..30 {
+            w.update();
+        }
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+    }
+
+    #[test]
+    fn rules_without_a_farm_leave_the_computer_short_of_food() {
+        let rules = read("res/rules.txt").replace("def farm\n", "def barn\n");
+        // A town hall gives the food of one peasant: getting more asks
+        // for a farm.
+        let (mut w, p) = scripted_with_rules(&rules, "def easy\nattack\n", "townhall 1 peasant");
+        for _ in 0..30 {
+            w.update();
+        }
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+    }
+
+    #[test]
+    fn computer2_knowing_nothing_to_aim_at_gives_no_aimed_order() {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 0
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+",
+        );
+        let p = w
+            .populate_map(&[crate::Controller::computer("ai2")], false, false)
+            .unwrap()[0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let tid = w.rules.type_id("peasant").unwrap();
+        let u = w
+            .create_creature(tid, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        for _ in 0..200 {
+            let order = w.door(p).random_order(u, &[]);
+            assert!(
+                order
+                    .as_ref()
+                    .is_ok_and(|o| o.as_ref().is_none_or(|o| o.target().is_none()))
+            );
+        }
     }
 
     #[test]

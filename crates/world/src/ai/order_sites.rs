@@ -163,7 +163,7 @@ fn workers_repair_a_building_site_without_workers() {
     let site = w
         .create_building_site(c, Place::Square(s), x, y, farm)
         .unwrap();
-    w.update_effect_users_and_workers(c).unwrap();
+    w.update_effect_users_and_workers(c);
     w.door(c)
         .send_workers_to_forgotten_building_sites()
         .unwrap();
@@ -216,7 +216,7 @@ fn workers_build_a_gate_on_the_exit_nearest_the_sensible_building() {
         .copied()
         .find(|&u| &*w.e(u).type_name == "townhall")
         .unwrap();
-    w.update_effect_users_and_workers(c).unwrap();
+    w.update_effect_users_and_workers(c);
     w.computer_state(c).sensible_building = Some(townhall);
     let (bx, by) = (w.e(townhall).x, w.e(townhall).y);
     let mut exits = w.square(s).exits.clone();

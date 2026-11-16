@@ -307,16 +307,16 @@ impl World {
     }
 
     /// The state of a new scripted computer, with its AI type set.
-    pub(crate) fn new_computer(&mut self, p: PlayerId) -> Res {
+    pub(crate) fn new_computer(&mut self, p: PlayerId) {
         self.plm(p).ai = Some(Box::default());
         let t = self.pl(p).ai_type().unwrap_or("timers").to_owned();
-        self.computer_set_ai(p, &t)
+        self.computer_set_ai(p, &t);
     }
 
     /// `set_ai`, after the AI type of the player changed: loads the script
     /// and resets the script's settings.
-    pub(crate) fn computer_set_ai(&mut self, p: PlayerId, ai_type: &str) -> Res {
-        self.door(p).set_ai(ai_type)
+    pub(crate) fn computer_set_ai(&mut self, p: PlayerId, ai_type: &str) {
+        self.door(p).set_ai(ai_type);
     }
 
     /// `play`: what a computer player does during its update.
@@ -341,8 +341,8 @@ impl World {
     }
 
     #[cfg(test)]
-    pub(crate) fn update_effect_users_and_workers(&mut self, p: PlayerId) -> Res {
-        self.door(p).update_effect_users_and_workers()
+    pub(crate) fn update_effect_users_and_workers(&mut self, p: PlayerId) {
+        self.door(p).update_effect_users_and_workers();
     }
 
     /// `best_explorers`: the mobile units not upgrading, best first.

@@ -110,7 +110,7 @@ starting_units townhall peasant
     let [a1, b1] = ["a1", "b1"].map(|n| w.square_by_name(n).unwrap());
     let townhall = w.pl(c).units[0];
     assert_eq!(&*w.e(townhall).type_name, "townhall");
-    w.update_effect_users_and_workers(c).unwrap();
+    w.update_effect_users_and_workers(c);
     w.computer_state(c).sensible_building = Some(townhall);
     let exit = w.square(a1).exits[0];
     // A footman of the other player blocks the other side of the exit from
