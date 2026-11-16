@@ -1,6 +1,6 @@
 //! What each skill level changes in how a computer plays.
 
-use super::skill::{Settings, Workers};
+use super::skill::{MoreMakers, Settings, Workers};
 use super::tests::world;
 use super::*;
 use crate::entity::{PlayerId, Target};
@@ -16,12 +16,20 @@ fn settings_of(f: impl Fn(Settings) -> i64) -> [i64; 5] {
 #[test]
 fn each_level_has_its_settings_and_normal_is_the_original() {
     assert_eq!(settings_of(|s| s.grace), [600_000, 300_000, 0, 0, 0]);
-    assert_eq!(settings_of(|s| s.attack_ratio), [120, 150, 180, 180, 180]);
     assert_eq!(
         settings_of(|s| s.turns_between_decisions),
         [40, 30, 10, 10, 10]
     );
-    assert_eq!(settings_of(|s| s.more_makers_at), [100, 100, 100, 100, 3]);
+    assert_eq!(
+        Skill::ALL.map(|s| s.settings().more_makers),
+        [
+            MoreMakers::AsTheOriginal,
+            MoreMakers::AsTheOriginal,
+            MoreMakers::AsTheOriginal,
+            MoreMakers::AsTheOriginal,
+            MoreMakers::CountingSites(3),
+        ]
+    );
     assert_eq!(
         Skill::ALL.map(|s| s.settings().workers),
         [
@@ -161,28 +169,6 @@ fn each_level_keeps_its_number_of_workers_whatever_its_script_asks() {
 }
 
 #[test]
-fn a_level_attacks_only_with_its_odds() {
-    let (mut w, p, _) = facing_a_farm(Skill::NORMAL);
-    let footmen: Vec<EntityId> = w.pl(p).units.clone();
-    let mine: i64 = footmen
-        .iter()
-        .filter(|&&u| w.e(u).class() == EntityClass::Soldier)
-        .map(|&u| w.e(u).menace())
-        .sum();
-    // Its soldiers' menace is 140 percent of the enemy's.
-    let enemy = mine * 100 / 140;
-    let mut fights = Vec::new();
-    for skill in Skill::ALL {
-        let PlayerKind::Computer { skill: s, .. } = &mut w.plm(p).kind else {
-            unreachable!("a computer");
-        };
-        *s = skill;
-        fights.push(w.door(p).is_powerful_enough(&footmen, enemy));
-    }
-    assert_eq!(fights, [true, false, false, false, false]);
-}
-
-#[test]
 fn a_level_decides_once_in_its_number_of_turns() {
     let (mut w, p, _) = facing_a_farm(Skill::NORMAL);
     let mut decisions = Vec::new();
@@ -204,7 +190,7 @@ fn a_level_decides_once_in_its_number_of_turns() {
 }
 
 #[test]
-fn the_top_level_builds_more_barracks_while_it_can_pay_for_more_footmen() {
+fn the_top_level_builds_more_barracks_while_it_can_pay_for_their_footmen() {
     let mut barracks = Vec::new();
     for skill in [Skill::NORMAL, Skill::Level5] {
         let (mut w, p) = with_a_town_hall(
@@ -212,13 +198,16 @@ fn the_top_level_builds_more_barracks_while_it_can_pay_for_more_footmen() {
             "def easy\nget 20 footman\n",
             "townhall barracks 3 farm 6 peasant",
         );
+        // 50 gold: eight footmen, or a barracks and seven.
+        w.plm(p).resources = vec![50_000, 100_000];
         for _ in 0..100 {
             w.update();
         }
         let t = Sel::One(w.rules.type_id("barracks").unwrap());
         barracks.push(w.door(p).future_nb(&t));
     }
-    // It counts the barracks it has, not those being built: at each
-    // decision until the first is built, it starts one more.
-    assert_eq!(barracks, [1, 4]);
+    // It counts the barracks being built too: with one more being built,
+    // it can pay for no more than three footmen for each, and stops.
+    // Counting only those built, it would build two more.
+    assert_eq!(barracks, [1, 2]);
 }

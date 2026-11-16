@@ -39,6 +39,7 @@ use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 use script::{Plan, Step};
+use skill::MoreMakers;
 pub use skill::Skill;
 
 /// The deepest the computer player's planning may go. Getting a unit asks
@@ -695,7 +696,7 @@ impl Door<'_> {
     fn is_powerful_enough(&self, units: &[EntityId], enemy_menace: i64) -> bool {
         // sometimes the food limit prevents units with more than 1 food cost
         let ratio = if self.used_food() < self.food_limit() - 5 {
-            self.skill().settings().attack_ratio
+            180
         } else {
             100
         };
@@ -1697,11 +1698,15 @@ impl Door<'_> {
                 self.order(4, maker_sel, Task::Build(made, id), true)?;
             }
         } else if mc.can_train.contains(&name) {
-            let nb_maker = self.nb(&maker_sel);
-            let more_makers_at = self.skill().settings().more_makers_at;
+            // The makers it counts, and how many units it must be able to
+            // pay for, for each, before it builds one more.
+            let (nb_maker, at) = match self.skill().settings().more_makers {
+                MoreMakers::AsTheOriginal => (self.nb(&maker_sel), 100),
+                MoreMakers::CountingSites(at) => (self.future_nb(&maker_sel), at),
+            };
             if self.nb(&Sel::Workers) != 0
                 && nb > nb_maker * 3
-                && self.potential(&t.cost) > nb_maker * more_makers_at
+                && self.potential(&t.cost) > nb_maker * at
             {
                 // additional production sites
                 self.build_or_train_or_upgradeto_or_summon(maker, 1, depth)?;

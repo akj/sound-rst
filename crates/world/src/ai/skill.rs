@@ -51,14 +51,12 @@ impl Skill {
             Skill::Level1 => Settings {
                 grace: 600_000,
                 workers: Workers::AtMost(6),
-                attack_ratio: 120,
                 turns_between_decisions: 40,
                 ..Settings::NORMAL
             },
             Skill::Level2 => Settings {
                 grace: 300_000,
                 workers: Workers::AtMost(8),
-                attack_ratio: 150,
                 turns_between_decisions: 30,
                 ..Settings::NORMAL
             },
@@ -75,7 +73,7 @@ impl Skill {
                     kept: 10,
                     spare: 15,
                 },
-                more_makers_at: 3,
+                more_makers: MoreMakers::CountingSites(3),
                 ..Settings::NORMAL
             },
         }
@@ -92,17 +90,24 @@ pub(super) struct Settings {
     pub(super) grace: i64,
     /// How many workers it gets.
     pub(super) workers: Workers,
-    /// The menace, in percent of the enemy's, that its soldiers must pass
-    /// before they fight, while it is below the map's food limit and could
-    /// still make more of them.
-    pub(super) attack_ratio: i64,
     /// It decides once in this many turns. The computers that decide at
     /// the same rate share these turns between them.
     pub(super) turns_between_decisions: i64,
-    /// When it wants more than three units of a type for each of their
-    /// makers it has, it builds one more maker if it could pay for more
-    /// than this many units of the type for each maker.
-    pub(super) more_makers_at: i64,
+    /// When it builds one more maker of the units it trains.
+    pub(super) more_makers: MoreMakers,
+}
+
+/// When a computer builds one more maker, such as a barracks, of the units
+/// it trains: when it wants more than three of the units for each maker,
+/// and could pay for more than some number of them for each maker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum MoreMakers {
+    /// As in the original: for each maker it has built, it must be able to
+    /// pay for more than 100 units.
+    AsTheOriginal,
+    /// For each maker it has or is building, it must be able to pay for
+    /// more than this many units.
+    CountingSites(i64),
 }
 
 impl Settings {
@@ -110,9 +115,8 @@ impl Settings {
     const NORMAL: Settings = Settings {
         grace: 0,
         workers: Workers::AtLeast(10),
-        attack_ratio: 180,
         turns_between_decisions: 10,
-        more_makers_at: 100,
+        more_makers: MoreMakers::AsTheOriginal,
     };
 }
 
