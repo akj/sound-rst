@@ -233,7 +233,7 @@ impl Session {
         game.view()
             .map_intro()
             .iter()
-            .map(|n| vec![MsgPart::original(&n.to_string())])
+            .map(|part| vec![part.clone()])
             .collect()
     }
 

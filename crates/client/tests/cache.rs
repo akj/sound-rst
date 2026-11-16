@@ -1,6 +1,12 @@
 //! Port of upstream `tests/test_cache.py`: sounds, texts, style, rules and
 //! computer players of the resource layers, with maps and campaigns.
 //!
+//! The tests read the original's small test packages once they are
+//! imported. There, the number 0 is the phrase `nothing`, 1 is
+//! `you_are_capitalized`, 5 is `what_are_your_orders`, and 9998 and 9999
+//! are the sounds `silence/short` and `silence/long`. A number that names
+//! nothing in the original, such as 6, stays a number.
+//!
 //! Rules and computer players belong to the simulation, which takes them
 //! as text; these tests check the text the resource stack hands over.
 
@@ -12,13 +18,13 @@ use soundrts::mapfile::Map;
 use soundrts::package::Package;
 use soundrts::parameters::Parameters;
 use soundrts::resource::Resources;
-use soundrts::testkit::{upstream_root, upstream_tests_dir};
+use soundrts::testkit::{game_root, imported_tests_dir};
 use soundrts_world::msg::MsgPart;
 
 fn stack(path: std::path::PathBuf) -> Resources {
     Resources::new(
         vec![path],
-        upstream_tests_dir().join("no-downloads"),
+        imported_tests_dir().join("no-downloads"),
         Some("en".into()),
         Arc::new(Parameters::default()),
         Log::silent(),
@@ -26,13 +32,13 @@ fn stack(path: std::path::PathBuf) -> Resources {
 }
 
 fn test_stack() -> Resources {
-    stack(upstream_tests_dir().join("res"))
+    stack(imported_tests_dir().join("res"))
 }
 
 fn maps() -> Vec<Map> {
     ["single/map1", "single/map1.zip"]
         .iter()
-        .map(|p| Map::from_path(&upstream_tests_dir().join(p)).unwrap())
+        .map(|p| Map::from_path(&imported_tests_dir().join(p)).unwrap())
         .collect()
 }
 
@@ -41,7 +47,7 @@ fn campaigns() -> Vec<Campaign> {
         .iter()
         .map(|p| {
             Campaign::new(
-                Package::from_path(&upstream_tests_dir().join(p)).unwrap(),
+                Package::from_path(&imported_tests_dir().join(p)).unwrap(),
                 "campaign1",
             )
         })
@@ -49,7 +55,7 @@ fn campaigns() -> Vec<Campaign> {
 }
 
 fn text0(res: &Resources) -> Option<String> {
-    res.sounds().text("0")
+    res.sounds().text("nothing")
 }
 
 const BASE_RULES: &str = "def test\ncost 0 0\n\ndef peasant\ncost 0 0\n";
@@ -57,9 +63,9 @@ const BASE_AI: &str = "def easy\nget 1 peasant\ngoto -1\n";
 
 #[test]
 fn test_get_sound_with_default_config() {
-    let mut res = stack(upstream_root().join("res"));
+    let mut res = stack(game_root().join("res"));
     res.set_language("fr");
-    assert!(res.sounds().get_sound("9999").is_some());
+    assert!(res.sounds().get_sound("silence/long").is_some());
     assert!(res.sounds().get_sound("fdsgedtgf").is_none());
 }
 
@@ -67,11 +73,11 @@ fn test_get_sound_with_default_config() {
 fn test_get_sound() {
     let res = test_stack();
     let s = res.sounds();
-    assert!(s.get_sound("1000").is_none());
+    assert!(s.get_sound("ambience/path").is_none());
     assert!(s.get_sound("fdsgedtgf").is_none());
-    assert!(s.get_sound("9998").is_some());
-    assert!(s.get_sound("9999").is_none());
-    assert!(s.get_sound("1028").is_none());
+    assert!(s.get_sound("silence/short").is_some());
+    assert!(s.get_sound("silence/long").is_none());
+    assert!(s.get_sound("unnamed/sound_1028").is_none());
 }
 
 #[test]
@@ -79,21 +85,21 @@ fn test_get_sound_with_locale() {
     let mut res = test_stack();
     res.set_language("fr");
     let s = res.sounds();
-    assert!(s.get_sound("1000").is_none());
+    assert!(s.get_sound("ambience/path").is_none());
     assert!(s.get_sound("fdsgedtgf").is_none());
-    assert!(s.get_sound("9998").is_some());
-    assert!(s.get_sound("9999").is_some());
+    assert!(s.get_sound("silence/short").is_some());
+    assert!(s.get_sound("silence/long").is_some());
     // A sound can be stored in a subfolder.
-    assert!(s.get_sound("1028").is_some());
+    assert!(s.get_sound("unnamed/sound_1028").is_some());
 }
 
 #[test]
 fn test_text() {
     let res = test_stack();
     let s = res.sounds();
-    assert_eq!(s.text("0").as_deref(), Some("yes"));
-    assert_eq!(s.text("1").as_deref(), Some("no"));
-    assert_eq!(s.text("2"), None);
+    assert_eq!(s.text("nothing").as_deref(), Some("yes"));
+    assert_eq!(s.text("you_are_capitalized").as_deref(), Some("no"));
+    assert_eq!(s.text("in_front_of_you"), None);
 }
 
 #[test]
@@ -101,22 +107,25 @@ fn test_text_with_locale() {
     let mut res = test_stack();
     res.set_language("fr");
     let s = res.sounds();
-    assert_eq!(s.text("0").as_deref(), Some("oui"));
-    assert_eq!(s.text("1").as_deref(), Some("no"));
-    assert_eq!(s.text("2"), None);
+    assert_eq!(s.text("nothing").as_deref(), Some("oui"));
+    assert_eq!(s.text("you_are_capitalized").as_deref(), Some("no"));
+    assert_eq!(s.text("in_front_of_you"), None);
 }
 
 #[test]
 fn test_get_style() {
     let res = test_stack();
-    assert_eq!(res.style().words("peasant", "test"), ["0"]);
+    assert_eq!(res.style().words("peasant", "test"), ["nothing"]);
 }
 
 #[test]
 fn test_get_style_with_locale() {
     let mut res = test_stack();
     res.set_language("fr");
-    assert_eq!(res.style().words("peasant", "test"), ["1"]);
+    assert_eq!(
+        res.style().words("peasant", "test"),
+        ["you_are_capitalized"]
+    );
 }
 
 #[test]
@@ -149,7 +158,7 @@ fn test_folder_map() {
         res.set_map(None);
         assert_eq!(res.rules_text(), BASE_RULES);
         assert_eq!(res.ai_text(), BASE_AI);
-        assert_eq!(res.style().words("peasant", "test"), ["0"]);
+        assert_eq!(res.style().words("peasant", "test"), ["nothing"]);
         assert_eq!(text0(&res).as_deref(), Some("yes"));
     }
 }
@@ -177,8 +186,8 @@ fn test_campaign_cutscene() {
         else {
             panic!("chapter 0 is a cut scene");
         };
-        assert_eq!(title, &vec![MsgPart::original_number(4272)]);
-        assert_eq!(sequence, &vec!["7500".to_owned()]);
+        assert_eq!(title, &vec![MsgPart::Name("prologue".into())]);
+        assert_eq!(sequence, &vec![MsgPart::Count(7500)]);
         assert_eq!(text0(&res).as_deref(), Some("campaign1"));
         res.set_campaign(None);
     }
@@ -196,7 +205,7 @@ fn test_campaign_map() {
         assert_eq!(map.name, "campaign1/2");
         assert_eq!(
             chapter.title(),
-            vec![MsgPart::original_number(11), MsgPart::original_number(22)]
+            vec![MsgPart::Count(11), MsgPart::Count(22)]
         );
         assert!(map.resources.is_none());
         res.set_map(Some(map));
@@ -208,7 +217,10 @@ fn test_campaign_map() {
             res.ai_text(),
             format!("{BASE_AI}\ndef easy\nget 5 peasant\ngoto -1\n")
         );
-        assert_eq!(res.style().words("peasant", "test"), ["5"]);
+        assert_eq!(
+            res.style().words("peasant", "test"),
+            ["what_are_your_orders"]
+        );
         assert_eq!(text0(&res).as_deref(), Some("campaign1"));
         res.set_map(None);
         res.set_campaign(None);

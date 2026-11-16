@@ -81,7 +81,7 @@ fn read_help_table(res: &Resources, name: &str) -> Vec<Msg> {
         .unwrap_or_default()
         .split('\n')
         .filter(|l| !l.trim().is_empty())
-        .map(|l| l.split_whitespace().map(MsgPart::original).collect())
+        .map(|l| l.split_whitespace().filter_map(MsgPart::named).collect())
         .collect()
 }
 
@@ -268,14 +268,14 @@ impl Client {
     /// Says the sounds or texts of a campaign's cut scene, outside a game,
     /// in order, as the story's policy says: a key skips a line, Escape the
     /// rest (see [`crate::voice::Voice::tell_now`]).
-    pub fn play_sequence(&mut self, names: &[String]) {
+    pub fn play_sequence(&mut self, parts: &Msg) {
         let policy = self.config.news.of(Category::Story);
         if policy == Policy::Speak {
             self.stop_sound(true);
         }
-        let story = names
+        let story = parts
             .iter()
-            .map(|name| News::new(Category::Story, vec![MsgPart::original(name)]))
+            .map(|part| News::new(Category::Story, vec![part.clone()]))
             .collect();
         self.voice.tell_now(story, policy);
     }

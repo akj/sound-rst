@@ -295,14 +295,8 @@ pub fn universal_newlines(s: &str) -> String {
     }
 }
 
-/// Decodes a text file of the game data. `tts.txt` files may start with a
-/// UTF-8 signature, which is skipped; the other files keep it, as upstream.
-pub fn decode_text(bytes: &[u8], name: &str) -> String {
-    let is_tts = name.rsplit(['/', '\\']).next() == Some("tts.txt");
-    let bytes = match bytes.strip_prefix(b"\xef\xbb\xbf") {
-        Some(rest) if is_tts => rest,
-        _ => bytes,
-    };
+/// Decodes a text file of the game data.
+pub fn decode_text(bytes: &[u8]) -> String {
     universal_newlines(&String::from_utf8_lossy(bytes))
 }
 
@@ -389,7 +383,7 @@ impl Package {
     /// cannot be read.
     pub fn read_text(&self, name: &str) -> Option<String> {
         let bytes = self.open_binary(name).ok()?;
-        Some(decode_text(&bytes, name))
+        Some(decode_text(&bytes))
     }
 
     pub fn isfile(&self, name: &str) -> bool {
@@ -834,12 +828,8 @@ mod tests {
     }
 
     #[test]
-    fn text_gets_unix_line_ends_and_tts_files_lose_their_signature() {
-        assert_eq!(
-            decode_text(b"\xef\xbb\xbfa\r\nb\rc", "ui/tts.txt"),
-            "a\nb\nc"
-        );
-        assert_eq!(decode_text(b"\xef\xbb\xbfa", "ui/style.txt"), "\u{feff}a");
+    fn text_gets_unix_line_ends() {
+        assert_eq!(decode_text(b"a\r\nb\rc"), "a\nb\nc");
     }
 
     /// `bytes` with the uncompressed size of every entry, in its local and

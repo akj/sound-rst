@@ -4,7 +4,7 @@
 use soundrts::bindings::{Bindings, game_bindings_text};
 use soundrts::game::command::{GameCommand, is_command};
 use soundrts::log::Log;
-use soundrts::testkit::{Harness, Script, upstream_root};
+use soundrts::testkit::{Harness, Script, game_root};
 
 /// Commands whose feature this client leaves out, and what they do.
 const EXCLUDED: &[(&str, &str)] = &[];
@@ -15,7 +15,7 @@ const NOT_PORTED: &[&str] = &["select_sound", "sound_volume"];
 
 #[test]
 fn every_command_of_bindings_txt_is_parsed_into_a_handled_command() {
-    let text = std::fs::read_to_string(upstream_root().join("res/ui/bindings.txt")).unwrap();
+    let text = std::fs::read_to_string(game_root().join("res/ui/bindings.txt")).unwrap();
     // Every distinct name, as written in the file.
     let mut names: Vec<String> = Vec::new();
     let mut raw: Bindings<String> = Bindings::new();

@@ -373,7 +373,10 @@ fn an_order_key_changes_nothing_and_the_listener_hears_so_once() {
         .count();
     assert_eq!(told, 1, "{said:?}");
     // The console and the cheats are not the listener's.
-    assert_eq!(answer(&mut h, &mut g, Key::Backquote, Mods::NONE), "<1029>");
+    assert_eq!(
+        answer(&mut h, &mut g, Key::Backquote, Mods::NONE),
+        "<ui/beep>"
+    );
     while !g.game.end_loop {
         h.step(&mut g);
     }
@@ -530,7 +533,7 @@ fn going_fastest_hears_nothing_more_of_the_turn_waiting() {
     let mut g = listening(&mut h, record);
     h.run_until_turn(&mut g, 20);
     // News of the turn taken, not yet handled.
-    let news = vec![soundrts_world::msg::MsgPart::Original(
+    let news = vec![soundrts_world::msg::MsgPart::Literal(
         "news of the turn".into(),
     )];
     g.game
@@ -569,7 +572,7 @@ fn going_fastest_on_the_players_last_turn_hears_nothing_of_it() {
     }
     assert!(!g.game.end_loop);
     assert!(!g.game.srv_queue.is_empty());
-    let news = vec![soundrts_world::msg::MsgPart::Original(
+    let news = vec![soundrts_world::msg::MsgPart::Literal(
         "news of the turn".into(),
     )];
     g.game

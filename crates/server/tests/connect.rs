@@ -255,7 +255,7 @@ async fn a_message_larger_than_the_server_holds_closes_the_connection() {
     // About 1.5 MB, where the server holds 1 MB of messages other than
     // maps for a connection.
     let (mut info, _) = map(2, 4);
-    info.title_sounds = vec![1000; 300_000];
+    info.title = vec![soundrts_world::msg::MsgPart::Count(1_000_000); 300_000];
     c.send(ClientMsg::CreateRoom {
         map: info,
         speed: Speed::Normal,

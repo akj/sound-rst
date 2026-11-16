@@ -25,7 +25,7 @@ pub enum Chapter {
     CutScene {
         number: usize,
         title: Msg,
-        sequence: Vec<String>,
+        sequence: Msg,
     },
 }
 
@@ -70,6 +70,11 @@ fn header_line<'a>(
     })
 }
 
+/// Whether a line can hold `c` and name phrases, sounds and counts.
+pub fn is_name_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '/' | ' ')
+}
+
 impl Campaign {
     /// Reads the campaign in `package`, named after the last part of `path`.
     pub fn new(package: Package, path: &str) -> Campaign {
@@ -85,8 +90,8 @@ impl Campaign {
             String::new()
         };
         let words = |c: char| c.is_ascii_alphanumeric() || c == ' ';
-        let title = match header_line(&text, "title", words) {
-            Some(t) => t.split(' ').map(MsgPart::original).collect(),
+        let title = match header_line(&text, "title", is_name_char) {
+            Some(t) => t.split(' ').filter_map(MsgPart::named).collect(),
             None => vec![MsgPart::literal(name.as_str())],
         };
         let mut mods = match header_line(&text, "mods", words) {
@@ -124,18 +129,12 @@ impl Campaign {
                 .flatten();
             match cutscene {
                 Some(text) if text.split_inclusive('\n').next() == Some("cut_scene_chapter\n") => {
-                    let digits = |c: char| c.is_ascii_digit() || c == ' ';
-                    let title = match header_line(&text, "title", digits) {
-                        Some(t) => t
-                            .split(' ')
-                            .filter_map(|x| x.parse().ok())
-                            .map(MsgPart::original_number)
-                            .collect(),
-                        None => nb2msg(number),
+                    let named = |keyword| -> Option<Msg> {
+                        let line = header_line(&text, keyword, is_name_char)?;
+                        Some(line.split(' ').filter_map(MsgPart::named).collect())
                     };
-                    let sequence = header_line(&text, "sequence", digits)
-                        .map(|s| s.split(' ').map(str::to_owned).collect())
-                        .unwrap_or_default();
+                    let title = named("title").unwrap_or_else(|| nb2msg(number));
+                    let sequence = named("sequence").unwrap_or_default();
                     chapters.push(Chapter::CutScene {
                         number: number as usize,
                         title,
@@ -475,7 +474,7 @@ pub fn resume_mission(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testkit::upstream_tests_dir;
+    use crate::testkit::imported_tests_dir;
 
     #[test]
     fn the_bookmark_file_reads_and_writes_as_configparser_does() {
@@ -527,7 +526,7 @@ mod tests {
     #[test]
     fn a_campaign_lists_its_chapters_from_a_folder_or_a_zip() {
         for path in ["single/campaign1", "single/campaign1.zip"] {
-            let package = Package::from_path(&upstream_tests_dir().join(path)).unwrap();
+            let package = Package::from_path(&imported_tests_dir().join(path)).unwrap();
             let c = Campaign::new(package, "campaign1");
             assert_eq!(c.name, "campaign1");
             assert_eq!(c.resources.name, "campaign1");
@@ -538,7 +537,7 @@ mod tests {
             assert_eq!(map.name, "campaign1/2");
             assert_eq!(
                 c.chapters[2].title(),
-                vec![MsgPart::original_number(11), MsgPart::original_number(22)]
+                vec![MsgPart::Count(11), MsgPart::Count(22)]
             );
             assert!(map.resources.is_none());
             let Chapter::Mission { map, .. } = &c.chapters[1] else {

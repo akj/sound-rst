@@ -79,14 +79,6 @@ fn bell() -> Msg {
     [cue(Cue::BellStrike), cue(Cue::PositionalBeep)].concat()
 }
 
-/// A map's sound numbers as a message.
-fn nums(numbers: &[i64]) -> Msg {
-    numbers
-        .iter()
-        .map(|n| MsgPart::original(&n.to_string()))
-        .collect()
-}
-
 /// The characters the console accepts.
 fn console_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || " .,'@#$%^&*()_?!".contains(c) || ('+'..='=').contains(&c)
@@ -317,7 +309,7 @@ impl GameInterface {
         let mut steps: Vec<Msg> = Vec::new();
         let map_objective = view.map_objective();
         if !map_objective.is_empty() {
-            steps.push(nums(map_objective));
+            steps.push(map_objective.to_vec());
         }
         let seen = self.objectives_seen.iter();
         let new = now.iter().filter(|o| !self.objectives_seen.contains(o));
@@ -327,7 +319,7 @@ impl GameInterface {
             } else {
                 Phrase::ObjectiveDone
             };
-            steps.push([nums(&o.description), comma(), msg(done)].concat());
+            steps.push([o.description.clone(), comma(), msg(done)].concat());
         }
         let n = steps.len();
         if n == 0 {
@@ -806,8 +798,8 @@ mod tests {
     fn the_objectives_are_said_one_at_a_time_with_whether_each_is_done() {
         let (mut h, mut g) = training();
         let me = g.game.me;
-        cheat(&mut g, me, "add_objective 1 101 151 83");
-        cheat(&mut g, me, "add_objective 2 101 151 99");
+        cheat(&mut g, me, "add_objective 1 build one_f farm");
+        cheat(&mut g, me, "add_objective 2 build one_f barracks");
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
         cheat(&mut g, me, "objective_complete 1");
@@ -835,7 +827,7 @@ mod tests {
         let speed = g.game.speed;
         let from = h.utterances().len();
         g.game.execute_command(&mut h.client, "s fast");
-        assert_eq!(h.said_since(from), ["<1029>"]);
+        assert_eq!(h.said_since(from), ["<ui/beep>"]);
         assert_eq!(g.game.speed, speed);
         g.game.execute_command(&mut h.client, "s 2");
         assert_eq!(g.game.speed, 2.0);

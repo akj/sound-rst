@@ -25,7 +25,7 @@ pub fn nb2msg_f(n: i64) -> Msg {
 pub fn substitute_args(t: Msg, arg: &Msg) -> Msg {
     let mut out = Vec::with_capacity(t.len() + arg.len());
     for part in t {
-        if part == MsgPart::original("$1") {
+        if part == MsgPart::literal("$1") {
             out.extend(arg.iter().cloned());
         } else {
             out.push(part);
@@ -237,22 +237,19 @@ mod tests {
     use super::*;
 
     fn t(s: &str) -> MsgPart {
-        MsgPart::original(s)
+        crate::game::style_part(s).unwrap()
     }
 
     #[test]
     fn each_dollar_one_becomes_the_argument() {
-        let title = vec![t("101"), t("$1"), t("119")];
+        let title = vec![t("build"), t("$1"), t("on")];
         assert_eq!(
-            substitute_args(
-                title,
-                &vec![MsgPart::original_number(5), MsgPart::original_number(6)]
-            ),
+            substitute_args(title, &vec![t("what_are_your_orders"), t("6")]),
             vec![
-                t("101"),
-                MsgPart::original_number(5),
-                MsgPart::original_number(6),
-                t("119")
+                t("build"),
+                t("what_are_your_orders"),
+                MsgPart::Count(6),
+                t("on")
             ]
         );
         assert_eq!(

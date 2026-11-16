@@ -599,7 +599,7 @@ mod tests {
 
     /// Queues news that keeps the voice busy for a while.
     fn cx_news(h: &mut Harness, s: &str) {
-        let m = vec![soundrts_world::msg::MsgPart::original(s)];
+        let m = vec![soundrts_world::msg::MsgPart::literal(s)];
         h.client.news(News::new(Category::Production, m));
     }
 

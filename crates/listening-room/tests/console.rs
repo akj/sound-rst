@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn game_root() -> PathBuf {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
     assert!(
         root.join("res/rules.txt").is_file(),
         "the game data is missing: run scripts/fetch-upstream.ps1"

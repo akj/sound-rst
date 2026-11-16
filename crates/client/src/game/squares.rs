@@ -710,7 +710,7 @@ mod tests {
         // The game's animation plays the terrain noise of the selected
         // square and of those around it: the sea of b 1 among them.
         assert!(g.game.terrain_noises.iter().any(|(s, _)| *s == b1));
-        assert!(h.audio.played().iter().any(|(_, s)| s == "1342"));
+        assert!(h.audio.played().iter().any(|(_, s)| s == "ambience/lake"));
     }
 
     #[test]
@@ -779,7 +779,7 @@ mod tests {
     }
 
     fn t(n: u64) -> Msg {
-        vec![MsgPart::original_number(n)]
+        vec![MsgPart::Count(n)]
     }
 
     #[test]

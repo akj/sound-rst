@@ -426,7 +426,7 @@ impl<C> Bindings<C> {
 )]
 mod tests {
     use super::*;
-    use crate::testkit::upstream_root;
+    use crate::testkit::game_root;
 
     /// A command kept as its name and arguments.
     type Command = (String, Vec<String>);
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn the_upstream_bindings_parse_completely() {
-        let text = std::fs::read_to_string(upstream_root().join("res/ui/bindings.txt")).unwrap();
+        let text = std::fs::read_to_string(game_root().join("res/ui/bindings.txt")).unwrap();
         let log = Log::silent();
         let mut b = Bindings::new();
         b.load(&text, &any, &log);
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn the_clients_keys_are_free_in_the_original_and_name_its_commands() {
-        let text = std::fs::read_to_string(upstream_root().join("res/ui/bindings.txt")).unwrap();
+        let text = std::fs::read_to_string(game_root().join("res/ui/bindings.txt")).unwrap();
         let log = Log::silent();
         let mut upstream = Bindings::new();
         upstream.load(&text, &any, &log);

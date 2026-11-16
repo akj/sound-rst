@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use soundrts_world::entity::{ActionKind, Entity, Place};
+use soundrts_world::msg::MsgPart;
 use soundrts_world::{
     AiScripts, Controller, ControllerKind, Event, PlayerId, Rules, World,
     multiplayer_default_triggers,
@@ -92,7 +93,19 @@ fn make_world(case: &Case) -> World {
 
 fn dump_static(w: &World) -> Vec<String> {
     let m = &w.map;
-    let join = |v: &[i64]| v.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    // The recorded dumps hold the numbers of the original. The maps now
+    // hold the names that the import gave those numbers, so each name is
+    // written as its number: the dump shows that the import kept the
+    // original's title and objective.
+    let number = |part: &MsgPart| match part {
+        MsgPart::Name(name) => soundrts_import::names::names()
+            .game_number(name)
+            .unwrap_or_else(|| panic!("{name} is no name of the original"))
+            .to_string(),
+        MsgPart::Count(n) => n.to_string(),
+        other => panic!("{other:?} in a map"),
+    };
+    let join = |v: &[MsgPart]| v.iter().map(number).collect::<Vec<_>>().join(",");
     let mut out = vec![format!(
         "map title={} objective={} players={}-{} starts={} computers={} food={}",
         join(&m.title),
@@ -142,7 +155,15 @@ fn dump_static(w: &World) -> Vec<String> {
             ));
         }
     }
-    let mut saved: Vec<String> = w.save_map().lines().map(str::to_owned).collect();
+    // The saved map names its title and objective, as the game's maps do.
+    let as_recorded = |line: &str| match line.split_once(' ') {
+        Some((keyword @ ("title" | "objective"), words)) => {
+            let parts: Vec<MsgPart> = words.split(' ').filter_map(MsgPart::named).collect();
+            format!("{keyword} {}", join(&parts).replace(',', " "))
+        }
+        _ => line.to_owned(),
+    };
+    let mut saved: Vec<String> = w.save_map().lines().map(as_recorded).collect();
     saved.sort();
     out.extend(saved.into_iter().map(|l| format!("save {l}")));
     out

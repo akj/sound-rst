@@ -464,8 +464,9 @@ mod tests {
 
     #[test]
     fn mono_sounds_are_decoded_as_stereo() {
-        let path = crate::testkit::upstream_root().join("res/ui/effects/1029.ogg");
-        let s = SoundBuffer::decode(std::fs::read(path).unwrap(), "1029", "default", 0.5).unwrap();
+        let path = crate::testkit::game_root().join("res/sounds/ui/beep.ogg");
+        let s =
+            SoundBuffer::decode(std::fs::read(path).unwrap(), "ui/beep", "default", 0.5).unwrap();
         assert!(s.duration() > 0.0);
         assert_eq!(s.samples.len() % 2, 0);
         assert_eq!(s.volume(), 0.5);
@@ -475,8 +476,14 @@ mod tests {
     fn a_sound_ends_at_the_last_granule_position_of_its_stream() {
         // 1003.ogg: mono, 44100 Hz, last granule position 804, as pygame
         // reads it (18231 microseconds).
-        let path = crate::testkit::upstream_root().join("res/ui/effects/1003.ogg");
-        let s = SoundBuffer::decode(std::fs::read(path).unwrap(), "1003", "default", 1.0).unwrap();
+        let path = crate::testkit::game_root().join("res/sounds/ui/positional_beep.ogg");
+        let s = SoundBuffer::decode(
+            std::fs::read(path).unwrap(),
+            "ui/positional_beep",
+            "default",
+            1.0,
+        )
+        .unwrap();
         assert_eq!(s.samples.len(), 2 * 804);
         assert_eq!((s.duration() * 1e6).round(), 18231.0);
     }
@@ -484,11 +491,12 @@ mod tests {
     #[test]
     fn a_sound_longer_than_the_limit_is_refused() {
         // The original's longest sound: 2,261,768 frames.
-        let path = crate::testkit::upstream_root().join("res/ui/effects/1342.ogg");
+        let path = crate::testkit::game_root().join("res/sounds/ambience/lake.ogg");
         let bytes = std::fs::read(path).unwrap();
-        let sound = SoundBuffer::decode(bytes.clone(), "1342", "default", 1.0).unwrap();
+        let sound = SoundBuffer::decode(bytes.clone(), "ambience/lake", "default", 1.0).unwrap();
         assert_eq!(sound.samples.len(), 2 * 2_261_768);
-        let e = SoundBuffer::decode_within(bytes, "1342", "default", 1.0, 2_261_767).unwrap_err();
+        let e = SoundBuffer::decode_within(bytes, "ambience/lake", "default", 1.0, 2_261_767)
+            .unwrap_err();
         assert_eq!(e, "longer than 2261767 frames, the most a sound may have");
     }
 
@@ -521,7 +529,7 @@ mod tests {
     fn a_sound_the_decoder_fails_on_is_refused() {
         // A shipped sound whose sixth codebook is given no dimension, with
         // its page's checksum made right again: the decoder panics on it.
-        let path = crate::testkit::upstream_root().join("res/ui/effects/1003.ogg");
+        let path = crate::testkit::game_root().join("res/sounds/ui/positional_beep.ogg");
         let mut bytes = std::fs::read(path).unwrap();
         let codebook = (0..bytes.len() - 3)
             .filter(|&i| &bytes[i..i + 3] == b"BCV")
@@ -543,7 +551,7 @@ mod tests {
         bytes[page + 22..page + 26].fill(0);
         let crc = ogg_crc(&bytes[page..page + size]);
         bytes[page + 22..page + 26].copy_from_slice(&crc.to_le_bytes());
-        let e = SoundBuffer::decode(bytes, "1003", "default", 1.0).unwrap_err();
+        let e = SoundBuffer::decode(bytes, "ui/positional_beep", "default", 1.0).unwrap_err();
         assert_eq!(e, "the decoder failed on this file");
     }
 }

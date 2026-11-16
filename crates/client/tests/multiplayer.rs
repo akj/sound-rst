@@ -141,7 +141,7 @@ fn arrivals_and_departures_are_not_said_with_the_option_off() {
         [
             "welcome andrew on the server of test",
             "please make a selection",
-            "<6114> carol says still said",
+            "<magic/conversion> carol says still said",
         ]
     );
 }
@@ -298,14 +298,16 @@ fn chat_is_said_while_a_submenu_is_open_before_the_queued_messages() {
         from(&said(&h), "carol has just logged in"),
         [
             "carol has just logged in",
-            "<6114> bob says hi",
-            "<6114> bob says hi",
+            "<magic/conversion> bob says hi",
+            "<magic/conversion> bob says hi",
             "dave has just logged in",
             "cancel",
         ]
     );
     assert!(
-        h.audio.played().contains(&(0, "6114".to_owned())),
+        h.audio
+            .played()
+            .contains(&(0, "magic/conversion".to_owned())),
         "the chat sound plays on the voice channel"
     );
 }
@@ -330,7 +332,7 @@ fn chat_is_said_while_the_chat_prompt_is_open_and_the_line_typed_is_sent() {
         from(&said(&h), "enter your message"),
         [
             "enter your message",
-            "<6114> bob says are you there",
+            "<magic/conversion> bob says are you there",
             "y . y",
             "é . yé",
             "yé",
@@ -361,10 +363,10 @@ fn the_chat_is_read_again_with_control_f5_and_f6() {
         s.at(10.0, chat("bob", "two"));
     });
     assert_eq!(
-        from(&said(&h), "<6114> bob says one"),
+        from(&said(&h), "<magic/conversion> bob says one"),
         [
-            "<6114> bob says one",
-            "<6114> bob says two",
+            "<magic/conversion> bob says one",
+            "<magic/conversion> bob says two",
             // Read again without the sound.
             "bob says two",
             "bob says one",
@@ -468,7 +470,7 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
     assert!(said.contains(&"g . g".to_owned()), "{said:#?}");
     assert!(said.contains(&"gg wp".to_owned()), "{said:#?}");
     assert!(
-        said.contains(&"<6114> andrew says gg wp".to_owned()),
+        said.contains(&"<magic/conversion> andrew says gg wp".to_owned()),
         "{said:#?}"
     );
 }
@@ -600,7 +602,7 @@ fn a_game_on_a_map_the_player_does_not_have_is_left() {
     assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
     let said = said(&h);
     assert!(
-        said.contains(&"<1029> this game cannot start here".to_owned()),
+        said.contains(&"<ui/beep> this game cannot start here".to_owned()),
         "{said:#?}"
     );
 }
@@ -849,7 +851,7 @@ fn a_game_on_a_server_that_gives_ever_more_objectives_is_ended() {
         next.state.objectives = (0..soundrts_world::MAX_OBJECTIVES)
             .map(|i| soundrts_world::player::Objective {
                 number: format!("{turn}.{i}"),
-                description: vec![1],
+                description: soundrts_world::msg::nb2msg(1),
             })
             .collect();
         let change = soundrts_world::TurnChange::between(&last, &next);
@@ -939,7 +941,7 @@ fn a_map_package_that_unpacks_too_large_is_refused() {
     let map = MapInfo {
         file_name: file_name.clone(),
         hash: hash.clone(),
-        title_sounds: Vec::new(),
+        title: Vec::new(),
         nb_players_min: 2,
         nb_players_max: 2,
     };
@@ -962,7 +964,7 @@ fn a_map_package_that_unpacks_too_large_is_refused() {
     assert!(server.sent().contains(&ClientMsg::GetMap { hash }));
     let said = said(&h);
     assert!(
-        said.contains(&"<1029> the map of this game is too large once unpacked".to_owned()),
+        said.contains(&"<ui/beep> the map of this game is too large once unpacked".to_owned()),
         "{said:#?}"
     );
     let saved = std::fs::read_dir(h.client.paths.downloaded().join("multi"))
@@ -1136,18 +1138,18 @@ fn what_players_wrote_and_their_logins_are_said_as_written() {
     let script = Script::new().at(30.0).tap(Key::LShift);
     let (h, _) = on_fake_server(script, config("andrew"), |_, s| {
         s.at(10.0, arrived("4000"));
-        // A sound number, a count as the world encodes it, a phrase number.
-        s.at(15.0, chat("4000", "6114"));
-        s.at(15.0, chat("4000", "1000005"));
-        s.at(15.0, chat("bob", "4056"));
+        // The name of a sound, a count, the name of a phrase.
+        s.at(15.0, chat("4000", "magic/conversion"));
+        s.at(15.0, chat("4000", "5"));
+        s.at(15.0, chat("bob", "what_are_your_orders"));
     });
     assert_eq!(
         from(&said(&h), "4000 has just logged in"),
         [
             "4000 has just logged in",
-            "<6114> 4000 says 6114",
-            "<6114> 4000 says 1000005",
-            "<6114> bob says 4056",
+            "<magic/conversion> 4000 says magic/conversion",
+            "<magic/conversion> 4000 says 5",
+            "<magic/conversion> bob says what_are_your_orders",
         ]
     );
 }
@@ -1161,7 +1163,7 @@ fn a_players_login_is_said_as_written_in_the_game() {
     let name = g.game.view().player_name(other);
     assert_eq!(
         h.client.sounds.translate(&name[0]),
-        soundrts::sound_cache::Spoken::Text("4000".into())
+        Some(soundrts::sound_cache::Spoken::Text("4000".into()))
     );
 }
 
@@ -1220,7 +1222,7 @@ fn a_map_that_cannot_be_read_is_said_and_the_room_does_not_wait_for_it() {
     let map = MapInfo {
         file_name: file_name.clone(),
         hash: MapHash::of(&package),
-        title_sounds: Vec::new(),
+        title: Vec::new(),
         nb_players_min: 2,
         nb_players_max: 2,
     };
@@ -1248,9 +1250,9 @@ fn a_map_that_cannot_be_read_is_said_and_the_room_does_not_wait_for_it() {
         );
     });
     assert_eq!(
-        from(&said(&h), "<1029> this game cannot start here"),
+        from(&said(&h), "<ui/beep> this game cannot start here"),
         [
-            "<1029> this game cannot start here",
+            "<ui/beep> this game cannot start here",
             "quit, leave this game",
             "this game cannot start here",
         ]
@@ -1926,7 +1928,10 @@ fn an_allys_flare_is_an_alert_at_its_square_and_ones_own_is_confirmed() {
     });
     assert_eq!(said, ["bob : flare at a 4", "flare sent"]);
     assert!(
-        h.audio.played().iter().any(|(_, s)| s.contains("1339")),
+        h.audio
+            .played()
+            .iter()
+            .any(|(_, s)| s.contains("magic/holy_vision")),
         "{:?}",
         h.audio.played()
     );

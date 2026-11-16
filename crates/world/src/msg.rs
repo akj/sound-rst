@@ -4,11 +4,6 @@ use std::fmt;
 
 pub use crate::phrases::{Cue, Pause, Phrase};
 
-/// In the original's files, a number from this value up is a count to read
-/// aloud, not a name: `1000012` is said "12". Only [`MsgPart::original`]
-/// knows it.
-const ORIGINAL_COUNT_SHIFT: u64 = 1_000_000;
-
 /// The longest name of the game's files, in bytes. The original's longest,
 /// once named, has 43.
 pub const MAX_NAME_BYTES: usize = 64;
@@ -43,11 +38,9 @@ pub enum MsgPart {
     /// speed.
     Literal(String),
     /// A name from the files of the game: a style, a map, a campaign, a
-    /// help file. Until the game imports the original's files, the name is
-    /// the original's: a number, which is a line of `ui/tts.txt` or a
-    /// recording, whichever the files have. A name that is neither is said
-    /// as written. Make one with [`MsgPart::original`].
-    Original(String),
+    /// help file. It names a phrase of a language file or a recording
+    /// under `sounds/` (see [`is_name`]). Make one with [`MsgPart::named`].
+    Name(String),
 }
 
 /// A spoken message. The parts are said in order.
@@ -55,19 +48,22 @@ pub type Msg = Vec<MsgPart>;
 
 impl MsgPart {
     /// The part that a word of the game's files names: a count if the word
-    /// is a number that the original reads aloud, else the word as a name.
-    pub fn original(word: &str) -> MsgPart {
-        let digits = !word.is_empty() && word.bytes().all(|b| b.is_ascii_digit());
-        let count = word.parse::<u64>().ok().filter(|_| digits);
-        match count.and_then(|n| n.checked_sub(ORIGINAL_COUNT_SHIFT)) {
-            Some(n) => MsgPart::Count(n),
-            None => MsgPart::Original(word.to_owned()),
+    /// is a whole number, a name if it has the shape of one. None for any
+    /// other word.
+    pub fn named(word: &str) -> Option<MsgPart> {
+        if !word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()) {
+            return word.parse().ok().map(MsgPart::Count);
         }
+        is_name(word).then(|| MsgPart::Name(word.to_owned()))
     }
 
-    /// As [`MsgPart::original`], for a name read as a number.
-    pub fn original_number(number: u64) -> MsgPart {
-        MsgPart::original(&number.to_string())
+    /// The parts that the words of a line of the game's files name. The
+    /// error is the first word that names nothing.
+    pub fn all_named<'a>(words: impl IntoIterator<Item = &'a str>) -> Result<Msg, &'a str> {
+        words
+            .into_iter()
+            .map(|w| MsgPart::named(w).ok_or(w))
+            .collect()
     }
 
     /// Words said as written.
@@ -87,7 +83,7 @@ impl fmt::Display for MsgPart {
             MsgPart::Count(n) => write!(f, "{n}"),
             MsgPart::Pause(Pause::Short) => f.write_str(","),
             MsgPart::Pause(Pause::Long) => f.write_str("."),
-            MsgPart::Literal(s) | MsgPart::Original(s) => f.write_str(s),
+            MsgPart::Literal(s) | MsgPart::Name(s) => f.write_str(s),
         }
     }
 }
@@ -150,26 +146,36 @@ mod tests {
     }
 
     #[test]
-    fn a_word_of_the_original_is_a_name_or_a_count() {
-        assert_eq!(MsgPart::original("4053"), MsgPart::Original("4053".into()));
-        assert_eq!(MsgPart::original_number(4053), MsgPart::original("4053"));
-        assert_eq!(MsgPart::original("1000010"), MsgPart::Count(10));
-        assert_eq!(MsgPart::original("1000000"), MsgPart::Count(0));
+    fn a_word_of_a_file_is_a_name_or_a_count() {
+        let name = |s: &str| Some(MsgPart::Name(s.to_owned()));
+        assert_eq!(MsgPart::named("footman"), name("footman"));
+        assert_eq!(MsgPart::named("footstep/grass_1"), name("footstep/grass_1"));
+        assert_eq!(MsgPart::named("10"), Some(MsgPart::Count(10)));
+        assert_eq!(MsgPart::named("007"), Some(MsgPart::Count(7)));
+        for bad in [
+            "",
+            "Footman",
+            "1st",
+            "-1",
+            "+1",
+            "a b",
+            "a/",
+            "/a",
+            "a//b",
+            "a-b",
+            "$1",
+            "é",
+            "99999999999999999999999",
+        ] {
+            assert_eq!(MsgPart::named(bad), None, "{bad}");
+        }
+        assert!(is_name(&"a".repeat(MAX_NAME_BYTES)));
+        assert!(!is_name(&"a".repeat(MAX_NAME_BYTES + 1)));
         assert_eq!(
-            MsgPart::original("999999"),
-            MsgPart::Original("999999".into())
+            MsgPart::all_named(["you_have", "2"]),
+            Ok(vec![MsgPart::Name("you_have".into()), MsgPart::Count(2)])
         );
-        assert_eq!(MsgPart::original("orc"), MsgPart::Original("orc".into()));
-        assert_eq!(
-            MsgPart::original("-1000010"),
-            MsgPart::Original("-1000010".into())
-        );
-        assert_eq!(
-            MsgPart::original("+1000010"),
-            MsgPart::Original("+1000010".into())
-        );
-        let huge = "99999999999999999999999";
-        assert_eq!(MsgPart::original(huge), MsgPart::Original(huge.into()));
+        assert_eq!(MsgPart::all_named(["you_have", "X"]), Err("X"));
     }
 
     #[test]

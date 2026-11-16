@@ -95,10 +95,10 @@ pub struct GameMap {
     pub squares: Vec<SquareInfo>,
     /// Every exit, by id.
     pub exits: Vec<MapExit>,
-    /// The map's objective, as sound numbers. Empty if it has none.
-    pub objective: Vec<i64>,
-    /// The map's introduction, as sound numbers. Empty if it has none.
-    pub intro: Vec<i64>,
+    /// The map's objective. Empty if it has none.
+    pub objective: Msg,
+    /// The map's introduction. Empty if it has none.
+    pub intro: Msg,
 }
 
 /// A square of the map: its place, name and shape. What is on it is not

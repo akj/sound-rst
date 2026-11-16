@@ -20,6 +20,7 @@ use regex::Regex;
 
 use crate::defs::{MAX_NUMBER, bounded, check_size, preprocess_within_limits};
 use crate::entity::{Place, PlayerId, SquareId};
+use crate::msg::{Msg, MsgPart};
 use crate::nofloat::{PRECISION, floordiv, py_float, py_int, to_int};
 use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upgrades};
 use crate::rules::AirGround;
@@ -124,9 +125,11 @@ pub struct Start {
 /// built.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapDef {
-    pub title: Vec<i64>,
-    pub objective: Vec<i64>,
-    pub intro: Vec<i64>,
+    /// What the `title`, `objective` and `intro` lines name: phrases,
+    /// sounds and counts.
+    pub title: Msg,
+    pub objective: Msg,
+    pub intro: Msg,
     pub timer_coefficient: i64,
     /// Square, deposit type, quantity as written.
     pub map_objects: Vec<(String, String, String)>,
@@ -464,9 +467,33 @@ impl World {
             let rest = args.get(1..).unwrap_or_default();
             if !matches!(
                 w,
-                "south_north" | "west_east" | "terrain" | "speed" | "cover"
+                "south_north"
+                    | "west_east"
+                    | "terrain"
+                    | "speed"
+                    | "cover"
+                    | "title"
+                    | "objective"
+                    | "intro"
             ) {
+                // Inside an action that says something, each word names a
+                // phrase or a sound, or is a count: `cut_scene`, and
+                // `add_objective` after the objective's number. The words
+                // of the action left before those.
+                let mut says: Option<usize> = None;
                 for word in args {
+                    match (word.as_str(), says) {
+                        ("add_objective", _) => says = Some(2),
+                        ("cut_scene", _) => says = Some(1),
+                        (")", _) => says = None,
+                        (_, Some(0)) if MsgPart::named(word).is_none() => {
+                            let error = format!("{word} is not a name or a count");
+                            return Err(map_error(line, &error));
+                        }
+                        (_, Some(0)) => continue,
+                        _ => {}
+                    }
+                    says = says.map(|n| n.saturating_sub(1));
                     for part in word.split(',') {
                         let part = part.strip_prefix('-').unwrap_or(part);
                         let known = p.valid_word.is_match(part)
@@ -481,20 +508,14 @@ impl World {
                     }
                 }
             }
-            let int_list = |words: &[String]| -> Result<Vec<i64>, MapError> {
-                words
-                    .iter()
-                    .map(|x| {
-                        py_int(x)
-                            .map_err(|_| map_error(line, &format!("{x} is not a whole number")))
-                            .and_then(|n| number(line, n))
-                    })
-                    .collect()
+            let named = |words: &[String]| -> Result<Msg, MapError> {
+                MsgPart::all_named(words.iter().map(String::as_str))
+                    .map_err(|word| map_error(line, &format!("{word} is not a name or a count")))
             };
             match w {
-                "title" => self.map.title = int_list(args)?,
-                "objective" => self.map.objective = int_list(args)?,
-                "intro" => self.map.intro = int_list(args)?,
+                "title" => self.map.title = named(args)?,
+                "objective" => self.map.objective = named(args)?,
+                "intro" => self.map.intro = named(args)?,
                 "square_width"
                 | "nb_rows"
                 | "nb_columns"
@@ -1204,7 +1225,12 @@ impl World {
             });
             names
         };
-        let join = |v: &[i64]| v.iter().map(i64::to_string).collect::<Vec<_>>().join(" ");
+        let join = |m: &Msg| {
+            m.iter()
+                .map(MsgPart::to_string)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
         let mut f = String::new();
         let m = &self.map;
         let _ = writeln!(f, "title {}", join(&m.title));

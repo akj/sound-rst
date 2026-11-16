@@ -172,12 +172,13 @@ impl GameInterface {
         if sort {
             let key = |id: &EntityId| {
                 let v = &self.dobjets[id];
-                let t: Vec<u64> = self
+                let t: Vec<usize> = self
                     .short_title(cx, v)
                     .iter()
                     .map(|p| match p {
-                        // A title is the numbers of its style.
-                        MsgPart::Original(s) => s.parse().unwrap_or(0),
+                        // A title is the names of its style: the units
+                        // come in the order the language files list them.
+                        MsgPart::Name(name) => cx.sounds.rank(name),
                         _ => 0,
                     })
                     .collect();
@@ -915,10 +916,10 @@ mod tests {
             .iter()
             .map(|(_, s)| s.clone())
             .collect();
-        assert_eq!(played, ["1029"]);
+        assert_eq!(played, ["ui/beep"]);
         assert_eq!(h.said_since(from), Vec::<String>::new());
         g.game.cmd_default(&mut h.client, OrderFlags::default());
-        assert_eq!(h.said_since(from), ["<1029>"]);
+        assert_eq!(h.said_since(from), ["<ui/beep>"]);
         assert_eq!(g.game.pending_commands.len(), pending, "no order given");
     }
 
@@ -1060,11 +1061,11 @@ mod tests {
     impl UpgradeOnAServer {
         fn new() -> UpgradeOnAServer {
             use crate::clock::Clock;
-            use crate::testkit::{FakeStream, Harness, Script, slot, upstream_root};
+            use crate::testkit::{FakeStream, Harness, Script, game_root, slot};
             use soundrts_protocol::game::SeatFrame;
             use soundrts_protocol::{Login, SlotPlayer, Speed};
             use soundrts_world::{Cheat, GameSetup, Host, KeywordOrder, Queue, TurnChange};
-            let read = |f: &str| std::fs::read_to_string(upstream_root().join(f)).unwrap();
+            let read = |f: &str| std::fs::read_to_string(game_root().join(f)).unwrap();
             let mut h = Harness::new("en", Script::new().keep_open());
             let server = h.join_fake_server("andrew", &["bob"]);
             let slots = [
@@ -1341,7 +1342,7 @@ mod tests {
             h.said_since(from)
         };
         // The beep.
-        assert_eq!(said(&mut g, recruit), ["<1029>"]);
+        assert_eq!(said(&mut g, recruit), ["<ui/beep>"]);
         assert_eq!(
             said(&mut g, stables),
             [

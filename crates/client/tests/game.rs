@@ -170,15 +170,15 @@ fn a_training_game_on_jl1_through_the_menus() {
     // Squares: a path west (its sound first), no path north.
     assert_eq!(
         p.said_at("west"),
-        ["<1091> a 1 , meadows , in the fog of war , 1 gold mine"]
+        ["<move/through_path> a 1 , meadows , in the fog of war , 1 gold mine"]
     );
     assert_eq!(
         p.said_at("east"),
-        ["<1091> b 1 , meadows , 1 town hall , 1 farm and 1 peasant"]
+        ["<move/through_path> b 1 , meadows , 1 town hall , 1 farm and 1 peasant"]
     );
     assert_eq!(
         p.said_at("north")[0],
-        "<1027> b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
+        "<ui/blocked> b 1 , meadows , 1 town hall , 1 farm and 1 peasant"
     );
     // Status keys (news may follow what a key says).
     assert_eq!(p.said_at("gold")[0], "10 gold");
@@ -209,7 +209,9 @@ fn a_training_game_on_jl1_through_the_menus() {
     );
     assert_eq!(
         p.said_at("target").last().map(String::as_str),
-        Some("<1003> gold mine in the fog of war , to the southwest , contains 75 gold , exploit")
+        Some(
+            "<ui/positional_beep> gold mine in the fog of war , to the southwest , contains 75 gold , exploit"
+        )
     );
     assert_eq!(
         p.said_at("gather"),
@@ -227,7 +229,7 @@ fn a_training_game_on_jl1_through_the_menus() {
     );
     assert_eq!(
         p.said_at("meadow"),
-        ["<1003> a meadow to the northwest , build farm on"]
+        ["<ui/positional_beep> a meadow to the northwest , build farm on"]
     );
     assert_eq!(
         p.said_at("build"),

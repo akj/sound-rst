@@ -3,7 +3,7 @@
 //! happens to it.
 
 use soundrts_world::events::{EntityEvent, Reason};
-use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg};
+use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::rules::AirGround;
 use soundrts_world::{EntityId, KnownEntity, KnownOrder, KnownTarget, Place, PlayerId, SquareId};
@@ -539,7 +539,7 @@ impl GameInterface {
     fn style_text(&self, cx: &Client, v: &EntityView, attr: &str) -> Msg {
         self.get_style_words(cx, v, attr)
             .iter()
-            .map(|w| MsgPart::original(w))
+            .filter_map(|w| super::style_part(w))
             .collect()
     }
 
@@ -1068,7 +1068,10 @@ mod tests {
         let v = &g.game.dobjets[&peasant];
         // On its meadows the peasant steps on the grass of the nearest
         // building or meadow.
-        assert_eq!(g.game.footstep_noise(&h.client, v), ["1053", "1054"]);
+        assert_eq!(
+            g.game.footstep_noise(&h.client, v),
+            ["footstep/grass_1", "footstep/grass_2"]
+        );
         // The player remembers a wood under its feet, which is not there:
         // the steps are on leaves.
         let wood = g
@@ -1083,7 +1086,10 @@ mod tests {
         let remembered = EntityView::new(model);
         g.game.dobjets.insert(EntityId(999_999), remembered);
         let v = &g.game.dobjets[&peasant];
-        assert_eq!(g.game.footstep_noise(&h.client, v), ["1069", "1070"]);
+        assert_eq!(
+            g.game.footstep_noise(&h.client, v),
+            ["footstep/leaves_1", "footstep/leaves_2"]
+        );
     }
 
     #[test]

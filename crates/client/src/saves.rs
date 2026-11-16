@@ -318,8 +318,8 @@ fn parse_header(line: &[u8]) -> Option<SaveHeader> {
     Some(header)
 }
 
-/// A title read from a file, kept to what a title is: a few words and
-/// sound numbers, words of letters, digits, spaces and `._-`.
+/// A title read from a file, kept to what a title is: a few words of
+/// letters, digits, spaces and `._-`, names and counts.
 fn clean_title(title: &Msg) -> Msg {
     let clean = |s: &str| -> String {
         s.chars()
@@ -331,11 +331,14 @@ fn clean_title(title: &Msg) -> Msg {
         .iter()
         .take(MAX_TITLE_PARTS)
         .map(|p| match p {
-            MsgPart::Original(s) => MsgPart::Original(clean(s)),
             MsgPart::Literal(s) => MsgPart::Literal(clean(s)),
             other => other.clone(),
         })
-        .filter(|p| !matches!(p, MsgPart::Original(s) | MsgPart::Literal(s) if s.is_empty()))
+        .filter(|p| match p {
+            MsgPart::Literal(s) => !s.is_empty(),
+            MsgPart::Name(s) => soundrts_world::msg::is_name(s),
+            _ => true,
+        })
         .collect()
 }
 

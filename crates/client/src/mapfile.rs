@@ -11,7 +11,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use soundrts_protocol::{MAX_TITLE_SOUNDS, MapData, MapFileName, MapHash, MapInfo};
+use soundrts_protocol::{MAX_TITLE_PARTS, MapData, MapFileName, MapHash, MapInfo};
 use soundrts_world::msg::{Msg, MsgPart};
 
 use crate::package::{MAX_PACKAGE_BYTES, Package, decode_text, read_file};
@@ -25,7 +25,7 @@ pub struct Map {
     pub definition: String,
     /// The map's own resources, for a map package.
     pub resources: Option<Package>,
-    /// The name, then the sound numbers of the `title` line.
+    /// The name, then what the `title` line names.
     pub title: Msg,
     pub nb_players_min: i64,
     pub nb_players_max: i64,
@@ -44,15 +44,10 @@ pub struct Map {
 }
 
 /// The title of a map from what a host said of it: its name, said as
-/// written, then the sounds of its `title` line.
+/// written, then what its `title` line names.
 pub fn title_of(info: &MapInfo) -> Msg {
     let mut title = vec![MsgPart::literal(name_from_path(info.file_name.as_str()))];
-    title.extend(
-        info.title_sounds
-            .iter()
-            .filter_map(|&n| u64::try_from(n).ok())
-            .map(MsgPart::original_number),
-    );
+    title.extend(info.title.iter().cloned());
     title
 }
 
@@ -68,14 +63,15 @@ pub fn name_from_path(path: &str) -> String {
         .collect()
 }
 
-/// The numbers after `keyword` on a line holding only digits and spaces.
+/// The words after `keyword` on a line holding only names, counts and
+/// spaces.
 fn find_a_line_with<'a>(definition: &'a str, keyword: &str) -> Option<&'a str> {
     definition.split('\n').find_map(|line| {
         let rest = line.strip_prefix(keyword)?;
         let value = rest.trim_start_matches([' ', '\t']);
         let valid = value.len() < rest.len()
             && !value.is_empty()
-            && value.bytes().all(|b| b.is_ascii_digit() || b == b' ');
+            && value.chars().all(crate::campaign::is_name_char);
         valid.then_some(value)
     })
 }
@@ -109,7 +105,7 @@ impl Map {
         let name = name_from_path(name_with_ext);
         let bytes = Arc::new(buffer.clone());
         let mut map = if name_with_ext.ends_with(".txt") {
-            let definition = decode_text(&buffer, name_with_ext);
+            let definition = decode_text(&buffer);
             Self::from_definition(definition, name, None)
         } else {
             let package = Package::from_zip_bytes(name_with_ext.to_owned(), buffer)?;
@@ -142,20 +138,18 @@ impl Map {
     /// What a host tells the server and the other players about this map;
     /// `None` for a map that cannot be sent (a folder, or a name too long).
     pub fn info(&self) -> Option<MapInfo> {
-        let title_sounds = self
+        // What the `title` line names: not the map's name, and not the
+        // sound that marks a map that is not official.
+        let title = self
             .title
             .iter()
-            .skip(1)
-            .filter_map(|p| match p {
-                MsgPart::Original(n) => n.parse().ok(),
-                _ => None,
-            })
-            .take(MAX_TITLE_SOUNDS)
+            .filter(|p| matches!(p, MsgPart::Name(_) | MsgPart::Count(_)))
+            .cloned()
             .collect();
         Some(MapInfo {
             file_name: self.wire_file_name()?,
             hash: self.hash()?,
-            title_sounds,
+            title,
             nb_players_min: u8::try_from(self.nb_players_min).ok()?,
             nb_players_max: u8::try_from(self.nb_players_max).ok()?,
         })
@@ -183,9 +177,8 @@ impl Map {
         if let Some(line) = find_a_line_with(&definition, "title") {
             title.extend(
                 line.split(' ')
-                    .filter_map(|x| x.parse().ok())
-                    .map(MsgPart::original_number)
-                    .take(MAX_TITLE_SOUNDS),
+                    .filter_map(MsgPart::named)
+                    .take(MAX_TITLE_PARTS),
             );
         }
         let int = |keyword| {
@@ -216,15 +209,15 @@ impl Map {
 )]
 mod tests {
     use super::*;
-    use crate::testkit::upstream_tests_dir;
+    use crate::testkit::imported_tests_dir;
 
     #[test]
     fn a_text_map_has_its_name_title_and_player_counts() {
-        let m = Map::from_path(&upstream_tests_dir().join("jl1.txt")).unwrap();
+        let m = Map::from_path(&imported_tests_dir().join("jl1.txt")).unwrap();
         assert_eq!(m.name, "jl1");
         assert_eq!(
             m.title,
-            vec![MsgPart::literal("jl1"), MsgPart::original_number(3001)]
+            vec![MsgPart::literal("jl1"), MsgPart::Name("numeral_1".into())]
         );
         assert_eq!((m.nb_players_min, m.nb_players_max), (2, 2));
     }
@@ -232,15 +225,15 @@ mod tests {
     #[test]
     fn a_map_package_brings_its_resources() {
         for path in ["single/map1", "single/map1.zip"] {
-            let m = Map::from_path(&upstream_tests_dir().join(path)).unwrap();
+            let m = Map::from_path(&imported_tests_dir().join(path)).unwrap();
             assert_eq!(m.name, "map1");
             assert_eq!(m.definition, "title 11 22\n");
             assert_eq!(
                 m.title,
                 vec![
                     MsgPart::literal("map1"),
-                    MsgPart::original_number(11),
-                    MsgPart::original_number(22)
+                    MsgPart::Count(11),
+                    MsgPart::Count(22)
                 ]
             );
             assert_eq!(m.resources.as_ref().unwrap().name, "map1");
@@ -254,9 +247,31 @@ mod tests {
     }
 
     #[test]
-    fn a_title_keeps_at_most_the_sounds_a_title_may_have() {
-        let line = "1 ".repeat(MAX_TITLE_SOUNDS + 1);
+    fn a_title_keeps_at_most_the_parts_a_title_may_have() {
+        let line = "numeral_1 ".repeat(MAX_TITLE_PARTS + 1);
         let m = Map::from_bytes(format!("title {line}\n").into_bytes(), "t.txt").unwrap();
-        assert_eq!(m.title.len(), 1 + MAX_TITLE_SOUNDS);
+        assert_eq!(m.title.len(), 1 + MAX_TITLE_PARTS);
+    }
+
+    #[test]
+    fn a_title_names_phrases_and_sounds_and_the_host_tells_the_other_players() {
+        let text = "title chapter 2 voice/own/attack\nnb_players_min 2\nnb_players_max 2\n";
+        let m = Map::from_bytes(text.as_bytes().to_vec(), "t.txt").unwrap();
+        let named = [
+            MsgPart::Name("chapter".into()),
+            MsgPart::Count(2),
+            MsgPart::Name("voice/own/attack".into()),
+        ];
+        assert_eq!(
+            m.title,
+            [vec![MsgPart::literal("t")], named.to_vec()].concat()
+        );
+        let info = m.info().unwrap();
+        assert_eq!(info.title, named);
+        assert!(info.title_is_valid());
+        assert_eq!(title_of(&info), m.title);
+        // A line with a word that is no name and no count is no title.
+        let m = Map::from_bytes(b"title Chapter 2\n".to_vec(), "t.txt").unwrap();
+        assert_eq!(m.title, [MsgPart::literal("t")]);
     }
 }

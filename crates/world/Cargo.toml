@@ -31,3 +31,6 @@ serde_json = { version = "1", features = ["float_roundtrip"], optional = true }
 [dev-dependencies]
 # The tests read the whole world.
 soundrts-world = { path = ".", features = ["truth", "serde"] }
+# The table of the original's numbers: the trace of a built map writes a
+# name as its number, to compare with what the original recorded.
+soundrts-import = { path = "../import" }

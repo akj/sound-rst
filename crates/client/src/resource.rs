@@ -20,45 +20,20 @@ use crate::log::Log;
 use crate::mapfile::Map;
 use crate::package::{Package, PackageStack};
 use crate::parameters::Parameters;
-use crate::sound_cache::{SoundCache, Sounds, TXT_FILE};
+use crate::sound_cache::{LanguageFile, SOUNDS_FOLDER, SoundCache, Sounds, TEXT_FOLDER};
 use crate::style::Style;
 
-fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// The path for this language: `ui` becomes `ui-fr`, when `ui` is a whole
-/// word of the path.
-pub fn localized_path(path: &str, lang: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    let mut rest = path;
-    let mut previous: Option<char> = None;
-    while let Some(i) = rest.find("ui") {
-        let Some((head, found)) = rest.split_at_checked(i) else {
-            break;
-        };
-        let tail = found.get(2..).unwrap_or_default();
-        let before = head.chars().next_back().or(previous);
-        let after = tail.chars().next();
-        out.push_str(head);
-        if !before.is_some_and(is_word) && !after.is_some_and(is_word) {
-            out.push_str("ui-");
-            out.push_str(lang);
-        } else {
-            out.push_str("ui");
-        }
-        previous = Some('i');
-        rest = tail;
-    }
-    out.push_str(rest);
-    out
+/// The folder of a package that holds what differs in a language: its
+/// own `ui/style.txt`, help files and recordings.
+pub fn language_folder(language: &str) -> String {
+    format!("lang/{language}")
 }
 
 /// The path, then its translation if a language is given.
 pub fn localized_paths(path: &str, language: Option<&str>) -> Vec<String> {
     let mut result = vec![path.to_owned()];
     if let Some(lang) = language.filter(|l| !l.is_empty()) {
-        result.push(localized_path(path, lang));
+        result.push(format!("{}/{path}", language_folder(lang)));
     }
     result
 }
@@ -239,8 +214,11 @@ impl Resources {
     fn available_languages(&self) -> Vec<String> {
         let mut result = vec!["en".to_owned()];
         for package in self.interface_layers() {
-            for name in package.dirnames() {
-                if let Some(lang) = name.strip_prefix("ui-")
+            let Some(texts) = package.subpackage(TEXT_FOLDER) else {
+                continue;
+            };
+            for name in texts.filenames() {
+                if let Some(lang) = name.strip_suffix(".txt")
                     && !result.iter().any(|r| r == lang)
                 {
                     result.push(lang.to_owned());
@@ -310,18 +288,18 @@ impl Resources {
         let style_texts = self.texts("ui/style", true, None);
         let refs: Vec<&str> = style_texts.iter().map(String::as_str).collect();
         self.style.load(&refs);
-        let texts = self.texts(TXT_FILE, true, None);
-        let dirs: Vec<(Package, String)> = self.paths("ui", None, true);
+        let texts = self.language_files(None);
+        let dirs: Vec<(Package, String)> = self.paths(SOUNDS_FOLDER, None, true);
         let mut cache = SoundCache::new(&texts, &dirs, self.params.clone(), self.log.clone());
         if let Some(map) = self.downloaded_map().cloned() {
             let style_texts = self.texts("ui/style", true, Some(&map));
             let refs: Vec<&str> = style_texts.iter().map(String::as_str).collect();
             let style = self.style.add_downloaded(&refs);
-            let texts = self.texts(TXT_FILE, true, Some(&map));
-            let sounds = cache.add_downloaded(&texts, &self.paths("ui", Some(&map), true));
+            let texts = self.language_files(Some(&map));
+            let sounds = cache.add_downloaded(&texts, &self.paths(SOUNDS_FOLDER, Some(&map), true));
             if style > 0 || sounds > 0 {
                 self.log.warning(format!(
-                    "downloaded map {}: ignored {style} style attributes and {sounds} texts or sounds the game already has",
+                    "downloaded map {}: ignored {style} style attributes and {sounds} phrases or sounds the game already has",
                     map.name
                 ));
             }
@@ -395,6 +373,32 @@ impl Resources {
                     .map(move |p| (r.clone(), p))
             })
             .collect()
+    }
+
+    /// The language files of `root`, or else of the interface's layers, in
+    /// priority order: for each layer the English, then the language's.
+    fn language_files(&self, root: Option<&Package>) -> Vec<LanguageFile> {
+        let roots: Vec<&Package> = match root {
+            Some(r) => vec![r],
+            None => self.interface_layers().iter().collect(),
+        };
+        let mut languages = vec!["en"];
+        if self.language != "en" {
+            languages.push(&self.language);
+        }
+        let mut files = Vec::new();
+        for package in roots {
+            for language in &languages {
+                let name = format!("{TEXT_FOLDER}/{language}.txt");
+                if let Some(text) = package.read_text(&name) {
+                    files.push(LanguageFile {
+                        path: format!("{}/{name}", package.name),
+                        text,
+                    });
+                }
+            }
+        }
+        files
     }
 
     /// The contents of every `<name>.txt` of `root`, or else of the
@@ -589,7 +593,7 @@ impl Resources {
 )]
 mod tests {
     use super::*;
-    use crate::testkit::{upstream_root, upstream_tests_dir};
+    use crate::testkit::{game_root, upstream_tests_dir};
 
     /// A stack of upstream test packages; "res2" is the folder with its
     /// empty mod folders restored, in `res2_dir`.
@@ -634,16 +638,16 @@ mod tests {
     }
 
     #[test]
-    fn test_localize_path() {
-        assert_eq!(localized_path("/ui", "fr"), "/ui-fr");
-        assert_eq!(localized_path("/ui/", "fr"), "/ui-fr/");
-        assert_eq!(localized_path("/uii", "fr"), "/uii");
-        assert_eq!(localized_path("/oui", "fr"), "/oui");
-        assert_eq!(localized_path("/ui/i", "fr"), "/ui-fr/i");
-        assert_eq!(localized_path("/oui/i", "fr"), "/oui/i");
+    fn a_language_has_its_own_folder_in_a_package() {
+        assert_eq!(localized_paths("ui/style.txt", None), ["ui/style.txt"]);
+        assert_eq!(localized_paths("sounds", Some("")), ["sounds"]);
         assert_eq!(
-            localized_path("ui/style.txt", "pt-BR"),
-            "ui-pt-BR/style.txt"
+            localized_paths("ui/style.txt", Some("pt-BR")),
+            ["ui/style.txt", "lang/pt-BR/ui/style.txt"]
+        );
+        assert_eq!(
+            localized_paths("sounds", Some("de")),
+            ["sounds", "lang/de/sounds"]
         );
     }
 
@@ -671,9 +675,6 @@ mod tests {
 
     #[test]
     fn test_update() {
-        assert_eq!(localized_path("ui", "en"), "ui-en");
-        assert_eq!(localized_paths("ui", Some("en")), ["ui", "ui-en"]);
-
         let res2 = crate::testkit::upstream_res2_folder();
         let stack = |paths: &[&str]| stack(paths, res2.path());
 
@@ -727,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_maps_list() {
-        let root = upstream_root();
+        let root = game_root();
         let mut r = Resources::new(
             vec![root.join("res"), root.clone()],
             root.join("no-downloads"),
@@ -763,24 +764,27 @@ mod tests {
     /// A map that brings a new unit type, and tries to change the game's
     /// keys, a prompt, the help, a unit's name and a sound.
     fn intrusive_map() -> Vec<u8> {
-        let sound = std::fs::read(upstream_root().join("res/ui/effects/1003.ogg")).unwrap();
+        let sound = std::fs::read(game_root().join("res/sounds/ambience/wood_1.ogg")).unwrap();
         zipped(&[
-            ("map.txt", b"title 9000\n".to_vec()),
+            ("map.txt", b"title golem\n".to_vec()),
             ("rules.txt", b"def golem\nclass soldier\n".to_vec()),
             ("ui/bindings.txt", b"CTRL SHIFT F12: quit\n".to_vec()),
-            ("ui/tts.txt", b"5 Press Alt F4 now.\n9000 golem\n".to_vec()),
-            ("ui/menu_help.txt", b"9000\n".to_vec()),
+            (
+                "text/en.txt",
+                b"what_are_your_orders = Press Alt F4 now.\ngolem = golem\n".to_vec(),
+            ),
+            ("ui/menu_help.txt", b"golem\n".to_vec()),
             (
                 "ui/style.txt",
-                b"def footman\ntitle 9000\n\ndef golem\nis_a footman\ntitle 9000\n".to_vec(),
+                b"def footman\ntitle golem\n\ndef golem\nis_a footman\ntitle golem\n".to_vec(),
             ),
-            ("ui/1002.ogg", sound.clone()),
-            ("ui/9001.ogg", sound),
+            ("sounds/ambience/wood_2.ogg", sound.clone()),
+            ("sounds/creature/golem.ogg", sound),
         ])
     }
 
-    fn upstream_stack() -> Resources {
-        let root = upstream_root();
+    fn game_stack() -> Resources {
+        let root = game_root();
         Resources::new(
             vec![root.join("res"), root.clone()],
             root.join("no-downloads"),
@@ -796,7 +800,7 @@ mod tests {
 
     #[test]
     fn a_downloaded_map_adds_to_the_interface_and_changes_nothing_in_it() {
-        let mut r = upstream_stack();
+        let mut r = game_stack();
         let bindings = |r: &Resources| {
             crate::bindings::game_bindings_text(r, std::path::Path::new("no bindings.txt"))
         };
@@ -808,44 +812,47 @@ mod tests {
         // The game gets the map's rules.
         assert!(r.rules_text().ends_with("def golem\nclass soldier\n"));
         // The interface gets what it lacked.
-        assert_eq!(r.sounds().text("9000").as_deref(), Some("golem"));
-        assert_eq!(r.style().words("golem", "title"), ["9000"]);
-        assert_eq!(sound_layer(&r, "9001"), "intrusive");
+        assert_eq!(r.sounds().text("golem").as_deref(), Some("golem"));
+        assert_eq!(r.style().words("golem", "title"), ["golem"]);
+        assert_eq!(sound_layer(&r, "creature/golem"), "intrusive");
         // And nothing it had changes.
         assert_eq!(bindings(&r), base_bindings);
         assert_eq!(r.text("ui/menu_help", false), base_help);
         assert_eq!(
-            r.sounds().text("5").as_deref(),
+            r.sounds().text("what_are_your_orders").as_deref(),
             Some("What are your orders?")
         );
-        assert_eq!(r.style().words("footman", "title"), ["86"]);
-        assert_eq!(sound_layer(&r, "1002"), "default");
+        assert_eq!(r.style().words("footman", "title"), ["footman"]);
+        assert_eq!(sound_layer(&r, "ambience/wood_2"), "default");
         // Without the map, the interface is the game's again.
         r.set_map(None);
-        assert_eq!(r.sounds().text("9000"), None);
+        assert_eq!(r.sounds().text("golem"), None);
         assert!(!r.style().has("golem", "title"));
     }
 
     #[test]
     fn a_map_the_player_installed_keeps_its_powers() {
-        let mut r = upstream_stack();
+        let mut r = game_stack();
         let map = Map::from_bytes(intrusive_map(), "intrusive.zip").unwrap();
         assert!(!map.downloaded);
         r.set_map(Some(&map));
         let bindings =
             crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
         assert!(bindings.contains("CTRL SHIFT F12: quit"));
-        assert_eq!(r.text("ui/menu_help", false).as_deref(), Some("9000\n"));
-        assert_eq!(r.sounds().text("5").as_deref(), Some("Press Alt F4 now."));
-        assert_eq!(r.style().words("footman", "title"), ["9000"]);
-        assert_eq!(sound_layer(&r, "1002"), "intrusive");
+        assert_eq!(r.text("ui/menu_help", false).as_deref(), Some("golem\n"));
+        assert_eq!(
+            r.sounds().text("what_are_your_orders").as_deref(),
+            Some("Press Alt F4 now.")
+        );
+        assert_eq!(r.style().words("footman", "title"), ["golem"]);
+        assert_eq!(sound_layer(&r, "ambience/wood_2"), "intrusive");
     }
 
     #[test]
     fn the_shipped_folder_map_works_as_before_when_local_and_adds_when_downloaded() {
-        let bytes = std::fs::read(upstream_root().join("res/multi/jl4.zip")).unwrap();
+        let bytes = std::fs::read(game_root().join("res/multi/jl4.zip")).unwrap();
         for downloaded in [false, true] {
-            let mut r = upstream_stack();
+            let mut r = game_stack();
             let map = if downloaded {
                 Map::from_server(bytes.clone(), "jl4.zip").unwrap()
             } else {
@@ -855,17 +862,42 @@ mod tests {
             let bindings =
                 crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
             assert_eq!(bindings.contains("SHIFT z: resource_status 2"), !downloaded);
-            assert_eq!(r.sounds().text("9000").as_deref(), Some("stone golem"));
-            assert_eq!(r.style().words("stone_golem", "title"), ["9000"]);
-            assert_eq!(r.style().words("parameters", "resource_2_title"), ["4308"]);
-            assert_eq!(r.style().words("quarry", "title"), ["4309"]);
-            assert_eq!(sound_layer(&r, "9001"), "jl4");
+            assert_eq!(
+                r.sounds().text("stone_golem").as_deref(),
+                Some("stone golem")
+            );
+            assert_eq!(r.style().words("stone_golem", "title"), ["stone_golem"]);
+            assert_eq!(r.style().words("parameters", "resource_2_title"), ["stone"]);
+            assert_eq!(r.style().words("quarry", "title"), ["quarry"]);
+            assert_eq!(sound_layer(&r, "creature/stone_golem"), "jl4");
         }
     }
 
     #[test]
+    fn a_language_is_one_that_a_layer_has_a_language_file_for() {
+        let mut r = game_stack();
+        let languages = r.available_languages();
+        assert!(languages.contains(&"fr".to_owned()), "{languages:?}");
+        assert!(languages.contains(&"pt-BR".to_owned()), "{languages:?}");
+        assert!(!languages.contains(&"xx".to_owned()));
+        r.set_language("fr");
+        // The words of the language file, over the English.
+        assert_eq!(
+            r.sounds().text("what_are_your_orders").as_deref(),
+            Some("Que faites vous ?")
+        );
+        // The language's own style, over the game's.
+        let english = game_stack();
+        assert_eq!(english.style().words("a_deadly_fog", "shortcut"), ["f"]);
+        assert_eq!(r.style().words("a_deadly_fog", "shortcut"), ["n"]);
+        // A recording that only the German has.
+        r.set_language("de");
+        assert_eq!(sound_layer(&r, "voice/own/order_ok_1"), "default");
+    }
+
+    #[test]
     fn maps_in_the_downloaded_folder_are_downloaded_maps() {
-        let root = upstream_root();
+        let root = game_root();
         let user = tempfile::tempdir().unwrap();
         let downloaded = user.path().join("downloaded");
         std::fs::create_dir_all(downloaded.join("multi")).unwrap();

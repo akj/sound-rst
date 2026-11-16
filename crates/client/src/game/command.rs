@@ -787,7 +787,7 @@ mod tests {
     #[test]
     fn each_command_of_the_games_keys_has_a_description_of_its_own() {
         use crate::bindings::{Bindings, CLIENT_BINDINGS};
-        let path = crate::testkit::upstream_root().join("res/ui/bindings.txt");
+        let path = crate::testkit::game_root().join("res/ui/bindings.txt");
         let text = format!(
             "{}\n{CLIENT_BINDINGS}",
             std::fs::read_to_string(path).unwrap()

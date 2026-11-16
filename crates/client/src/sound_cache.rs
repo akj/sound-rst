@@ -1,5 +1,9 @@
-//! The text table and the sounds of the active resources: what each sound
-//! number of a message turns into.
+//! The phrases and the sounds of the active resources, by name: what each
+//! part of a message turns into.
+//!
+//! A phrase is a line `name = words` of a language file, `text/en.txt` or
+//! `text/fr.txt`. A sound is a recording under `sounds/`, named by its path
+//! without `.ogg`: `footstep/grass_1`.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -9,26 +13,28 @@
 )]
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Cue, MsgPart, Pause, Phrase};
+use soundrts_world::msg::{Cue, MsgPart, Pause, Phrase, is_name};
 
 use crate::audio::{Sound, SoundBuffer};
 use crate::log::Log;
-use crate::original_names::names;
 use crate::package::Package;
 use crate::parameters::Parameters;
 
-pub const TXT_FILE: &str = "ui/tts";
-/// The largest `tts.txt` of one layer, in bytes; a larger one is ignored
-/// whole. The original's largest is 16 KB.
-pub const MAX_TTS_BYTES: usize = 1024 * 1024;
-/// A sound of 0.01 s, said as "," when there is no recording.
-pub const SHORT_SILENCE: &str = "9998";
-/// A sound of 0.2 s, said as "." when there is no recording.
-pub const SILENCE: &str = "9999";
+/// The folder of a package that holds its language files.
+pub const TEXT_FOLDER: &str = "text";
+/// The folder of a package that holds its recordings.
+pub const SOUNDS_FOLDER: &str = "sounds";
+/// The largest language file of one layer, in bytes; a larger one is
+/// refused whole. The game's largest is 20 KB.
+pub const MAX_LANGUAGE_FILE_BYTES: usize = 1024 * 1024;
+/// A sound of 0.01 s, said as "," when a message names it.
+const SHORT_SILENCE: &str = "silence/short";
+/// A sound of 0.2 s, said as "." when a message names it.
+const SILENCE: &str = "silence/long";
 
 /// What a part of a message becomes: words to speak or a sound to play.
 #[derive(Clone, Debug)]
@@ -52,40 +58,65 @@ enum SoundRef {
     Loaded(Sound),
 }
 
-/// Reads the lines `<key> <text>` of `ui/tts.txt` files into `table`.
-pub fn update_text_table(table: &mut HashMap<String, String>, txt: &str, log: &Log) {
-    if txt.len() > MAX_TTS_BYTES {
-        log.warning(format!(
-            "'{TXT_FILE}' of {} bytes, more than {MAX_TTS_BYTES}, ignored",
-            txt.len()
+/// The phrases of a language file, in the order of the file: each line is
+/// `name = words`, blank, or a comment that starts with `#`. This is the
+/// simple subset of Fluent. Any other line refuses the whole file: the
+/// error names the line.
+pub fn read_language_file(text: &str) -> Result<Vec<(&str, &str)>, String> {
+    if text.len() > MAX_LANGUAGE_FILE_BYTES {
+        return Err(format!(
+            "{} bytes, more than {MAX_LANGUAGE_FILE_BYTES}",
+            text.len()
         ));
-        return;
     }
-    for line in txt.split('\n') {
-        let line = line.trim();
-        if line.is_empty() {
+    let mut phrases = Vec::new();
+    for (i, line) in text.split('\n').enumerate() {
+        let at = |what: &str| format!("line {}: {what}", i.saturating_add(1));
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() || line.starts_with('#') {
             continue;
         }
-        match line.split_once(char::is_whitespace) {
-            Some((key, value)) => {
-                let value = value.trim_start();
-                if value.is_empty() {
-                    log.warning(format!("in '{TXT_FILE}', line ignored: {line}"));
-                } else {
-                    table.insert(key.to_owned(), value.to_owned());
-                }
-            }
-            None => log.warning(format!("in '{TXT_FILE}', syntax error: {line}")),
+        let (name, words) = line
+            .split_once('=')
+            .ok_or_else(|| at("not 'name = words'"))?;
+        let (name, words) = (name.trim_end(), words.trim());
+        if !is_name(name) || name.contains('/') {
+            return Err(at("the name is not lower case letters, digits and '_'"));
         }
+        if words.is_empty() {
+            return Err(at("no words after '='"));
+        }
+        phrases.push((name, words));
     }
+    Ok(phrases)
 }
 
-/// The texts and sounds of the resource layers, merged: a later layer
-/// replaces an earlier one, a translation replaces the original. Sounds are
+/// The recordings under `sounds/` of a layer, by name.
+fn recordings(package: &Package, dir: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for path in package.relative_paths_of_files_in_subtree(dir) {
+        let name = path
+            .strip_prefix(dir)
+            .and_then(|p| p.strip_prefix('/'))
+            .and_then(|p| p.strip_suffix(".ogg"));
+        if let Some(name) = name.filter(|n| is_name(n)) {
+            found.push((name.to_owned(), path.clone()));
+        }
+    }
+    found
+}
+
+/// The phrases and sounds of the resource layers, merged: a later layer
+/// replaces an earlier one, a translation replaces the English. Sounds are
 /// decoded when first used.
 pub struct SoundCache {
     txt: HashMap<String, String>,
+    /// The place of each phrase among the phrases, in the order the
+    /// language files give them.
+    rank: HashMap<String, usize>,
     sounds: HashMap<String, SoundRef>,
+    /// The names that named nothing, each reported once.
+    missing: HashSet<String>,
     params: Arc<Parameters>,
     log: Log,
 }
@@ -94,108 +125,129 @@ pub struct SoundCache {
 #[derive(Clone)]
 pub struct Sounds(Rc<RefCell<SoundCache>>);
 
-fn is_all_digits(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
-}
-
-/// The key of a phrase of the original in the texts and the sounds: its
-/// number, from the table of names. None for a phrase the port added.
-fn phrase_key(phrase: Phrase) -> Option<String> {
-    let number = names().game_number(phrase.id())?;
-    Some(number.to_string())
-}
-
-/// The key of a sound the code plays by itself: the original's number for
-/// it, from the table of names. A test checks that each cue has one.
-fn cue_key(cue: Cue) -> String {
-    let number = names().game_number(cue.sound());
-    number.map_or_else(|| cue.sound().to_owned(), |n| n.to_string())
+/// A language file of a layer: where it is, for a message, and its text.
+pub struct LanguageFile {
+    pub path: String,
+    pub text: String,
 }
 
 impl SoundCache {
-    /// Builds the cache from the text files and the `.ogg` files found
-    /// under `ui` (and its translation) in the layers.
-    ///
-    /// `texts` are the `ui/tts.txt` contents in priority order; `sound_dirs`
-    /// are the (package, folder) pairs in priority order.
+    /// Builds the cache from the language files and the recordings of the
+    /// layers, both in priority order. A language file with a line that
+    /// cannot be read is refused whole, with its path and the line.
     pub fn new(
-        texts: &[String],
+        texts: &[LanguageFile],
         sound_dirs: &[(Package, String)],
         params: Arc<Parameters>,
         log: Log,
     ) -> SoundCache {
-        let mut txt = HashMap::new();
-        for t in texts {
-            update_text_table(&mut txt, t, &log);
+        let mut cache = SoundCache {
+            txt: HashMap::new(),
+            rank: HashMap::new(),
+            sounds: HashMap::new(),
+            missing: HashSet::new(),
+            params,
+            log,
+        };
+        for (name, words) in cache.phrases_of(texts) {
+            let next = cache.rank.len();
+            cache.rank.entry(name.clone()).or_insert(next);
+            cache.txt.insert(name, words);
         }
-        let mut sounds = HashMap::new();
         for (package, dir) in sound_dirs.iter().rev() {
-            for name in package.relative_paths_of_files_in_subtree(dir) {
-                let Some(stem) = name.strip_suffix(".ogg") else {
-                    continue;
-                };
-                let key = stem.rsplit('/').next().unwrap_or(stem).to_owned();
-                if txt.contains_key(&key) {
-                    log.warning(format!("didn't load {key}.ogg (text exists)"));
+            for (name, path) in recordings(package, dir) {
+                if cache.txt.contains_key(&name) {
+                    cache
+                        .log
+                        .warning(format!("didn't load {name}.ogg (text exists)"));
                 } else {
-                    sounds
-                        .entry(key)
-                        .or_insert_with(|| SoundRef::Unloaded(package.clone(), name.clone()));
+                    cache
+                        .sounds
+                        .entry(name)
+                        .or_insert_with(|| SoundRef::Unloaded(package.clone(), path));
                 }
             }
         }
         // The silences are used as random noises in style.txt.
-        txt.insert(SHORT_SILENCE.to_owned(), ",".to_owned());
-        txt.insert(SILENCE.to_owned(), ".".to_owned());
-        SoundCache {
-            txt,
-            sounds,
-            params,
-            log,
-        }
+        cache.txt.insert(SHORT_SILENCE.to_owned(), ",".to_owned());
+        cache.txt.insert(SILENCE.to_owned(), ".".to_owned());
+        cache
     }
 
-    /// Adds the texts and sounds of a map that came from a server, as
-    /// [`SoundCache::new`] reads them, but only under sound numbers this
-    /// cache lacks: the game's own texts and sounds stay, and so do the
-    /// numbers and words the game says as they are. Returns how many were
-    /// ignored.
-    pub fn add_downloaded(&mut self, texts: &[String], sound_dirs: &[(Package, String)]) -> usize {
-        let mut ignored: usize = 0;
-        let mut txt = HashMap::new();
-        for t in texts {
-            update_text_table(&mut txt, t, &self.log);
+    /// The phrases of the language files that can be read, in order.
+    fn phrases_of(&self, texts: &[LanguageFile]) -> Vec<(String, String)> {
+        let mut phrases = Vec::new();
+        for file in texts {
+            match read_language_file(&file.text) {
+                Ok(lines) => phrases.extend(
+                    lines
+                        .into_iter()
+                        .map(|(name, words)| (name.to_owned(), words.to_owned())),
+                ),
+                Err(e) => self.log.error(format!("{} is refused: {e}", file.path)),
+            }
         }
-        let taken = |cache: &SoundCache, key: &str| {
-            cache.txt.contains_key(key) || cache.sounds.contains_key(key) || !is_all_digits(key)
+        phrases
+    }
+
+    /// Adds the phrases and sounds of a map that came from a server, as
+    /// [`SoundCache::new`] reads them, but only under names this cache
+    /// lacks: the game's own phrases and sounds stay. Returns how many
+    /// were ignored.
+    pub fn add_downloaded(
+        &mut self,
+        texts: &[LanguageFile],
+        sound_dirs: &[(Package, String)],
+    ) -> usize {
+        let mut ignored: usize = 0;
+        let taken = |cache: &SoundCache, name: &str| {
+            cache.txt.contains_key(name)
+                || cache.sounds.contains_key(name)
+                || Phrase::from_id(name).is_some()
         };
-        for (key, value) in txt {
-            if taken(self, &key) {
+        let mut txt = HashMap::new();
+        let mut order = Vec::new();
+        for (name, words) in self.phrases_of(texts) {
+            if txt.insert(name.clone(), words).is_none() {
+                order.push(name);
+            }
+        }
+        for name in order {
+            if taken(self, &name) {
                 ignored = ignored.saturating_add(1);
-            } else {
-                self.txt.insert(key, value);
+            } else if let Some(words) = txt.remove(&name) {
+                let next = self.rank.len();
+                self.rank.entry(name.clone()).or_insert(next);
+                self.txt.insert(name, words);
             }
         }
         let mut sounds = HashMap::new();
         for (package, dir) in sound_dirs.iter().rev() {
-            for name in package.relative_paths_of_files_in_subtree(dir) {
-                let Some(stem) = name.strip_suffix(".ogg") else {
-                    continue;
-                };
-                let key = stem.rsplit('/').next().unwrap_or(stem).to_owned();
+            for (name, path) in recordings(package, dir) {
                 sounds
-                    .entry(key)
-                    .or_insert_with(|| SoundRef::Unloaded(package.clone(), name.clone()));
+                    .entry(name)
+                    .or_insert_with(|| SoundRef::Unloaded(package.clone(), path));
             }
         }
-        for (key, sound) in sounds {
-            if taken(self, &key) {
+        for (name, sound) in sounds {
+            if taken(self, &name) {
                 ignored = ignored.saturating_add(1);
             } else {
-                self.sounds.insert(key, sound);
+                self.sounds.insert(name, sound);
             }
         }
         ignored
+    }
+
+    /// Whether a phrase or a sound has this name.
+    pub fn has(&self, name: &str) -> bool {
+        self.txt.contains_key(name) || self.sounds.contains_key(name)
+    }
+
+    /// The place of a phrase among the phrases, in the order the language
+    /// files give them. A name that is no phrase comes after them all.
+    pub fn rank(&self, name: &str) -> usize {
+        self.rank.get(name).copied().unwrap_or(usize::MAX)
     }
 
     pub fn get_sound(&mut self, name: &str, warn: bool) -> Option<Sound> {
@@ -234,44 +286,38 @@ impl SoundCache {
         self.txt.get(key).map(String::as_str)
     }
 
-    /// What a name of the texts and the sounds becomes: its text, else its
-    /// sound.
-    fn named(&mut self, key: &str) -> Option<Spoken> {
-        if let Some(t) = self.text(key) {
+    /// What a name becomes: its phrase, else its sound. A name that names
+    /// nothing says nothing, and is reported once: it is never said as
+    /// written, since a map from a server chooses its names.
+    fn named(&mut self, name: &str) -> Option<Spoken> {
+        if let Some(t) = self.text(name) {
             return Some(Spoken::Text(t.to_owned()));
         }
-        self.get_sound(key, false).map(Spoken::Sound)
-    }
-
-    /// As [`SoundCache::named`], for a name that should exist: without it,
-    /// the name is said as written, and a number is logged as missing.
-    fn named_or_said(&mut self, key: String) -> Spoken {
-        if let Some(spoken) = self.named(&key) {
-            return spoken;
-        }
-        if is_all_digits(&key) {
+        let sound = self.get_sound(name, false).map(Spoken::Sound);
+        if sound.is_none() && self.missing.len() < 1000 && self.missing.insert(name.to_owned()) {
             self.log
-                .warning(format!("this sound may be missing: {key}"));
+                .warning(format!("{name} names no phrase and no sound"));
         }
-        Spoken::Text(key)
+        sound
     }
 
-    /// What a message part becomes: words to speak or a sound to play. A
-    /// phrase of the original is the text or the recording that the
-    /// resources have for it, in the player's language, and else its
-    /// English words.
-    pub fn translate(&mut self, part: &MsgPart) -> Spoken {
-        match part {
-            MsgPart::Phrase(p) => phrase_key(*p)
-                .and_then(|key| self.named(&key))
-                .unwrap_or_else(|| Spoken::Text(p.english().to_owned())),
-            MsgPart::Sound(c) => self.named_or_said(cue_key(*c)),
+    /// What a message part becomes: words to speak or a sound to play, or
+    /// nothing for a name that names nothing. A phrase is the words or
+    /// the recording that the resources have for it, in the player's
+    /// language, and else its English words.
+    pub fn translate(&mut self, part: &MsgPart) -> Option<Spoken> {
+        Some(match part {
+            MsgPart::Phrase(p) => {
+                let known = self.has(p.id()).then(|| self.named(p.id())).flatten();
+                known.unwrap_or_else(|| Spoken::Text(p.english().to_owned()))
+            }
+            MsgPart::Sound(c) => return self.named(c.sound()),
             MsgPart::Count(n) => Spoken::Text(n.to_string()),
             MsgPart::Pause(Pause::Short) => Spoken::Text(",".to_owned()),
             MsgPart::Pause(Pause::Long) => Spoken::Text(".".to_owned()),
             MsgPart::Literal(t) => Spoken::Text(t.clone()),
-            MsgPart::Original(name) => self.named_or_said(name.clone()),
-        }
+            MsgPart::Name(name) => return self.named(name),
+        })
     }
 
     /// Applies the parameters' volumes again to the loaded sounds.
@@ -301,14 +347,22 @@ impl Sounds {
 
     /// The sound of a cue.
     pub fn cue(&self, cue: Cue) -> Option<Sound> {
-        self.get_sound(&cue_key(cue))
+        self.get_sound(cue.sound())
     }
 
     pub fn text(&self, key: &str) -> Option<String> {
         self.0.borrow().text(key).map(str::to_owned)
     }
 
-    pub fn translate(&self, part: &MsgPart) -> Spoken {
+    pub fn has(&self, name: &str) -> bool {
+        self.0.borrow().has(name)
+    }
+
+    pub fn rank(&self, name: &str) -> usize {
+        self.0.borrow().rank(name)
+    }
+
+    pub fn translate(&self, part: &MsgPart) -> Option<Spoken> {
         self.0.borrow_mut().translate(part)
     }
 
@@ -318,50 +372,126 @@ impl Sounds {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_downloaded_text_cannot_stand_for_a_number_or_a_word() {
-        let log = Log::silent();
-        let params = Arc::new(Parameters::default());
-        let mut cache =
-            SoundCache::new(&["5 What are your orders?\n".to_owned()], &[], params, log);
-        let added = "5 Press Alt F4.\n9000 golem\n1000005 six\nhello bye\n".to_owned();
-        assert_eq!(cache.add_downloaded(&[added], &[]), 2);
-        let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
+    fn file(text: &str) -> LanguageFile {
+        LanguageFile {
+            path: "a map/text/en.txt".to_owned(),
+            text: text.to_owned(),
+        }
+    }
+
+    fn said(cache: &mut SoundCache, part: MsgPart) -> Option<String> {
+        cache.translate(&part).map(|spoken| match spoken {
             Spoken::Text(t) => t,
             Spoken::Sound(_) => "a sound".to_owned(),
-        };
-        let original = MsgPart::original;
-        assert_eq!(said(&mut cache, original("5")), "What are your orders?");
-        assert_eq!(said(&mut cache, original("9000")), "golem");
-        // A count is never looked up, in the code or in a file.
-        assert_eq!(said(&mut cache, MsgPart::Count(5)), "5");
-        assert_eq!(said(&mut cache, original("1000005")), "5");
-        assert_eq!(said(&mut cache, original("hello")), "hello");
+        })
+    }
+
+    fn name(s: &str) -> MsgPart {
+        MsgPart::Name(s.to_owned())
     }
 
     #[test]
-    fn a_phrase_is_its_text_in_the_resources_and_else_its_english() {
+    fn a_language_file_is_lines_of_name_and_words() {
+        let text =
+            "# The orders.\n\nwhat_are_your_orders = What are your orders?\r\nat  =  a = b \n";
+        assert_eq!(
+            read_language_file(text),
+            Ok(vec![
+                ("what_are_your_orders", "What are your orders?"),
+                ("at", "a = b")
+            ])
+        );
+        for (bad, line) in [
+            ("a = b\nhello\n", "line 2: not 'name = words'"),
+            ("5 = five\n", "line 1: the name"),
+            ("Hello = hi\n", "line 1: the name"),
+            ("voice/own = hi\n", "line 1: the name"),
+            ("a =\n", "line 1: no words"),
+            ("a = b\n  continued\n", "line 2: not 'name = words'"),
+            (" # indented\n", "line 1: not 'name = words'"),
+        ] {
+            let error = read_language_file(bad).unwrap_err();
+            assert!(error.starts_with(line), "{bad:?}: {error}");
+        }
+        let big = "a = b\n".repeat(MAX_LANGUAGE_FILE_BYTES / 6 + 1);
+        assert!(read_language_file(&big).unwrap_err().contains("bytes"));
+    }
+
+    #[test]
+    fn a_language_file_with_a_bad_line_is_refused_whole() {
+        let log = Log::silent();
+        log.keep_errors();
+        let params = Arc::new(Parameters::default());
+        let good = file("footman = footman\n");
+        let bad = file("knight = knight\nPress Alt F4 now\n");
+        let mut cache = SoundCache::new(&[good, bad], &[], params, log.clone());
+        assert_eq!(
+            said(&mut cache, name("footman")).as_deref(),
+            Some("footman")
+        );
+        assert_eq!(said(&mut cache, name("knight")), None);
+        assert_eq!(
+            log.take_errors(),
+            ["a map/text/en.txt is refused: line 2: not 'name = words'"]
+        );
+    }
+
+    #[test]
+    fn a_downloaded_phrase_cannot_take_a_name_of_the_game() {
         let log = Log::silent();
         let params = Arc::new(Parameters::default());
-        let french = "4202 en attente de vos ordres\n".to_owned();
+        let game = file("what_are_your_orders = What are your orders?\n");
+        let mut cache = SoundCache::new(&[game], &[], params, log);
+        let added =
+            file("what_are_your_orders = Press Alt F4.\ngolem = golem\nare_welcome = go away\n");
+        assert_eq!(cache.add_downloaded(&[added], &[]), 2);
+        assert_eq!(
+            said(&mut cache, name("what_are_your_orders")).as_deref(),
+            Some("What are your orders?")
+        );
+        assert_eq!(said(&mut cache, name("golem")).as_deref(), Some("golem"));
+        // A phrase of the port, which no language file has yet.
+        assert_eq!(
+            said(&mut cache, Phrase::AreWelcome.into()).as_deref(),
+            Some("welcome")
+        );
+        assert_eq!(said(&mut cache, MsgPart::Count(5)).as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn a_name_that_names_nothing_says_nothing() {
+        let params = Arc::new(Parameters::default());
+        let mut cache = SoundCache::new(&[], &[], params, Log::silent());
+        assert_eq!(said(&mut cache, name("press_alt_f4_now")), None);
+        assert_eq!(said(&mut cache, name("press_alt_f4_now")), None);
+        assert_eq!(said(&mut cache, MsgPart::Sound(Cue::Beep)), None);
+        assert_eq!(cache.missing.len(), 2);
+    }
+
+    #[test]
+    fn a_phrase_is_its_words_in_the_resources_and_else_its_english() {
+        let log = Log::silent();
+        let params = Arc::new(Parameters::default());
+        let french = file("awaiting_your_orders = en attente de vos ordres\n");
         let mut cache = SoundCache::new(&[french], &[], params, log);
-        let said = |cache: &mut SoundCache, part: MsgPart| match cache.translate(&part) {
-            Spoken::Text(t) => t,
-            Spoken::Sound(_) => "a sound".to_owned(),
-        };
+        let said = |cache: &mut SoundCache, part: MsgPart| said(cache, part).unwrap();
         assert_eq!(
             said(&mut cache, Phrase::AwaitingYourOrders.into()),
             "en attente de vos ordres"
         );
-        // The resources lack this line of the original.
+        // The resources lack this phrase.
         assert_eq!(said(&mut cache, Phrase::Welcome.into()), "welcome");
-        // The port's own phrase has no number, so no text can replace it.
-        assert_eq!(said(&mut cache, Phrase::AreWelcome.into()), "welcome");
         assert_eq!(said(&mut cache, Pause::Short.into()), ",");
         assert_eq!(said(&mut cache, Pause::Long.into()), ".");
-        assert_eq!(said(&mut cache, MsgPart::literal("4202")), "4202");
+        assert_eq!(
+            said(&mut cache, MsgPart::literal("awaiting_your_orders")),
+            "awaiting_your_orders"
+        );
+        assert_eq!(cache.rank("awaiting_your_orders"), 0);
+        assert_eq!(cache.rank("welcome"), usize::MAX);
     }
 }

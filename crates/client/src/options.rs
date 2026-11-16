@@ -17,6 +17,9 @@ pub struct Options {
     pub fetch_data: bool,
     /// Replays a game's record or a save, says how it went, then exits.
     pub check_record: Option<PathBuf>,
+    /// Converts the original game, or one of its mods, campaigns or maps,
+    /// into the files the game reads, then exits: from, then to.
+    pub import: Option<(PathBuf, PathBuf)>,
 }
 
 /// A command line the program cannot follow.
@@ -27,7 +30,7 @@ impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data] [--check-record <file>]",
+            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data] [--check-record <file>] [--import <from> <to>]",
             self.0
         )
     }
@@ -65,6 +68,13 @@ impl Options {
                 "--check-record" => {
                     options.check_record = Some(PathBuf::from(value("--check-record")?))
                 }
+                "--import" => {
+                    let from = PathBuf::from(value("--import")?);
+                    let to = args
+                        .next()
+                        .ok_or_else(|| UsageError("--import needs two values".to_owned()))?;
+                    options.import = Some((from, PathBuf::from(to)));
+                }
                 _ => {}
             }
         }
@@ -99,6 +109,7 @@ mod tests {
                 probe: true,
                 fetch_data: false,
                 check_record: None,
+                import: None,
             })
         );
         assert_eq!(

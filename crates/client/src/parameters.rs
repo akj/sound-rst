@@ -33,7 +33,8 @@ pub struct Parameters {
     pub observer_reactivity: f64,
     /// The volume of each package's sounds, by package name.
     pub default_volume: BTreeMap<String, f64>,
-    /// The volume of a sound, by sound name, over its package's.
+    /// The volume of a sound, by its name (`ambience/path`), over its
+    /// package's.
     pub volume: BTreeMap<String, f64>,
     pub packages: Packages,
 }
@@ -51,7 +52,7 @@ impl Default for Parameters {
             play_movement_sound: true,
             observer_reactivity: 1000.0,
             default_volume: BTreeMap::from([("res".into(), 1.0), ("soundpack".into(), 0.8)]),
-            volume: BTreeMap::from([("1000".into(), 0.5)]),
+            volume: BTreeMap::from([("ambience/path".into(), 0.5)]),
             packages: Packages::default(),
         }
     }
@@ -116,9 +117,22 @@ mod tests {
         assert_eq!(p.play_movement_sound, flag("play_movement_sound"));
         assert_eq!(p.observer_reactivity, number("observer_reactivity"));
         let tables: toml::Table = toml::from_str(&toml::to_string(&p).unwrap()).unwrap();
-        for table in ["default_volume", "volume", "packages"] {
+        for table in ["default_volume", "packages"] {
             assert_eq!(tables[table], original[table], "{table}");
         }
+        // The original names a sound with its number: the import gives the
+        // name.
+        let names = soundrts_import::names::names();
+        let original_volume: BTreeMap<String, f64> = original["volume"]
+            .as_table()
+            .unwrap()
+            .iter()
+            .map(|(number, volume)| {
+                let name = names.game_name(number.parse().unwrap()).unwrap();
+                (name.to_owned(), volume.as_float().unwrap())
+            })
+            .collect();
+        assert_eq!(p.volume, original_volume);
         // Every value of the original is one of the parameters.
         let keys = |t: &toml::Table| {
             let mut k: Vec<String> = t.keys().cloned().collect();
@@ -126,7 +140,7 @@ mod tests {
             k
         };
         assert_eq!(keys(&tables), keys(&original));
-        assert_eq!(p.sound_volume("1000", "res"), 0.5);
+        assert_eq!(p.sound_volume("ambience/path", "res"), 0.5);
         assert_eq!(p.sound_volume("1001", "soundpack"), 0.8);
         assert_eq!(p.sound_volume("1001", "default"), 1.0);
     }

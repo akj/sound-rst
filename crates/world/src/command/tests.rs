@@ -2,8 +2,7 @@ use super::*;
 use crate::{AiScripts, Rules};
 
 fn jl1() -> World {
-    let dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/soundrts-upstream");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data");
     let read = |f: &str| {
         let bytes = std::fs::read(dir.join(f))
             .unwrap_or_else(|e| panic!("{f}: {e}: run scripts/fetch-upstream.ps1"));

@@ -131,7 +131,7 @@ fn a_mission_packages_resources_are_unloaded_when_it_ends() {
     let mut w = zip::ZipWriter::new(std::fs::File::create(campaign.join("0.zip")).unwrap());
     let options = zip::write::SimpleFileOptions::default();
     w.start_file("map.txt", options).unwrap();
-    let map = soundrts::testkit::upstream_root().join("single/campaign/1.txt");
+    let map = soundrts::testkit::game_root().join("single/campaign/1.txt");
     w.write_all(&std::fs::read(map).unwrap()).unwrap();
     w.finish().unwrap();
     let package = soundrts::package::Package::from_path(&campaign).unwrap();

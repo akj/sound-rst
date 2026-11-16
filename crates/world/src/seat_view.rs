@@ -39,7 +39,7 @@ use crate::entity::{EntityId, Place, PlayerId, SquareId};
 use crate::known::{KnownEntity, KnownOrder, KnownTarget};
 use crate::message::SquareInfo;
 use crate::message::{ControlledPlayer, GameEnd, GameStart, TurnMessage};
-use crate::msg::Msg;
+use crate::msg::{Msg, MsgPart};
 use crate::orders::{Keyword, MenuEntry, OrderInfo, TargetRef};
 use crate::player::{Objective, PlayerStats};
 use crate::questions::{self, Controlled, Knowledge, PlayerFacts, Resolved};
@@ -142,12 +142,12 @@ impl SeatView {
     }
 
     /// The map's objective, as sound numbers. Empty if it has none.
-    pub fn map_objective(&self) -> &[i64] {
+    pub fn map_objective(&self) -> &[MsgPart] {
         &self.start.map.objective
     }
 
     /// The map's introduction, as sound numbers. Empty if it has none.
-    pub fn map_intro(&self) -> &[i64] {
+    pub fn map_intro(&self) -> &[MsgPart] {
         &self.start.map.intro
     }
 

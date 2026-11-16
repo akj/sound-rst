@@ -9,8 +9,8 @@ use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::{
     CHAT_HISTORY_LINES, Channel, ChatLine, ChatText, ClientMsg, Computer, ContentHash, Faction,
     GameTexts, Income, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_ALLIANCE,
-    MAX_LOGIN_CHARS, MAX_TITLE_SOUNDS, MapData, MapHash, MapInfo, Refusal, Rejection, RoomChange,
-    RoomExit, RoomId, SeatToken, ServerMsg, ServerName, Skill, Slot, SlotIndex, Speed, Whereabouts,
+    MAX_LOGIN_CHARS, MapData, MapHash, MapInfo, Refusal, Rejection, RoomChange, RoomExit, RoomId,
+    SeatToken, ServerMsg, ServerName, Skill, Slot, SlotIndex, Speed, Whereabouts,
 };
 use soundrts_world::{Command, GameSetup};
 use tokio::sync::mpsc;
@@ -500,7 +500,7 @@ impl Lobby {
         }
         if new.map.nb_players_min == 0
             || new.map.nb_players_min > new.map.nb_players_max
-            || new.map.title_sounds.len() > MAX_TITLE_SOUNDS
+            || !new.map.title_is_valid()
         {
             return Err(Refusal::Invalid);
         }
