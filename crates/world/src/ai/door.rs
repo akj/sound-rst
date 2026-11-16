@@ -64,10 +64,6 @@ impl<'a> Seen<'a> {
         self.e.class()
     }
 
-    pub(super) fn type_name(self) -> &'a str {
-        &self.e.type_name
-    }
-
     /// Its type in the rules. A building site has none.
     pub(super) fn type_id(self) -> Option<TypeId> {
         self.e.type_id()
@@ -172,10 +168,6 @@ impl<'a> Own<'a> {
     /// Its type in the rules. A building site has none.
     pub(super) fn type_id(self) -> Option<TypeId> {
         self.e.type_id()
-    }
-
-    pub(super) fn type_name(self) -> &'a str {
-        &self.e.type_name
     }
 
     pub(super) fn hp(self) -> i64 {
@@ -319,7 +311,8 @@ impl World {
 
     /// The state of a new scripted computer, with its AI type set.
     pub(crate) fn new_computer(&mut self, p: PlayerId) -> Res {
-        self.plm(p).ai = Some(Box::default());
+        let names = self.rules.types().iter().map(|t| t.name.clone()).collect();
+        self.plm(p).ai = Some(Box::new(Computer::with_names(names)));
         let t = self.pl(p).ai_type().unwrap_or("timers").to_owned();
         self.computer_set_ai(p, &t)
     }
@@ -373,13 +366,15 @@ impl World {
     /// there.
     #[cfg(test)]
     pub(crate) fn ai_get(&mut self, p: PlayerId, nb: i64, type_name: &str) -> Res<bool> {
-        self.door(p).get(nb, type_name)
+        let t = self.rules.type_id(type_name);
+        self.door(p).get(nb, t)
     }
 
     /// `nb`: the number of units of the type.
     #[cfg(test)]
     pub(crate) fn computer_nb(&mut self, p: PlayerId, type_name: &str) -> i64 {
-        self.door(p).nb(&super::Sel::One(type_name.to_owned()))
+        let t = self.rules.type_id(type_name).expect("a type of the rules");
+        self.door(p).nb(&super::Sel::One(t))
     }
 
     /// The state of a scripted computer, for the tests.
@@ -466,9 +461,10 @@ impl Door<'_> {
         self.world.faction_ai_type(self.me, ai_type)
     }
 
-    /// Whether `unit_type` can harm `other_type`, by the rules.
-    pub(super) fn can_harm(&mut self, unit_type: &str, other_type: &str) -> bool {
-        self.world.can_harm(unit_type, other_type)
+    /// Whether the type named `unit_type` can harm `other`, by the rules.
+    pub(super) fn can_harm(&mut self, unit_type: &str, other: TypeId) -> bool {
+        let other = self.world.rules.ty(other).name.clone();
+        self.world.can_harm(unit_type, &other)
     }
 
     // its own state
@@ -557,13 +553,9 @@ impl Door<'_> {
     }
 
     /// Whether its unit may receive the order now, by its menu.
-    pub(super) fn is_order_allowed(
-        &self,
-        u: EntityId,
-        kw: Keyword,
-        type_name: Option<&str>,
-    ) -> bool {
-        self.unit(u).is_some() && self.world.is_order_allowed(u, kw, type_name)
+    pub(super) fn is_order_allowed(&self, u: EntityId, kw: Keyword, t: Option<TypeId>) -> bool {
+        let name = t.map(|t| self.world.rules.ty(t).name.as_str());
+        self.unit(u).is_some() && self.world.is_order_allowed(u, kw, name)
     }
 
     /// The first order of its unit, to follow, if it has this keyword.
@@ -588,11 +580,6 @@ impl Door<'_> {
             && unit.place.is_some()
             && f.likeness
                 .is_some_and(|l| unit.orders().iter().any(|o| o.likeness() == Some(l)))
-    }
-
-    /// An order as the words it is written with.
-    pub(super) fn words(&self, r: &Request) -> Vec<String> {
-        r.words(self.world)
     }
 
     // what it perceives and remembers
@@ -908,6 +895,7 @@ impl Names for Computer {
             time_has_come,
             safe_cnt: _,
             lacking: _,
+            names: _,
         } = self;
         attacked_places.names(f);
         for followed in orders.values().flatten() {

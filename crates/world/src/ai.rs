@@ -25,11 +25,12 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, py_int, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, EntityClass, Role};
+use crate::rules::{AirGround, EntityClass, Role, TypeId};
 use crate::world::TPlace;
 
 mod door;
 mod handicap;
+mod legacy;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
@@ -59,22 +60,63 @@ fn deeper(depth: usize) -> Res<usize> {
 /// What `check_type` compares a unit or a type with.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Sel {
-    /// A list of type names: `nb` counts 1 if the first one is an upgrade
-    /// the player has.
-    List(Vec<String>),
-    /// One type name.
-    One(String),
+    /// A list of types: `nb` counts 1 if the first one is an upgrade the
+    /// player has.
+    List(Vec<TypeId>),
+    One(TypeId),
     /// The `Worker` class.
     Workers,
 }
 
 impl Sel {
-    /// `check_type(type, sel)` for a type known by its name.
-    fn matches_type(&self, name: &str) -> bool {
+    /// `check_type(type, sel)` for a type.
+    fn matches_type(&self, t: TypeId) -> bool {
         match self {
-            Sel::List(l) => l.iter().any(|t| t == name),
-            Sel::One(t) => t == name,
+            Sel::List(l) => l.contains(&t),
+            Sel::One(o) => *o == t,
             Sel::Workers => false,
+        }
+    }
+}
+
+/// An order the computer gives to units of a kind, and follows until
+/// enough of them carry it out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum Task {
+    /// Repair a building site.
+    Repair(EntityId),
+    /// Build a building on a meadow.
+    Build(TypeId, EntityId),
+    Train(TypeId),
+    Research(TypeId),
+    UpgradeTo(TypeId),
+    /// Use an ability, aimed at a unit if it asks for a target.
+    Use(TypeId, Option<EntityId>),
+}
+
+impl Task {
+    fn keyword(self) -> Keyword {
+        match self {
+            Task::Repair(_) => Keyword::Repair,
+            Task::Build(..) => Keyword::Build,
+            Task::Train(_) => Keyword::Train,
+            Task::Research(_) => Keyword::Research,
+            Task::UpgradeTo(_) => Keyword::UpgradeTo,
+            Task::Use(..) => Keyword::Use,
+        }
+    }
+
+    /// The order, as a unit takes it.
+    fn request(self, rules: &crate::Rules) -> Request {
+        let name = |t: TypeId| rules.ty(t).name.clone();
+        match self {
+            Task::Repair(site) => Request::repair(TargetRef::Entity(site)),
+            Task::Build(t, meadow) => Request::build(name(t), TargetRef::Entity(meadow)),
+            Task::Train(t) => Request::train(name(t)),
+            Task::Research(t) => Request::research(name(t)),
+            Task::UpgradeTo(t) => Request::upgrade_to(name(t)),
+            Task::Use(a, None) => Request::use_ability(name(a)),
+            Task::Use(a, Some(u)) => Request::use_ability(name(a)).at(TargetRef::Entity(u)),
         }
     }
 }
@@ -105,7 +147,7 @@ impl Kind {
 type DepositPriority = (i64, i64, Option<EntityId>);
 
 /// The state of a scripted computer player (`Computer`).
-#[derive(Clone, Debug, Default, Hash)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Computer {
     /// The lines of the script, once an AI type other than `timers` is set.
     plan: Option<Vec<String>>,
@@ -115,26 +157,36 @@ pub(crate) struct Computer {
     constant_attacks: i64,
     research: i64,
     attacked_places: Vec<Option<Place>>,
-    orders: BTreeMap<(Sel, Vec<String>), Vec<Followed>>,
+    orders: BTreeMap<(Sel, Task), Vec<Followed>>,
     previous_choose: BTreeMap<(Kind, Option<i64>, Option<Place>), Mark>,
     sensible_building: Option<EntityId>,
     workers: Vec<EntityId>,
     /// Workers gathering from each deposit, by the identity of the target.
     gathered_deposits: Vec<(Option<Mark>, i64)>,
     building_sites: Vec<EntityId>,
-    raise_dead_users: Vec<(EntityId, String)>,
-    teleportation_users: Vec<(EntityId, String)>,
-    cataclysm_users: Vec<(EntityId, String)>,
-    detector_users: Vec<(EntityId, String)>,
-    summon_users: Vec<(EntityId, String)>,
+    /// The units able to use an ability of each kind, and the ability.
+    raise_dead_users: Vec<(EntityId, TypeId)>,
+    teleportation_users: Vec<(EntityId, TypeId)>,
+    cataclysm_users: Vec<(EntityId, TypeId)>,
+    detector_users: Vec<(EntityId, TypeId)>,
+    summon_users: Vec<(EntityId, TypeId)>,
     /// Whether units waiting on a target may go, by target.
     time_has_come: Vec<(Option<Mark>, bool)>,
     safe_cnt: i64,
     /// The cost of the first purchase of its turn that lacked a resource.
     lacking: Option<Vec<i64>>,
+    /// The names of the types, which only the digest reads.
+    names: Vec<String>,
 }
 
 impl Computer {
+    fn with_names(names: Vec<String>) -> Computer {
+        Computer {
+            names,
+            ..Computer::default()
+        }
+    }
+
     /// Whether the units waiting on a square are strong enough.
     fn time_has_come(&self, s: SquareId) -> bool {
         let key = Some(Mark::square(s));
@@ -359,10 +411,10 @@ impl Door<'_> {
         }
         self.raise_dead()?;
         self.build_a_warehouse_if_useful()?;
-        let peasant = self.rules().role_name(self.faction(), Role::Worker);
+        let worker = self.role_type(Role::Worker);
         // A recursion error here ends the player's update with a warning, as
         // the original's ends at the world's catch.
-        self.get(NB_WORKERS_TO_GET, &peasant)?;
+        self.get(NB_WORKERS_TO_GET, worker)?;
         let planned = match self.follow_plan() {
             // The original catches a recursion error of its plan here, and
             // goes on with the next line of the plan at its next turn.
@@ -491,7 +543,8 @@ impl Door<'_> {
                         n = py_int(w).map_err(|_| Abort::new("invalid literal for int()"))?;
                     } else if self.rules().has_class(w) {
                         let t = self.equivalent(w);
-                        if !self.get(n, &t)? {
+                        let t = self.rules().type_id(&t);
+                        if !self.get(n, t)? {
                             done = false;
                             break;
                         }
@@ -545,32 +598,31 @@ impl Door<'_> {
                 | EntityClass::Corpse
                 | EntityClass::Exit => {}
             }
-            let abilities = e
-                .type_id()
-                .map(|t| self.rules().ty(t).can_use.clone())
-                .unwrap_or_default();
+            let abilities = self.listed(e.type_id(), |t| &t.can_use);
             for a in abilities {
-                if !self.is_order_allowed(u, Keyword::Use, Some(&a)) {
+                // A unit may use only an ability the rules have.
+                if !self.is_order_allowed(u, Keyword::Use, Some(a)) {
                     continue;
                 }
                 let rules = self.rules();
-                let Some(effect) = rules.get_words(&a, "effect") else {
+                let Some(effect) = self.effect(a) else {
                     continue;
                 };
-                match effect.first().map(String::as_str) {
+                let mut words = effect.iter().map(String::as_str);
+                match words.next() {
                     None => continue,
-                    Some("raise_dead") => raise_dead.push((u, a.clone())),
-                    Some("teleportation") => teleportation.push((u, a.clone())),
+                    Some("raise_dead") => raise_dead.push((u, a)),
+                    Some("teleportation") => teleportation.push((u, a)),
                     Some("summon") => {
-                        for item in &effect[1..] {
+                        for item in words {
                             if rules.get_is_truthy(item, "harm_level") {
-                                cataclysm.push((u, a.clone()));
+                                cataclysm.push((u, a));
                             }
                             if rules.get_is_truthy(item, "is_a_detector") {
-                                detector.push((u, a.clone()));
+                                detector.push((u, a));
                             }
                             if rules.get_is_truthy(item, "damage") {
-                                summon.push((u, a.clone()));
+                                summon.push((u, a));
                             }
                         }
                     }
@@ -687,8 +739,7 @@ impl Door<'_> {
                     .is_some_and(|t| t.is_entity(site))
             });
             if !served {
-                let repair = Request::repair(TargetRef::Entity(site));
-                self.order(4, Sel::Workers, repair, true)?;
+                self.order(4, Sel::Workers, Task::Repair(site), true)?;
                 break;
             }
         }
@@ -894,7 +945,7 @@ impl Door<'_> {
         };
         for (u, a) in self.state().cataclysm_users.clone() {
             let busy = self.unit(u).is_none_or(Own::has_orders);
-            if busy || !self.cataclysm_is_efficient(&a, &mut enemies) {
+            if busy || !self.cataclysm_is_efficient(a, &mut enemies) {
                 continue;
             }
             let start = square_of(self.unit(u).and_then(Own::place))?;
@@ -905,7 +956,7 @@ impl Door<'_> {
                 self.give(u, Request::go(TargetRef::Square(before)), false)?;
             }
             let t = square_target(last)?;
-            let cataclysm = Request::use_ability(a.clone()).at(t);
+            let cataclysm = Request::use_ability(self.name_of(a)).at(t);
             self.give(u, cataclysm, false)?;
             if self.first_order_is_possible(u) {
                 let t = square_target(self.unit(u).and_then(Own::place))?;
@@ -924,24 +975,29 @@ impl Door<'_> {
 
     /// `_cataclysm_is_efficient`: the ability summons something harmful
     /// to one of the enemies.
-    fn cataclysm_is_efficient(&mut self, a: &str, enemies: &mut Enemies) -> bool {
-        let mut names: BTreeSet<String> = BTreeSet::new();
+    fn cataclysm_is_efficient(&mut self, a: TypeId, enemies: &mut Enemies) -> bool {
+        let mut types: BTreeSet<TypeId> = BTreeSet::new();
         if !enemies.used {
             enemies.used = true;
             let known = self.perceived().chain(self.remembered().map(|(r, _)| r));
             for e in known {
-                if e.place() == enemies.place && self.is_an_enemy(e) {
-                    names.insert(e.type_name().to_owned());
+                // A building site has no type, and nothing harms it.
+                if e.place() == enemies.place
+                    && self.is_an_enemy(e)
+                    && let Some(t) = e.type_id()
+                {
+                    types.insert(t);
                 }
             }
         }
-        let Some(effect) = self.rules().get_words(a, "effect") else {
+        let Some(effect) = self.effect(a) else {
             return false;
         };
-        if effect.first().map(String::as_str) == Some("summon") {
-            for item in &effect[1..] {
+        let mut words = effect.iter();
+        if words.next().map(String::as_str) == Some("summon") {
+            for item in words {
                 if self.rules().get_is_truthy(item, "harm_level") {
-                    for t in &names {
+                    for &t in &types {
                         if self.can_harm(item, t) {
                             return true;
                         }
@@ -981,7 +1037,7 @@ impl Door<'_> {
         let mut used_teleportation = false;
         for (u, a) in self.state().teleportation_users.clone() {
             let t = square_target(Some(place))?;
-            self.give(u, Request::use_ability(a).at(t), true)?;
+            self.give(u, Request::use_ability(self.name_of(a)).at(t), true)?;
             if self.first_order_is_possible(u) {
                 used_teleportation = true;
             }
@@ -1000,9 +1056,9 @@ impl Door<'_> {
                 self.give(u, Request::go(TargetRef::Square(before)), false)?;
                 if !self.friendly_presence(Some(place)) {
                     for (u_, a) in self.state().cataclysm_users.clone() {
-                        if u_ == u && self.cataclysm_is_efficient(&a, &mut enemies) {
+                        if u_ == u && self.cataclysm_is_efficient(a, &mut enemies) {
                             let t = square_target(Some(place))?;
-                            let cataclysm = Request::use_ability(a).at(t);
+                            let cataclysm = Request::use_ability(self.name_of(a)).at(t);
                             self.give(u, cataclysm, false)?;
                         }
                     }
@@ -1011,13 +1067,15 @@ impl Door<'_> {
             for (u_, a) in self.state().summon_users.clone() {
                 if u_ == u {
                     let t = square_target(Some(place))?;
-                    self.give(u, Request::use_ability(a).at(t), false)?;
+                    let summon = Request::use_ability(self.name_of(a)).at(t);
+                    self.give(u, summon, false)?;
                 }
             }
             for (u_, a) in self.state().detector_users.clone() {
                 if u_ == u {
                     let t = square_target(Some(place))?;
-                    self.give(u, Request::use_ability(a).at(t), false)?;
+                    let detector = Request::use_ability(self.name_of(a)).at(t);
+                    self.give(u, detector, false)?;
                 }
             }
             let t = square_target(Some(place))?;
@@ -1101,17 +1159,16 @@ impl Door<'_> {
                 .type_id()
                 .map(|t| self.rules().ty(t).can_research.clone())
                 .unwrap_or_default();
-            for t in researchable {
-                let cost = self
-                    .rules()
-                    .unit_type(&t)
-                    .map(|c| c.cost.clone())
-                    .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'cost'"))?;
-                if self.future_nb(&Sel::List(vec![t.clone()])) == 0
+            for name in researchable {
+                let Some(t) = self.rules().type_id(&name) else {
+                    return Err(Abort::new("'NoneType' object has no attribute 'cost'"));
+                };
+                let cost = self.rules().ty(t).cost.clone();
+                if self.future_nb(&Sel::List(vec![t])) == 0
                     && self.missing_resources(&cost)?.is_empty()
                     && self.potential(&cost)? > 3
                 {
-                    self.give(u, Request::research(t), true)?;
+                    self.give(u, Request::research(self.name_of(t)), true)?;
                 }
             }
         }
@@ -1123,7 +1180,7 @@ impl Door<'_> {
             if let Some(Place::Square(s)) = self.unit(u).and_then(Own::place)
                 && self.places_with_corpses().contains(&s)
             {
-                let raise = Request::use_ability(a).at(TargetRef::Square(s));
+                let raise = Request::use_ability(self.name_of(a)).at(TargetRef::Square(s));
                 self.give(u, raise, true)?;
             }
         }
@@ -1132,17 +1189,11 @@ impl Door<'_> {
 
     // Computer: warehouses
 
-    fn best_warehouse(&self) -> Option<(String, Vec<i64>)> {
-        let name = self.rules().role_name(self.faction(), Role::TownHall);
-        self.rules()
-            .unit_type(&name)
-            .map(|t| (t.name.clone(), t.cost.clone()))
-    }
-
     fn build_a_warehouse_if_useful(&mut self) -> Res {
-        let Some((_, cost)) = self.best_warehouse() else {
+        let Some(warehouse) = self.role_type(Role::TownHall) else {
             return Ok(());
         };
+        let cost = self.rules().ty(warehouse).cost.clone();
         if !self.missing_resources(&cost)?.is_empty() {
             return Ok(());
         }
@@ -1159,7 +1210,7 @@ impl Door<'_> {
             }
         }
         for d in deposits {
-            self.build_a_warehouse_for(&d)?;
+            self.build_a_warehouse_for(&d, warehouse)?;
         }
         Ok(())
     }
@@ -1170,7 +1221,9 @@ impl Door<'_> {
             .ok_or_else(|| Abort::new("object has no attribute 'resource_type'"))
     }
 
-    fn build_a_warehouse_for(&mut self, deposit: &Mark) -> Res {
+    /// Has the workers near a deposit repair a warehouse being built near
+    /// it, or build `warehouse` there if none stands near.
+    fn build_a_warehouse_for(&mut self, deposit: &Mark, warehouse: TypeId) -> Res {
         let dplace = self.target_place_of(deposit);
         let nearby: Vec<EntityId> = self
             .state()
@@ -1219,14 +1272,11 @@ impl Door<'_> {
             }
         };
         if far && let Some(meadow) = self.choose(Kind::Meadow, None, Some(dp), false)? {
-            let (name, _) = self
-                .best_warehouse()
-                .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'type_name'"))?;
             let Some(id) = meadow.entity_id() else {
                 return Ok(());
             };
             for v in nearby {
-                let build = Request::build(name.clone(), TargetRef::Entity(id));
+                let build = Request::build(self.name_of(warehouse), TargetRef::Entity(id));
                 self.give(v, build, true)?;
             }
         }
@@ -1409,17 +1459,14 @@ impl Door<'_> {
     fn entity_matches(e: Own, sel: &Sel) -> bool {
         match sel {
             Sel::Workers => e.class() == EntityClass::Worker,
-            _ => sel.matches_type(e.type_name()),
+            _ => e.type_id().is_some_and(|t| sel.matches_type(t)),
         }
     }
 
     fn nb(&self, sel: &Sel) -> i64 {
         if let Sel::List(l) = sel
-            && let Some(first) = l.first()
-            && self
-                .rules()
-                .type_id(first)
-                .is_some_and(|t| self.has_upgrade(t))
+            && let Some(&first) = l.first()
+            && self.has_upgrade(first)
         {
             return 1;
         }
@@ -1431,19 +1478,14 @@ impl Door<'_> {
     }
 
     fn nb_in_production(&self, sel: &Sel) -> i64 {
-        let rules = self.rules();
         let mut n = 0;
         for e in self.units().iter().filter_map(|&u| self.unit(u)) {
-            if let Some(site) = e.site_type()
-                && sel.matches_type(&rules.ty(site).name)
-            {
+            if e.site_type().is_some_and(|t| sel.matches_type(t)) {
                 n += 1;
                 continue;
             }
             for o in e.orders() {
-                if o.made()
-                    .is_some_and(|t| sel.matches_type(&rules.ty(t).name))
-                {
+                if o.made().is_some_and(|t| sel.matches_type(t)) {
                     n += 1;
                 }
             }
@@ -1485,14 +1527,14 @@ impl Door<'_> {
     }
 
     /// `get`: works toward having `nb` units of the type; true if they are
-    /// there.
-    fn get(&mut self, nb: i64, type_name: &str) -> Res<bool> {
+    /// there. Of a name that is no type, it never has any.
+    fn get(&mut self, nb: i64, t: Option<TypeId>) -> Res<bool> {
         self.state_mut().safe_cnt = 0;
-        self.get_types(nb, vec![type_name.to_owned()], 0)
+        self.get_types(nb, t.into_iter().collect(), 0)
     }
 
     /// `_get`. `depth` counts the planning calls this one is inside.
-    fn get_types(&mut self, nb: i64, types: Vec<String>, depth: usize) -> Res<bool> {
+    fn get_types(&mut self, nb: i64, types: Vec<TypeId>, depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
         let sel = Sel::List(types.clone());
         if self.nb(&sel) >= nb {
@@ -1505,17 +1547,14 @@ impl Door<'_> {
         if self.state().safe_cnt > 10 {
             return Ok(false);
         }
-        for t in &types {
-            if self.rules().unit_type(t).is_none() {
-                continue;
-            }
-            let makers = self.rules().get_makers(t);
+        for &t in &types {
+            let makers = self.makers(t);
             if self.nb(&Sel::List(makers.clone())) > 0 {
                 let n = nb - self.future_nb(&sel);
                 self.build_or_train_or_upgradeto_or_summon(t, n, depth)?;
                 break;
-            } else if let Some(m) = makers.first() {
-                self.get_types(1, vec![m.clone()], depth)?;
+            } else if let Some(&m) = makers.first() {
+                self.get_types(1, vec![m], depth)?;
                 return Ok(false);
             }
         }
@@ -1536,10 +1575,12 @@ impl Door<'_> {
         let available = self.available_food();
         if food != 0 && food > available - self.used_food() {
             if available < limit {
-                let name = self.rules().role_name(self.faction(), Role::Farm);
-                let t = Sel::One(name.clone());
+                let Some(farm) = self.role_type(Role::Farm) else {
+                    return Err(Abort::new("'NoneType' object has no attribute '__name__'"));
+                };
+                let t = Sel::One(farm);
                 if self.future_nb(&t) == self.nb(&t) {
-                    self.build_or_train_or_upgradeto_or_summon(&name, 1, depth)?;
+                    self.build_or_train_or_upgradeto_or_summon(farm, 1, depth)?;
                 }
             }
             Ok(false)
@@ -1552,7 +1593,8 @@ impl Door<'_> {
         let depth = deeper(depth)?;
         for r in requirements {
             if !self.has(r) {
-                return self.get_types(1, vec![r.clone()], depth);
+                let t = self.rules().type_id(r);
+                return self.get_types(1, t.into_iter().collect(), depth);
             }
         }
         Ok(true)
@@ -1560,36 +1602,30 @@ impl Door<'_> {
 
     fn build_or_train_or_upgradeto_or_summon(
         &mut self,
-        type_name: &str,
+        made: TypeId,
         nb: i64,
         depth: usize,
     ) -> Res {
         let depth = deeper(depth)?;
-        let t = self
-            .rules()
-            .unit_type(type_name)
-            .cloned()
-            .ok_or_else(|| Abort::new("'NoneType' object has no attribute '__name__'"))?;
-        let makers = self.rules().get_makers(type_name);
+        let t = self.rules().ty(made).clone();
+        let makers = self.makers(made);
         if !self.get_types(1, makers.clone(), depth)?
             || !self.get_requirements(&t.requirements, depth)?
         {
             return Ok(());
         }
-        let Some(mut maker) = makers.last().cloned() else {
+        let Some(mut maker) = makers.last().copied() else {
             return Ok(());
         };
-        for m in &makers {
-            if self.nb(&Sel::One(m.clone())) != 0 {
-                maker = m.clone();
+        for &m in &makers {
+            if self.nb(&Sel::One(m)) != 0 {
+                maker = m;
                 break;
             }
         }
-        let Some(mc) = self.rules().unit_type(&maker).cloned() else {
-            return Ok(());
-        };
-        let maker_sel = Sel::One(maker.clone());
-        let name = type_name.to_owned();
+        let mc = self.rules().ty(maker).clone();
+        let maker_sel = Sel::One(maker);
+        let name = t.name.clone();
         if mc.can_upgrade_to.contains(&name) {
             if self.nb(&maker_sel) >= nb {
                 let cost: Vec<i64> = t
@@ -1599,7 +1635,7 @@ impl Door<'_> {
                     .map(|(i, c)| c - mc.cost.get(i).copied().unwrap_or(0))
                     .collect();
                 if self.gather(&cost, t.stats.food_cost - mc.stats.food_cost, depth)? {
-                    self.order(nb, maker_sel, Request::upgrade_to(name), false)?;
+                    self.order(nb, maker_sel, Task::UpgradeTo(made), false)?;
                 }
             } else {
                 self.get_types(nb, vec![maker], depth)?;
@@ -1620,7 +1656,7 @@ impl Door<'_> {
                     }
                 };
                 if far {
-                    if self.nb(&Sel::One(name.clone())) != 0 {
+                    if self.nb(&Sel::One(made)) != 0 {
                         return Ok(());
                     }
                     let bp = self.builders_place()?;
@@ -1633,8 +1669,7 @@ impl Door<'_> {
                 self.choose(Kind::Meadow, None, bp, false)?
             };
             if let Some(id) = meadow.as_ref().and_then(Mark::entity_id) {
-                let build = Request::build(name, TargetRef::Entity(id));
-                self.order(4, maker_sel, build, true)?;
+                self.order(4, maker_sel, Task::Build(made, id), true)?;
             }
         } else if mc.can_train.contains(&name) {
             let nb_maker = self.nb(&maker_sel);
@@ -1643,35 +1678,77 @@ impl Door<'_> {
                 && self.potential(&t.cost)? > nb_maker * 100
             {
                 // additional production sites
-                self.build_or_train_or_upgradeto_or_summon(&maker, 1, depth)?;
+                self.build_or_train_or_upgradeto_or_summon(maker, 1, depth)?;
             }
             if self.gather(&t.cost, t.stats.food_cost, depth)? {
-                self.order(nb, maker_sel, Request::train(name), false)?;
+                self.order(nb, maker_sel, Task::Train(made), false)?;
             }
         } else if mc.can_research.contains(&name) {
             if self.gather(&t.cost, t.stats.food_cost, depth)? {
-                self.order(1, maker_sel, Request::research(name), false)?;
+                self.order(1, maker_sel, Task::Research(made), false)?;
             }
         } else {
-            for ability in &mc.can_use {
-                let Some(effect) = self.rules().get_words(ability, "effect") else {
+            for a in self.listed(Some(maker), |t| &t.can_use) {
+                let Some(effect) = self.effect(a) else {
                     continue;
                 };
                 if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
-                    let mut order = Request::use_ability(ability.clone());
-                    if self.rules().get_words(ability, "effect_target").as_deref()
-                        == Some(&["ask".to_owned()][..])
-                    {
+                    let mut target = None;
+                    if self.rules().ty(a).effect_target == ["ask"] {
                         let first = self.units().first().copied();
                         let first = first.ok_or_else(|| Abort::new("list index out of range"))?;
-                        order = order.at(TargetRef::Entity(first));
+                        target = Some(first);
                     }
-                    self.order(1, maker_sel, order, false)?;
+                    self.order(1, maker_sel, Task::Use(a, target), false)?;
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    /// The types able to build, train, upgrade to, research or summon `t`,
+    /// in definition order.
+    fn makers(&self, t: TypeId) -> Vec<TypeId> {
+        let rules = self.rules();
+        rules
+            .get_makers(&rules.ty(t).name)
+            .iter()
+            .filter_map(|m| rules.type_id(m))
+            .collect()
+    }
+
+    /// The types a list of a unit's type names, such as what it can use;
+    /// a name of no type is left out.
+    fn listed(
+        &self,
+        t: Option<TypeId>,
+        list: impl Fn(&crate::rules::UnitType) -> &Vec<String>,
+    ) -> Vec<TypeId> {
+        let rules = self.rules();
+        t.map(|t| list(rules.ty(t)))
+            .into_iter()
+            .flatten()
+            .filter_map(|n| rules.type_id(n))
+            .collect()
+    }
+
+    /// The words of an ability's effect, as the rules give them.
+    fn effect(&self, a: TypeId) -> Option<Vec<String>> {
+        let rules = self.rules();
+        rules.get_words(&rules.ty(a).name, "effect")
+    }
+
+    /// The type that plays a role for the player's faction, if the rules
+    /// have one.
+    fn role_type(&self, role: Role) -> Option<TypeId> {
+        let rules = self.rules();
+        rules.type_id(&rules.role_name(self.faction(), role))
+    }
+
+    /// The name of a type, as an order names it.
+    fn name_of(&self, t: TypeId) -> String {
+        self.rules().ty(t).name.clone()
     }
 
     fn worker_orders_priority(&self, u: EntityId) -> Res<(u8, Option<DepositPriority>)> {
@@ -1687,8 +1764,9 @@ impl Door<'_> {
     /// `order`: gives the order to units of a type until `nb` of them
     /// follow it. With `requisition`, busy workers may be taken, the least
     /// useful first.
-    fn order(&mut self, nb: i64, sel: Sel, order: Request, requisition: bool) -> Res {
-        let key = (sel.clone(), self.words(&order));
+    fn order(&mut self, nb: i64, sel: Sel, task: Task, requisition: bool) -> Res {
+        let key = (sel.clone(), task);
+        let order = task.request(self.rules());
         let mut tracked = self.state_mut().orders.remove(&key).unwrap_or_default();
         tracked.retain_mut(|t| self.still_followed(t));
         let enough = tracked.len() as i64 >= nb;
@@ -1905,7 +1983,7 @@ starting_resources 0 50
         for _ in 0..20 {
             w.update();
         }
-        let farm = Sel::One("farm".to_owned());
+        let farm = Sel::One(w.rules.type_id("farm").unwrap());
         let door = w.door(p);
         assert_eq!((door.nb(&farm), door.future_nb(&farm)), (1, 2));
     }
