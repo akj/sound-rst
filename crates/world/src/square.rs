@@ -1,7 +1,7 @@
 //! Squares of the map grid and the search for free space (`worldroom.py`).
 
 use crate::entity::{COLLISION_RADIUS, EntityId, SquareId};
-use crate::msg::{Msg, MsgPart, nb2msg};
+use crate::msg::{Msg, MsgPart, Phrase, nb2msg};
 use crate::rules::AirGround;
 
 /// The most units of one layer a square can receive by teleportation or
@@ -55,7 +55,9 @@ impl Square {
     pub(crate) fn new(id: u32, col: i64, row: i64, width: i64) -> Square {
         let letter = (b'a' + col as u8) as char;
         let name = format!("{letter}{}", row + 1);
-        let mut title = vec![MsgPart::Num(5000 + col as u64)];
+        // A map has 26 columns at most.
+        let column = usize::try_from(col).ok().and_then(Phrase::letter);
+        let mut title: Msg = column.map(MsgPart::from).into_iter().collect();
         title.extend(nb2msg(row + 1));
         let xmin = col * width;
         let ymin = row * width;

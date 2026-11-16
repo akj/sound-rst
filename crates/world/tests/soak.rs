@@ -5,7 +5,7 @@
 mod common;
 
 use soundrts_world::msg::msg;
-use soundrts_world::msgparts as mp;
+use soundrts_world::phrases::Phrase;
 use soundrts_world::{Controller, Event, World, multiplayer_default_triggers};
 
 const MAX_TURNS: usize = 3000;
@@ -35,7 +35,7 @@ fn training_game(map: &str, seed: i64) -> Outcome {
             true,
         )
         .unwrap()[0];
-    let defeat = msg(mp::YOU_HAVE_BEEN_DEFEATED);
+    let defeat = msg(Phrase::YouHaveBeenDefeated);
     let mut defeat_announced = false;
     let mut turns = 0;
     while turns < MAX_TURNS && !w.true_playing_players().is_empty() {

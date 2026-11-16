@@ -1,0 +1,682 @@
+; The name of each number of the original's files, for each package: the
+; game (res), a map with files of its own, a mod, a campaign.
+;
+; A row is: <number> <name> [unused] ; <comment>
+; A name with a slash is a sound: its path under sounds/, without .ogg.
+; A name without a slash is a phrase. A package lists only the numbers
+; that the game lacks: a number that the game has keeps the game's name.
+; "unused" marks a number that no style, map, help file or code refers to.
+;
+; Correct a name here by hand. scripts/name-numbers.ps1 adds the missing
+; rows, and writes the unused marks and the comments again. It keeps
+; every name.
+
+package res
+0 nothing ; nothing!
+1 you_are_capitalized ; You are
+3 in_front_of_you ; In front of you
+4 behind_you ; Behind you
+5 what_are_your_orders ; What are your orders?
+23 and ; and
+38 you_have ; You have
+39 hit_points_on ; hit points on
+40 level unused ; level
+54 at_distance ; at
+55 meters ; meters
+59 the_player unused ; the player
+60 you_are ; you are
+61 killed unused ; killed
+65 minutes ; minutes
+66 seconds ; seconds
+67 north ; north
+68 south ; south
+69 east ; east
+70 west ; west
+71 northeast ; northeast
+72 northwest ; northwest
+73 southeast ; southeast
+74 southwest ; southwest
+79 in_a_meadow_rounded_with_trees unused ; in a meadow rounded with trees
+80 wood_deposit ; wood
+81 gold_mine ; gold mine
+82 town_hall ; town hall
+83 farm ; farm
+84 a_path ; a path
+85 peasant ; peasant
+86 footman ; footman
+87 archer ; archer
+88 enemy ; enemy
+89 friend unused ; friend
+99 barracks ; barracks
+100 go ; go
+101 build ; build
+102 exploit ; exploit
+103 patrol ; patrol
+104 mode ; mode
+105 ok ; ok!
+106 stop ; stop
+107 at ; at
+108 to_the ; to the
+110 offensive ; offensive
+111 defensive ; defensive
+112 hold_position unused ; hold position
+113 stealth unused ; stealth
+114 attack ; attack
+115 to_place ; to
+116 to_the_east ; to the east
+117 to_the_west ; to the west
+118 repair ; repair
+119 on ; on
+120 combat unused ; combat
+121 against ; against
+122 a_meadow ; a meadow
+123 recruit ; recruit
+124 ready ; ready!
+125 rally ; rally
+126 complete ; complete
+127 cancel_order ; cancel
+128 building ; building
+129 requires ; requires
+130 units ; units
+131 gold ; gold
+132 wood ; wood
+133 food ; food
+134 contains ; contains
+135 not_enough ; not enough
+136 idem unused ; idem!
+137 food_137 unused ; food
+138 you_control ; You control
+139 a_group unused ; a group
+142 production_paused ; production paused
+143 the_queue_is_full ; the queue is full
+144 exhausted ; exhausted
+145 neutralized ; neutralized
+146 lost ; lost
+147 production ; production
+148 sawmill ; sawmill
+149 victory ; Victory!
+150 defeat ; Defeat
+151 one_f ; 1
+152 alert ; alert
+153 a_bridge ; a bridge
+154 open unused ; open
+155 you_reached_level unused ; you reached level
+156 at_the_center ; at the center
+1000 ambience/path ; style mountain.noise, style mountain_pass.noise, style path.noise
+1002 unnamed/sound_1002 unused
+1003 ui/positional_beep
+1008 combat/peasant_hit ; style peasant.attack_hit
+1012 combat/miss ; style thing.missed
+1013 unnamed/sound_1013 unused
+1014 unnamed/sound_1014 ; map res/multi/pm4
+1015 unnamed/sound_1015 unused
+1016 building/damaged ; style building.noise_if_damaged, style building.noise_if_very_damaged, map res/multi/pm4
+1017 unnamed/sound_1017 unused
+1018 unnamed/sound_1018 unused
+1027 ui/blocked ; style messages.not_enough_space, style parameters.no_path_in_this_direction, style unit.blocked
+1028 unnamed/sound_1028 unused
+1029 ui/beep ; style thing.order_impossible
+1030 voice/other/attack ; style unit.attack
+1031 combat/undead_attack ; style zombie.attack, style skeleton.attack
+1032 unnamed/sound_1032 unused
+1033 unnamed/sound_1033 unused
+1034 work/chop_wood_1 ; style peasant.noise_when_exploiting_wood
+1035 work/chop_wood_2 ; style peasant.noise_when_exploiting_wood
+1036 work/chop_wood_3 ; style peasant.noise_when_exploiting_wood
+1037 work/chop_wood_4 ; style peasant.noise_when_exploiting_wood
+1038 work/mine_gold ; style peasant.noise_when_exploiting_goldmine, style peasant.noise_when_exploiting_quarry, map res/multi/pm3
+1039 combat/sword_hit_1 ; style footman.attack_hit, style knight.attack_hit, map res/multi/pm2
+1040 combat/sword_hit_2 ; style footman.attack_hit, style knight.attack_hit, map res/multi/pm2
+1041 combat/sword_hit_3 ; style footman.attack_hit, style knight.attack_hit, map res/multi/pm2
+1042 combat/arrow_shot ; style guardtower.launch_attack, style archer.launch_attack, style destroyer.launch_attack
+1043 combat/arrow_hit ; style archer.attack_hit, style destroyer.attack_hit
+1046 work/build_1 ; style peasant.noise_when_building
+1047 building/collapse ; style building.death, style goldmine.exhausted, style quarry.exhausted
+1048 work/build_2 ; style peasant.noise_when_building
+1049 work/build_3 ; style peasant.noise_when_building
+1050 ambience/farm ; style farm.noise, style pig_farm.noise
+1051 combat/death ; style unit.death
+1052 ambience/lumbermill ; style lumbermill.noise
+1053 footstep/grass_1 ; style walking_unit.move, style walking_unit.move_on_grass
+1054 footstep/grass_2 ; style walking_unit.move, style walking_unit.move_on_grass
+1055 ambience/wood_1 ; style wood.noise
+1056 ambience/wood_2 ; style wood.noise
+1057 ambience/wood_3 ; style wood.noise
+1058 ambience/wood_4 ; style wood.noise
+1059 ambience/meadow_1 ; style meadow.noise
+1060 ambience/meadow_2 ; style meadow.noise
+1061 ambience/meadow_3 ; style meadow.noise
+1062 ambience/meadow_4 ; style meadow.noise
+1063 ambience/meadow_5 ; style meadow.noise
+1064 ambience/town_hall ; style townhall.noise, style great_hall.noise
+1065 ambience/river ; style river.noise, style big_bridge.noise, style bridge.noise
+1067 footstep/wood_1 ; style walking_unit.move_on_wood
+1068 unnamed/sound_1068 unused
+1069 footstep/leaves_1 ; style walking_unit.move_on_leaves
+1070 footstep/leaves_2 ; style walking_unit.move_on_leaves
+1071 unnamed/sound_1071 unused
+1072 voice/other/hurt ; style unit.noise_if_damaged
+1073 voice/other/badly_hurt ; style unit.noise_if_very_damaged
+1074 voice/other/flee ; style unit.flee
+1078 alert/horn ; style unit.alert, map res/multi/kel1, map res/multi/kel2
+1079 alert/bell ; style building.alert
+1080 unnamed/sound_1080 unused
+1081 work/quarry_stone ; style peasant.noise_when_exploiting_quarry
+1082 move/catapult_1 ; style catapult.move
+1083 move/catapult_2 ; style catapult.move
+1084 combat/cannon_shot ; style cannontower.launch_attack, style catapult.launch_attack, style dragon.launch_attack
+1085 combat/cannon_hit ; style cannontower.attack_hit, style catapult.attack_hit, style dragon.attack_hit
+1086 unnamed/sound_1086 unused
+1087 footstep/mud_1 ; style walking_unit.move_on_mud
+1088 footstep/water_1 ; style walking_unit.move_on_water, style boat.move, style destroyer.move
+1089 ambience/ocean ; style ocean.noise
+1090 ambience/ford ; style ford.noise
+1091 move/through_path ; style path.when_moving_through
+1092 move/over_bridge ; style bridge.when_moving_through
+1093 unnamed/sound_1093 unused
+1094 voice/other/order_ok_1 ; style thing.order_ok
+1095 voice/other/order_ok_2 ; style thing.order_ok
+1096 voice/other/order_ok_3 ; style thing.order_ok
+1097 event/healed ; style unit.healed
+1098 work/store_wood ; style peasant.store_resource_1
+1099 work/store_gold ; style peasant.store_resource_0, style peasant.store_resource_2
+1100 voice/other/building_complete ; style building.complete
+1114 unnamed/sound_1114 unused
+1115 unnamed/sound_1115 unused
+1130 voice/own/attack ; style unit.attack, map res/multi/kel1, map res/multi/kel2
+1151 unnamed/sound_1151 unused
+1171 unnamed/sound_1171 unused
+1172 voice/own/hurt ; style unit.noise_if_damaged
+1173 voice/own/badly_hurt ; style unit.noise_if_very_damaged
+1174 voice/own/flee ; style unit.flee, map res/multi/kel4
+1194 voice/own/order_ok_1 ; style thing.order_ok
+1195 voice/own/order_ok_2 ; style thing.order_ok
+1196 voice/own/order_ok_3 ; style thing.order_ok
+1200 voice/own/building_complete ; style building.complete
+1300 ambience/blacksmith ; style blacksmith.noise
+1301 combat/arrow_hit_upgraded ; style guardtower.attack_hit, style archer.attack_hit_level_1, style destroyer.attack_hit_level_1
+1302 combat/sword_hit_upgraded ; style footman.attack_hit_level_1, style knight.attack_hit_level_1, map res/multi/kel1
+1303 move/horse_1 ; style knight.move
+1304 move/horse_2 ; style knight.move
+1305 ambience/horse_1 ; style stables.noise, style knight.noise
+1306 ambience/horse_2 ; style stables.noise, style knight.noise
+1307 ambience/keep ; style keep.noise
+1308 ambience/castle ; style castle.noise
+1309 voice/other/death ; style unit.death, map res/multi/z5
+1310 voice/own/death ; style unit.death, map res/multi/kel3
+1311 ambience/catapult_1 ; style catapult.noise, style battleship.noise
+1312 ambience/catapult_2 ; style catapult.noise, style battleship.noise
+1313 ambience/catapult_3 ; style catapult.noise, style battleship.noise
+1314 ambience/dragon ; style dragon.noise
+1315 unnamed/sound_1315 unused
+1316 combat/dragon_death ; style dragon.death
+1317 move/wings_1 ; style dragon.move, style new_flyingmachine.move, style flying_townhall.move
+1318 move/wings_2 ; style dragon.move, style new_flyingmachine.move, style flying_townhall.move
+1319 ambience/mages_tower ; style magestower.noise
+1320 ambience/dragons_lair ; style dragonslair.noise
+1321 ambience/workshop ; style workshop.noise
+1322 combat/magic_shot ; style mage.launch_attack, style flyingmachine.launch_attack, map res/multi/js8
+1323 combat/magic_hit ; style mage.attack_hit, style flyingmachine.attack_hit, map res/multi/js8
+1324 combat/lose_fight ; style thing.lose_fight, map res/multi/js8
+1325 voice/other/win_fight ; style unit.win_fight, map res/multi/js8
+1326 voice/own/win_fight ; style unit.win_fight, map res/multi/z5
+1327 event/production ; style unit.production
+1328 magic/teleportation ; style a_teleportation.alert, style a_recall.alert, map res/multi/js8
+1329 event/added ; style thing.added, map res/multi/js8
+1330 event/enter ; style thing.enter
+1331 event/exit ; style thing.exit
+1332 ambience/corpse_1 ; style corpse.noise
+1333 ambience/corpse_2 ; style corpse.noise
+1334 ambience/corpse_3 ; style corpse.noise
+1335 ambience/zombie_1 ; style zombie.noise
+1336 ambience/zombie_2 ; style zombie.noise
+1337 ambience/skeleton ; style skeleton.noise
+1338 magic/summon_dragon ; style a_summon_dragon.alert
+1339 magic/holy_vision ; style a_holy_vision.alert, style a_resurrection.alert, style exorcism.noise
+1340 magic/raise_dead ; style a_raise_dead.alert
+1341 magic/meteors ; style meteors.noise
+1342 ambience/lake ; style lake.noise, style sea.noise
+1343 ambience/marsh ; style marsh.noise
+1344 footstep/gravel_1 ; style walking_unit.move_on_gravel
+1345 footstep/gravel_2 ; style walking_unit.move_on_gravel
+1346 footstep/snow_1 ; style walking_unit.move_on_snow
+1347 footstep/snow_2 ; style walking_unit.move_on_snow
+1348 footstep/water_2 ; style walking_unit.move_on_water
+1349 footstep/mud_2 ; style walking_unit.move_on_mud
+1350 footstep/wood_2 ; style walking_unit.move_on_wood
+2008 history_explanation ; press F5 to listen again
+2010 press unused ; press
+2011 to ; to
+2012 tab ; Tab
+2013 select ; select
+2014 enter ; Enter
+2015 confirm_help ; confirm
+2016 keys_a_and_q unused ; A and Q
+2017 give_an_order unused ; give an order
+2018 keys_z_and_s unused ; Z and S
+2019 control_another_unit unused ; control another unit
+2020 keys_x_or_w unused ; X or W
+2021 check_resources unused ; check resources
+2022 keys_1_2_or_3 unused ; 1, 2 or 3
+2023 control_a_group ; control a group
+2024 key_0 unused ; 0
+2025 control_a_single_unit unused ; control a single unit
+2026 backspace ; backspace
+2027 give_the_typical_order unused ; give the typical order for the selected target
+2028 keys_f5_and_f6 unused ; F5 and F6
+2029 history unused ; history
+2030 alt unused ; Alt
+2031 interrupt_speech unused ; interrupt speech
+2032 escape ; escape
+2033 cancel_help ; cancel
+2034 shift ; shift
+2035 backward ; backward
+2036 open_the_menu ; open the menu
+2037 direction_arrows ; direction arrows
+2038 move_on_the_map ; move on the map
+2039 control_key ; control
+2040 ignoring_obstacles ; ignoring obstacles
+2041 page_down ; page down
+2042 move_to_the_next_interesting_square ; move to the next interesting square
+2043 space ; space
+2044 follow_the_controlled_unit ; move to the square of the unit that is currently being controlled, and follow this unit
+2045 control_the_next_local_unit ; control the next local unit
+2046 select_the_next_target ; select the next target
+2047 select_the_next_order ; select the next order
+2048 control_all_units_of_the_same_type ; control all units that are of the same type and located in the same square as the current unit
+2049 confirm_the_current_order ; confirm the current order
+2050 give_the_most_common_order ; give the most common order for the current target
+2051 hear_your_resources ; hear how much gold, wood and food you have
+2052 hear_the_health_of_the_unit ; hear the health of the current unit
+2053 control_half_of_the_units_of_the_same_type ; control half of the units of the same type and in the same square than the current unit
+2054 control_only_1_unit ; control only 1 unit
+2055 key_q unused ; q
+2056 control_all_soldiers_of_the_square ; control all of the soldiers that are located in the current square
+2057 control_all_peasants_of_the_square ; control all of the peasants that are located in the current square
+2058 control_the_next_building ; control the next building
+2059 control_the_next_peasant ; control the next peasant
+3000 numeral_0 ; 0
+3001 numeral_1 ; 1
+3002 numeral_2 ; 2
+3003 numeral_3 ; 3
+3004 numeral_4 ; 4
+3005 numeral_5 ; 5
+3006 numeral_6 ; 6
+3007 numeral_7 ; 7
+3008 numeral_8 ; 8
+3009 numeral_9 ; 9
+3010 numeral_10 ; 10
+3011 numeral_11 ; 11
+3012 numeral_12 ; 12
+3013 numeral_13 ; 13
+3014 numeral_14 ; 14
+3015 numeral_15 ; 15
+3016 numeral_16 unused ; 16
+3017 numeral_17 unused ; 17
+3018 numeral_18 unused ; 18
+3019 numeral_19 unused ; 19
+3020 numeral_20 unused ; 20
+3021 numeral_21 unused ; 21
+3030 numeral_30 unused ; 30
+3031 numeral_31 unused ; 31
+3040 numeral_40 unused ; 40
+3041 numeral_41 unused ; 41
+3050 numeral_50 unused ; 50
+3051 numeral_51 unused ; 51
+3060 numeral_60 unused ; 60
+3061 numeral_61 unused ; 61
+3070 numeral_70 unused ; 70
+3071 numeral_71 unused ; 71
+3080 numeral_80 unused ; 80
+3090 numeral_90 unused ; 90
+3100 hundred unused ; hundred
+3101 thousand ; thousand
+3102 million unused ; million
+4000 game ; game
+4001 internet ; Internet
+4002 local ; local
+4004 processing ; processing
+4005 failure unused ; failure
+4006 success unused ; success!
+4007 make_a_selection_reminder ; please make a selection
+4008 please_send_comments unused ; please send comments to jlpo@free.fr
+4009 quit ; Quit
+4010 menu ; Menu
+4011 continue ; continue
+4012 version_error ; version error
+4014 strategy_game unused ; strategy game
+4015 chapter_4015 unused ; chapter
+4016 single_player_4016 unused ; single player
+4017 map unused ; map
+4018 multiplayer ; multiplayer
+4019 join ; join
+4020 objective ; objective:
+4021 resist_enemy_attacks ; resist ennemy attacks
+4022 produced_m ; produced
+4023 produced_f ; produced
+4024 consumed ; consumed
+4025 buildings ; building
+4026 score ; score
+4028 press_f1_for_help unused ; press F1 for help
+4029 main_menu unused ; main menu
+4030 make_a_selection ; please make a selection
+4031 single_player ; single player,
+4032 single_player_explanation ; play on your computer
+4033 multiplayer_menu_item ; multiplayer,
+4034 multiplayer_explanation ; play on the Internet
+4035 server ; server,
+4036 server_explanation ; launch a server on your computer to host multiplayer games
+4037 options ; options,
+4038 options_explanation ; modify your parameters
+4041 quit_menu_item ; quit,
+4042 quit_explanation ; quit this program
+4043 what_kind_of_server ; what kind of server?
+4044 simple_server ; simple server
+4045 simple_server_explanation ; only you can create games
+4046 public_server ; public server
+4047 public_server_explanation ; a guest can create games
+4048 cancel ; cancel
+4049 server_could_not_register unused ; Your server couldn't probably register itself to the metaserver. Please check your connection to the Internet.
+4051 good_bye unused ; good bye
+4052 select_and_confirm_explanation ; press Tab to select. press Enter to confirm.
+4053 accept_invitation_from ; accept the invitation from
+4054 rejoin_game unused ; rejoin game
+4055 start_a_game_on ; start a game on
+4056 welcome ; welcome
+4057 too_many_games ; error : there are too many games
+4058 invite ; invite
+4059 start ; start
+4060 cancel_this_game ; cancel this game
+4061 leave_this_game ; leave this game
+4062 the_game_will_start_in_five_seconds ; the game will start in 5 seconds
+4063 the_game_will_start_when_organizer_is_ready ; the game will start when the organizer is ready
+4064 press_enter_to_confirm ; press enter to confirm
+4066 press_tab_to_cycle_through_objects unused ; press tab repeatedly to cycle through each of the visible objects
+4067 select_target_and_confirm ; press tab to select the target and then press enter to confirm
+4070 cancel_game ; cancel game
+4071 continue_game ; continue game
+4072 cannot_contact_the_metaserver unused ; Cannot contact the metaserver. Please check your connection to the Internet.
+4073 server_hosted_by ; server hosted by
+4074 for unused ; for
+4075 cancel_back ; cancel
+4076 cancel_back_explanation ; go back to previous menu
+4077 no_server_registered unused ; At the moment, there aren't any servers registered on the metaserver. Please try again later.
+4078 servers_on ; servers on
+4079 are_compatible ; use a compatible version. Please select a server.
+4080 server_could_not_start ; error: the server couldn't start
+4081 server_unreachable ; error: the server is unreachable. The server is closed, or behind a firewall, or behind a router.
+4082 unexpected_reply ; error: unexpected data was received from the server. This is not a SoundRTS server
+4083 connection_rejected ; error: connection rejected by the server. This is not a SoundRTS server
+4084 or_login_rejected ; or your login has been rejected
+4085 error_during_connection ; error while connecting to the server
+4086 options_menu ; options menu
+4087 modify_login ; Modify your login
+4096 save_options unused ; save,
+4097 save_options_explanation unused ; save the modifications and then return to the main menu
+4098 cancel_options unused ; cancel,
+4099 cancel_options_explanation unused ; return to the main menu without saving the modifications
+4101 a_new_window_will_open unused ; a new window will open
+4102 connection_interrupted ; the connection was interrupted
+4103 set_speed_to_slow ; set the game speed to slow
+4104 set_speed_to_normal ; set the game speed to normal
+4105 set_speed_to_fast ; set the game speed to fast
+4112 save_the_game ; save the game
+4113 restore_a_saved_game ; restore a saved game
+4114 play_against_the_computer_on_map unused ; play against the computer on map
+4115 computer_versus_computer unused ; computer versus computer
+4118 back ; go back to the previous menu
+4119 choose_server_in_list ; choose a server in a list
+4120 enter_server_ip ; enter the I P address of the server
+4121 private_server ; private server
+4122 private_server_explanation ; The server won't be added to the list.
+4200 the_wood_production_is_improved unused ; the wood production is improved
+4201 catapult ; catapult
+4202 awaiting_your_orders ; awaiting your orders
+4203 of unused ; of
+4204 cannot_build_there ; cannot build there
+4205 no_unit_controlled ; you are not controlling any unit
+4206 display_on ; the display is now on
+4207 display_off ; the display is now off
+4208 unknown ; unknown
+4209 in_the_fog ; in the fog of war
+4210 f10_to_access_the_menu unused ; F10 to access to the menu
+4211 first_person_mode ; first person mode
+4212 map_mode ; map mode
+4213 blacksmith ; blacksmith
+4214 upgrade ; upgrade
+4215 swords ; swords
+4216 arrows ; arrows
+4217 footmen_armors ; footmen armors
+4218 archers_armors ; archers armors
+4219 to_upgrade ; to
+4220 keep ; keep
+4221 castle ; castle
+4222 stables ; stables
+4223 menu_of ; the menu of
+4224 changed ; has just changed.
+4225 knight ; knight
+4226 workshop ; workshop
+4227 dragons_lair ; dragons lair
+4228 mages_tower ; mages tower
+4229 mage ; mage
+4230 flying_machine ; flying machine
+4231 dragon ; dragon
+4232 server_error unused ; server error
+4233 bows_range ; bows range
+4234 update_available ; a newer version of this program is available on the Internet
+4235 enter_new_login ; enter your new login name
+4236 use_letters_and_numbers_only ; use letters and numbers only
+4237 bad_login ; bad login
+4238 current_login_kept ; the current login was kept
+4239 new_login ; new login
+4240 has_just_logged_in ; has just logged in
+4241 has_just_joined ; has just joined
+4242 players_on ; players on
+4243 invites_you ; invites you
+4244 not_enough_players ; Not enough players to start. The minimum is
+4245 current_login unused ; current login
+4246 the_population_limit_has_been_reached ; the population limit has been reached
+4247 mana_points_on ; mana points on
+4248 research ; research
+4249 super_healer ; super healer
+4250 teleportation ; teleportation
+4251 to_teleport ; to
+4252 not_enough_mana ; not enough mana
+4253 percent_volume ; percent of the volume
+4254 horses_speed ; horses speed
+4255 define_the_rally_point ; define the rally point for the new units
+4256 gathered ; gathered
+4257 aggressive_computer ; aggressive computer
+4258 quiet_computer ; quiet computer
+4259 has_just_logged_out ; has just logged out
+4260 on_the_server_of ; on the server of
+4261 has_just_quit_game ; has just quit the game
+4262 optional_sound_pack unused ; optional sound pack
+4263 is_now_on ; is now on
+4264 is_now_off ; is now off
+4265 cheat_mode ; cheat mode
+4266 restart ; restart
+4267 campaign unused ; campaign
+4268 new_objective ; new objective
+4269 objective_complete ; objective complete
+4270 mission_complete ; mission complete
+4271 chapter ; chapter
+4272 prologue ; prologue
+4273 epilogue unused ; epilogue
+4274 conversion ; conversion
+4275 scout_tower ; scout tower
+4276 guard_tower ; guard tower
+4277 cannon_tower ; cannon tower
+4278 load ; load
+4279 load_all_from ; load all from
+4280 unload ; unload
+4281 unload_all_to ; unload all to
+4282 enter_in ; enter in
+4283 dark_archer ; dark archer
+4284 move ; move
+4285 to_alliance ; to alliance
+4286 ally ; allied
+4287 says ; says
+4288 enter_message ; enter your message
+4289 invisible ; invisible
+4290 detector ; detector
+4291 cloaker ; cloaker
+4292 summon ; summon
+4293 raise_dead ; raise dead
+4294 resurrection ; resurrection
+4295 zombie ; zombie
+4296 skeleton ; skeleton
+4297 priest ; priest
+4298 temple ; temple
+4299 holy_vision ; holy vision
+4300 exorcism ; exorcism
+4301 human ; human
+4302 orc ; orc
+4303 necromancer ; necromancer
+4304 necropolis ; necropolis
+4305 deadly_fog ; deadly fog
+4306 meteors ; meteors
+4307 recall ; recall
+4308 stone ; stone
+4309 quarry ; quarry
+4310 random_game unused
+4311 has_been_defeated ; has been defeated
+4312 you_have_been_defeated ; You have been defeated.
+4313 you_are_now_in_observer_mode ; You are now in observer mode.
+4314 plateau ; plateau
+4315 observe_recorded_game ; observe a recorded game
+4316 observe_another_player_explanation ; Press Control Shift F4 to observe another player.
+4317 enter_command ; Enter a command.
+4318 zoom ; zoom
+4319 modify_the_mods_load_order unused ; modify the mods load order
+4320 add_a_mod_to_the_list unused ; add a mod to the list
+4321 the_list_is_empty ; the list is empty
+4322 loading ; Loading
+4323 packages unused ; packages
+4324 packages_menu unused ; packages menu
+4325 install_a_package unused ; install a package
+4326 uninstall_a_package unused ; uninstall a package
+4327 update_a_package unused ; update a package
+4328 downloading ; Downloading...
+4329 extracting unused ; Extracting...
+4330 mod_not_found ; Couldn't find mod:
+4331 wall ; wall
+4332 gate ; gate
+4333 block ; block
+4334 random_faction ; random faction
+4335 count_limit_reached ; Count limit reached
+4336 open_user_folder ; open user folder
+4337 documentation ; documentation
+4338 massive_wall ; massive wall
+4339 massive_gate ; massive gate
+4340 start_a_public_game_on ; Start a public game on
+4341 mods ; Mods
+4342 soundpacks ; Soundpacks
+4343 speed ; speed
+4344 sea ; sea
+4345 lake ; lake
+4346 river ; river
+4347 mountain ; mountain
+4348 bridge ; bridge
+4349 ford ; ford
+4350 marsh ; marsh
+4351 ocean ; ocean
+4352 mountain_pass ; mountain pass
+4353 enable_auto_repair ; enable auto-repair
+4354 disable_auto_repair ; disable auto-repair
+4355 enable_auto_gather ; enable auto-gather
+4356 disable_auto_gather ; disable auto-gather
+4357 shipyard ; shipyard
+4358 boat ; boat
+4359 destroyer ; destroyer
+4360 battleship ; battleship
+4361 submarine ; submarine
+4362 meadows ; meadows
+4363 forest ; forest
+4364 dense_forest ; dense forest
+5000 letter_a ; a
+5001 letter_b ; b
+5002 letter_c ; c
+5003 letter_d ; d
+5004 letter_e ; e
+5005 letter_f ; f
+5006 letter_g ; g
+5007 letter_h ; h
+5008 letter_i ; i
+5009 letter_j ; j
+5010 letter_k ; k
+5011 letter_l ; l
+5012 letter_m ; m
+5013 letter_n ; n
+5014 letter_o ; o
+5015 letter_p ; p
+5016 letter_q ; q
+5017 letter_r ; r
+5018 letter_s ; s
+5019 letter_t ; t
+5020 letter_u ; u
+5021 letter_v ; v
+5022 letter_w ; w
+5023 letter_x ; x
+5024 letter_y ; y
+5025 letter_z ; z
+5026 dot ; dot
+5356 disable_auto_gather_5356 unused
+5357 shipyard_5357 unused
+6000 voice/other/health_0 ; style thing.proportion_0
+6001 voice/other/health_1 ; style thing.proportion_1
+6002 voice/other/health_2 ; style thing.proportion_2
+6003 voice/other/health_3 ; style thing.proportion_3
+6004 voice/other/health_4 ; style thing.proportion_4
+6005 voice/other/health_5 ; style thing.proportion_5
+6006 voice/other/health_6 ; style thing.proportion_6
+6007 voice/other/health_7 ; style thing.proportion_7
+6008 voice/other/health_8 ; style thing.proportion_8
+6009 voice/other/health_9 ; style thing.proportion_9
+6010 voice/other/health_10 ; style thing.proportion_10
+6100 voice/own/health_0 ; style thing.proportion_0
+6101 voice/own/health_1 ; style thing.proportion_1
+6102 voice/own/health_2 ; style thing.proportion_2
+6103 voice/own/health_3 ; style thing.proportion_3
+6104 voice/own/health_4 ; style thing.proportion_4
+6105 voice/own/health_5 ; style thing.proportion_5
+6106 voice/own/health_6 ; style thing.proportion_6
+6107 voice/own/health_7 ; style thing.proportion_7
+6108 voice/own/health_8 ; style thing.proportion_8
+6109 voice/own/health_9 ; style thing.proportion_9
+6110 voice/own/health_10 ; style thing.proportion_10
+6111 ambience/scout_tower ; style scouttower.noise
+6112 ambience/guard_tower ; style guardtower.noise
+6113 ambience/cannon_tower ; style cannontower.noise
+6114 magic/conversion ; style a_conversion.alert
+6115 ui/select
+6116 ui/confirm
+9998 silence/short
+9999 silence/long ; style wood.noise, style meadow.noise, style corpse.noise
+
+package res/multi/jl4
+9000 stone_golem ; stone golem
+9001 creature/stone_golem ; style stone_golem.noise, style stone_golem.attack, style stone_golem.attack_hit
+
+package mods/flyingtownhall
+7000 flying_townhall ; flying townhall
+
+package mods/orc
+7000 pig_farm ; pig farm
+7001 orc_barracks ; barracks
+7002 great_hall ; great hall
+7003 peon ; peon
+7004 grunt ; grunt
+
+package single/campaign
+7500 a_horde_of_enemies_has_arrived ; A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done...
+7501 your_lord_has_sent_you ; Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby.
+7502 nicely_done ; Nicely done!
+7503 escort_the_catapults_to_i1 ; Escort the catapults to I1.
+
+package single/orc
+7000 pig_farm ; pig farm
+7001 orc_barracks ; barracks
+7002 great_hall ; great hall
+7003 peon ; peon
+7004 grunt ; grunt

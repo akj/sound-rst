@@ -14,7 +14,7 @@ use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
 use crate::voice::Heard;
 
 fn t(s: &str) -> Msg {
-    vec![MsgPart::from(s)]
+    vec![MsgPart::original(s)]
 }
 
 /// Runs the loop until `n` utterances have started since the `from`th.

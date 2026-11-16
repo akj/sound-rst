@@ -12,7 +12,7 @@ use soundrts_world::SquareId;
 use soundrts_world::msg::{Msg, MsgPart};
 
 fn t(s: &str) -> Msg {
-    vec![MsgPart::from(s)]
+    vec![MsgPart::original(s)]
 }
 
 /// News of `category` that is spoken.
@@ -42,14 +42,7 @@ fn log(h: &Harness) -> Vec<(String, Heard)> {
         .voice
         .log()
         .map(|e| {
-            let texts: Vec<String> = e
-                .parts()
-                .iter()
-                .map(|p| match p {
-                    MsgPart::Text(s) | MsgPart::Literal(s) => s.clone(),
-                    MsgPart::Num(n) => n.to_string(),
-                })
-                .collect();
+            let texts: Vec<String> = e.parts().iter().map(MsgPart::to_string).collect();
             (texts.join(" "), e.heard())
         })
         .collect()
@@ -190,7 +183,7 @@ fn a_message_said_from_the_history_when_the_game_ends_is_heard() {
     let mut h = Harness::new("en", Script::new());
     // Under the sound policy, words without a sound wait to be heard.
     let chime = || {
-        let mut m = vec![MsgPart::Num(6114)];
+        let mut m = vec![MsgPart::original_number(6114)];
         m.extend(t("bell"));
         News::new(Category::Production, m)
     };
@@ -525,7 +518,7 @@ fn each_policy_does_what_it_says() {
     let mut h = Harness::new("en", Script::new());
     // The chat sound is a recorded sound, before the line.
     let line = || {
-        let mut m = vec![MsgPart::Num(6114)];
+        let mut m = vec![MsgPart::original_number(6114)];
         m.extend(t("hello"));
         News::new(Category::Chat, m)
     };
@@ -693,7 +686,11 @@ fn the_copy_key_copies_what_the_history_and_what_did_i_miss_said() {
 fn the_copy_key_copies_the_words_said_without_the_recorded_sounds() {
     let mut h = Harness::new("en", Script::new());
     // 1000 is a recorded sound; 4031 is said as words.
-    let parts = vec![MsgPart::Num(1000), MsgPart::from("orc"), MsgPart::Num(4031)];
+    let parts = vec![
+        MsgPart::original_number(1000),
+        MsgPart::original("orc"),
+        MsgPart::original_number(4031),
+    ];
     h.client.voice.important(&parts);
     let expected = format!("orc {}", h.text(4031));
     assert_eq!(h.client.voice.copy(), Some(expected));

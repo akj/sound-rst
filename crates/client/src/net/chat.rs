@@ -3,16 +3,9 @@
 use std::collections::VecDeque;
 
 use soundrts_protocol::{Channel, ChatLine};
-use soundrts_world::msg::{Msg, msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, cue, msg};
 
-use super::words::{WATCHING, text};
 use crate::message::{Category, News};
-use crate::sound_cache::literal;
-
-/// The sound before a chat line: the alert of the conversion ability,
-/// rarely heard in a game.
-pub const CHAT_SOUND: u64 = 6114;
 
 /// The most lines kept.
 const CAPACITY: usize = 100;
@@ -68,10 +61,7 @@ impl ChatLog {
 
 /// A chat line as news: the chat sound, then the line.
 pub fn line_news(line: &ChatLine) -> News {
-    News::new(
-        Category::Chat,
-        [msg(&[CHAT_SOUND]), line_msg(line)].concat(),
-    )
+    News::new(Category::Chat, [cue(Cue::Chat), line_msg(line)].concat())
 }
 
 /// How a chat line is said: who says what, "allied" first for a line to
@@ -79,14 +69,14 @@ pub fn line_news(line: &ChatLine) -> News {
 pub fn line_msg(line: &ChatLine) -> Msg {
     let mut m = Vec::new();
     if line.channel == Channel::Allies {
-        m.extend(msg(mp::ALLY));
+        m.extend(msg(Phrase::Ally));
     }
-    m.push(literal(line.from.as_str()));
+    m.push(MsgPart::literal(line.from.as_str()));
     if line.watcher {
-        m.extend(text(WATCHING));
+        m.extend(msg(Phrase::Watching));
     }
-    m.extend(msg(mp::SAYS));
-    m.push(literal(line.text.as_str()));
+    m.extend(msg(Phrase::Says));
+    m.push(MsgPart::literal(line.text.as_str()));
     m
 }
 

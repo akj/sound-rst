@@ -93,7 +93,7 @@ fn a_held_modifier_does_not_repeat() {
 fn shift_and_an_arrow_do_not_skip_the_news_being_said() {
     let (mut h, mut g, live) = game(0.5, 0.1);
     let (from, start) = (h.utterance_log.len(), h.clock.now());
-    let news = News::new(Category::Production, vec![MsgPart::from("aaaaaaaaaa")]);
+    let news = News::new(Category::Production, vec![MsgPart::original("aaaaaaaaaa")]);
     h.client.voice.news(news, Policy::Speak);
     live.down_at(start + 0.3, Key::LShift, Mods::SHIFT);
     live.tap_at(start + 0.4, Key::Up, Mods::SHIFT);

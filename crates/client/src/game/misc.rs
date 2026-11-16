@@ -4,22 +4,20 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, comma, cue, msg, nb2msg};
 use soundrts_world::player::Objective;
 use soundrts_world::{Cheat, Command};
 
 use crate::client::Client;
 use crate::input::{Event, Key, KeyDown};
 use crate::menu::{Action, Exit, Flow, Menu, TextEntry, Typed};
-use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 use soundrts_protocol::{Channel, Step};
 
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
 use super::replay::Pace;
-use super::{GameInterface, Mode, POSITIONAL_BEEP_SOUND, Source, Story, TURN, style_msg};
+use super::{GameInterface, Mode, Source, Story, TURN, style_msg};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -76,9 +74,17 @@ impl Chat {
     }
 }
 
-/// Sound numbers as a message.
+/// The two sounds that stand for the clock's bell, which has no words.
+fn bell() -> Msg {
+    [cue(Cue::BellStrike), cue(Cue::PositionalBeep)].concat()
+}
+
+/// A map's sound numbers as a message.
 fn nums(numbers: &[i64]) -> Msg {
-    numbers.iter().map(|&n| MsgPart::Num(n as u64)).collect()
+    numbers
+        .iter()
+        .map(|n| MsgPart::original(&n.to_string()))
+        .collect()
 }
 
 /// The characters the console accepts.
@@ -174,7 +180,7 @@ impl GameInterface {
                     if factions {
                         m.extend(self.faction_title(cx, p));
                     }
-                    m.extend(msg(mp::COMMA));
+                    m.extend(comma());
                 }
                 // On a server, who watches the game: nobody listens unknown.
                 let room = cx.net.as_ref().and_then(|n| n.room.as_ref());
@@ -210,7 +216,7 @@ impl GameInterface {
                 if self.cheats_allowed() {
                     self.execute_command(cx, cmd);
                 } else {
-                    cx.voice.item(&msg(mp::BEEP));
+                    cx.voice.item(&cue(Cue::Beep));
                 }
             }
         }
@@ -231,7 +237,7 @@ impl GameInterface {
             .filter(|&(id, _)| id >= self.log_start)
             .or(before.and(self.alert_jump))
         else {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         };
         self.leave_zoom_and_immersion(cx);
@@ -244,12 +250,12 @@ impl GameInterface {
     /// beep without a server.
     fn cmd_say(&mut self, cx: &mut Client, channel: Channel) {
         if !self.on_a_server() {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
             return;
         }
-        let mut prompt = msg(mp::ENTER_MESSAGE);
+        let mut prompt = msg(Phrase::EnterMessage);
         if channel == Channel::Allies {
-            prompt.extend(text(words::TO_YOUR_ALLIES));
+            prompt.extend(msg(Phrase::ToYourAllies));
         }
         let entry = TextEntry::start(cx, &prompt, crate::net::chat_char, "", false);
         let over = match std::mem::replace(&mut self.mode, Mode::Playing) {
@@ -288,7 +294,7 @@ impl GameInterface {
                 .concat();
                 cx.voice.item(&m);
             }
-            None => cx.voice.item(&msg(mp::BEEP)),
+            None => cx.voice.item(&cue(Cue::Beep)),
         }
     }
 
@@ -317,15 +323,15 @@ impl GameInterface {
         let new = now.iter().filter(|o| !self.objectives_seen.contains(o));
         for o in seen.chain(new) {
             let done = if now.contains(o) {
-                words::NOT_DONE
+                Phrase::ObjectiveNotDone
             } else {
-                words::DONE
+                Phrase::ObjectiveDone
             };
-            steps.push([nums(&o.description), msg(mp::COMMA), text(done)].concat());
+            steps.push([nums(&o.description), comma(), msg(done)].concat());
         }
         let n = steps.len();
         if n == 0 {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         }
         let i = match self.objective_at {
@@ -336,9 +342,9 @@ impl GameInterface {
         self.objective_at = Some(i);
         let m = [
             steps.swap_remove(i),
-            msg(mp::COMMA),
+            comma(),
             nb2msg(i as i64 + 1),
-            text(words::OF),
+            msg(Phrase::OutOf),
             nb2msg(n as i64),
         ]
         .concat();
@@ -355,13 +361,14 @@ impl GameInterface {
         if self.cheats_allowed() {
             self.send_command(cx, Command::Cheat(Cheat::ToggleMode));
             let state = if self.view().cheat_mode() {
-                mp::IS_NOW_OFF
+                Phrase::IsNowOff
             } else {
-                mp::IS_NOW_ON
+                Phrase::IsNowOn
             };
-            cx.voice.item(&[msg(mp::CHEATMODE), msg(state)].concat());
+            cx.voice
+                .item(&[msg(Phrase::CheatMode), msg(state)].concat());
         } else {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
         }
     }
 
@@ -376,7 +383,7 @@ impl GameInterface {
                     self.turn_due_at(now);
                 }
                 // Not a number: the speed stays.
-                Err(_) => cx.voice.item(&msg(mp::BEEP)),
+                Err(_) => cx.voice.item(&cue(Cue::Beep)),
             }
         } else if cmd == "p" {
             if self.speed >= 1.0 {
@@ -388,9 +395,7 @@ impl GameInterface {
         } else if cmd == "m" {
             self.cheat_at_once(Cheat::InfiniteMana);
         } else if cmd == "h" {
-            cx.voice.item(&vec![MsgPart::from(
-                "p: pause/unpause, s: set speed, r: get 1000 resources, t: get all techs, m: infinite mana, a: add units, v: instant victory",
-            )]);
+            cx.voice.item(&msg(Phrase::ConsoleHelp));
         } else if cmd == "r" {
             self.cheat_at_once(Cheat::Resources);
         } else if cmd == "t" {
@@ -402,7 +407,7 @@ impl GameInterface {
             || cmd.starts_with("st ")
         {
             // The map editor is not part of this client.
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
         } else if !cmd.is_empty() {
             let cheat = if let Some(rest) = cmd.strip_prefix("a ") {
                 Cheat::AddUnits {
@@ -430,10 +435,10 @@ impl GameInterface {
     /// cheats.
     fn cmd_console(&mut self, cx: &mut Client) {
         if !self.cheats_allowed() {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
             return;
         }
-        let entry = TextEntry::start(cx, &msg(mp::ENTER_COMMAND), console_char, "", false);
+        let entry = TextEntry::start(cx, &msg(Phrase::EnterCommand), console_char, "", false);
         self.mode = Mode::Console(entry);
     }
 
@@ -451,7 +456,7 @@ impl GameInterface {
     /// the players, the events now come from the new one.
     fn cmd_change_player(&mut self, cx: &mut Client) {
         if !self.cheats_allowed() {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
             return;
         }
         let players = self.view().players();
@@ -462,7 +467,7 @@ impl GameInterface {
         }
         // Upstream refreshes the fog of war here from the previous player's
         // last perception: nothing changes until the next turn.
-        let m = [msg(mp::YOU_ARE), self.view().player_name(self.me)].concat();
+        let m = [msg(Phrase::YouAre), self.view().player_name(self.me)].concat();
         cx.voice.item(&m);
     }
 
@@ -484,22 +489,26 @@ impl GameInterface {
                 Ok(Flow::Stay)
             })
         };
-        let mut menu = Menu::new(msg(mp::MENU), Vec::new());
-        menu.append(msg(mp::CANCEL_GAME), set(GameMenuChoice::Quit), None);
+        let mut menu = Menu::new(msg(Phrase::Menu), Vec::new());
+        menu.append(msg(Phrase::CancelGame), set(GameMenuChoice::Quit), None);
         if let Some(paused) = self.listening_paused() {
-            let item = if paused { words::RESUME } else { words::PAUSE };
+            let item = if paused {
+                Phrase::Resume
+            } else {
+                Phrase::Pause
+            };
             let listen = |c| set(GameMenuChoice::Listen(c));
-            menu.append(text(item), listen(ListenChoice::PauseOrResume), None);
+            menu.append(msg(item), listen(ListenChoice::PauseOrResume), None);
             let paces = [
-                (msg(mp::SET_SPEED_TO_SLOW), Pace::Slow),
-                (msg(mp::SET_SPEED_TO_NORMAL), Pace::Normal),
-                (msg(mp::SET_SPEED_TO_FAST), Pace::Fast2),
+                (msg(Phrase::SetSpeedToSlow), Pace::Slow),
+                (msg(Phrase::SetSpeedToNormal), Pace::Normal),
+                (msg(Phrase::SetSpeedToFast), Pace::Fast2),
                 (
-                    [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
+                    [msg(Phrase::SetSpeedToFast), nb2msg(4)].concat(),
                     Pace::Fast4,
                 ),
                 (
-                    [msg(mp::SET_SPEED_TO_FAST), nb2msg(8)].concat(),
+                    [msg(Phrase::SetSpeedToFast), nb2msg(8)].concat(),
                     Pace::Fast8,
                 ),
                 (Pace::Fastest.spoken(), Pace::Fastest),
@@ -508,17 +517,17 @@ impl GameInterface {
                 menu.append(label, listen(ListenChoice::Pace(pace)), None);
             }
             let jumps = [
-                (words::FORWARD, words::ONE_MINUTE, 1),
-                (words::FORWARD, words::FIVE_MINUTES, 5),
-                (words::BACK, words::ONE_MINUTE, -1),
-                (words::BACK, words::FIVE_MINUTES, -5),
+                (Phrase::JumpForward, Phrase::OneMinute, 1),
+                (Phrase::JumpForward, Phrase::FiveMinutes, 5),
+                (Phrase::JumpBack, Phrase::OneMinute, -1),
+                (Phrase::JumpBack, Phrase::FiveMinutes, -5),
             ];
             for (way, how_long, minutes) in jumps {
-                let label = [text(way), text(how_long)].concat();
+                let label = [msg(way), msg(how_long)].concat();
                 menu.append(label, listen(ListenChoice::Jump(minutes)), None);
             }
             menu.append(
-                text(words::KEEP_THIS_RECORD),
+                msg(Phrase::KeepThisRecord),
                 listen(ListenChoice::Keep),
                 None,
             );
@@ -526,34 +535,38 @@ impl GameInterface {
         // In a game on a server, the room's host sets the server's speed.
         if self.offers_speeds() {
             menu.append(
-                msg(mp::SET_SPEED_TO_SLOW),
+                msg(Phrase::SetSpeedToSlow),
                 set(GameMenuChoice::Speed(0.5)),
                 None,
             );
             menu.append(
-                msg(mp::SET_SPEED_TO_NORMAL),
+                msg(Phrase::SetSpeedToNormal),
                 set(GameMenuChoice::Speed(1.0)),
                 None,
             );
             menu.append(
-                msg(mp::SET_SPEED_TO_FAST),
+                msg(Phrase::SetSpeedToFast),
                 set(GameMenuChoice::Speed(2.0)),
                 None,
             );
             menu.append(
-                [msg(mp::SET_SPEED_TO_FAST), nb2msg(4)].concat(),
+                [msg(Phrase::SetSpeedToFast), nb2msg(4)].concat(),
                 set(GameMenuChoice::Speed(4.0)),
                 None,
             );
         }
         if let Some(paused) = self.paused_for_the_host(cx) {
-            let item = if paused { words::RESUME } else { words::PAUSE };
-            menu.append(text(item), set(GameMenuChoice::PauseOrResume), None);
+            let item = if paused {
+                Phrase::Resume
+            } else {
+                Phrase::Pause
+            };
+            menu.append(msg(item), set(GameMenuChoice::PauseOrResume), None);
         }
         if self.can_be_saved() {
-            menu.append(text(words::SAVE_GAME), set(GameMenuChoice::Save), None);
+            menu.append(msg(Phrase::SaveGame), set(GameMenuChoice::Save), None);
         }
-        menu.append(msg(mp::CONTINUE_GAME), Action::Nothing, None);
+        menu.append(msg(Phrase::ContinueGame), Action::Nothing, None);
         menu.say_title(cx);
         let over = match std::mem::replace(&mut self.mode, Mode::Playing) {
             Mode::Story(s) => Some(s),
@@ -649,11 +662,10 @@ impl GameInterface {
     fn cmd_toggle_talking_clock(&mut self, cx: &mut Client) {
         self.bell_enabled = !self.bell_enabled;
         if self.bell_enabled {
-            cx.voice.item(&[msg(mp::BELL), msg(mp::IS_NOW_ON)].concat());
+            cx.voice.item(&[bell(), msg(Phrase::IsNowOn)].concat());
             self.previous_nb_minutes = (self.last_virtual_time / 60.0) as i64;
         } else {
-            cx.voice
-                .item(&[msg(mp::BELL), msg(mp::IS_NOW_OFF)].concat());
+            cx.voice.item(&[bell(), msg(Phrase::IsNowOff)].concat());
         }
     }
 
@@ -662,7 +674,7 @@ impl GameInterface {
         let nb_minutes = (self.last_virtual_time / 60.0) as i64;
         if self.previous_nb_minutes != nb_minutes {
             cx.audio.play_stereo(
-                cx.sounds.get_sound(POSITIONAL_BEEP_SOUND),
+                cx.sounds.cue(Cue::PositionalBeep),
                 StereoVolume::Both(1.0),
                 0.0,
             );
@@ -673,7 +685,7 @@ impl GameInterface {
     /// Ticks every turn, quietly.
     pub(crate) fn play_tick(&self, cx: &Client) {
         cx.audio.play_stereo(
-            cx.sounds.get_sound(POSITIONAL_BEEP_SOUND),
+            cx.sounds.cue(Cue::PositionalBeep),
             StereoVolume::Both(0.1),
             0.0,
         );
@@ -711,12 +723,12 @@ impl GameInterface {
         let (m, s) = (t.div_euclid(60), t.rem_euclid(60));
         let m = [
             nb2msg(m),
-            msg(mp::MINUTES),
+            msg(Phrase::Minutes),
             nb2msg(s),
-            msg(mp::SECONDS),
-            msg(mp::COMMA),
-            msg(mp::SPEED),
-            vec![MsgPart::Text(format!("{:.1}", self.real_speed()))],
+            msg(Phrase::Seconds),
+            comma(),
+            msg(Phrase::Speed),
+            vec![MsgPart::literal(format!("{:.1}", self.real_speed()))],
         ]
         .concat();
         cx.voice.item(&m);
@@ -728,9 +740,9 @@ impl GameInterface {
         self.immersion = !self.immersion;
         if self.immersion {
             self.cmd_unit_status(cx);
-            cx.voice.item(&msg(mp::FIRST_PERSON_MODE));
+            cx.voice.item(&msg(Phrase::FirstPersonMode));
         } else {
-            cx.voice.item(&msg(mp::MAP_MODE));
+            cx.voice.item(&msg(Phrase::MapMode));
         }
         self.follow_mode = self.immersion;
     }
@@ -743,7 +755,7 @@ impl GameInterface {
             return;
         }
         if self.order.is_some() {
-            cx.voice.item(&msg(mp::CANCEL));
+            cx.voice.item(&msg(Phrase::Cancel));
             self.order = None;
         } else if self.immersion {
             self.toggle_immersion(cx);

@@ -1,8 +1,7 @@
 //! Moving through the squares of the map, and what a square says: its
 //! name, terrain, fog, and the summary of what is on it.
 
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg};
 use soundrts_world::rules::AirGround;
 use soundrts_world::{INF, Place, SquareId};
 
@@ -35,9 +34,9 @@ pub fn summary(group: &[Msg], brief: bool) -> Msg {
     let mut result = Vec::new();
     for t in &types {
         if Some(t) == types.last() && types.len() > 1 {
-            result.extend(msg(mp::AND));
+            result.extend(msg(Phrase::And));
         } else if Some(t) != types.first() {
-            result.extend(msg(mp::COMMA));
+            result.extend(comma());
         }
         result.extend(nb2msg(group.iter().filter(|x| *x == t).count() as i64));
         result.extend(t.iter().cloned());
@@ -121,13 +120,13 @@ impl GameInterface {
         if !terrain.is_empty() {
             let title = style_msg(cx.res.style(), terrain, "title");
             if !title.is_empty() {
-                result.extend(msg(mp::COMMA));
+                result.extend(comma());
                 result.extend(title);
             }
         }
         if view.square(place).high_ground() {
-            result.extend(msg(mp::COMMA));
-            result.extend(msg(mp::PLATEAU));
+            result.extend(comma());
+            result.extend(msg(Phrase::Plateau));
         }
         result
     }
@@ -139,11 +138,11 @@ impl GameInterface {
             postfix.extend(self.square_terrain(cx, place));
         } else if self.scouted_before_squares.contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
-            postfix.extend(msg(mp::COMMA));
-            postfix.extend(msg(mp::IN_THE_FOG));
+            postfix.extend(comma());
+            postfix.extend(msg(Phrase::InTheFog));
         } else {
-            postfix.extend(msg(mp::COMMA));
-            postfix.extend(msg(mp::UNKNOWN));
+            postfix.extend(comma());
+            postfix.extend(msg(Phrase::Unknown));
         }
         postfix
     }
@@ -191,21 +190,21 @@ impl GameInterface {
         }
         let mut result = Vec::new();
         if !enemies.is_empty() {
-            result.extend(msg(mp::COMMA));
+            result.extend(comma());
             result.extend(summary(&enemies, brief));
-            result.extend(msg(mp::ENEMY));
+            result.extend(msg(Phrase::Enemy));
         }
         if me && !allies.is_empty() {
-            result.extend(msg(mp::COMMA));
+            result.extend(comma());
             result.extend(summary(&allies, false));
-            result.extend(msg(mp::ALLY));
+            result.extend(msg(Phrase::Ally));
         }
         if me && !units.is_empty() {
-            result.extend(msg(mp::COMMA));
+            result.extend(comma());
             result.extend(summary(&units, false));
         }
         if !resources.is_empty() && (enemies.is_empty() || !brief) {
-            result.extend(msg(mp::COMMA));
+            result.extend(comma());
             result.extend(summary(&resources, false));
         }
         result
@@ -431,7 +430,7 @@ impl GameInterface {
 
     fn select_square_from_list(&mut self, cx: &mut Client, increment: i64, squares: Vec<SquareId>) {
         if squares.is_empty() {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             return;
         }
         self.leave_zoom_and_immersion(cx);
@@ -502,11 +501,11 @@ impl GameInterface {
         if self.zoom.is_none() {
             self.zoom = Some(Zoom::new(self.view().square(p)));
             self.target = None;
-            let prefix = [msg(mp::ZOOM), msg(mp::IS_NOW_ON), msg(mp::COMMA)].concat();
+            let prefix = [msg(Phrase::Zoom), msg(Phrase::IsNowOn), comma()].concat();
             self.say_zoom(cx, &prefix);
         } else {
             self.zoom = None;
-            let prefix = [msg(mp::ZOOM), msg(mp::IS_NOW_OFF), msg(mp::COMMA)].concat();
+            let prefix = [msg(Phrase::Zoom), msg(Phrase::IsNowOff), comma()].concat();
             self.select_and_say_square(cx, p, &prefix);
         }
     }
@@ -780,7 +779,7 @@ mod tests {
     }
 
     fn t(n: u64) -> Msg {
-        vec![MsgPart::Num(n)]
+        vec![MsgPart::original_number(n)]
     }
 
     #[test]
@@ -793,10 +792,10 @@ mod tests {
             [
                 n(2),
                 t(1),
-                msg(mp::COMMA),
+                comma(),
                 n(1),
                 t(2),
-                msg(mp::AND),
+                msg(Phrase::And),
                 n(1),
                 t(3)
             ]
@@ -804,7 +803,7 @@ mod tests {
         );
         assert_eq!(
             summary(&[t(1), t(2)], true),
-            [n(1), t(1), msg(mp::AND), n(1), t(2)].concat()
+            [n(1), t(1), msg(Phrase::And), n(1), t(2)].concat()
         );
         assert_eq!(summary(&[t(1), t(2), t(3), t(3)], true), n(4));
     }

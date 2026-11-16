@@ -4,14 +4,12 @@
 //! its value; Enter changes the value in place, and the change is saved at
 //! once.
 
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg, period};
 
 use crate::client::Client;
 use crate::input::{Event, InputPoint, Key};
 use crate::menu::{Action, Choice, Exit, Menu};
 use crate::message::{Category, Policy};
-use crate::net::words::{self, text};
 use crate::voice::category_title;
 
 /// The fastest speech rate a measure may give, in seconds a character:
@@ -26,15 +24,15 @@ pub fn sound_and_speech_menu(cx: &mut Client) -> Result<(), Exit> {
     choices.extend(Category::ALL.into_iter().map(policy_choice));
     choices.push(nvda_direct_choice());
     choices.push(speech_rate_choice());
-    choices.push(Choice::new(msg(mp::BACK), Action::CloseMenu));
-    Menu::new(text(words::SOUND_AND_SPEECH), choices).run_loop(cx)
+    choices.push(Choice::new(msg(Phrase::Back), Action::CloseMenu));
+    Menu::new(msg(Phrase::SoundAndSpeech), choices).run_loop(cx)
 }
 
 fn volume_choice() -> Choice {
     Choice {
-        explanation: Some(text(words::VOLUME_KEYS)),
+        explanation: Some(msg(Phrase::VolumeKeys)),
         ..Choice::setting(
-            text(words::VOLUME),
+            msg(Phrase::Volume),
             |cx| percent(cx.config.main_volume),
             |cx| {
                 // Up by a tenth, and from the top back to silence.
@@ -43,23 +41,23 @@ fn volume_choice() -> Choice {
                     v => (v + 10).min(100),
                 };
                 cx.set_main_volume(v);
-                Ok([nb2msg(i64::from(v)), msg(mp::PERCENT_VOLUME)].concat())
+                Ok([nb2msg(i64::from(v)), msg(Phrase::PercentVolume)].concat())
             },
         )
     }
 }
 
 fn percent(v: u8) -> Msg {
-    [nb2msg(i64::from(v)), text(words::PERCENT)].concat()
+    [nb2msg(i64::from(v)), msg(Phrase::Percent)].concat()
 }
 
 /// What a policy means, said plainly.
 fn policy_words(p: Policy) -> Msg {
-    text(match p {
-        Policy::Speak => words::SPOKEN,
-        Policy::Sound => words::SOUND_ONLY,
-        Policy::Log => words::LOG_ONLY,
-        Policy::Drop => words::DROPPED,
+    msg(match p {
+        Policy::Speak => Phrase::NewsSpoken,
+        Policy::Sound => Phrase::NewsSoundOnly,
+        Policy::Log => Phrase::NewsLogOnly,
+        Policy::Drop => Phrase::NewsDropped,
     })
 }
 
@@ -86,14 +84,18 @@ fn policy_choice(c: Category) -> Choice {
 }
 
 fn on_off(on: bool) -> Msg {
-    text(if on { words::ON } else { words::OFF })
+    msg(if on {
+        Phrase::TurnedOn
+    } else {
+        Phrase::TurnedOff
+    })
 }
 
 fn nvda_direct_choice() -> Choice {
     Choice {
-        explanation: Some(text(words::NVDA_DIRECT_EXPLANATION)),
+        explanation: Some(msg(Phrase::NvdaDirectExplanation)),
         ..Choice::setting(
-            text(words::NVDA_DIRECT),
+            msg(Phrase::NvdaDirect),
             |cx| on_off(cx.config.nvda_direct),
             |cx| {
                 cx.config.nvda_direct = !cx.config.nvda_direct;
@@ -107,14 +109,14 @@ fn nvda_direct_choice() -> Choice {
 /// A speech rate in whole characters a second.
 fn characters_a_second(seconds_a_character: f64) -> Msg {
     let n = (1.0 / seconds_a_character).round() as i64;
-    [nb2msg(n), text(words::CHARACTERS_A_SECOND)].concat()
+    [nb2msg(n), msg(Phrase::CharactersASecond)].concat()
 }
 
 fn speech_rate_choice() -> Choice {
     Choice {
-        explanation: Some(text(words::MEASURE_IT)),
+        explanation: Some(msg(Phrase::MeasureIt)),
         ..Choice::setting(
-            text(words::SPEECH_RATE),
+            msg(Phrase::SpeechRate),
             |cx| characters_a_second(cx.config.wait_delay_per_character),
             measure_speech_rate,
         )
@@ -167,31 +169,31 @@ fn next_key(cx: &mut Client, mut held: Option<Key>) -> Result<Option<Key>, Exit>
 /// `wait_delay_per_character`, and the estimate of the end of speech uses
 /// it at once. Returns what to say of the result.
 fn measure_speech_rate(cx: &mut Client) -> Result<Msg, Exit> {
-    let nothing_changed = text(words::NOTHING_CHANGED);
-    cx.voice.item(&text(words::MEASURE_HOW));
+    let nothing_changed = msg(Phrase::NothingChanged);
+    cx.voice.item(&msg(Phrase::MeasureHow));
     let Some(start_key) = next_key(cx, None)? else {
         return Ok(nothing_changed);
     };
     let start = cx.clock.now();
-    cx.voice.item(&text(words::MEASURE_SENTENCE));
+    cx.voice.item(&msg(Phrase::MeasureSentence));
     if next_key(cx, Some(start_key))?.is_none() {
         return Ok(nothing_changed);
     }
     let seconds = cx.clock.now() - start;
-    let why = match measure(seconds, words::MEASURE_SENTENCE) {
+    let why = match measure(seconds, Phrase::MeasureSentence.english()) {
         Measure::Rate(rate) => return Ok(measured(cx, seconds, rate)),
-        Measure::TooEarly => words::TOO_EARLY,
-        Measure::TooLate => words::TOO_LATE,
+        Measure::TooEarly => Phrase::TooEarly,
+        Measure::TooLate => Phrase::TooLate,
     };
     cx.log.info(format!(
         "speech rate not measured: {seconds:.3} s for the sentence"
     ));
     Ok([
-        text(why),
-        msg(mp::COMMA),
+        msg(why),
+        comma(),
         nothing_changed,
-        msg(mp::PERIOD),
-        text(words::TRY_AGAIN),
+        period(),
+        msg(Phrase::TryAgain),
     ]
     .concat())
 }
@@ -203,10 +205,10 @@ fn measured(cx: &mut Client, seconds: f64, rate: f64) -> Msg {
     ));
     cx.set_wait_delay_per_character(rate);
     [
-        text(words::MEASURED),
+        msg(Phrase::RateMeasured),
         characters_a_second(rate),
-        msg(mp::PERIOD),
-        text(words::MEASURE_AGAIN),
+        period(),
+        msg(Phrase::MeasureAgain),
     ]
     .concat()
 }

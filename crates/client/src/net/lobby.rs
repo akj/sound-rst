@@ -7,14 +7,12 @@ use soundrts_protocol::{
     AiLevel, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_TITLE_SOUNDS, MapInfo, RoomChange,
     RoomId, RoomState, RoomSummary, ServerName, SlotIndex, SlotPlayer, Whereabouts,
 };
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg, period};
 
-use super::words::{self, text};
+use super::words;
 use crate::game::style_msg;
 use crate::mapfile::{Map, title_of};
 use crate::message::RoomTopic;
-use crate::sound_cache::literal;
 use crate::style::Style;
 
 /// The most players a client keeps for a server's lobby. A server takes
@@ -115,13 +113,23 @@ impl LobbyModel {
                 }
                 self.players.retain(|p| p.login != login);
                 self.players.push(player);
-                (arrivals && login != self.you)
-                    .then(|| [vec![literal(login.as_str())], msg(mp::HAS_JUST_LOGGED_IN)].concat())
+                (arrivals && login != self.you).then(|| {
+                    [
+                        vec![MsgPart::literal(login.as_str())],
+                        msg(Phrase::HasJustLoggedIn),
+                    ]
+                    .concat()
+                })
             }
             LobbyChange::PlayerLeft { login } => {
                 self.players.retain(|p| p.login != login);
-                arrivals
-                    .then(|| [vec![literal(login.as_str())], msg(mp::HAS_JUST_LOGGED_OUT)].concat())
+                arrivals.then(|| {
+                    [
+                        vec![MsgPart::literal(login.as_str())],
+                        msg(Phrase::HasJustLoggedOut),
+                    ]
+                    .concat()
+                })
             }
             LobbyChange::PlayerMoved { player } => {
                 if !player_fits(&self.players, &player.login) {
@@ -191,7 +199,7 @@ pub struct RoomModel {
 /// How a player of a room is named: the login, or the kind of computer.
 pub fn player_name(p: &SlotPlayer) -> Msg {
     match p {
-        SlotPlayer::Human(login) => vec![literal(login.as_str())],
+        SlotPlayer::Human(login) => vec![MsgPart::literal(login.as_str())],
         SlotPlayer::Computer(level) => computer_name(*level),
     }
 }
@@ -205,7 +213,7 @@ fn names(list: impl IntoIterator<Item = Msg>) -> Msg {
     let mut out = Vec::new();
     for (i, n) in list.into_iter().enumerate() {
         if i > 0 {
-            out.extend(msg(mp::PERIOD));
+            out.extend(period());
         }
         out.extend(n);
     }
@@ -240,12 +248,12 @@ impl RoomModel {
             return Vec::new();
         }
         [
-            text(words::WATCHING_LIST),
+            msg(Phrase::WatchingList),
             names(
                 self.state
                     .watchers
                     .iter()
-                    .map(|l| vec![literal(l.as_str())]),
+                    .map(|l| vec![MsgPart::literal(l.as_str())]),
             ),
         ]
         .concat()
@@ -255,11 +263,11 @@ impl RoomModel {
     /// watchers.
     pub fn welcome(&self) -> Msg {
         let watchers = if self.state.takes_watchers {
-            words::TAKES_WATCHERS
+            Phrase::WatchersWelcome
         } else {
-            words::NO_WATCHERS_HERE
+            Phrase::NoWatchers
         };
-        [self.title(), msg(mp::COMMA), text(watchers)].concat()
+        [self.title(), comma(), msg(watchers)].concat()
     }
 
     pub fn map(&self) -> Option<Arc<Map>> {
@@ -275,23 +283,23 @@ impl RoomModel {
         let map = &self.state.map;
         let mut m = [
             nb2msg(n),
-            msg(mp::PLAYERS_ON),
+            msg(Phrase::PlayersOn),
             nb2msg(i64::from(map.nb_players_max)),
         ]
         .concat();
         if n >= i64::from(map.nb_players_min) {
-            m.extend(msg(mp::THE_GAME_WILL_START_WHEN_ORGANIZER_IS_READY));
+            m.extend(msg(Phrase::TheGameWillStartWhenOrganizerIsReady));
         } else {
-            m.extend(msg(mp::NOT_ENOUGH_PLAYERS));
+            m.extend(msg(Phrase::NotEnoughPlayers));
             m.extend(nb2msg(i64::from(map.nb_players_min)));
         }
-        m.extend(msg(mp::PERIOD));
+        m.extend(period());
         m.extend(names(
             self.state.slots.iter().map(|s| player_name(&s.player)),
         ));
         let watchers = self.watchers();
         if !watchers.is_empty() {
-            m.extend(msg(mp::PERIOD));
+            m.extend(period());
             m.extend(watchers);
         }
         m
@@ -310,14 +318,19 @@ impl RoomModel {
         Some(match change {
             RoomChange::Entered => return None,
             RoomChange::Joined { player } => (
-                [player_name(player), msg(mp::HAS_JUST_JOINED), self.status()].concat(),
+                [
+                    player_name(player),
+                    msg(Phrase::HasJustJoined),
+                    self.status(),
+                ]
+                .concat(),
                 RoomTopic::Players,
             ),
             RoomChange::Left { player } => (
                 [
                     player_name(player),
-                    msg(mp::HAS_JUST_QUIT_GAME),
-                    msg(mp::PERIOD),
+                    msg(Phrase::HasJustQuitGame),
+                    period(),
                     self.status(),
                 ]
                 .concat(),
@@ -338,9 +351,9 @@ impl RoomModel {
                 let s = self.state.slots.get(*slot)?;
                 (
                     [
-                        msg(mp::MOVE),
+                        msg(Phrase::Move),
                         slot_name(*slot),
-                        msg(mp::TO_ALLIANCE),
+                        msg(Phrase::ToAlliance),
                         nb2msg(i64::from(s.alliance)),
                     ]
                     .concat(),
@@ -350,22 +363,30 @@ impl RoomModel {
             RoomChange::Ready { slot } => {
                 let s = self.state.slots.get(*slot)?;
                 let word = if s.ready {
-                    words::READY
+                    Phrase::IsReady
                 } else {
-                    words::NOT_READY
+                    Phrase::IsNotReady
                 };
                 (
-                    [slot_name(*slot), text(word)].concat(),
+                    [slot_name(*slot), msg(word)].concat(),
                     RoomTopic::Ready(*slot),
                 )
             }
             RoomChange::Host { host } => (words::new_host(host), RoomTopic::Host),
             RoomChange::Watching { login } => (
-                [vec![literal(login.as_str())], text(words::IS_WATCHING)].concat(),
+                [
+                    vec![MsgPart::literal(login.as_str())],
+                    msg(Phrase::IsWatching),
+                ]
+                .concat(),
                 RoomTopic::Watcher(login.clone()),
             ),
             RoomChange::StoppedWatching { login } => (
-                [vec![literal(login.as_str())], text(words::STOPPED_WATCHING)].concat(),
+                [
+                    vec![MsgPart::literal(login.as_str())],
+                    msg(Phrase::StoppedWatching),
+                ]
+                .concat(),
                 RoomTopic::Watcher(login.clone()),
             ),
         })

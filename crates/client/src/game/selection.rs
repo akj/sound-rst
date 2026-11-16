@@ -3,23 +3,21 @@
 
 use std::num::NonZeroU32;
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, comma, cue, msg, nb2msg};
 use soundrts_world::orders::{Keyword, MenuEntry};
 use soundrts_world::rules::TypeId;
 use soundrts_world::{Command, EntityId, Event, Order, OrderTarget, TurnMessage};
 
 use crate::audio::stereo;
 use crate::client::Client;
-use crate::net::words::{self, text};
 use crate::sound::StereoVolume;
 
+use super::GameInterface;
 use super::command::{OrderFlags, OrderMenu, UnitFilter};
 use super::entity::EntityView;
 use super::focus::Zoom;
 use super::order::{OrderTypeView, PRECISION};
 use super::squares::{remove_duplicates, summary};
-use super::{BEEP_SOUND, GameInterface};
 
 /// What an order with a target aims at: the selected object, else the
 /// point of the zoom on its square, else the selected square.
@@ -112,14 +110,14 @@ impl GameInterface {
         if self.an_order_requiring_a_target_is_selected()
             && let Some(o) = &self.order
         {
-            d.extend(msg(mp::COMMA));
+            d.extend(comma());
             d.extend(o.title.iter().cloned());
         }
         let (mut l, mut r) = stereo(self.x, self.y, v.x(), v.y(), self.o, 1.0, true);
         if l.max(r) < 0.2 {
             (l, r) = (0.2, 0.2);
         }
-        let m = [msg(mp::POSITIONAL_BEEP), d].concat();
+        let m = [cue(Cue::PositionalBeep), d].concat();
         cx.voice.item_stereo(&m, l, r);
     }
 
@@ -136,7 +134,7 @@ impl GameInterface {
     pub(crate) fn cmd_select_target(&mut self, cx: &mut Client, inc: i64, types: &[String]) {
         let choices = self.object_choices(cx, inc, types);
         if choices.is_empty() {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             self.target = None;
         } else {
             let sel = self
@@ -178,8 +176,9 @@ impl GameInterface {
                     .short_title(cx, v)
                     .iter()
                     .map(|p| match p {
-                        MsgPart::Num(n) => *n,
-                        MsgPart::Text(_) | MsgPart::Literal(_) => 0,
+                        // A title is the numbers of its style.
+                        MsgPart::Original(s) => s.parse().unwrap_or(0),
+                        _ => 0,
                     })
                     .collect();
                 (t, v.model.number)
@@ -319,7 +318,7 @@ impl GameInterface {
             let m = [
                 self.ext_title(cx, v),
                 self.orders_txt(cx, v),
-                msg(mp::AWAITING_YOUR_ORDERS),
+                msg(Phrase::AwaitingYourOrders),
             ]
             .concat();
             cx.voice.item(&m);
@@ -387,7 +386,7 @@ impl GameInterface {
             let v = &self.dobjets[&self.group[0]];
             let m = [
                 prefix.clone(),
-                msg(mp::YOU_CONTROL),
+                msg(Phrase::YouControl),
                 self.ext_title(cx, v),
                 self.orders_txt(cx, v),
             ]
@@ -404,21 +403,21 @@ impl GameInterface {
             }
             let mut m = [
                 prefix.clone(),
-                msg(mp::COMMA),
-                msg(mp::YOU_CONTROL),
+                comma(),
+                msg(Phrase::YouControl),
                 summary(&titles, false),
             ]
             .concat();
             if remove_duplicates(&orders).len() == 1 {
-                m.extend(msg(mp::COMMA));
+                m.extend(comma());
                 m.extend(orders[0].iter().cloned());
             } else if remove_duplicates(&titles).len() == 1 {
-                m.extend(msg(mp::COMMA));
+                m.extend(comma());
                 m.extend(summary(&orders, false));
             }
             cx.voice.item(&m);
         } else {
-            let m = [prefix.clone(), msg(mp::COMMA), msg(mp::NO_UNIT_CONTROLLED)].concat();
+            let m = [prefix.clone(), comma(), msg(Phrase::NoUnitControlled)].concat();
             cx.voice.item(&m);
         }
     }
@@ -463,16 +462,16 @@ impl GameInterface {
             }
             let mut m = [
                 nb2msg(hp / PRECISION),
-                msg(mp::HITPOINTS_ON),
+                msg(Phrase::HitPointsOn),
                 nb2msg(hp_max / PRECISION),
             ]
             .concat();
             if hurt > 0 {
-                m.extend(msg(mp::COMMA));
+                m.extend(comma());
                 m.extend(nb2msg(hurt));
-                m.extend(text(words::BADLY_HURT));
+                m.extend(msg(Phrase::BadlyHurt));
             }
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
             m.extend(summary(&titles, false));
             cx.voice.item(&m);
         }
@@ -542,14 +541,14 @@ impl GameInterface {
     /// and, with `help`, what to do next.
     pub(crate) fn select_order(&mut self, cx: &mut Client, order: OrderTypeView, help: bool) {
         let mut m = order.title.clone();
-        m.extend(msg(mp::COMMA));
+        m.extend(comma());
         m.extend(order.full_comment(self.view(), cx.res.style()));
         if help {
-            m.extend(msg(mp::COMMA));
+            m.extend(comma());
             if order.nb_args == 0 {
-                m.extend(msg(mp::CONFIRM));
+                m.extend(msg(Phrase::PressEnterToConfirm));
             } else {
-                m.extend(msg(mp::SELECT_TARGET_AND_CONFIRM));
+                m.extend(msg(Phrase::SelectTargetAndConfirm));
             }
         }
         self.order = Some(order);
@@ -559,7 +558,7 @@ impl GameInterface {
     pub(crate) fn cmd_select_order(&mut self, cx: &mut Client, inc: i64, menu: OrderMenu) {
         let orders = self.orders(cx, menu);
         if orders.is_empty() {
-            cx.voice.item(&msg(mp::NOTHING));
+            cx.voice.item(&msg(Phrase::Nothing));
             self.order = None;
             return;
         }
@@ -583,9 +582,9 @@ impl GameInterface {
             let mut m = Vec::new();
             for o in self.orders(cx, OrderMenu::Active) {
                 if let Some(s) = &o.shortcut {
-                    m.push(MsgPart::Text(s.clone()));
+                    m.push(MsgPart::literal(s.as_str()));
                     m.extend(o.title.iter().cloned());
-                    m.extend(msg(mp::COMMA));
+                    m.extend(comma());
                 }
             }
             if !m.is_empty() {
@@ -594,7 +593,7 @@ impl GameInterface {
                 return;
             }
         }
-        cx.voice.item(&msg(mp::BEEP));
+        cx.voice.item(&cue(Cue::Beep));
     }
 
     /// The key after the order shortcut key: the order with that shortcut.
@@ -609,7 +608,7 @@ impl GameInterface {
                 return;
             }
         }
-        cx.voice.item(&msg(mp::BEEP));
+        cx.voice.item(&cue(Cue::Beep));
     }
 
     /// Selects the previous order again, and with `now` gives it if it
@@ -627,7 +626,7 @@ impl GameInterface {
                 match listed.into_iter().find(|x| *x == o) {
                     Some(x) => o = x,
                     None => {
-                        cx.voice.item(&msg(mp::BEEP));
+                        cx.voice.item(&cue(Cue::Beep));
                         return;
                     }
                 }
@@ -760,7 +759,7 @@ impl GameInterface {
 
     fn validate(&mut self, cx: &mut Client, flags: OrderFlags) {
         if self.group.is_empty() {
-            cx.voice.item(&msg(mp::NO_UNIT_CONTROLLED));
+            cx.voice.item(&msg(Phrase::NoUnitControlled));
         } else if self.order.is_none() {
             self.cmd_command_unit(cx);
         } else if self.an_order_not_requiring_a_target_is_selected() {
@@ -819,10 +818,10 @@ impl GameInterface {
         let mut confirmation = Vec::new();
         for m in msgs {
             confirmation.extend(m);
-            confirmation.extend(msg(mp::COMMA));
+            confirmation.extend(comma());
         }
         if confirmation.is_empty() {
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
         } else {
             cx.voice.item(&confirmation);
         }
@@ -830,13 +829,13 @@ impl GameInterface {
 
     pub(crate) fn cmd_default(&mut self, cx: &mut Client, flags: OrderFlags) {
         if self.group.is_empty() {
-            cx.voice.item(&msg(mp::NO_UNIT_CONTROLLED));
+            cx.voice.item(&msg(Phrase::NoUnitControlled));
         } else if let Some((target, title)) = self.ui_order_target(cx) {
             self.send_order(cx, Order::Default(target), flags);
             self.say_default_confirmation(cx, target, &title);
         } else {
             // No square is selected yet to aim at.
-            cx.voice.item(&msg(mp::BEEP));
+            cx.voice.item(&cue(Cue::Beep));
         }
         self.order = None;
     }
@@ -844,11 +843,8 @@ impl GameInterface {
 
 /// The beep of an order that cannot be given.
 fn refuse_order(cx: &Client) {
-    cx.audio.play_stereo(
-        cx.sounds.get_sound(BEEP_SOUND),
-        StereoVolume::Both(1.0),
-        0.0,
-    );
+    cx.audio
+        .play_stereo(cx.sounds.cue(Cue::Beep), StereoVolume::Both(1.0), 0.0);
 }
 
 /// The units replaced in the turn `m`, old and new, in order.
@@ -919,7 +915,7 @@ mod tests {
             .iter()
             .map(|(_, s)| s.clone())
             .collect();
-        assert_eq!(played, [BEEP_SOUND]);
+        assert_eq!(played, ["1029"]);
         assert_eq!(h.said_since(from), Vec::<String>::new());
         g.game.cmd_default(&mut h.client, OrderFlags::default());
         assert_eq!(h.said_since(from), ["<1029>"]);

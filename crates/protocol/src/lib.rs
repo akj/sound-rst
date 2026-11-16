@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client

@@ -1,10 +1,10 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, and listening to a recorded game added to part 4 at `2220932`.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, and part 11, the names of the sounds, added after `274f9b9`.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
-The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
+The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 and part 11 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
 
 ## How to report
 
@@ -266,3 +266,35 @@ cargo run -p listening-room --features binaural -- --root vendor/soundrts-upstre
 ```
 
 It runs seven steps over four renderers and saves your answers in `listening-room-results.txt` in that folder. Type `q` at any question to stop; what you answered so far is kept. Send the file back.
+
+## Part 11. The names of the sounds
+
+Each recording of the original now has a name that says what the sound is, such as `footstep/grass_1`. The names are in `crates/client/src/original_names.txt`. They were proposed from where the game uses each sound, and nobody has listened to check them. This part needs only you, and no game.
+
+For a name that is wrong, report the name and a better one: "11.4 fail: combat/arrow_hit is a sword". A name says what the sound is, not where the game plays it.
+
+11.1. In the repository, run `pwsh scripts/name-numbers.ps1 -CopySoundsTo target/named-sounds`. Expected: the last line is "220 recordings copied to target/named-sounds."
+
+11.2. Open `target/named-sounds/res/footstep` in File Explorer and play each of its 14 files. Expected: each is one step on the ground in its name: grass, leaves, gravel, wood, mud, water or snow.
+
+11.3. Play the 39 files of `res/ambience`. Expected: each is the background sound of the place, building or creature in its name. `path` is also the sound of a mountain. `horse_1` and `horse_2` are a stable. `catapult_1` to `catapult_3` are also a battleship. `corpse_1` to `corpse_3` are what lies where a unit died.
+
+11.4. Play the 17 files of `res/combat`. Expected: `sword_hit_1` to `sword_hit_3` and `sword_hit_upgraded` are a sword that hits. `arrow_shot`, `arrow_hit` and `arrow_hit_upgraded` are an arrow. `cannon_shot` and `cannon_hit` are a cannon or a catapult. `magic_shot` and `magic_hit` are a mage's attack. `peasant_hit` is a peasant's blow, `miss` an attack that misses, `undead_attack` a zombie or a skeleton that attacks, `death` and `dragon_death` something that dies, and `lose_fight` the sound of a lost fight.
+
+11.5. Play the 11 files of `res/work`. Expected: `chop_wood_1` to `chop_wood_4` are an axe on a tree. `mine_gold` and `quarry_stone` are a pick. `build_1` to `build_3` are a building site. `store_gold` and `store_wood` are a peasant who brings a load in.
+
+11.6. Play the 8 files of `res/move`. Expected: `catapult_1` and `catapult_2` are a catapult that rolls. `horse_1` and `horse_2` are a horse that walks. `wings_1` and `wings_2` are a dragon's wings. `through_path` is a unit that takes a path, and `over_bridge` a unit that crosses a bridge.
+
+11.7. Play the 6 files of `res/magic`. Expected: each is the sound of the spell in its name: teleportation, a summoned dragon, holy vision, raise dead, meteors, conversion. The game also plays `holy_vision` for an ally's flare.
+
+11.8. Play the 5 files of `res/event`, the 2 of `res/alert` and the 2 of `res/building`. Expected: `event/healed` is a unit that is healed, `event/production` a unit or an upgrade that starts, `event/added` a thing that appears, and `event/enter` and `event/exit` a unit that goes in or comes out. `alert/horn` is a horn and `alert/bell` is a bell. `building/damaged` is a building that burns, and `building/collapse` a building that falls.
+
+11.9. Play the 5 files of `res/ui` and the 2 of `res/silence`. Expected: `beep` is the sound of an order that is impossible. `positional_beep` is the beep that says where a square is. `select` and `confirm` are the two clicks of a menu. `blocked` is the sound of a unit that has no room or no path. `silence/short` and `silence/long` are silent.
+
+11.10. Play the 21 files of `res/voice/own`, then the 21 of `res/voice/other`. Expected: `own` is the voice of your units, and `other` the voice of anyone else's. In each, `order_ok_1` to `order_ok_3` accept an order, `attack` is a shout, `hurt` and `badly_hurt` are a wounded unit, `flee` is a unit that runs away, `death` a unit that dies, `win_fight` a unit that won, and `building_complete` a finished building. I do not know what `health_0` to `health_10` are. The game plays one for each tenth of a unit's hit points. Say what you hear.
+
+11.11. Play the 19 files of `res/unnamed`. No style, map or code uses them, except `sound_1014`, which one map names in its objective. Expected: nothing in particular. Say what each one is, so that it gets a name.
+
+11.12. Play `res/multi/jl4/creature/stone_golem.ogg`. Expected: a stone golem.
+
+11.13. Play some of the 47 files under `mods/soundpack`. Expected: each is another recording of the same thing as the file of the same name under `res`.

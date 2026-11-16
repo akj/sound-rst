@@ -2,8 +2,8 @@
 //! says so. A fair computer has no handicap.
 
 use crate::msg::{Msg, MsgPart, msg};
-use crate::msgparts as mp;
 use crate::nofloat::PRECISION;
+use crate::phrases::Phrase;
 
 /// The AI type of the random computer, which gives random orders.
 pub const RANDOM_AI_TYPE: &str = "ai2";
@@ -43,11 +43,11 @@ impl Handicap {
     }
 
     /// The words that follow the computer's name, if it has a handicap.
-    pub fn words(self) -> Option<&'static str> {
+    pub fn words(self) -> Option<Phrase> {
         match (self.resources.is_some(), self.ignores_requirements) {
-            (true, true) => Some("with unlimited resources and no requirements"),
-            (true, false) => Some("with unlimited resources"),
-            (false, true) => Some("with no requirements"),
+            (true, true) => Some(Phrase::WithUnlimitedResourcesAndNoRequirements),
+            (true, false) => Some(Phrase::WithUnlimitedResources),
+            (false, true) => Some(Phrase::WithNoRequirements),
             (false, false) => None,
         }
     }
@@ -64,10 +64,10 @@ pub fn computer_name(ai_type: &str) -> Msg {
 /// The name of a computer of an AI type with this handicap.
 pub(crate) fn handicapped_name(ai_type: &str, handicap: Handicap) -> Msg {
     let mut name = match ai_type {
-        "easy" => msg(mp::QUIET_COMPUTER),
-        "aggressive" => msg(mp::AGGRESSIVE_COMPUTER),
-        RANDOM_AI_TYPE => vec![MsgPart::from("random computer")],
-        other => vec![MsgPart::Literal(format!("ai_{other}"))],
+        "easy" => msg(Phrase::QuietComputer),
+        "aggressive" => msg(Phrase::AggressiveComputer),
+        RANDOM_AI_TYPE => msg(Phrase::RandomComputer),
+        other => vec![MsgPart::literal(format!("ai_{other}"))],
     };
     name.extend(handicap.words().map(MsgPart::from));
     name

@@ -1,8 +1,7 @@
 //! The score said at the end of a game, from the player's statistics.
 
 use soundrts_world::SeatView;
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg};
 use soundrts_world::nofloat::floordiv;
 use soundrts_world::player::{StatEvent, StatTarget};
 
@@ -27,41 +26,38 @@ pub fn score_msgs_of(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg>
     };
     let resources = view.resources();
     let outcome = if view.has_victory() {
-        msg(mp::VICTORY)
+        msg(Phrase::Victory)
     } else if still_on {
-        crate::net::words::text(crate::net::words::NOT_OVER)
+        msg(Phrase::NotOver)
     } else {
-        msg(mp::DEFEAT)
+        msg(Phrase::Defeat)
     };
     let (minutes, seconds) = stats.game_duration_in_minutes_seconds(view.time());
     let mut msgs = vec![
         [
             outcome,
-            msg(mp::AT),
+            msg(Phrase::At),
             nb2msg(minutes),
-            msg(mp::MINUTES),
+            msg(Phrase::Minutes),
             nb2msg(seconds),
-            msg(mp::SECONDS),
+            msg(Phrase::Seconds),
         ]
         .concat(),
     ];
     for (target, produced) in [
-        (StatTarget::Unit, [mp::UNITS, mp::PRODUCED_F].concat()),
-        (
-            StatTarget::Building,
-            [mp::BUILDINGS, mp::PRODUCED_M].concat(),
-        ),
+        (StatTarget::Unit, [Phrase::Units, Phrase::ProducedF]),
+        (StatTarget::Building, [Phrase::Buildings, Phrase::ProducedM]),
     ] {
         msgs.push(
             [
                 nb2msg(stats.get(StatEvent::Produced, target)),
-                msg(&produced),
-                msg(mp::COMMA),
+                produced.map(MsgPart::from).to_vec(),
+                comma(),
                 nb2msg(stats.get(StatEvent::Lost, target)),
-                msg(mp::LOST),
-                msg(mp::COMMA),
+                msg(Phrase::Lost),
+                comma(),
                 nb2msg(stats.get(StatEvent::Killed, target)),
-                msg(mp::NEUTRALIZED),
+                msg(Phrase::Neutralized),
             ]
             .concat(),
         );
@@ -72,19 +68,19 @@ pub fn score_msgs_of(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg>
             [
                 nb2msg(floordiv(gathered, PRECISION)),
                 style_msg(style, "parameters", &format!("resource_{i}_title")),
-                msg(mp::GATHERED),
-                msg(mp::COMMA),
+                msg(Phrase::Gathered),
+                comma(),
                 nb2msg(floordiv(stats.consumed(i, resources), PRECISION)),
-                msg(mp::CONSUMED),
+                msg(Phrase::Consumed),
             ]
             .concat(),
         );
     }
     msgs.push(
         [
-            msg(mp::SCORE),
+            msg(Phrase::Score),
             nb2msg(stats.score(resources)),
-            msg(mp::HISTORY_EXPLANATION),
+            msg(Phrase::HistoryExplanation),
         ]
         .concat(),
     );

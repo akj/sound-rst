@@ -433,6 +433,7 @@ The check speaks nothing and opens no window. It fetches the data into a tempora
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game. `scripts/upstream-commit.txt` names its pinned commit, which the game also downloads when it has no data.
+- `scripts/name-numbers.ps1` keeps `crates/client/src/original_names.txt`, which gives a name to each numbered phrase and sound of the original. It adds a row for a number that has none and keeps every name that the table has.
 - `scripts/fetch-nvda-controller.ps1` fetches NVDA's controller client, for the `nvda_direct` setting.
 - `scripts/stage-release.ps1` gathers the files of the Windows download, `scripts/check-release.ps1` checks them, and `packaging/` holds the installer's script and the download's README.
 

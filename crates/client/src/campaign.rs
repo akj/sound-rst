@@ -6,8 +6,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, msg, nb2msg};
 
 use crate::client::Client;
 use crate::mapfile::Map;
@@ -86,8 +85,8 @@ impl Campaign {
         };
         let words = |c: char| c.is_ascii_alphanumeric() || c == ' ';
         let title = match header_line(&text, "title", words) {
-            Some(t) => t.split(' ').map(MsgPart::from).collect(),
-            None => vec![MsgPart::Text(name.clone())],
+            Some(t) => t.split(' ').map(MsgPart::original).collect(),
+            None => vec![MsgPart::literal(name.as_str())],
         };
         let mut mods = match header_line(&text, "mods", words) {
             Some(m) => Some(m.to_owned()),
@@ -129,7 +128,7 @@ impl Campaign {
                         Some(t) => t
                             .split(' ')
                             .filter_map(|x| x.parse().ok())
-                            .map(MsgPart::Num)
+                            .map(MsgPart::original_number)
                             .collect(),
                         None => nb2msg(number),
                     };
@@ -281,7 +280,7 @@ fn campaign_menu(cx: &Client, campaign: &Rc<Campaign>) -> Result<Menu, Exit> {
     if available.len() > 1 {
         let last = &available[available.len() - 1];
         menu.append(
-            [msg(mp::CONTINUE), last.title()].concat(),
+            [msg(Phrase::Continue), last.title()].concat(),
             chapter_action(campaign, last.number()),
             None,
         );
@@ -298,7 +297,7 @@ fn campaign_menu(cx: &Client, campaign: &Rc<Campaign>) -> Result<Menu, Exit> {
             None,
         );
     }
-    menu.append(msg(mp::BACK), Action::Nothing, None);
+    menu.append(msg(Phrase::Back), Action::Nothing, None);
     Ok(menu)
 }
 
@@ -339,17 +338,17 @@ fn play_mission(
         if number + 1 < campaign.chapters.len() {
             let mut menu = Menu::new(Vec::new(), Vec::new());
             menu.append(
-                msg(mp::CONTINUE),
+                msg(Phrase::Continue),
                 chapter_action(campaign, number + 1),
                 None,
             );
-            menu.append(msg(mp::QUIT), Action::Nothing, None);
+            menu.append(msg(Phrase::Quit), Action::Nothing, None);
             menu.run(cx)?;
         }
     } else {
         let mut menu = Menu::new(Vec::new(), Vec::new());
-        menu.append(msg(mp::RESTART), chapter_action(campaign, number), None);
-        menu.append(msg(mp::QUIT), Action::Nothing, None);
+        menu.append(msg(Phrase::Restart), chapter_action(campaign, number), None);
+        menu.append(msg(Phrase::Quit), Action::Nothing, None);
         menu.run(cx)?;
     }
     Ok(())
@@ -430,7 +429,7 @@ mod tests {
             assert_eq!(map.name, "campaign1/2");
             assert_eq!(
                 c.chapters[2].title(),
-                vec![MsgPart::Num(11), MsgPart::Num(22)]
+                vec![MsgPart::original_number(11), MsgPart::original_number(22)]
             );
             assert!(map.resources.is_none());
             let Chapter::Mission { map, .. } = &c.chapters[1] else {

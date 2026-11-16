@@ -1,0 +1,318 @@
+//! The name of each number of the original's files: `original_names.txt`.
+//!
+//! The original names everything it says or plays with a number: a line of
+//! `ui/tts.txt` (a phrase) or a recording under `ui/` (a sound). The table
+//! gives each number a name, for each package: the game (`res`), a map
+//! with files of its own, a mod, a campaign. `scripts/name-numbers.ps1`
+//! keeps the table, and a person corrects the names in it.
+//!
+//! A name with a slash is a sound: its path under `sounds/`. A name without
+//! one is a phrase. A package lists only the numbers the game lacks: a
+//! number that the game has keeps the game's name there.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::string_slice,
+    clippy::arithmetic_side_effects
+)]
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+const TEXT: &str = include_str!("original_names.txt");
+
+/// The package of the game itself.
+pub const GAME: &str = "res";
+
+/// One number of a package and its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Row {
+    pub number: u32,
+    pub name: &'static str,
+    /// No style, map, help file or code refers to the number.
+    pub unused: bool,
+}
+
+impl Row {
+    /// Whether the name is a sound's: a path, not a phrase's bare word.
+    pub fn is_sound(&self) -> bool {
+        self.name.contains('/')
+    }
+}
+
+/// The table: the rows of each package, in the order of the file.
+#[derive(Debug, Default)]
+pub struct Names {
+    packages: Vec<(&'static str, Vec<Row>)>,
+    game_numbers: HashMap<&'static str, u32>,
+}
+
+impl Names {
+    /// The packages, with their rows.
+    pub fn packages(&self) -> impl Iterator<Item = (&'static str, &[Row])> {
+        self.packages.iter().map(|(p, rows)| (*p, rows.as_slice()))
+    }
+
+    /// The rows of a package. Empty for a package the table lacks.
+    pub fn rows(&self, package: &str) -> &[Row] {
+        self.packages
+            .iter()
+            .find(|(p, _)| *p == package)
+            .map_or(&[], |(_, rows)| rows.as_slice())
+    }
+
+    /// The number the game gives a name.
+    pub fn game_number(&self, name: &str) -> Option<u32> {
+        self.game_numbers.get(name).copied()
+    }
+}
+
+fn is_word(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Whether `name` has the shape of a phrase's name or of a sound's: lower
+/// case words, and for a sound, at least two of them joined by slashes.
+fn is_name(name: &str) -> bool {
+    name.split('/').all(is_word)
+}
+
+/// Reads the table. The error names the line.
+fn parse(text: &'static str) -> Result<Names, String> {
+    let mut names = Names::default();
+    for (i, line) in text.lines().enumerate() {
+        let at = |what: &str| format!("original_names.txt line {}: {what}", i.saturating_add(1));
+        let mut words = line.split(';').next().unwrap_or("").split_whitespace();
+        let Some(first) = words.next() else {
+            continue;
+        };
+        let second = words.next().ok_or_else(|| at("one word only"))?;
+        if first == "package" {
+            if names.packages.iter().any(|(p, _)| *p == second) {
+                return Err(at("this package has rows above"));
+            }
+            names.packages.push((second, Vec::new()));
+            continue;
+        }
+        let number = first.parse().map_err(|_| at("not a number"))?;
+        if !is_name(second) {
+            return Err(at("not a name"));
+        }
+        let unused = match words.next() {
+            None => false,
+            Some("unused") => true,
+            Some(_) => return Err(at("a word that is not 'unused' after the name")),
+        };
+        let Some((_, rows)) = names.packages.last_mut() else {
+            return Err(at("a row before the first package"));
+        };
+        if rows
+            .iter()
+            .any(|r: &Row| r.number == number || r.name == second)
+        {
+            return Err(at("this package has this number or this name above"));
+        }
+        rows.push(Row {
+            number,
+            name: second,
+            unused,
+        });
+    }
+    names.game_numbers = names
+        .rows(GAME)
+        .iter()
+        .map(|r| (r.name, r.number))
+        .collect();
+    for (package, rows) in names.packages() {
+        if let Some(r) = rows
+            .iter()
+            .find(|r| package != GAME && names.game_numbers.contains_key(r.name))
+        {
+            return Err(format!(
+                "original_names.txt: '{}' of {package} is a name of the game",
+                r.name
+            ));
+        }
+    }
+    Ok(names)
+}
+
+/// The table. A test checks that it reads without an error.
+pub fn names() -> &'static Names {
+    static NAMES: OnceLock<Names> = OnceLock::new();
+    NAMES.get_or_init(|| parse(TEXT).unwrap_or_default())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::path::Path;
+
+    use soundrts_world::msg::{Cue, Phrase};
+
+    use super::*;
+    use crate::package::Package;
+    use crate::testkit::upstream_root;
+
+    /// The numbers a package of the original has: the keys of its
+    /// `tts.txt` files (true) and the names of its recordings (false), in
+    /// `ui` and in each translation.
+    fn numbers_of(path: &Path) -> BTreeMap<u32, bool> {
+        let package = Package::from_path(path).unwrap();
+        let mut numbers = BTreeMap::new();
+        let folders = package.dirnames();
+        for ui in folders
+            .iter()
+            .filter(|d| *d == "ui" || d.starts_with("ui-"))
+        {
+            for file in package.relative_paths_of_files_in_subtree(ui) {
+                let stem = file.rsplit('/').next().unwrap().strip_suffix(".ogg");
+                if let Some(n) = stem.and_then(|s| s.parse().ok()) {
+                    numbers.entry(n).or_insert(false);
+                }
+            }
+            let text = package.read_text(&format!("{ui}/tts.txt"));
+            for line in text.unwrap_or_default().lines() {
+                let key = line.split_whitespace().next();
+                if let Some(n) = key.and_then(|k| k.parse().ok()) {
+                    numbers.insert(n, true);
+                }
+            }
+        }
+        numbers
+    }
+
+    /// The packages of the original, as the table names them.
+    fn original_packages() -> Vec<(String, std::path::PathBuf)> {
+        let root = upstream_root();
+        let mut packages = vec![(GAME.to_owned(), root.join("res"))];
+        for group in ["res/multi", "mods", "single"] {
+            let mut entries: Vec<_> = std::fs::read_dir(root.join(group))
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .collect();
+            entries.sort();
+            for path in entries {
+                let is_zip = path.extension().is_some_and(|e| e == "zip");
+                if path.is_dir() || is_zip {
+                    let stem = path.file_stem().unwrap().to_str().unwrap();
+                    packages.push((format!("{group}/{stem}"), path));
+                }
+            }
+        }
+        packages
+    }
+
+    #[test]
+    fn the_table_reads_without_an_error() {
+        let names = parse(TEXT).unwrap();
+        assert_eq!(names.game_number("cannot_build_there"), Some(4204));
+        assert_eq!(names.game_number("footstep/grass_1"), Some(1053));
+        assert_eq!(names.game_number("pig_farm"), None);
+        let orc = names.rows("mods/orc");
+        assert!(orc.iter().any(|r| r.number == 7000 && r.name == "pig_farm"));
+    }
+
+    #[test]
+    fn every_number_of_the_original_has_a_row_and_every_row_a_number() {
+        let names = names();
+        let game = numbers_of(&upstream_root().join("res"));
+        let mut seen = BTreeSet::new();
+        for (package, path) in original_packages() {
+            // A package lists the numbers the game lacks.
+            let numbers: BTreeMap<u32, bool> = numbers_of(&path)
+                .into_iter()
+                .filter(|(n, _)| package == GAME || !game.contains_key(n))
+                .collect();
+            let rows: BTreeMap<u32, bool> = names
+                .rows(&package)
+                .iter()
+                .map(|r| (r.number, !r.is_sound()))
+                .collect();
+            assert_eq!(rows, numbers, "{package}: number, and whether a phrase");
+            seen.insert(package);
+        }
+        let listed: BTreeSet<String> = names.packages().map(|(p, _)| p.to_owned()).collect();
+        assert!(listed.is_subset(&seen), "a package the original lacks");
+    }
+
+    #[test]
+    fn a_bad_line_is_refused_with_its_number() {
+        let bad = |text: &'static str| parse(text).unwrap_err();
+        assert!(bad("1 a\n").contains("line 1: a row before the first package"));
+        assert!(bad("package res\n1 A\n").contains("line 2: not a name"));
+        assert!(bad("package res\n1 a/\n").contains("line 2: not a name"));
+        assert!(bad("package res\nx a\n").contains("line 2: not a number"));
+        assert!(bad("package res\n1 a\n1 b\n").contains("line 3"));
+        assert!(bad("package res\n1 a\n2 a\n").contains("line 3"));
+        assert!(bad("package res\n1 a used\n").contains("line 2"));
+        assert!(bad("package res\n1 a\npackage mods/m\n7 a\n").contains("'a' of mods/m"));
+        let ok = parse("; c\npackage res\n1 a/b unused ; c\n").unwrap();
+        assert_eq!(
+            ok.rows(GAME),
+            [Row {
+                number: 1,
+                name: "a/b",
+                unused: true
+            }]
+        );
+    }
+
+    /// The English lines of the game's `ui/tts.txt`, by number, as the
+    /// sound cache reads them.
+    fn english_of_the_original() -> BTreeMap<u32, String> {
+        let text = std::fs::read_to_string(upstream_root().join("res/ui/tts.txt")).unwrap();
+        let mut table = std::collections::HashMap::new();
+        crate::sound_cache::update_text_table(&mut table, &text, &crate::log::Log::silent());
+        table
+            .into_iter()
+            .filter_map(|(key, words)| Some((key.parse().ok()?, words)))
+            .collect()
+    }
+
+    #[test]
+    fn every_phrase_of_the_original_has_its_number_and_its_english() {
+        let english = english_of_the_original();
+        for &phrase in Phrase::ORIGINAL {
+            let id = phrase.id();
+            let number = names().game_number(id);
+            let number = number.unwrap_or_else(|| panic!("{id} has no row"));
+            assert_eq!(
+                english.get(&number).map(String::as_str),
+                Some(phrase.english()),
+                "{id}"
+            );
+        }
+        assert_eq!(
+            names().game_number(Phrase::AwaitingYourOrders.id()),
+            Some(4202)
+        );
+        assert_eq!(names().game_number(Phrase::AtDistance.id()), Some(54));
+        assert_eq!(names().game_number(Phrase::LetterZ.id()), Some(5025));
+    }
+
+    #[test]
+    fn no_phrase_of_the_port_takes_a_name_of_the_original() {
+        for &phrase in Phrase::OWN {
+            for (package, rows) in names().packages() {
+                let taken = rows.iter().any(|r| r.name == phrase.id());
+                assert!(!taken, "{} is a name of {package}", phrase.id());
+            }
+        }
+    }
+
+    #[test]
+    fn every_cue_is_a_sound_of_the_game() {
+        let game = names().rows(GAME);
+        for cue in Cue::ALL {
+            let row = game.iter().find(|r| r.name == cue.sound());
+            assert!(row.is_some_and(Row::is_sound), "{}", cue.sound());
+        }
+        assert_eq!(names().game_number(Cue::Beep.sound()), Some(1029));
+        assert_eq!(names().game_number(Cue::Select.sound()), Some(6115));
+    }
+}

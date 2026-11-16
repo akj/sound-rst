@@ -15,15 +15,13 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use soundrts_world::SquareId;
-use soundrts_world::msg::{Msg, msg, nb2msg};
-use soundrts_world::msgparts as mp;
+use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg};
 
 use crate::audio::DEFAULT_VOLUME;
 use crate::clock::ClockRef;
 use crate::input::{Input, InputPoint, Key, KeyDown};
 use crate::log::Log;
 use crate::message::{Category, News, Parts, Policy, Subject, translate_and_collapse};
-use crate::net::words::{self, text};
 use crate::sound::Audio;
 use crate::sound_cache::{Sounds, Spoken};
 use crate::tts::Tts;
@@ -380,13 +378,13 @@ struct Review {
 /// The words for a category.
 pub fn category_title(c: Category) -> Msg {
     match c {
-        Category::Alert => msg(mp::ALERT),
-        Category::Production => text(words::PRODUCTION),
-        Category::Economy => text(words::ECONOMY),
-        Category::Scouting => text(words::SCOUTING),
-        Category::Chat => text(words::CHAT),
-        Category::System => text(words::SYSTEM),
-        Category::Story => text(words::STORY),
+        Category::Alert => msg(Phrase::Alert),
+        Category::Production => msg(Phrase::ProductionNews),
+        Category::Economy => msg(Phrase::EconomyNews),
+        Category::Scouting => msg(Phrase::ScoutingNews),
+        Category::Chat => msg(Phrase::ChatNews),
+        Category::System => msg(Phrase::SystemNews),
+        Category::Story => msg(Phrase::StoryNews),
     }
 }
 
@@ -760,14 +758,14 @@ impl Voice {
                         .count();
                     if n > 0 {
                         if !m.is_empty() {
-                            m.extend(msg(mp::COMMA));
+                            m.extend(comma());
                         }
                         m.extend(category_title(c));
                         m.extend(nb2msg(n as i64));
                     }
                 }
                 if m.is_empty() {
-                    self.answer(&msg(mp::NOTHING), CENTERED);
+                    self.answer(&msg(Phrase::Nothing), CENTERED);
                 } else {
                     self.answer(&m, CENTERED);
                     self.missed = Missed::Steps { first: true };
@@ -789,7 +787,7 @@ impl Voice {
                         self.missed = Missed::Steps { first: false };
                     }
                     None => {
-                        self.answer(&msg(mp::NOTHING), CENTERED);
+                        self.answer(&msg(Phrase::Nothing), CENTERED);
                         self.missed = Missed::Count;
                     }
                 }
@@ -816,7 +814,10 @@ impl Voice {
             .filter(|&i| self.log[i].category() == Some(c))
             .collect();
         let Some(last) = in_category.len().checked_sub(1) else {
-            self.answer(&[category_title(c), msg(mp::NOTHING)].concat(), CENTERED);
+            self.answer(
+                &[category_title(c), msg(Phrase::Nothing)].concat(),
+                CENTERED,
+            );
             return;
         };
         let at = self
@@ -855,8 +856,8 @@ impl Voice {
             .map(|m| self.channel.words(m))
             .filter(|w| !w.is_empty());
         let answer = match copied {
-            Some(_) => text(words::COPIED),
-            None => msg(mp::NOTHING),
+            Some(_) => msg(Phrase::Copied),
+            None => msg(Phrase::Nothing),
         };
         self.answer(&answer, CENTERED);
         copied

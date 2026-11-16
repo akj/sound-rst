@@ -6,10 +6,10 @@ use crate::command::{Cheat, Command, Order, Queue};
 use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event};
 use crate::map::MAX_START_UNITS;
-use crate::msg::{Msg, MsgPart, msg};
-use crate::msgparts as mp;
+use crate::msg::{Cue, Msg, MsgPart, cue, msg};
 use crate::nofloat::{py_float, py_int};
 use crate::orders::{Request, TargetRef};
+use crate::phrases::Phrase;
 use crate::player::{Objective, PlayerKind};
 use crate::rules::{Summoned, TypeId};
 use crate::world::{NotEnoughSpace, World};
@@ -101,10 +101,7 @@ fn is_digits(s: &str) -> bool {
 fn msg_of(numbers: &[i64]) -> Msg {
     numbers
         .iter()
-        .map(|&n| match u64::try_from(n) {
-            Ok(n) => MsgPart::Num(n),
-            Err(_) => MsgPart::Text(n.to_string()),
-        })
+        .map(|n| MsgPart::original(&n.to_string()))
         .collect()
 }
 
@@ -249,7 +246,7 @@ impl World {
                     description.push(py_int(x).map_err(|_| number(x))?);
                 }
                 if !self.pl(p).objectives.iter().any(|o| o.number == n) {
-                    let mut m = msg(mp::NEW_OBJECTIVE);
+                    let mut m = msg(Phrase::NewObjective);
                     m.extend(msg_of(&description));
                     self.plm(p).objectives.push(Objective {
                         number: n,
@@ -262,12 +259,12 @@ impl World {
             "objective_complete" => {
                 let n = arg_word(0)?;
                 if let Some(i) = self.pl(p).objectives.iter().position(|o| o.number == n) {
-                    let mut m = msg(mp::OBJECTIVE_COMPLETE);
+                    let mut m = msg(Phrase::ObjectiveComplete);
                     m.extend(msg_of(&self.pl(p).objectives[i].description));
                     self.send_voice_important(p, m);
                     self.plm(p).objectives.remove(i);
                     if self.pl(p).objectives.is_empty() {
-                        self.send_voice_important(p, msg(mp::MISSION_COMPLETE));
+                        self.send_voice_important(p, msg(Phrase::MissionComplete));
                         self.victory(p);
                     }
                 }
@@ -399,7 +396,7 @@ impl World {
                         };
                         self.add_of_type(p, t, nb, &add, corpses.as_mut());
                     }
-                    None => self.send_voice_important(p, msg(mp::BEEP)),
+                    None => self.send_voice_important(p, cue(Cue::Beep)),
                 }
                 nb = 1;
             }
@@ -444,11 +441,11 @@ impl World {
     ) {
         if self.rules.ty(t).is_upgrade() {
             self.plm(p).upgrades.add(t);
-            self.send_voice_important(p, msg(mp::OK));
+            self.send_voice_important(p, msg(Phrase::Ok));
             return;
         }
         if self.rules.ty(t).is_ability() {
-            self.send_voice_important(p, msg(mp::BEEP));
+            self.send_voice_important(p, cue(Cue::Beep));
             self.warn("cannot add an ability");
             return;
         }

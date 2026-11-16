@@ -339,7 +339,7 @@ fn translate(cache: &mut SoundCache) {
         "18446744073709551616",
         "é",
     ] {
-        let _ = cache.translate(&MsgPart::from(key));
+        let _ = cache.translate(&MsgPart::original(key));
     }
 }
 
