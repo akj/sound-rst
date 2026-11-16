@@ -269,14 +269,8 @@ fn closing_the_window_during_a_game_saves_it_as_the_last_game() {
     h.client.game.seed = Some(1);
     let m = h.multiplayer_map("jl1");
     h.client.res.set_map(Some(&m));
-    let players = [
-        h.client.config.login.as_str().to_owned(),
-        "quiet".to_owned(),
-    ];
-    let factions = vec!["random_faction".to_owned(); 2];
-    let alliances = ["1".to_owned(), "2".to_owned()];
-    let mut session =
-        crate::session::Session::training(&h.client, m, &players, &factions, &alliances);
+    let players = crate::testkit::training_players(&h.client, &["quiet"]);
+    let mut session = crate::session::Session::training(&h.client, m, players);
     assert!(session.run(&mut h.client).is_err(), "the window closed");
     let list = saves(&h);
     assert_eq!(list.len(), 1);

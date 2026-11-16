@@ -39,7 +39,7 @@ Decided against, or put off on purpose, 2 findings:
 
 - C3, C8
 
-That is 33. Twenty-three findings from the work since, N1 to N23, are at the end. Of those, N2, N4 to N10 and N14 to N16 are fixed, and N11 and N21 partly.
+That is 33. Twenty-four findings from the work since, N1 to N24, are at the end. Of those, N2, N4 to N10 and N14 to N16 are fixed, and N11 and N21 partly.
 
 Issues 83 to 96, opened on 15 November, plan work that several entries here point at: levels and handicaps for the computer players (G1, N18), typed rules (C1), and named phrases and sounds. They are named where they apply.
 
@@ -381,7 +381,7 @@ All of these change the recordings. Since the cutover that means re-recording wi
 - Computer 2 keeps its two privileges, 1000 of each resource every time it plays and no requirements, as a named handicap (`Handicap` in `crates/world/src/ai/handicap.rs`), and is called "random computer with unlimited resources and no requirements" wherever it is chosen or heard, in English only. Test: `a_computer_is_named_for_its_handicap` in `fairness.rs`. Issue 83 asks for one name in every language.
 - The roles (worker, farm, town hall, gate, wood) are looked up once when the rules load (`Roles` in `crates/world/src/rules.rs`).
 
-Still to come, as issues: a level of skill apart from the script (84 to 86), an announced income handicap for any seat (87), and a difficulty for the campaign (88). Fleeing and regrouping are still things only a computer's units do.
+Built since, in the pull request for issues 84, 85, 87 and 88: a computer's level of skill, from 1 to 3, apart from its script (`Skill` in `crates/world/src/ai/skill.rs`; level 3 plays as before), an income for any seat that the room says aloud, and a level for the campaign. The ladder in `crates/world/tests/ai_sweep.rs` shows each level beating the one below in 75 and 76 percent of 160 games. Levels above Normal (86) are still to come: see N24. Fleeing and regrouping are still things only a computer's units do.
 
 Pull request 52 added a measurement over many maps and seeds, `crates/world/tests/ai_sweep.rs`, to judge changes like these. N1 to N3 come from it.
 
@@ -859,3 +859,13 @@ Each is from the pull request named, as its agent reported it. Open. None was re
 **Storage (81).**
 
 - The table that finds an entity by its id keeps 4 bytes for every id ever given: about 55 kilobytes an hour on the busiest map.
+
+### N24. Loose ends of the computer levels and incomes
+
+From the pull request for issues 84, 85, 87 and 88, as its agents reported them. Open.
+
+- **No level beats Normal clearly yet (issue 86).** Two levels above Normal were built and measured, then left out: level 4 beat Normal in 61 percent of 160 games, and level 5 beat level 4 in 67 percent and Normal in 69. They kept up to 15 workers from resources to spare, and level 5 built more barracks. Every gain came from the rich maps (can3, js13); on jl1 and js1 none helped. Deciding every 5 turns, other attack odds, eager research, earlier farms, balancing gold and wood, and a town hall near distant gold made no difference or did harm. The work is on the branch `t3/ai-levels-4-5`.
+- **A script's `watchdog` never fires,** in the original too: moving to the next line resets its timer at every decision, so `watchdog 600` in `ai.txt` does nothing. Level 3 keeps this.
+- **The ladder leaves out maps where ground armies cannot meet** (jl6, jl7, js8, cw1, pra7, mb5 to mb8), where some starts have no ground path to the others. On jl7 every game of the ladder ended at the turn limit. See N1. It plays the aggressive computer only.
+- **Incomes are said in the room and once when the game starts,** not in a game's list of players. A campaign mission's level is never said in the game: its computers have no spoken name.
+- **Games between computers order the levels, but say nothing of how hard each feels to a person.** Issue 85's two points, that level 1 loses to a new player who has done the tutorial and that level 3 feels like the original, need playtesting.

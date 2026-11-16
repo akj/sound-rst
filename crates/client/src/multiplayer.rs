@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use soundrts_protocol::{
-    AiLevel, ClientMsg, Faction, GameText, GameTexts, Login, MAX_ALLIANCE, PROTOCOL_VERSION,
-    Rejection, ServerName, SlotIndex, SlotPlayer, Speed,
+    ClientMsg, Computer, Faction, GameText, GameTexts, Login, MAX_ALLIANCE, PROTOCOL_VERSION,
+    Rejection, ServerName, Slot, SlotIndex, SlotPlayer, Speed,
 };
 use soundrts_server::{ServerConfig, ServerHandle, UpnpOutcome};
 use soundrts_world::Rules;
@@ -28,7 +28,9 @@ use crate::mainmenu::modify_login;
 use crate::mapfile::{Map, title_of};
 use crate::menu::{Action, Choice, Exit, Flow, Menu, input_string, string_to_msg};
 use crate::net::conn::{self, BadCertificate, ConnectError, Connection, ServerAddress, Transport};
-use crate::net::lobby::{MapState, computer_name, player_name};
+use crate::net::lobby::{
+    MapState, SeatSetting, computer_name, seat_name, seat_name_in_sentence, seat_settings,
+};
 use crate::net::servers::{self, ListedServer};
 use crate::net::{self, Net, discovery};
 use crate::session;
@@ -677,12 +679,16 @@ fn send_action(m: ClientMsg) -> Action {
 
 /// The slot of the player an item was built for, now: the room may have
 /// changed between the menu and the choice. A human is found wherever
-/// they are; a computer only where it was, if it is the same kind.
+/// they are; a computer only where it was, if it is the same kind, at any
+/// level.
 fn slot_now(cx: &Client, index: SlotIndex, player: &SlotPlayer) -> Option<SlotIndex> {
     let slots = &net_ref(cx).room.as_ref()?.state.slots;
     match player {
         SlotPlayer::Human(_) => slots.iter().position(|s| s.player == *player),
-        SlotPlayer::Computer(_) => (slots.get(index)?.player == *player).then_some(index),
+        SlotPlayer::Computer(c) => match &slots.get(index)?.player {
+            SlotPlayer::Computer(now) if now.ai_type() == c.ai_type() => Some(index),
+            _ => None,
+        },
     }
 }
 
@@ -702,30 +708,40 @@ fn slot_action(
     })
 }
 
-fn faction_choices(
-    cx: &Client,
-    slot: usize,
-    player: &SlotPlayer,
-    current: &str,
-    factions: &[String],
-) -> Vec<Choice> {
-    let name = player_name(player);
+fn faction_choices(cx: &Client, index: usize, slot: &Slot, factions: &[String]) -> Vec<Choice> {
+    let name = seat_name_in_sentence(slot);
+    let player = &slot.player;
     if factions.len() <= 1 {
         return Vec::new();
     }
     std::iter::once("random_faction".to_owned())
         .chain(factions.iter().cloned())
-        .filter(|f| f != current)
+        .filter(|f| f != slot.faction.as_str())
         .filter_map(|f| {
             let faction = Faction::new(f.as_str()).ok()?;
             let label = [name.clone(), style_msg(cx.res.style(), &f, "title")].concat();
             Some(Choice::new(
                 label,
-                slot_action(slot, player, move |slot| ClientMsg::SetFaction {
+                slot_action(index, player, move |slot| ClientMsg::SetFaction {
                     slot,
                     faction: faction.clone(),
                 }),
             ))
+        })
+        .collect()
+}
+
+/// The organizer's choices of a seat's level and income, which the server
+/// makes.
+fn level_and_income_choices(index: usize, slot: &Slot) -> Vec<Choice> {
+    seat_settings(slot)
+        .into_iter()
+        .map(|(label, setting)| {
+            let action = slot_action(index, &slot.player, move |slot| match setting {
+                SeatSetting::Skill(skill) => ClientMsg::SetSkill { slot, skill },
+                SeatSetting::Income(income) => ClientMsg::SetIncome { slot, income },
+            });
+            Choice::new(label, action)
         })
         .collect()
 }
@@ -751,11 +767,11 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
                     send_action(ClientMsg::Invite { login: p }),
                 ));
             }
-            for level in [AiLevel::Easy, AiLevel::Aggressive, AiLevel::Ai2] {
-                let label = [msg(Phrase::Invite), computer_name(level)].concat();
+            for computer in Computer::NORMAL {
+                let label = [msg(Phrase::Invite), computer_name(computer)].concat();
                 choices.push(Choice::new(
                     label,
-                    send_action(ClientMsg::AddComputer { level }),
+                    send_action(ClientMsg::AddComputer { computer }),
                 ));
             }
         }
@@ -763,7 +779,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
             choices.push(Choice::new(msg(Phrase::Start), Action::run(start_game)));
         }
         for (i, slot) in slots.iter().enumerate() {
-            let name = player_name(&slot.player);
+            let name = seat_name_in_sentence(slot);
             let alliances = slots.len().min(usize::from(MAX_ALLIANCE));
             for a in 1..=alliances as u8 {
                 if a != slot.alliance {
@@ -785,18 +801,13 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
             }
             let mine = slot.player == SlotPlayer::Human(you.clone());
             if mine || matches!(slot.player, SlotPlayer::Computer(_)) {
-                choices.extend(faction_choices(
-                    cx,
-                    i,
-                    &slot.player,
-                    slot.faction.as_str(),
-                    factions,
-                ));
+                choices.extend(faction_choices(cx, i, slot, factions));
             }
+            choices.extend(level_and_income_choices(i, slot));
         }
         for (i, slot) in slots.iter().enumerate() {
             if slot.player != SlotPlayer::Human(you.clone()) {
-                let label = [msg(Phrase::Remove), player_name(&slot.player)].concat();
+                let label = [msg(Phrase::Remove), seat_name(slot)].concat();
                 choices.push(Choice::new(
                     label,
                     slot_action(i, &slot.player, |slot| ClientMsg::RemoveSlot { slot }),
@@ -806,13 +817,7 @@ fn build_room(cx: &mut Client, factions: &[String]) -> Menu {
     } else {
         if let Some(i) = room.slot_of(&you) {
             let slot = &slots[i];
-            choices.extend(faction_choices(
-                cx,
-                i,
-                &slot.player,
-                slot.faction.as_str(),
-                factions,
-            ));
+            choices.extend(faction_choices(cx, i, slot, factions));
             choices.push(match room.map {
                 MapState::Downloading => Choice::new(msg(Phrase::Downloading), Action::Nothing),
                 MapState::Refused => Choice::new(msg(Phrase::GameCannotStart), Action::Nothing),

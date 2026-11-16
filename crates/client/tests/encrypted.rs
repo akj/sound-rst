@@ -20,7 +20,7 @@ use soundrts::net::conn::{
 };
 use soundrts::net::servers;
 use soundrts::testkit::{Cable, Harness, Script, TestGame, WAIT_LIMIT, test_server};
-use soundrts_protocol::{AiLevel, ClientMsg, ContentHash, Login, PROTOCOL_VERSION, Speed};
+use soundrts_protocol::{ClientMsg, Computer, ContentHash, Login, PROTOCOL_VERSION, Skill, Speed};
 
 /// A root of trust made for one test, and what it signs.
 struct Pki {
@@ -338,7 +338,7 @@ fn a_lost_encrypted_connection_returns_encrypted() {
         silence: Duration::from_millis(1500),
     };
     h.connect_to(&wss(cable.addr()).to_string(), |c| c);
-    h.open_room("jl1", &[AiLevel::Easy], Speed::Fast4);
+    h.open_room("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4);
     let mut g = h.start_room_game("jl1");
     let from = h.utterances().len();
     let heard = |h: &Harness, line: &str| h.said_since(from).iter().any(|s| s == line);

@@ -38,11 +38,19 @@ pub(crate) fn training_allied(
         .find(|m| m.name == map)
         .expect("a multiplayer map");
     h.client.res.set_map(Some(&m));
-    let mut players = vec![h.client.config.login.as_str().to_owned()];
-    players.extend(computers.iter().map(|c| (*c).to_owned()));
-    let factions = vec!["random_faction".to_owned(); players.len()];
-    let alliances: Vec<String> = alliances.iter().map(|a| (*a).to_owned()).collect();
-    let mut session = Session::training(&h.client, m, &players, &factions, &alliances);
+    let mut players = vec![soundrts_world::Controller::human(
+        h.client.config.login.as_str(),
+        true,
+    )];
+    players.extend(
+        computers
+            .iter()
+            .map(|c| soundrts_world::Controller::computer(c)),
+    );
+    for (p, a) in players.iter_mut().zip(alliances) {
+        p.alliance = Some((*a).to_owned());
+    }
+    let mut session = Session::training(&h.client, m, players);
     let mut game = session.start(&mut h.client).expect("a valid map");
     h.client.input.clear();
     game.set_turn_due(h.client.clock.now());

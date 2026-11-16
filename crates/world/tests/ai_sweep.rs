@@ -1,22 +1,46 @@
 //! The computer players measured over maps and seeds: computers alone
-//! against each other, every seat of the map filled, until one is left or
-//! the turn limit. The sweep is ignored, since a run takes minutes; run it
-//! in a release build:
+//! against each other, until one is left or the turn limit. Both runs are
+//! ignored, since a run takes minutes; run them in a release build.
+//!
+//! The sweep fills every seat of the map with a computer at the normal
+//! level, and measures timings:
 //!
 //! ```text
-//! cargo test --release -p soundrts-world --test ai_sweep -- --ignored --nocapture
+//! cargo test --release -p soundrts-world --test ai_sweep sweep -- --ignored --nocapture
+//! ```
+//!
+//! The ladder plays each skill level against the level above it, one
+//! against one, and checks that the higher level wins 70 to 85 percent of
+//! the games:
+//!
+//! ```text
+//! cargo test --release -p soundrts-world --test ai_sweep ladder -- --ignored --nocapture
 //! ```
 //!
 //! The environment changes what is played:
 //!
 //! - `SWEEP_MAPS`: the maps, by name in `res/multi` or by path in the
-//!   original game (`jl1,jl7,js13` by default).
+//!   original game (`jl1,jl7,js13` by default for the sweep, and
+//!   `jl1,js1,can3,js13` for the ladder). The ladder leaves out jl7: its
+//!   starts are islands that no ground army can leave, so every game there
+//!   ends in a draw.
 //! - `SWEEP_SEEDS`: the seeds, a range or a list (`1-20` by default).
-//! - `SWEEP_TURNS`: the turn limit of a game (4,000 by default, 20 minutes
-//!   of game time).
+//! - `SWEEP_TURNS`: the turn limit of a game of the sweep (4,000 by
+//!   default, 20 minutes of game time).
 //! - `SWEEP_AI`: the computer types, given to the seats in turn
-//!   (`aggressive` by default).
+//!   (`aggressive` by default). The ladder takes one: the personality of
+//!   both computers.
 //! - `SWEEP_JOBS`: the games played at once (4 by default).
+//! - `LADDER_TURNS`: the turn limit of a game of the ladder (12,000 by
+//!   default, 60 minutes of game time). A game at the limit is a draw.
+//! - `LADDER_PAIRS`: the pairs of levels the ladder plays, the lower level
+//!   first (`1-2,2-3` by default). The ladder checks its band for each
+//!   pair it plays.
+//! - `LADDER_DETAILS`: `1` to print the sweep's measures of each game of
+//!   the ladder too. The ladder runs slower with them.
+//!
+//! The ladder plays each map and seed twice, once with each level in the
+//! first seat, so that a starting place does not decide the result.
 //!
 //! What is measured for each computer, from the world at the end of each
 //! turn, is in [`Seat`]. A time is game time since the start; a turn is
@@ -29,9 +53,8 @@ use std::collections::BTreeSet;
 use soundrts_world::entity::{Action, ActionKind, Entity};
 use soundrts_world::orders::Keyword;
 use soundrts_world::rules::{EntityClass, Role, TypeId};
-use soundrts_world::test_games::computer;
 use soundrts_world::{
-    AiScripts, PlayerId, Rules, SquareId, Target, VIRTUAL_TIME_INTERVAL, World,
+    AiScripts, Controller, PlayerId, Rules, Skill, SquareId, Target, VIRTUAL_TIME_INTERVAL, World,
     multiplayer_default_triggers,
 };
 
@@ -47,6 +70,7 @@ enum End {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Seat {
     ai: String,
+    skill: Skill,
     /// The end of the first turn at which the computer perceives or
     /// remembers a unit or building of an enemy that is a true player (not
     /// a neutral one). An aggressive computer attacks only squares where
@@ -86,6 +110,8 @@ struct Played {
     /// The game ended before the turn limit.
     ended: bool,
     seats: Vec<Seat>,
+    /// The processor time of the world's turns, without the measures.
+    cost: std::time::Duration,
 }
 
 /// A computer's farm: its type and its cost.
@@ -176,8 +202,8 @@ fn builds_a_farm(w: &World, p: PlayerId, farm: &Farm) -> bool {
     })
 }
 
-/// Updates the measures of `p` at the end of a turn.
-fn observe(w: &World, p: PlayerId, farm: &Farm, seat: &mut Seat) {
+/// Updates the end of `p` at the end of a turn.
+fn observe_end(w: &World, p: PlayerId, seat: &mut Seat) {
     let pl = w.player(p);
     if seat.end.is_none() {
         if pl.has_victory {
@@ -186,6 +212,11 @@ fn observe(w: &World, p: PlayerId, farm: &Farm, seat: &mut Seat) {
             seat.end = Some(End::Defeated(w.time));
         }
     }
+}
+
+/// Updates the measures of `p` at the end of a turn, its end aside.
+fn observe(w: &World, p: PlayerId, farm: &Farm, seat: &mut Seat) {
+    let pl = w.player(p);
     if !pl.is_playing() {
         return;
     }
@@ -233,9 +264,30 @@ fn map_path(map: &str) -> String {
     }
 }
 
+/// A computer to seat: its type and its level.
+#[derive(Clone, Debug)]
+struct Who {
+    ai: String,
+    skill: Skill,
+}
+
 /// Plays `map` with `seed`: as many computers as the map has seats, each
-/// alone, of the `ais` types in turn, for `turns` turns at most.
+/// alone, of the `ais` types in turn at the normal level, for `turns`
+/// turns at most.
 fn play(files: &Files, map: &str, seed: i64, ais: &[String], turns: usize) -> Played {
+    let w = world(files, map, seed);
+    let seats = usize::try_from(w.map.nb_players_max).unwrap();
+    let who: Vec<Who> = (0..seats)
+        .map(|i| Who {
+            ai: ais[i % ais.len()].clone(),
+            skill: Skill::NORMAL,
+        })
+        .collect();
+    play_seats(w, map, seed, &who, turns, true)
+}
+
+/// The world of `map`, built with `seed`.
+fn world(files: &Files, map: &str, seed: i64) -> World {
     let mut w = World::new(
         Rules::load(&[files.rules.as_str()]),
         AiScripts::load(&[files.ai.as_str()]),
@@ -245,24 +297,51 @@ fn play(files: &Files, map: &str, seed: i64, ais: &[String], turns: usize) -> Pl
     let text = common::read(&map_path(map));
     w.load_and_build_map(&text)
         .unwrap_or_else(|e| panic!("{map}: {e}"));
-    let seats = usize::try_from(w.map.nb_players_max).unwrap();
-    let controllers: Vec<_> = (0..seats)
-        .map(|i| computer(&ais[i % ais.len()], &(i + 1).to_string()))
+    w
+}
+
+/// Plays the world of `map` and `seed`: one computer, alone, in each of
+/// the first seats, for `turns` turns at most. Without `measure`, only the
+/// end of each computer is measured.
+fn play_seats(
+    mut w: World,
+    map: &str,
+    seed: i64,
+    who: &[Who],
+    turns: usize,
+    measure: bool,
+) -> Played {
+    let controllers: Vec<_> = who
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let mut c = Controller::computer_at(&s.ai, s.skill);
+            c.alliance = Some((i + 1).to_string());
+            c
+        })
         .collect();
     let players = w.populate_map(&controllers, true, true).unwrap();
     let farms: Vec<Farm> = players.iter().map(|&p| farm_of(&w, p)).collect();
-    let mut measured: Vec<Seat> = (0..seats)
-        .map(|i| Seat {
-            ai: ais[i % ais.len()].clone(),
+    let mut measured: Vec<Seat> = who
+        .iter()
+        .map(|s| Seat {
+            ai: s.ai.clone(),
+            skill: s.skill,
             ..Seat::default()
         })
         .collect();
     let mut turn = 0;
+    let mut cost = std::time::Duration::ZERO;
     while turn < turns && !w.true_playing_players().is_empty() {
+        let start = std::time::Instant::now();
         w.update();
+        cost += start.elapsed();
         turn += 1;
         for (i, &p) in players.iter().enumerate() {
-            observe(&w, p, &farms[i], &mut measured[i]);
+            observe_end(&w, p, &mut measured[i]);
+            if measure {
+                observe(&w, p, &farms[i], &mut measured[i]);
+            }
         }
     }
     Played {
@@ -271,6 +350,7 @@ fn play(files: &Files, map: &str, seed: i64, ais: &[String], turns: usize) -> Pl
         time: w.time,
         ended: w.true_playing_players().is_empty(),
         seats: measured,
+        cost,
     }
 }
 
@@ -398,6 +478,33 @@ fn summary_lines(games: &[&Played], ai: &str) -> Vec<String> {
     out
 }
 
+/// `f` of each case, `jobs` cases at once, in the order of the cases.
+fn in_parallel<C: Sync, R: Send>(cases: &[C], jobs: usize, f: impl Fn(&C) -> R + Sync) -> Vec<R> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..jobs.max(1))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(case) = cases.get(i) else {
+                            break done;
+                        };
+                        done.push((i, f(case)));
+                    }
+                })
+            })
+            .collect();
+        let mut all: Vec<(usize, R)> = workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap())
+            .collect();
+        all.sort_by_key(|(i, _)| *i);
+        all.into_iter().map(|(_, r)| r).collect()
+    })
+}
+
 fn env_or(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_owned())
 }
@@ -435,28 +542,8 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
         .iter()
         .flat_map(|m| seeds.iter().map(move |&s| (m.as_str(), s)))
         .collect();
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let played: Vec<Played> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..jobs.max(1))
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(&(map, seed)) = cases.get(i) else {
-                            break done;
-                        };
-                        done.push((i, play(&files, map, seed, &ais, turns)));
-                    }
-                })
-            })
-            .collect();
-        let mut all: Vec<(usize, Played)> = workers
-            .into_iter()
-            .flat_map(|w| w.join().unwrap())
-            .collect();
-        all.sort_by_key(|(i, _)| *i);
-        all.into_iter().map(|(_, g)| g).collect()
+    let played = in_parallel(&cases, jobs, |&(map, seed)| {
+        play(&files, map, seed, &ais, turns)
     });
     for line in played.iter().flat_map(game_lines) {
         eprintln!("{line}");
@@ -475,6 +562,217 @@ fn sweep_the_computer_players_over_maps_and_seeds() {
             }
         }
     }
+}
+
+/// Who won a game of the ladder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Winner {
+    Higher,
+    Lower,
+    /// Nobody won before the turn limit.
+    Draw,
+}
+
+/// One game of the ladder: a map and a seed, and which level sits first.
+struct Rung<'a> {
+    map: &'a str,
+    seed: i64,
+    lower: Skill,
+    higher: Skill,
+    higher_first: bool,
+}
+
+/// A game of the ladder, played.
+struct Climbed {
+    winner: Winner,
+    played: Played,
+}
+
+/// Plays a game of the ladder. With `details`, the sweep's measures too.
+fn climb(files: &Files, ai: &str, rung: &Rung, turns: usize, details: bool) -> Climbed {
+    let lower = Who {
+        ai: ai.to_owned(),
+        skill: rung.lower,
+    };
+    let higher = Who {
+        ai: ai.to_owned(),
+        skill: rung.higher,
+    };
+    let who = if rung.higher_first {
+        [higher, lower]
+    } else {
+        [lower, higher]
+    };
+    let w = world(files, rung.map, rung.seed);
+    let played = play_seats(w, rung.map, rung.seed, &who, turns, details);
+    let won = played
+        .seats
+        .iter()
+        .find(|s| matches!(s.end, Some(End::Won(_))));
+    let winner = match won {
+        Some(s) if s.skill == rung.higher => Winner::Higher,
+        Some(_) => Winner::Lower,
+        None => Winner::Draw,
+    };
+    Climbed { winner, played }
+}
+
+/// Two levels, `2-3`, the lower first.
+fn pair(text: &str) -> (Skill, Skill) {
+    let level = |n: &str| n.trim().parse().ok().and_then(Skill::from_number);
+    let pair = text
+        .split_once('-')
+        .and_then(|(a, b)| Some((level(a)?, level(b)?)));
+    match pair {
+        Some((lower, higher)) if lower < higher => (lower, higher),
+        _ => panic!("LADDER_PAIRS: {text} is not two levels from 1 to 3, the lower first"),
+    }
+}
+
+/// The lines of the ladder's report for one pair of levels, with whether
+/// the higher level won 70 to 85 percent of the games.
+fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, bool) {
+    let (lower, higher) = (games[0].0.lower.number(), games[0].0.higher.number());
+    let head = format!("level {lower} against level {higher}");
+    let count = |games: &[&(&Rung, &Climbed)], w: Winner| {
+        games.iter().filter(|(_, c)| c.winner == w).count()
+    };
+    let tally = |games: &[&(&Rung, &Climbed)]| {
+        format!(
+            "{} games, level {higher} won {}, level {lower} won {}, draws {}",
+            games.len(),
+            count(games, Winner::Higher),
+            count(games, Winner::Lower),
+            count(games, Winner::Draw),
+        )
+    };
+    let mut out = Vec::new();
+    for map in maps {
+        let on: Vec<_> = games.iter().filter(|(r, _)| r.map == map).collect();
+        out.push(format!("{head} on {map}: {}", tally(&on)));
+    }
+    let all: Vec<_> = games.iter().collect();
+    let n = all.len();
+    let wins = count(&all, Winner::Higher);
+    out.push(format!(
+        "{head}: {}, win rate {} percent",
+        tally(&all),
+        wins * 100 / n
+    ));
+    let mut times: Vec<i64> = games.iter().map(|(_, c)| c.played.time).collect();
+    times.sort_unstable();
+    out.push(format!(
+        "{head}: game time, median {}, longest {}",
+        seconds(median(&times)),
+        seconds(times[n - 1])
+    ));
+    let mut costs: Vec<u128> = games
+        .iter()
+        .map(|(_, c)| c.played.cost.as_millis())
+        .collect();
+    costs.sort_unstable();
+    let turns: i64 = games
+        .iter()
+        .map(|(_, c)| c.played.time / VIRTUAL_TIME_INTERVAL)
+        .sum();
+    let total: u128 = costs.iter().sum();
+    out.push(format!(
+        "{head}: processor time per game, median {} ms, longest {} ms, per 1,000 turns {} ms",
+        costs[(n - 1) / 2],
+        costs[n - 1],
+        total * 1000 / u128::try_from(turns.max(1)).unwrap()
+    ));
+    (out, (70 * n..=85 * n).contains(&(wins * 100)))
+}
+
+#[test]
+#[ignore = "minutes: run by hand in a release build"]
+fn ladder_each_level_beats_the_level_below() {
+    let maps: Vec<String> = env_or("SWEEP_MAPS", "jl1,js1,can3,js13")
+        .split(',')
+        .map(|m| m.trim().to_owned())
+        .collect();
+    let seeds = parse_seeds(&env_or("SWEEP_SEEDS", "1-20"));
+    let ai = env_or("SWEEP_AI", "aggressive");
+    assert!(!ai.contains(','), "SWEEP_AI: the ladder takes one type");
+    let turns: usize = env_or("LADDER_TURNS", "12000").parse().unwrap();
+    let pairs: Vec<(Skill, Skill)> = env_or("LADDER_PAIRS", "1-2,2-3")
+        .split(',')
+        .map(pair)
+        .collect();
+    let jobs: usize = env_or("SWEEP_JOBS", "4").parse().unwrap();
+    let details = env_or("LADDER_DETAILS", "") == "1";
+    eprintln!(
+        "ladder: {ai} computers, one against one, maps {}, seeds {}, each with both seat orders",
+        maps.join(","),
+        env_or("SWEEP_SEEDS", "1-20")
+    );
+    eprintln!(
+        "ladder: turn limit {turns} turns, {}",
+        seconds(turns as i64 * VIRTUAL_TIME_INTERVAL)
+    );
+    let files = Files::load();
+    let mut rungs = Vec::new();
+    for &(lower, higher) in &pairs {
+        for map in &maps {
+            for &seed in &seeds {
+                for higher_first in [true, false] {
+                    rungs.push(Rung {
+                        map,
+                        seed,
+                        lower,
+                        higher,
+                        higher_first,
+                    });
+                }
+            }
+        }
+    }
+    let climbed = in_parallel(&rungs, jobs, |r| climb(&files, &ai, r, turns, details));
+    for (r, c) in rungs.iter().zip(&climbed) {
+        let first = if r.higher_first { r.higher } else { r.lower };
+        let won = c.played.seats.iter().find_map(|s| match s.end {
+            Some(End::Won(t)) => Some((s.skill, t)),
+            _ => None,
+        });
+        let result = match won {
+            Some((level, t)) => format!("level {} won at {}", level.number(), seconds(t)),
+            None => "a draw at the turn limit".to_owned(),
+        };
+        eprintln!(
+            "{} seed {} level {} against level {}, level {} first: {result}",
+            r.map,
+            r.seed,
+            r.lower.number(),
+            r.higher.number(),
+            first.number()
+        );
+        if details {
+            for line in game_lines(&c.played) {
+                eprintln!("{line}");
+            }
+        }
+    }
+    let mut missed = Vec::new();
+    for &(lower, higher) in &pairs {
+        let games: Vec<(&Rung, &Climbed)> = rungs
+            .iter()
+            .zip(&climbed)
+            .filter(|(r, _)| (r.lower, r.higher) == (lower, higher))
+            .collect();
+        let (lines, in_band) = pair_lines(&maps, &games);
+        for line in lines {
+            eprintln!("{line}");
+        }
+        if !in_band {
+            missed.push(format!("{} against {}", lower.number(), higher.number()));
+        }
+    }
+    assert!(
+        missed.is_empty(),
+        "the higher level won less than 70 or more than 85 percent of the games: {}",
+        missed.join(", ")
+    );
 }
 
 #[test]

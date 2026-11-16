@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::abort::{Abort, Res};
+use crate::ai::Skill;
 use crate::collision::CollisionMatrix;
 use crate::command::Command;
 use crate::entity::{
@@ -186,6 +187,9 @@ pub struct World {
     /// Whether `toggle_cheatmode` and `cmd` commands run. Off by default:
     /// the world ignores them, with a warning.
     pub allow_cheatmode: bool,
+    /// The level of the computers that the map makes, as in a campaign
+    /// mission.
+    pub computer_skill: Skill,
     /// The world's own id: 1.
     pub id: u32,
     next_id: u32,
@@ -244,6 +248,7 @@ impl Hash for World {
             default_triggers,
             seed,
             allow_cheatmode,
+            computer_skill,
             id,
             next_id,
             next_order_id,
@@ -276,6 +281,7 @@ impl Hash for World {
         default_triggers.hash(state);
         seed.hash(state);
         allow_cheatmode.hash(state);
+        computer_skill.hash(state);
         id.hash(state);
         next_id.hash(state);
         next_order_id.hash(state);
@@ -391,6 +397,7 @@ impl World {
             default_triggers,
             seed,
             allow_cheatmode: false,
+            computer_skill: Skill::NORMAL,
             id: 0,
             next_id: 0,
             next_order_id: 0,

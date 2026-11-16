@@ -327,7 +327,7 @@ fn changing_player_gives_the_other_sides_whole_message() {
     h.run_until_turn(&mut g, 10);
     assert_eq!(
         answer(&mut h, &mut g, Key::F12, Mods::CTRL),
-        "watching aggressive computer"
+        "watching aggressive computer , level 3"
     );
     let computer = g.game.me;
     assert_ne!(computer, first);

@@ -30,6 +30,7 @@ fn record(h: &mut Harness, turns: u64) -> Record {
         ],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: soundrts_world::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };
@@ -160,10 +161,8 @@ fn a_game_that_ends_is_kept_and_listening_to_it_keeps_it_for_good() {
     live.tap_at(6.0, Key::Return, Mods::NONE);
     h.client.game.seed = Some(1);
     let map = h.multiplayer_map("jl1");
-    let players = [h.client.config.login.as_str().to_owned(), "easy".to_owned()];
-    let factions = vec!["random_faction".to_owned(); 2];
-    let alliances = ["1".to_owned(), "2".to_owned()];
-    Session::training(&h.client, map, &players, &factions, &alliances)
+    let players = crate::testkit::training_players(&h.client, &["easy"]);
+    Session::training(&h.client, map, players)
         .run(&mut h.client)
         .unwrap();
     let records = h.client.paths.records();

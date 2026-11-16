@@ -851,6 +851,7 @@ fn a_default_order_reads_the_owners_own_unit_as_it_is_now() {
         controllers: vec![me, ally, computer("timers", "2")],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: false,
+        computer_skill: crate::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };
@@ -898,6 +899,7 @@ fn in_cheat_mode_the_seats_own_unit_inside_is_remembered() {
         controllers: vec![me, computer("timers", "2")],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: crate::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };

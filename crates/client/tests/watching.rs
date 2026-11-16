@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use soundrts::config::Config;
 use soundrts::input::{Key, Mods};
 use soundrts::net::conn::Liveness;
-use soundrts::testkit::{Cable, Harness, Script, TestGame, WAIT_LIMIT, controller, test_server};
-use soundrts_protocol::{AiLevel, ClientMsg, Speed};
+use soundrts::testkit::{Cable, Harness, Script, TestGame, WAIT_LIMIT, test_server};
+use soundrts_protocol::{ClientMsg, Computer, Skill, Speed};
 use soundrts_server::ServerConfig;
 use soundrts_world::{Command, GameSetup, Host, PlayerId, TurnMessage};
 
@@ -157,7 +157,10 @@ fn played_here(andrew: &mut Person, until: i64) -> Vec<(i64, TurnMessage)> {
         texts.ai.into_string(),
         texts.map.into_string(),
         SEED,
-        room.slots.iter().map(controller).collect(),
+        room.slots
+            .iter()
+            .map(soundrts_protocol::Slot::controller)
+            .collect(),
     );
     let mut host = Host::new(&setup).unwrap();
     let humans: Vec<PlayerId> = host.seats()[..2].to_vec();
@@ -184,9 +187,13 @@ fn party(server: &str, carol_server: &str) -> Vec<Person> {
     andrew.h.connect_to(server, |c| c);
     bob.h.connect_to(server, |c| c);
     carol.h.connect_to(carol_server, |c| c);
-    let room = andrew
-        .h
-        .create_room("jl2", &[AiLevel::Easy], Speed::Fast4, true, true);
+    let room = andrew.h.create_room(
+        "jl2",
+        &[Computer::Quiet(Skill::NORMAL)],
+        Speed::Fast4,
+        true,
+        true,
+    );
     andrew.h.invite("bob");
     bob.h.join_room(room);
     carol.h.watch_room(room);
@@ -350,7 +357,13 @@ fn a_watcher_too_many_or_unwelcome_hears_why() {
     let addr = server.local_addr().to_string();
     let mut andrew = Person::new("andrew").h;
     andrew.connect_to(&addr, |c| c);
-    let room = andrew.create_room("jl1", &[AiLevel::Easy], Speed::Fast4, true, true);
+    let room = andrew.create_room(
+        "jl1",
+        &[Computer::Quiet(Skill::NORMAL)],
+        Speed::Fast4,
+        true,
+        true,
+    );
     let mut carol = Person::new("carol").h;
     carol.connect_to(&addr, |c| c);
     carol.watch_room(room);
@@ -363,7 +376,13 @@ fn a_watcher_too_many_or_unwelcome_hears_why() {
 
     let mut zoe = Person::new("zoe").h;
     zoe.connect_to(&addr, |c| c);
-    let unwatched = zoe.create_room("jl1", &[AiLevel::Easy], Speed::Fast4, true, false);
+    let unwatched = zoe.create_room(
+        "jl1",
+        &[Computer::Quiet(Skill::NORMAL)],
+        Speed::Fast4,
+        true,
+        false,
+    );
     let said = asks_to_watch("eve", &addr, unwatched);
     assert!(
         said.iter()

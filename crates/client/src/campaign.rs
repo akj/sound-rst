@@ -6,7 +6,8 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{Msg, MsgPart, Phrase, msg, nb2msg};
+use soundrts_world::Skill;
+use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg};
 
 use crate::client::Client;
 use crate::mapfile::Map;
@@ -168,21 +169,19 @@ impl Campaign {
             .collect()
     }
 
-    /// The number of the last chapter unlocked (0 at first).
-    pub fn bookmark(&self, ini: &Path) -> usize {
+    /// The value of `key` in the campaign's section of `ini`.
+    fn ini_value(&self, ini: &Path, key: &str) -> Option<String> {
         let text = std::fs::read_to_string(ini).unwrap_or_default();
         read_ini(&text)
             .into_iter()
             .find(|(s, _)| *s == self.ini_id())
-            .and_then(|(_, keys)| {
-                keys.into_iter()
-                    .find(|(k, _)| k == "chapter")
-                    .and_then(|(_, v)| v.parse().ok())
-            })
-            .unwrap_or(0)
+            .and_then(|(_, keys)| keys.into_iter().find(|(k, _)| k == key))
+            .map(|(_, v)| v)
     }
 
-    fn set_bookmark(&self, ini: &Path, number: usize) -> std::io::Result<()> {
+    /// Sets `key` to `value` in the campaign's section of `ini`, keeping
+    /// the rest of the file.
+    fn set_ini_value(&self, ini: &Path, key: &str, value: String) -> std::io::Result<()> {
         let text = std::fs::read_to_string(ini).unwrap_or_default();
         let mut sections = read_ini(&text);
         let id = self.ini_id();
@@ -194,11 +193,41 @@ impl Campaign {
             }
         };
         let keys = &mut sections[i].1;
-        match keys.iter_mut().find(|(k, _)| k == "chapter") {
-            Some(kv) => kv.1 = number.to_string(),
-            None => keys.push(("chapter".into(), number.to_string())),
+        match keys.iter_mut().find(|(k, _)| k == key) {
+            Some(kv) => kv.1 = value,
+            None => keys.push((key.into(), value)),
         }
         std::fs::write(ini, write_ini(&sections))
+    }
+
+    /// The number of the last chapter unlocked (0 at first).
+    pub fn bookmark(&self, ini: &Path) -> usize {
+        self.ini_value(ini, "chapter")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    }
+
+    fn set_bookmark(&self, ini: &Path, number: usize) -> std::io::Result<()> {
+        self.set_ini_value(ini, "chapter", number.to_string())
+    }
+
+    /// The level of the computers of its missions: the normal level unless
+    /// the player chose another.
+    pub fn skill(&self, ini: &Path) -> Skill {
+        self.ini_value(ini, "level")
+            .and_then(|v| v.parse().ok())
+            .and_then(Skill::from_number)
+            .unwrap_or(Skill::NORMAL)
+    }
+
+    /// Chooses the level of the computers of its missions, from the next
+    /// mission on.
+    pub fn set_skill(&self, cx: &Client, skill: Skill) {
+        let ini = cx.paths.campaigns_config();
+        if let Err(e) = self.set_ini_value(&ini, "level", skill.number().to_string()) {
+            cx.log
+                .warning(format!("cannot write {}: {e}", ini.display()));
+        }
     }
 
     /// The chapters up to the bookmark.
@@ -261,19 +290,63 @@ pub fn run_campaign(cx: &mut Client, campaign: Rc<Campaign>) -> Result<(), Exit>
         cx.res.set_mods(mods);
     }
     cx.res.set_campaign(Some(&campaign));
-    let result = campaign_menu(cx, &campaign).and_then(|mut m| m.run(cx));
+    let result = (|| {
+        let mut menu = campaign_menu(cx, &campaign);
+        loop {
+            menu.run(cx)?;
+            if menu.ended() {
+                return Ok(());
+            }
+            // The level changed: its choices say the new one.
+            let new = campaign_menu(cx, &campaign);
+            menu.update_menu(cx, new);
+        }
+    })();
     cx.res.set_campaign(None);
     result
 }
 
+/// Plays a chapter, then leaves the campaign's menu.
 fn chapter_action(campaign: &Rc<Campaign>, number: usize) -> Action {
+    let campaign = campaign.clone();
+    Action::run(move |cx| run_chapter(cx, &campaign, number).map(|()| Flow::CloseMenu))
+}
+
+/// Plays a chapter from the menu after a mission, which is run once.
+fn next_chapter_action(campaign: &Rc<Campaign>, number: usize) -> Action {
     let campaign = campaign.clone();
     Action::run(move |cx| run_chapter(cx, &campaign, number).map(|()| Flow::Stay))
 }
 
+/// The choices of the level of the campaign's computers, one for each level
+/// it does not have: "set the computers, level 3, to level 2". The menu
+/// stays open.
+fn level_choices(menu: &mut Menu, campaign: &Rc<Campaign>, current: Skill) {
+    for skill in Skill::ALL.into_iter().filter(|s| *s != current) {
+        let label = [
+            msg(Phrase::Set),
+            msg(Phrase::TheComputers),
+            comma(),
+            msg(Phrase::Level),
+            nb2msg(current.number().into()),
+            comma(),
+            msg(Phrase::SetTo),
+            msg(Phrase::Level),
+            nb2msg(skill.number().into()),
+        ]
+        .concat();
+        let campaign = campaign.clone();
+        let action = Action::run(move |cx| {
+            campaign.set_skill(cx, skill);
+            Ok(Flow::Stay)
+        });
+        menu.append(label, action, None);
+    }
+}
+
 /// The menu of the chapters unlocked: "continue" with the last one, then
-/// each chapter, then back.
-fn campaign_menu(cx: &Client, campaign: &Rc<Campaign>) -> Result<Menu, Exit> {
+/// each chapter, then the level of the computers, then back.
+fn campaign_menu(cx: &Client, campaign: &Rc<Campaign>) -> Menu {
     let ini = cx.paths.campaigns_config();
     let mut menu = Menu::new(campaign.title.clone(), Vec::new());
     let available = campaign.available_chapters(&ini);
@@ -297,8 +370,9 @@ fn campaign_menu(cx: &Client, campaign: &Rc<Campaign>) -> Result<Menu, Exit> {
             None,
         );
     }
-    menu.append(msg(Phrase::Back), Action::Nothing, None);
-    Ok(menu)
+    level_choices(&mut menu, campaign, campaign.skill(&ini));
+    menu.append(msg(Phrase::Back), Action::CloseMenu, None);
+    menu
 }
 
 /// Plays a chapter: a cut scene goes on to the next chapter; a mission
@@ -317,7 +391,8 @@ pub fn run_chapter(cx: &mut Client, campaign: &Rc<Campaign>, number: usize) -> R
             }
         }
         Chapter::Mission { map, .. } => {
-            let game = Session::mission(cx, Arc::new(map.clone()), campaign, number);
+            let skill = campaign.skill(&cx.paths.campaigns_config());
+            let game = Session::mission(cx, Arc::new(map.clone()), campaign, number, skill);
             play_mission(cx, campaign, number, game)?;
         }
     }
@@ -339,7 +414,7 @@ fn play_mission(
             let mut menu = Menu::new(Vec::new(), Vec::new());
             menu.append(
                 msg(Phrase::Continue),
-                chapter_action(campaign, number + 1),
+                next_chapter_action(campaign, number + 1),
                 None,
             );
             menu.append(msg(Phrase::Quit), Action::Nothing, None);
@@ -347,7 +422,11 @@ fn play_mission(
         }
     } else {
         let mut menu = Menu::new(Vec::new(), Vec::new());
-        menu.append(msg(Phrase::Restart), chapter_action(campaign, number), None);
+        menu.append(
+            msg(Phrase::Restart),
+            next_chapter_action(campaign, number),
+            None,
+        );
         menu.append(msg(Phrase::Quit), Action::Nothing, None);
         menu.run(cx)?;
     }
@@ -412,6 +491,36 @@ mod tests {
         assert_eq!(
             write_ini(&sections),
             "[campaign1]\nchapter = 2\n\n[Other_one]\nchapter = 5\n\n"
+        );
+    }
+
+    #[test]
+    fn the_level_is_normal_unless_one_was_chosen_and_is_kept_beside_the_bookmark() {
+        let package = Package::from_path(&upstream_tests_dir().join("single/campaign1")).unwrap();
+        let c = Campaign::new(package, "campaign1");
+        let dir = tempfile::tempdir().unwrap();
+        let ini = dir.path().join("campaigns.ini");
+        let skill_in = |text: &str| {
+            std::fs::write(&ini, text).unwrap();
+            c.skill(&ini)
+        };
+        assert_eq!(c.skill(&ini), Skill::NORMAL, "no file");
+        assert_eq!(skill_in("[campaign1]\nchapter = 2\n"), Skill::NORMAL);
+        for bad in ["0", "4", "-1", "level 2", "", "99999999999999999999"] {
+            let text = format!("[campaign1]\nlevel = {bad}\n");
+            assert_eq!(skill_in(&text), Skill::NORMAL, "{bad:?}");
+        }
+        assert_eq!(skill_in("[other]\nlevel = 1\n"), Skill::NORMAL);
+        assert_eq!(skill_in("[campaign1]\nLevel: 2\n"), Skill::Level2);
+        // Writing the level keeps the bookmark and the other campaigns.
+        std::fs::write(&ini, "[campaign1]\nchapter = 2\n\n[other]\nlevel = 1\n").unwrap();
+        c.set_ini_value(&ini, "level", Skill::Level2.number().to_string())
+            .unwrap();
+        assert_eq!(c.skill(&ini), Skill::Level2);
+        assert_eq!(c.bookmark(&ini), 2);
+        assert_eq!(
+            std::fs::read_to_string(&ini).unwrap(),
+            "[campaign1]\nchapter = 2\nlevel = 2\n\n[other]\nlevel = 1\n\n"
         );
     }
 

@@ -924,6 +924,16 @@ fn menus_single() {
 }
 
 #[test]
+fn training_choices() {
+    check("training_choices");
+}
+
+#[test]
+fn campaign_level() {
+    check("campaign_level");
+}
+
+#[test]
 fn training_jl1() {
     check("training_jl1");
 }

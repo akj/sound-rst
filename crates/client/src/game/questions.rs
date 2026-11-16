@@ -521,7 +521,7 @@ mod tests {
         run_turns(&mut h, &mut g, 2);
         assert_eq!(
             ask(&mut h, &mut g, Key::F12, Mods::NONE),
-            "quiet computer allied , quiet computer enemy , quiet computer enemy has been defeated"
+            "quiet computer , level 3 allied , quiet computer , level 3 enemy , quiet computer , level 3 enemy has been defeated"
         );
     }
 
@@ -629,7 +629,7 @@ mod tests {
         let (mut h, mut g) = training();
         assert_eq!(
             ask(&mut h, &mut g, Key::F11, Mods::NONE),
-            "player , ai_quiet ,"
+            "player , ai_quiet , level 3 ,"
         );
         assert_eq!(ask(&mut h, &mut g, Key::F11, Mods::SHIFT), "human");
         // The orc mod adds a faction; each random choice was drawn.
@@ -647,7 +647,7 @@ mod tests {
         assert_eq!(factions, ["orc_faction", "human_faction"]);
         assert_eq!(
             ask(&mut h, &mut g, Key::F11, Mods::NONE),
-            "player orc , ai_quiet human ,"
+            "player orc , ai_quiet , level 3 human ,"
         );
         assert_eq!(ask(&mut h, &mut g, Key::F11, Mods::SHIFT), "orc");
     }

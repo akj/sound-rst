@@ -59,75 +59,75 @@ length 9999 208980
 @23530 voice menu "please make a selection"
 @25830 sounds 1 fb0fa6fd8370bbf3
 @25830 step 11 key DOWN
-@25830 voice item "invite quiet computer ,"
-@28130 sounds 1 536a248d1e8aba5e
-@28130 step 12 key RETURN
-@28130 voice confirmation "invite quiet computer"
-@30240 voice menu "please make a selection"
-@32540 sounds 1 5cd29eca6e07133d
-@32540 step 13 key DOWN
-@32540 voice item "start ,"
-@33240 sounds 1 be728dc679d69146
-@33240 step 14 key RETURN
-@33240 voice confirmation "start"
-@33750 voice info "objective: neutralized enemy"
-@36552 sounds 1 b26d1fc2ee139dfb
-@36552 step 15 key e
-@36552 voice item "peasant 1 at b 4 , awaiting your orders"
-@36651 voice item "b 4 , meadows , 1 town hall , 1 farm and 1 peasant"
-@42451 voice info ", 1 gold mine and 2 wood at a 3"
-@46151 voice info ", 1 wood at a 4"
-@48051 voice info ", 1 gold mine at c 4"
-@50452 sounds 98 7439316949c9e104
-@50452 step 16 key RIGHT
-@50452 voice item [1091] "c 4 , meadows , in the fog of war , 1 gold mine"
-@55800 sounds 22 286bd91b56b712ce
-@55800 step 17 key BACKSPACE
-@55800 voice item "go to c 4 ,"
-@56351 sounds 5 b85f4503e6ff041b
-@56351 step 18 wait_turns 2
-@57100 sounds 3 d541951e855e439e
-@57100 step 19 key SPACE
-@57100 voice item "b 4 You control peasant 1 at b 4 , go to c 4 ,"
-@62500 sounds 52 aaf4fef967e0c65c
-@62500 step 20 key F8
-@62500 voice item "zoom is now on , c 4 at the center , meadows"
-@67100 voice info "1 peasant enemy at a 3"
-@69701 sounds 44 806bd3f3c7d11d4b
-@69701 step 21 key UP
-@69701 voice item "c 4 north , meadows"
-@71801 sounds 9 eed75a59b960514a
-@71801 step 22 key BACKSPACE
-@71801 voice item "go to c 4 north ,"
-@72251 sounds 3 a63b039dd797c261
-@72251 step 23 wait_turns 2
-@73701 sounds 12 74612e267b1e3ea3
-@73701 step 24 key SPACE
-@73701 voice item "c 4 You control peasant 1 at c 4 , go to c 4 ,"
-@79101 sounds 33 e33143e8f779a104
-@79101 step 25 key ESCAPE
-@79101 voice item "zoom is now off , c 4 , meadows , 1 peasant , 1 gold mine"
-@85401 sounds 31 c40bdc361bb61a04
-@85401 step 26 key F10
-@85401 voice menu "Menu"
-@85801 step 27 key DOWN
-@85801 voice item "cancel game ,"
-@87101 sounds 1 19cce7700bcbca20
-@87101 step 28 key RETURN
-@87101 voice confirmation "cancel game"
-@88203 voice info "Defeat at 0 minutes 48 seconds"
-@91803 voice info "1 units produced , 0 lost , 0 neutralized"
-@96503 voice info "2 building produced , 0 lost , 0 neutralized"
-@101503 voice info "10 gold gathered , 0 consumed"
-@105003 voice info "10 wood gathered , 0 consumed"
-@108503 voice info "score 23 press F5 to listen again"
-@112403 voice menu "please make a selection"
-@114703 sounds 12 9c252b3bb723f6a5
-@114703 step 29 key ESCAPE
-@114703 voice confirmation "go back to the previous menu"
-@117513 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@122613 sounds 1 50db9552000a6a23
-@122613 step 30 key ESCAPE
-@122613 voice confirmation "quit,"
-@123123 sounds 1 0bddf6d5412a2df2
-@123123 end
+@25830 voice item "invite quiet computer , level 3 ,"
+@29330 sounds 1 536a248d1e8aba5e
+@29330 step 12 key RETURN
+@29330 voice confirmation "invite quiet computer , level 3"
+@32640 voice menu "please make a selection"
+@34940 sounds 1 6e957f072111ce72
+@34940 step 13 key DOWN
+@34940 voice item "start ,"
+@35640 sounds 1 34b74c458320badc
+@35640 step 14 key RETURN
+@35640 voice confirmation "start"
+@36150 voice info "objective: neutralized enemy"
+@38952 sounds 1 1fd7bf6b64bc8421
+@38952 step 15 key e
+@38952 voice item "peasant 1 at b 4 , awaiting your orders"
+@39051 voice item "b 4 , meadows , 1 town hall , 1 farm and 1 peasant"
+@44851 voice info ", 1 gold mine and 2 wood at a 3"
+@48551 voice info ", 1 wood at a 4"
+@50451 voice info ", 1 gold mine at c 4"
+@52852 sounds 98 3c7368effea2b162
+@52852 step 16 key RIGHT
+@52852 voice item [1091] "c 4 , meadows , in the fog of war , 1 gold mine"
+@58200 sounds 22 0ea8e724dea09879
+@58200 step 17 key BACKSPACE
+@58200 voice item "go to c 4 ,"
+@58751 sounds 5 266bfe364d189513
+@58751 step 18 wait_turns 2
+@59500 sounds 3 c0cf80e4d457ee9c
+@59500 step 19 key SPACE
+@59500 voice item "b 4 You control peasant 1 at b 4 , go to c 4 ,"
+@64900 sounds 52 5334a7760dda753f
+@64900 step 20 key F8
+@64900 voice item "zoom is now on , c 4 at the center , meadows"
+@69500 voice info "1 peasant enemy at a 3"
+@72101 sounds 44 890e676872b3541a
+@72101 step 21 key UP
+@72101 voice item "c 4 north , meadows"
+@74201 sounds 9 c722e710759092ce
+@74201 step 22 key BACKSPACE
+@74201 voice item "go to c 4 north ,"
+@74651 sounds 3 f0acf0bc0f03bb84
+@74651 step 23 wait_turns 2
+@76101 sounds 12 a8e6d7316c01d772
+@76101 step 24 key SPACE
+@76101 voice item "c 4 You control peasant 1 at c 4 , go to c 4 ,"
+@81501 sounds 33 d8192ad4dac4a496
+@81501 step 25 key ESCAPE
+@81501 voice item "zoom is now off , c 4 , meadows , 1 peasant , 1 gold mine"
+@87801 sounds 31 c669ef37886630f9
+@87801 step 26 key F10
+@87801 voice menu "Menu"
+@88201 step 27 key DOWN
+@88201 voice item "cancel game ,"
+@89501 sounds 1 a008d6da2e64c003
+@89501 step 28 key RETURN
+@89501 voice confirmation "cancel game"
+@90603 voice info "Defeat at 0 minutes 48 seconds"
+@94203 voice info "1 units produced , 0 lost , 0 neutralized"
+@98903 voice info "2 building produced , 0 lost , 0 neutralized"
+@103903 voice info "10 gold gathered , 0 consumed"
+@107403 voice info "10 wood gathered , 0 consumed"
+@110903 voice info "score 23 press F5 to listen again"
+@114803 voice menu "please make a selection"
+@117103 sounds 12 1f1bf3557d2695e1
+@117103 step 29 key ESCAPE
+@117103 voice confirmation "go back to the previous menu"
+@119913 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@125013 sounds 1 ed8d47cbe55af452
+@125013 step 30 key ESCAPE
+@125013 voice confirmation "quit,"
+@125523 sounds 1 0b929baeaa172f9f
+@125523 end

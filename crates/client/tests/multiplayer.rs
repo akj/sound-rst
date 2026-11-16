@@ -164,6 +164,7 @@ fn slot(player: SlotPlayer, alliance: u8, ready: bool) -> Slot {
         faction: Faction::random(),
         alliance,
         ready,
+        income: Income::FULL,
     }
 }
 
@@ -398,7 +399,11 @@ fn a_game_starting_during_the_room_chat_prompt_cancels_it_and_starts() {
 fn two_slots() -> Vec<Slot> {
     vec![
         slot(human("andrew"), 1, true),
-        slot(SlotPlayer::Computer(AiLevel::Easy), 2, true),
+        slot(
+            SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            2,
+            true,
+        ),
     ]
 }
 
@@ -439,7 +444,8 @@ fn turns_keep_running_while_a_chat_line_is_typed_in_the_game() {
         Script::new().keep_open().with_live(live.clone()),
         config("andrew"),
     );
-    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    let (server, mut g) =
+        h.start_on_server("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Normal, 1);
     h.clock.follow_real_time();
     let t0 = h.clock.now();
     live.tap_at(t0 + 1.0, Key::F7, Mods::NONE);
@@ -475,7 +481,8 @@ fn turns_keep_running_while_the_game_menu_is_open() {
         Script::new().keep_open().with_live(live.clone()),
         config("andrew"),
     );
-    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    let (server, mut g) =
+        h.start_on_server("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Normal, 1);
     h.clock.follow_real_time();
     let t0 = h.clock.now();
     live.tap_at(t0 + 1.0, Key::F10, Mods::NONE);
@@ -1355,10 +1362,13 @@ fn a_room_with_more_players_than_a_map_can_have_is_left() {
     let (h, _) = left_fake_server(config("andrew"), |h, s| {
         let map = jl1(h);
         let mut slots = vec![slot(human("andrew"), 1, true)];
-        slots.extend(
-            (0..soundrts::net::lobby::MAX_ROOM_SLOTS)
-                .map(|_| slot(SlotPlayer::Computer(AiLevel::Easy), 2, true)),
-        );
+        slots.extend((0..soundrts::net::lobby::MAX_ROOM_SLOTS).map(|_| {
+            slot(
+                SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+                2,
+                true,
+            )
+        }));
         s.at(10.0, room(RoomChange::Entered, &room_state(&map, slots)));
     });
     assert_eq!(
@@ -1739,7 +1749,8 @@ fn the_rooms_host_pauses_and_resumes_a_game_on_a_server() {
         Script::new().keep_open().with_live(live.clone()),
         config("andrew"),
     );
-    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Fast4, 1);
+    let (server, mut g) =
+        h.start_on_server("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4, 1);
     h.clock.follow_real_time();
     h.run_for(&mut g, 1.0);
     // F10, then the item after the four speeds.
@@ -1816,7 +1827,7 @@ fn when_the_host_leaves_a_game_on_a_server_the_next_player_hosts_it() {
     let (mut andrew, mut bob) = (real_player("andrew"), real_player("bob"));
     andrew.connect_to(&addr, |c| c);
     bob.connect_to(&addr, |c| c);
-    let room = andrew.open_room("jl2", &[AiLevel::Easy], Speed::Fast4);
+    let room = andrew.open_room("jl2", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4);
     andrew.invite("bob");
     bob.join_room(room);
     andrew.wait_for_ready(3);
@@ -1953,7 +1964,8 @@ fn a_flare_needs_a_server_and_an_ally() {
     h.run_until_turn(&mut g, 2);
     assert_eq!(h.key(&mut g, Key::F7, Mods::CTRL)[0], "nobody to tell");
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
-    let (server, mut g) = h.start_on_server("jl1", &[AiLevel::Easy], Speed::Normal, 1);
+    let (server, mut g) =
+        h.start_on_server("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Normal, 1);
     h.run_until_turn(&mut g, 2);
     assert_eq!(h.key(&mut g, Key::F7, Mods::CTRL)[0], "no ally in the game");
     server.shutdown();
@@ -1966,7 +1978,7 @@ fn a_flare_on_a_server_takes_an_ally_to_its_square() {
     let (mut andrew, mut bob) = (real_player("andrew"), real_player("bob"));
     andrew.connect_to(&addr, |c| c);
     bob.connect_to(&addr, |c| c);
-    let room = andrew.open_room("jl2", &[AiLevel::Easy], Speed::Fast4);
+    let room = andrew.open_room("jl2", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4);
     andrew.invite("bob");
     bob.join_room(room);
     andrew.wait_for_ready(3);
@@ -2076,7 +2088,10 @@ fn the_lobby_offers_to_watch_an_open_game_that_takes_watchers() {
             speed: Speed::Normal,
             open,
             content: content.clone(),
-            players: vec![human("bob"), SlotPlayer::Computer(AiLevel::Easy)],
+            players: vec![
+                human("bob"),
+                SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            ],
             started: true,
             takes_watchers,
         };
@@ -2242,5 +2257,267 @@ fn a_watcher_hears_the_flare_of_the_player_it_follows_and_sends_none() {
             .any(|m| matches!(m, ClientMsg::Flare { .. })),
         "{:?}",
         server.sent()
+    );
+}
+
+fn map_info(h: &mut Harness, name: &str) -> MapInfo {
+    h.client
+        .res
+        .multiplayer_maps()
+        .into_iter()
+        .find(|m| m.name == name)
+        .unwrap()
+        .info()
+        .unwrap()
+}
+
+/// Andrew organizes a room on jl2 with a quiet computer and the random
+/// computer, and presses Down `downs` times in the room's menu, then
+/// Return if `choose`: what he heard of the items, and what his client
+/// sent.
+fn organizer_menu(downs: usize, choose: bool) -> (Vec<String>, Vec<ClientMsg>) {
+    let mut script = Script::new();
+    let mut t = 20.0;
+    for _ in 0..downs {
+        script = script.at(t).tap(Key::Down);
+        t += 8.0;
+    }
+    if choose {
+        script = script.at(t).tap(Key::Return);
+        t += 8.0;
+    }
+    script = script.at(t + 5.0).tap(Key::LShift);
+    let (h, server) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = map_info(h, "jl2");
+        let state = room_state(
+            &map,
+            vec![
+                slot(human("andrew"), 1, true),
+                slot(
+                    SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+                    2,
+                    true,
+                ),
+                slot(SlotPlayer::Computer(Computer::Random), 3, true),
+            ],
+        );
+        s.at(10.0, room(RoomChange::Entered, &state));
+    });
+    let said = said(&h);
+    let items = from(&said, "jl2 2")[1..].to_vec();
+    (items, server.sent())
+}
+
+#[test]
+fn the_organizer_sets_a_computers_level_and_any_seats_income_from_the_room_menu() {
+    let (items, _) = organizer_menu(40, false);
+    let expected = [
+        "invite bob",
+        "invite quiet computer , level 3",
+        "invite aggressive computer , level 3",
+        "invite random computer with unlimited resources and no requirements",
+        "start",
+        "move andrew to alliance 2",
+        "move andrew to alliance 3",
+        "set andrew to 50 percent income",
+        "set andrew to 75 percent income",
+        "set andrew to 150 percent income",
+        "set andrew to 200 percent income",
+        "move quiet computer , level 3 , to alliance 1",
+        "move quiet computer , level 3 , to alliance 3",
+        "set quiet computer , level 3 , to level 1",
+        "set quiet computer , level 3 , to level 2",
+        "set quiet computer , level 3 , to 50 percent income",
+        "set quiet computer , level 3 , to 75 percent income",
+        "set quiet computer , level 3 , to 150 percent income",
+        "set quiet computer , level 3 , to 200 percent income",
+        "move random computer with unlimited resources and no requirements to alliance 1",
+        "move random computer with unlimited resources and no requirements to alliance 2",
+        "remove quiet computer , level 3",
+        "remove random computer with unlimited resources and no requirements",
+        "quit, leave this game",
+    ];
+    assert_eq!(items[..expected.len()], expected);
+    // The menu goes round: nothing else is in it.
+    assert_eq!(items[expected.len()], expected[0]);
+
+    // Choosing an item asks the server; the room says what it did.
+    let at = |item: &str| expected.iter().position(|e| *e == item).unwrap() + 1;
+    let (_, sent) = organizer_menu(at("set quiet computer , level 3 , to level 2"), true);
+    assert_eq!(
+        sent,
+        [ClientMsg::SetSkill {
+            slot: 1,
+            skill: Skill::Level2
+        }]
+    );
+    let (_, sent) = organizer_menu(at("set andrew to 150 percent income"), true);
+    assert_eq!(
+        sent,
+        [ClientMsg::SetIncome {
+            slot: 0,
+            income: Income::new(150).unwrap()
+        }]
+    );
+}
+
+#[test]
+fn a_member_hears_each_level_and_income_the_organizer_sets() {
+    let script = Script::new().at(100.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = map_info(h, "jl2");
+        let mut state = RoomState {
+            host: login("bob"),
+            ..room_state(
+                &map,
+                vec![
+                    slot(human("bob"), 1, true),
+                    slot(human("andrew"), 2, false),
+                    slot(
+                        SlotPlayer::Computer(Computer::Aggressive(Skill::NORMAL)),
+                        3,
+                        true,
+                    ),
+                ],
+            )
+        };
+        s.at(10.0, room(RoomChange::Entered, &state));
+        state.slots[2].player = SlotPlayer::Computer(Computer::Aggressive(Skill::Level1));
+        s.at(20.0, room(RoomChange::Skill { slot: 2 }, &state));
+        state.slots[2].income = Income::new(150).unwrap();
+        s.at(30.0, room(RoomChange::Income { slot: 2 }, &state));
+        state.slots[1].income = Income::new(50).unwrap();
+        s.at(40.0, room(RoomChange::Income { slot: 1 }, &state));
+        state.slots[1].income = Income::FULL;
+        s.at(50.0, room(RoomChange::Income { slot: 1 }, &state));
+        state.slots[0].income = Income::new(200).unwrap();
+        s.at(60.0, room(RoomChange::Income { slot: 0 }, &state));
+        state.slots[2].alliance = 1;
+        s.at(70.0, room(RoomChange::Alliance { slot: 2 }, &state));
+        state.slots.push(slot(human("carol"), 3, false));
+        s.at(
+            80.0,
+            room(
+                RoomChange::Joined {
+                    player: human("carol"),
+                },
+                &state,
+            ),
+        );
+    });
+    let said = said(&h);
+    let news = from(&said, "aggressive computer , level 1");
+    assert_eq!(
+        news[..7],
+        [
+            "aggressive computer , level 1",
+            "aggressive computer , level 1 , 150 percent income",
+            "andrew , 50 percent income",
+            "andrew , 100 percent income",
+            "bob , 200 percent income",
+            "move aggressive computer , level 1 , 150 percent income , to alliance 1",
+            "carol has just joined 4 players on 4 the game will start when the organizer is ready . bob , 200 percent income . andrew . aggressive computer , level 1 , 150 percent income . carol",
+        ]
+    );
+}
+
+#[test]
+fn a_member_who_enters_a_room_hears_the_incomes_set_before() {
+    let script = Script::new().at(100.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = map_info(h, "jl2");
+        let mut state = RoomState {
+            host: login("bob"),
+            ..room_state(
+                &map,
+                vec![slot(human("bob"), 1, true), slot(human("andrew"), 2, false)],
+            )
+        };
+        state.slots[0].income = Income::new(200).unwrap();
+        s.at(10.0, room(RoomChange::Entered, &state));
+    });
+    let said = said(&h);
+    assert!(
+        said.iter()
+            .any(|l| l.ends_with(". bob , 200 percent income")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn the_level_and_income_set_in_a_room_reach_the_game_the_server_builds() {
+    let dir = tempfile::tempdir().unwrap();
+    let records = dir.path().to_path_buf();
+    let server = soundrts::testkit::test_server(1, |c| c.records = Some(records.clone()));
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    h.connect_to(&server.local_addr().to_string(), |c| c);
+    h.open_room("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4);
+    let quiet2 = SlotPlayer::Computer(Computer::Quiet(Skill::Level2));
+    h.change_room(
+        ClientMsg::SetSkill {
+            slot: 1,
+            skill: Skill::Level2,
+        },
+        |r| r.slots[1].player == quiet2,
+    );
+    let income = Income::new(150).unwrap();
+    h.change_room(ClientMsg::SetIncome { slot: 0, income }, |r| {
+        r.slots[0].income == income
+    });
+    let mut g = h.start_room_game("jl1");
+    h.clock.follow_real_time();
+    h.run_until_turn(&mut g, 3);
+    // The game's start silenced the room's news; its incomes are said again.
+    assert!(
+        said(&h).contains(&"andrew , 150 percent income".to_owned()),
+        "{:?}",
+        said(&h)
+    );
+    // Everyone in the game hears the computer named at its level.
+    assert_eq!(
+        g.game.view().game_start().player_names[1],
+        soundrts_world::computer_name("easy", Skill::Level2)
+    );
+    // The server keeps the record of the game when its last player leaves.
+    soundrts::net::send(&mut h.client, ClientMsg::LeaveGame);
+    let start = std::time::Instant::now();
+    let file = loop {
+        let found = std::fs::read_dir(&records).ok().and_then(|d| {
+            d.filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        });
+        if let Some(f) = found {
+            break f;
+        }
+        assert!(start.elapsed() < soundrts::testkit::WAIT_LIMIT, "no record");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    server.shutdown();
+    let (record, _) = soundrts_world::Record::read(&std::fs::read(&file).unwrap()).unwrap();
+    let seats: Vec<_> = record
+        .setup()
+        .controllers
+        .iter()
+        .map(|c| (c.kind.clone(), c.income.percent()))
+        .collect();
+    assert_eq!(
+        seats,
+        [
+            (
+                soundrts_world::ControllerKind::Human {
+                    login: "andrew".into(),
+                    local: true
+                },
+                150
+            ),
+            (
+                soundrts_world::ControllerKind::Computer {
+                    ai_type: "easy".into(),
+                    skill: Skill::Level2
+                },
+                100
+            ),
+        ]
     );
 }
