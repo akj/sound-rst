@@ -48,7 +48,7 @@ Most features reach several of the places below. Before you call a change to the
 
 ## Verifying
 
-- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. The tests read the original's data from there.
+- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. The tests read the original's data from there. In a worktree the script copies the files from the main checkout's clone, so the worktree holds no nested Git repository. Do not clone the original into a worktree by hand.
 - Before you push, run what CI checks:
 
   ```powershell

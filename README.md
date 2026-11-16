@@ -28,7 +28,7 @@ The following parts of the original are not ported:
 
 You need Windows with the MSVC build tools, [rustup](https://rustup.rs), Git, and PowerShell 7. `rust-toolchain.toml` pins the Rust version, and rustup installs that version on the first build.
 
-1. Fetch the original game. The script checks out a pinned commit into `vendor/soundrts-upstream`.
+1. Fetch the original game. The script checks out a pinned commit into `vendor/soundrts-upstream`. In a Git worktree, the script keeps its one clone in the main checkout's `vendor/soundrts-upstream` and puts only the files of the commit, without a `.git` folder, into the worktree's `vendor/soundrts-upstream`. Then `git worktree remove` has no nested repository to delete.
 
    ```powershell
    pwsh scripts/fetch-upstream.ps1
