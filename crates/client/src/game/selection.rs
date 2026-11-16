@@ -242,14 +242,11 @@ impl GameInterface {
         TypeFilter::These(
             style
                 .objects()
-                .filter(|x| style.has(x, "keyboard"))
-                .filter(|x| {
-                    style
-                        .words(x, "keyboard")
-                        .first()
-                        .is_some_and(|k| filter.keyboard_types.contains(k))
+                .filter(|(_, x)| {
+                    let key = x.keyboard.as_ref().and_then(|k| k.first());
+                    key.is_some_and(|k| filter.keyboard_types.contains(k))
                 })
-                .map(str::to_owned)
+                .map(|(name, _)| name.to_owned())
                 .collect(),
         )
     }

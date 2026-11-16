@@ -39,6 +39,14 @@ pub const MAX_ENTRIES: usize = 20_000;
 /// deepest folder is 5 below the game folder.
 const MAX_FOLDER_DEPTH: usize = 32;
 
+/// A text file of a layer: where it is, for a message about one of its
+/// lines, and its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextFile {
+    pub path: String,
+    pub text: String,
+}
+
 /// A zip file held in memory, with its entry names in archive order.
 struct ZipData {
     filename: String,

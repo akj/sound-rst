@@ -10,7 +10,6 @@ use soundrts_protocol::{
 use soundrts_world::msg::{Msg, MsgPart, Phrase, comma, msg, nb2msg, period};
 
 use super::words;
-use crate::game::style_msg;
 use crate::mapfile::{Map, title_of};
 use crate::message::RoomTopic;
 use crate::style::Style;
@@ -440,11 +439,7 @@ impl RoomModel {
             RoomChange::Faction { slot } => {
                 let s = self.state.slots.get(*slot)?;
                 (
-                    [
-                        slot_name(*slot),
-                        style_msg(style, s.faction.as_str(), "title"),
-                    ]
-                    .concat(),
+                    [slot_name(*slot), style.get(s.faction.as_str()).title_msg()].concat(),
                     RoomTopic::Faction(*slot),
                 )
             }

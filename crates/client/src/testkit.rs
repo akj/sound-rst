@@ -72,21 +72,58 @@ pub fn imported_tests_dir() -> PathBuf {
         let dir = tempfile::tempdir().expect("temporary folder");
         let from = upstream_tests_dir();
         std::fs::create_dir_all(dir.path().join("single")).expect("folder");
+        let jl1 = std::fs::read(from.join("jl1.txt")).expect("jl1.txt");
+        let jl1 = soundrts_import::import_map_text(&jl1, &mut Default::default());
+        std::fs::write(dir.path().join("jl1.txt"), jl1).expect("jl1.txt");
         for name in [
             "res",
             "res.zip",
-            "jl1.txt",
             "single/map1",
             "single/map1.zip",
             "single/campaign1",
             "single/campaign1.zip",
         ] {
-            soundrts_import::import(&from.join(name), &dir.path().join(name))
-                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let (from, to) = (from.join(name), dir.path().join(name));
+            let files = if from.is_dir() {
+                soundrts_import::read_folder(&from)
+            } else {
+                soundrts_import::read_zip(&std::fs::read(&from).expect("zip file"))
+            };
+            let files =
+                files.and_then(|f| soundrts_import::import_files(&f, &mut Default::default()));
+            let files = with_a_real_attribute(files.unwrap_or_else(|e| panic!("{name}: {e}")));
+            let written = if name.ends_with(".zip") {
+                soundrts_import::write_zip(&files)
+                    .and_then(|zip| std::fs::write(&to, zip).map_err(|e| e.to_string()))
+            } else {
+                soundrts_import::write_folder(&to, &files)
+            };
+            written.unwrap_or_else(|e| panic!("{name}: {e}"));
         }
         dir
     });
     dir.path().to_path_buf()
+}
+
+/// The original's test styles give their types an attribute `test`, which
+/// the game does not have. This gives them `shortcut` instead, in every
+/// style of the files and of the zip files inside them.
+fn with_a_real_attribute(files: soundrts_import::Files) -> soundrts_import::Files {
+    files
+        .into_iter()
+        .map(|(path, bytes)| {
+            let bytes = if path.ends_with("ui/style.txt") {
+                let text = String::from_utf8_lossy(&bytes);
+                text.replace("\ntest ", "\nshortcut ").into_bytes()
+            } else if path.ends_with(".zip") {
+                let inside = soundrts_import::read_zip(&bytes).expect("zip file");
+                soundrts_import::write_zip(&with_a_real_attribute(inside)).expect("zip file")
+            } else {
+                bytes
+            };
+            (path, bytes)
+        })
+        .collect()
 }
 
 /// A copy of upstream's `tests/res2` folder in a temporary folder, with the

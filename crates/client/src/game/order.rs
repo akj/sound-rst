@@ -8,7 +8,7 @@ use soundrts_world::{EntityId, KeywordOrder, SeatView};
 
 use crate::style::Style;
 
-use super::{style_msg, style_msg_quiet};
+use crate::style::mine;
 
 /// The precision of the simulation's decimal values.
 pub const PRECISION: i64 = 1000;
@@ -36,13 +36,7 @@ pub fn substitute_args(t: Msg, arg: &Msg) -> Msg {
 
 /// The place of an order kind in the menu: its style `index`, or the end.
 pub fn ord_index(style: &Style, log: &crate::log::Log, keyword: &str) -> f64 {
-    let words = style
-        .get_or_warn(keyword, "index", false)
-        .map(|v| match v {
-            crate::style::StyleValue::Words(w) | crate::style::StyleValue::IfMe(w, _) => w.clone(),
-            crate::style::StyleValue::Noise(_) => Vec::new(),
-        })
-        .unwrap_or_default();
+    let words = style.get(keyword).index.as_deref().unwrap_or_default();
     match words.first() {
         Some(w) => match soundrts_world::nofloat::py_float(w) {
             Ok(f) => f,
@@ -63,7 +57,7 @@ pub fn orders_list(style: &Style, log: &crate::log::Log) -> Vec<Keyword> {
     let mut list: Vec<Keyword> = Keyword::ALL
         .iter()
         .copied()
-        .filter(|k| style.has(k.as_str(), "index"))
+        .filter(|k| style.get(k.as_str()).index.is_some())
         .collect();
     list.sort_by(|a, b| {
         ord_index(style, log, a.as_str()).total_cmp(&ord_index(style, log, b.as_str()))
@@ -108,19 +102,14 @@ impl OrderTypeView {
         let rules = &view.game_start().rules;
         let keyword = entry.keyword;
         let type_name = entry.type_id.map(|t| rules.ty(t).name.as_str());
-        let mut title = style_msg(style, keyword.as_str(), "title");
+        let mut title = style.get(keyword.as_str()).title_msg();
         if let Some(t) = type_name {
-            let t2 = style_msg(style, t, "title");
+            let t2 = style.get(t).title_msg();
             title = substitute_args(title, &t2);
         }
-        let shortcut = style_msg_quiet(style, keyword.as_str(), "shortcut")
-            .first()
-            .or(type_name
-                .map(|t| style_msg_quiet(style, t, "shortcut"))
-                .unwrap_or_default()
-                .first())
-            .map(|p| p.to_string());
-        let comment = style_msg_quiet(style, keyword.as_str(), "comment");
+        let first = |object: &str| style.get(object).shortcut.as_ref()?.first().cloned();
+        let shortcut = first(keyword.as_str()).or_else(|| type_name.and_then(first));
+        let comment = mine(&style.get(keyword.as_str()).comment);
         let info = view.order_info(unit, keyword, entry.type_id);
         if info.is_none() {
             log.error(format!(
@@ -180,32 +169,28 @@ impl OrderTypeView {
         let mut m: Msg = Vec::new();
         for t in &missing {
             and_index = m.len();
-            m.extend(style_msg(style, t, "title"));
+            m.extend(style.get(t).title_msg());
         }
         if missing.is_empty() {
             for (i, &c) in self.cost.iter().enumerate() {
                 if c != 0 {
                     and_index = m.len();
                     m.extend(nb2msg(c / PRECISION));
-                    m.extend(style_msg(
-                        style,
-                        "parameters",
-                        &format!("resource_{i}_title"),
-                    ));
+                    m.extend(style.get("parameters").resource_title_msg(i));
                 }
             }
             if self.food_cost != 0 {
                 and_index = m.len();
                 m.extend(nb2msg_f(self.food_cost));
-                m.extend(style_msg(style, "parameters", "food_title"));
+                m.extend(mine(&style.get("parameters").food_title));
             }
         }
         if and_index > 0 {
-            let and = style_msg(style, "parameters", "and");
+            let and = mine(&style.get("parameters").and);
             m.splice(and_index..and_index, and);
         }
         if !m.is_empty() {
-            let requires = style_msg(style, "parameters", "requires");
+            let requires = mine(&style.get("parameters").requires);
             m.splice(0..0, requires);
         }
         m
@@ -237,7 +222,11 @@ mod tests {
     use super::*;
 
     fn t(s: &str) -> MsgPart {
-        crate::game::style_part(s).unwrap()
+        if s.starts_with('$') {
+            MsgPart::literal(s)
+        } else {
+            MsgPart::named(s).unwrap()
+        }
     }
 
     #[test]
@@ -264,7 +253,12 @@ mod tests {
     #[test]
     fn the_menu_lists_the_order_kinds_with_an_index_in_index_order() {
         let mut style = Style::new(crate::log::Log::silent());
-        style.load(&["def go\nindex 1\ndef train\nindex 7\ndef stop\nindex 0.5\ndef gather\nindex 3\ndef build\nindex x\n"]);
+        let text = "def go\nindex 1\ndef train\nindex 7\ndef stop\nindex 0.5\ndef gather\nindex 3\ndef build\nindex x\n";
+        let file = crate::package::TextFile {
+            path: "ui/style.txt".to_owned(),
+            text: text.to_owned(),
+        };
+        style.load(&[file], &|_| true);
         let list = orders_list(&style, &crate::log::Log::silent());
         assert_eq!(
             list,

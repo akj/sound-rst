@@ -21,7 +21,7 @@ use soundrts_world::msg::{Cue, MsgPart, Pause, Phrase, is_name};
 
 use crate::audio::{Sound, SoundBuffer};
 use crate::log::Log;
-use crate::package::Package;
+use crate::package::{Package, TextFile};
 use crate::parameters::Parameters;
 
 /// The folder of a package that holds its language files.
@@ -125,18 +125,12 @@ pub struct SoundCache {
 #[derive(Clone)]
 pub struct Sounds(Rc<RefCell<SoundCache>>);
 
-/// A language file of a layer: where it is, for a message, and its text.
-pub struct LanguageFile {
-    pub path: String,
-    pub text: String,
-}
-
 impl SoundCache {
     /// Builds the cache from the language files and the recordings of the
     /// layers, both in priority order. A language file with a line that
     /// cannot be read is refused whole, with its path and the line.
     pub fn new(
-        texts: &[LanguageFile],
+        texts: &[TextFile],
         sound_dirs: &[(Package, String)],
         params: Arc<Parameters>,
         log: Log,
@@ -175,7 +169,7 @@ impl SoundCache {
     }
 
     /// The phrases of the language files that can be read, in order.
-    fn phrases_of(&self, texts: &[LanguageFile]) -> Vec<(String, String)> {
+    fn phrases_of(&self, texts: &[TextFile]) -> Vec<(String, String)> {
         let mut phrases = Vec::new();
         for file in texts {
             match read_language_file(&file.text) {
@@ -196,7 +190,7 @@ impl SoundCache {
     /// were ignored.
     pub fn add_downloaded(
         &mut self,
-        texts: &[LanguageFile],
+        texts: &[TextFile],
         sound_dirs: &[(Package, String)],
     ) -> usize {
         let mut ignored: usize = 0;
@@ -376,8 +370,8 @@ impl Sounds {
 mod tests {
     use super::*;
 
-    fn file(text: &str) -> LanguageFile {
-        LanguageFile {
+    fn file(text: &str) -> TextFile {
+        TextFile {
             path: "a map/text/en.txt".to_owned(),
             text: text.to_owned(),
         }

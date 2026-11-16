@@ -73,7 +73,7 @@ use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, 
 use crate::menu::{Exit, TextEntry};
 use crate::message::{Category, News, Subject};
 use crate::sound::Listener;
-use crate::style::{Style, StyleValue};
+
 use crate::voice::EntryId;
 
 use self::animation::NoiseSource;
@@ -191,46 +191,6 @@ fn important_category(m: &Msg) -> Category {
     } else {
         Category::System
     }
-}
-
-/// The words of `obj.attr` in style as text parts (with a warning, once,
-/// if it is missing). For an `if_me` value, the words for the player.
-pub fn style_msg(style: &Style, obj: &str, attr: &str) -> Msg {
-    style
-        .words(obj, attr)
-        .iter()
-        .filter_map(|w| style_part(w))
-        .collect()
-}
-
-/// What a word of a style names: a phrase, a sound or a count. `$1` stays
-/// as written, for [`order::substitute_args`].
-pub fn style_part(word: &str) -> Option<MsgPart> {
-    if word.starts_with('$') {
-        Some(MsgPart::literal(word))
-    } else {
-        MsgPart::named(word)
-    }
-}
-
-/// As [`style_msg`], without the warning.
-pub fn style_msg_quiet(style: &Style, obj: &str, attr: &str) -> Msg {
-    match style.get_or_warn(obj, attr, false) {
-        Some(StyleValue::Words(w)) | Some(StyleValue::IfMe(w, _)) => {
-            w.iter().filter_map(|w| style_part(w)).collect()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// The title of a type: the phrases and sounds its style `title` names.
-pub fn compute_title(style: &Style, type_name: &str) -> Msg {
-    style
-        .words(type_name, "title")
-        .iter()
-        .filter_map(|w| MsgPart::named(w))
-        .filter(|part| matches!(part, MsgPart::Name(_)))
-        .collect()
 }
 
 /// Where the game's turns come from.
@@ -963,7 +923,7 @@ impl GameInterface {
             Place::Inside(c) => self
                 .view()
                 .known(c)
-                .map(|e| style_msg(cx.res.style(), &e.type_name, "title"))
+                .map(|e| cx.res.style().get(&e.type_name).title_msg())
                 .unwrap_or_default(),
         }
     }

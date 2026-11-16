@@ -24,8 +24,9 @@ use std::time::{Duration, Instant};
 use soundrts::bindings::{BindingError, Bindings, Chord};
 use soundrts::clock::Clock;
 use soundrts::log::Log;
+use soundrts::package::TextFile;
 use soundrts::parameters::Parameters;
-use soundrts::sound_cache::{LanguageFile, SoundCache, read_language_file};
+use soundrts::sound_cache::{SoundCache, read_language_file};
 use soundrts::style::Style;
 use soundrts::testkit::{FakeStream, Harness, Script, TestGame, game_root, slot};
 use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
@@ -266,12 +267,18 @@ fn read(kind: Kind, base: &str, text: &str) {
     let log = Log::silent();
     match kind {
         Kind::Style => {
+            let file = |text: &str| TextFile {
+                path: "ui/style.txt".to_owned(),
+                text: text.to_owned(),
+            };
+            // Some names exist and some do not.
+            let exists = |name: &str| !name.len().is_multiple_of(3);
             let mut style = Style::new(log.clone());
-            style.load(&[base, text]);
+            style.load(&[file(base), file(text)], &exists);
             look_up(&style);
             let mut style = Style::new(log);
-            style.load(&[base]);
-            style.add_downloaded(&[text]);
+            style.load(&[file(base)], &exists);
+            style.add_downloaded(&[file(text)], &exists);
             look_up(&style);
         }
         Kind::Bindings => {
@@ -286,7 +293,7 @@ fn read(kind: Kind, base: &str, text: &str) {
         }
         Kind::Translation => {
             let _ = read_language_file(text);
-            let file = |text: &str| LanguageFile {
+            let file = |text: &str| TextFile {
                 path: "text/en.txt".to_owned(),
                 text: text.to_owned(),
             };
@@ -302,21 +309,15 @@ fn read(kind: Kind, base: &str, text: &str) {
 }
 
 fn look_up(style: &Style) {
-    let objects: Vec<String> = style.objects().map(str::to_owned).collect();
-    for o in objects.iter().take(300) {
-        for attr in [
-            "title",
-            "noise",
-            "is_a",
-            "attack_hit_level_2",
-            "x_level_",
-            "é_level_1",
-        ] {
-            let _ = style.get_or_warn(o, attr, false);
-        }
-        let _ = style.noise(o, "noise_when_moving");
-        let _ = style.words(o, "alert");
+    for (name, object) in style.objects().take(300) {
+        assert_eq!(style.get(name), object);
+        let _ = (object.title_msg(), object.title_names());
+        let _ = (object.attack_hit_at(2), object.attack_hit_at(10));
+        let _ = object.refusal_msg(&soundrts_world::events::Reason::NotEnoughResource(3));
+        let _ = object.resource_title_msg(0);
+        let _ = soundrts::style::mine(&object.alert);
     }
+    let _ = style.get("é_level_1").title_msg();
 }
 
 fn translate(cache: &mut SoundCache) {

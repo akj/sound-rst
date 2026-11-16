@@ -17,7 +17,7 @@ use soundrts_protocol::{Channel, Step};
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
 use super::replay::Pace;
-use super::{GameInterface, Mode, Source, Story, TURN, style_msg};
+use super::{GameInterface, Mode, Source, Story, TURN};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -281,7 +281,7 @@ impl GameInterface {
             Some(&n) => {
                 let m = [
                     nb2msg(n),
-                    style_msg(cx.res.style(), "parameters", &format!("resource_{r}_title")),
+                    cx.res.style().get("parameters").resource_title_msg(r),
                 ]
                 .concat();
                 cx.voice.item(&m);

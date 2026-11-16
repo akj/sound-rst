@@ -454,18 +454,24 @@ fn convert_help(text: &str, namer: &Namer, file: &str, report: &mut Report) -> S
     })
 }
 
-/// A map: the words of its `title`, `objective` and `intro` lines, and of
-/// its `add_objective` and `cut_scene` actions. For a chapter that is a
-/// cut scene, the words of its `title` and `sequence` lines.
-fn convert_map(text: &str, namer: &Namer, file: &str, report: &mut Report) -> String {
+/// Rewrites the words of a map that name a phrase or a sound, or are a
+/// count: those of its `title`, `objective` and `intro` lines, and of its
+/// `add_objective` and `cut_scene` actions. For a chapter that is a cut
+/// scene, those of its `title` and `sequence` lines. `name` gets the line of
+/// each word, counted from 1, and gives the word to write in its place, if
+/// another.
+fn map_words(text: &str, mut name: impl FnMut(usize, &str) -> Option<String>) -> String {
     let cut_scene = text.split('\n').next() == Some("cut_scene_chapter");
     let mut keyword = String::new();
+    // Inside an action that says something: the words of the action that
+    // come before those it says.
+    let mut saying: Option<usize> = None;
     each_line(text, |number, continues, code| {
-        let at = format!("{file} line {number}");
         if !continues {
             keyword = code.split_whitespace().next().unwrap_or("").to_owned();
+            saying = None;
         }
-        let mut name = |word: &str| (word != "\\").then(|| namer.word(word, &at, report));
+        let mut name = |word: &str| (word != "\\").then(|| name(number, word)).flatten();
         let named = match keyword.as_str() {
             "title" => true,
             "sequence" => cut_scene,
@@ -485,23 +491,49 @@ fn convert_map(text: &str, namer: &Namer, file: &str, report: &mut Report) -> St
         if keyword != "trigger" || cut_scene {
             return code.to_owned();
         }
-        // An action is the words up to a parenthesis: `add_objective`, the
+        // An action ends at a parenthesis: `add_objective`, the
         // objective's number and its words, or `cut_scene` and its words.
         let mut out = String::with_capacity(code.len());
         for piece in code.split_inclusive(['(', ')']) {
-            let skip = match piece.split_whitespace().next() {
-                Some("add_objective") => 2,
-                Some("cut_scene") => 1,
-                _ => usize::MAX,
-            };
-            let mut words = 0_usize;
-            out.push_str(&rewrite(piece, true, |word| {
-                words = words.saturating_add(1);
-                if words > skip { name(word) } else { None }
+            out.push_str(&rewrite(piece, true, |word| match (word, saying) {
+                ("add_objective", _) => {
+                    saying = Some(1);
+                    None
+                }
+                ("cut_scene", _) => {
+                    saying = Some(0);
+                    None
+                }
+                (_, Some(0)) => name(word),
+                (_, Some(n)) => {
+                    saying = Some(n.saturating_sub(1));
+                    None
+                }
+                (_, None) => None,
             }));
+            if piece.ends_with([')', '(']) {
+                saying = None;
+            }
         }
         out
     })
+}
+
+fn convert_map(text: &str, namer: &Namer, file: &str, report: &mut Report) -> String {
+    map_words(text, |line, word| {
+        Some(namer.word(word, &format!("{file} line {line}"), report))
+    })
+}
+
+/// The words of a map of the game that name a phrase or a sound, or are a
+/// count, each with its line, counted from 1.
+pub fn words_a_map_says(text: &str) -> Vec<(usize, String)> {
+    let mut words = Vec::new();
+    map_words(text, |line, word| {
+        words.push((line, word.to_owned()));
+        None
+    });
+    words
 }
 
 /// The `title` line of a `campaign.txt`.

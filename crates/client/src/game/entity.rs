@@ -12,12 +12,12 @@ use crate::audio::{angle, distance};
 use crate::client::Client;
 use crate::message::{Category, News, Subject};
 use crate::sound::{Audio, Placement};
-use crate::style::{Noise, StyleValue};
+use crate::style::{Noise, Said, Sided, Sounds, TypeStyle, mine};
 
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::news::must_be_said;
 use super::order::{PRECISION, substitute_args};
-use super::{GameInterface, Timing, compute_title, style_msg};
+use super::{GameInterface, Timing};
 
 /// The same footstep sound does not start again within this many seconds.
 pub const FOOTSTEP_LIMIT: f64 = 0.1;
@@ -184,12 +184,12 @@ impl GameInterface {
         if v.model.is_building_site() {
             let t = self.site_type_name(&v.model).unwrap_or_default();
             [
-                compute_title(style, &t),
-                compute_title(style, v.type_name()),
+                style.get(&t).title_names(),
+                style.get(v.type_name()).title_names(),
             ]
             .concat()
         } else {
-            compute_title(style, v.type_name())
+            style.get(v.type_name()).title_names()
         }
     }
 
@@ -201,8 +201,8 @@ impl GameInterface {
         let mut title = if v.model.is_building_site() {
             let t = self.site_type_name(&v.model).unwrap_or_default();
             [
-                compute_title(style, &t),
-                compute_title(style, "buildingsite"),
+                style.get(&t).title_names(),
+                style.get("buildingsite").title_names(),
             ]
             .concat()
         } else {
@@ -267,7 +267,7 @@ impl GameInterface {
         };
         upgrades
             .iter()
-            .flat_map(|u| style_msg(style, u, "title"))
+            .flat_map(|u| style.get(u).title_msg())
             .collect()
     }
 
@@ -281,11 +281,7 @@ impl GameInterface {
             let rt = self
                 .resource_type(&v.model)
                 .map_or("None".to_owned(), |r| r.to_string());
-            d.extend(style_msg(
-                style,
-                "parameters",
-                &format!("resource_{rt}_title"),
-            ));
+            d.extend(style.get("parameters").resource_title_msg(rt));
         }
         if v.is_creature() {
             d.extend(comma());
@@ -351,13 +347,13 @@ impl GameInterface {
     fn order_title_msg(&self, cx: &Client, order: &KnownOrder, nb: i64) -> Msg {
         let style = cx.res.style();
         let mut result = if order.is_deferred {
-            style_msg(style, "messages", "production_deferred")
+            mine(&style.get("messages").production_deferred)
         } else {
             Vec::new()
         };
-        result.extend(style_msg(style, order.keyword.as_str(), "title"));
+        result.extend(style.get(order.keyword.as_str()).title_msg());
         if let Some(t) = order.type_id {
-            let mut tt = style_msg(style, &self.view().unit_type_by_id(t).name, "title");
+            let mut tt = style.get(&self.view().unit_type_by_id(t).name).title_msg();
             if nb != 1 {
                 tt = [nb2msg(nb), tt].concat();
             }
@@ -373,7 +369,7 @@ impl GameInterface {
                 // A site the player does not know: no building said.
                 if let Some(e) = self.target_entity(t) {
                     let tn = self.site_type_name(&e).unwrap_or_default();
-                    result.extend(style_msg(style, &tn, "title"));
+                    result.extend(style.get(&tn).title_msg());
                 }
             } else {
                 result.extend(self.target_title(cx, t));
@@ -494,7 +490,8 @@ impl GameInterface {
 
     /// An exit, for the interface: a type with a sound for moving through.
     pub fn is_an_exit(&self, cx: &Client, v: &EntityView) -> bool {
-        cx.res.style().has(v.type_name(), "when_moving_through")
+        let style = cx.res.style().get(v.type_name());
+        style.when_moving_through.is_some()
     }
 
     /// A deposit, a building land, a damaged repairable or an exit: what a
@@ -506,41 +503,40 @@ impl GameInterface {
             || self.is_an_exit(cx, v)
     }
 
-    /// The style value of the entity's type, the player's side of an
-    /// `if_me` value chosen.
-    fn get_style_words(&self, cx: &Client, v: &EntityView, attr: &str) -> Vec<String> {
-        match cx.res.style().get(v.type_name(), attr) {
-            Some(StyleValue::Words(w)) => w.clone(),
-            Some(StyleValue::IfMe(a, b)) => {
+    /// The sounds of an attribute of the entity's type, for the entity's
+    /// side: the player's and its allies', or the others'.
+    fn style_sounds(
+        &self,
+        cx: &Client,
+        v: &EntityView,
+        attr: impl Fn(&TypeStyle) -> Option<&Sided<Sounds>>,
+    ) -> Sounds {
+        let allied = self.is_allied(v.player());
+        let sounds = attr(cx.res.style().get(v.type_name()));
+        sounds.map(|s| s.of(allied).clone()).unwrap_or_default()
+    }
+
+    /// A noise of the entity's type, for the entity's side.
+    fn style_noise(&self, v: &EntityView, noise: Option<&Noise>) -> Noise {
+        match noise {
+            Some(Noise::IfMe(mine, others)) => {
                 if self.is_allied(v.player()) {
-                    a.clone()
+                    (**mine).clone()
                 } else {
-                    b.clone()
+                    (**others).clone()
                 }
             }
-            _ => Vec::new(),
+            Some(n) => n.clone(),
+            None => Noise::Silent,
         }
     }
 
-    fn get_style_noise(&self, cx: &Client, v: &EntityView, attr: &str) -> Noise {
-        match cx.res.style().get(v.type_name(), attr) {
-            Some(StyleValue::Noise(Noise::IfMe(a, b))) => {
-                if self.is_allied(v.player()) {
-                    (**a).clone()
-                } else {
-                    (**b).clone()
-                }
-            }
-            Some(StyleValue::Noise(n)) => n.clone(),
-            _ => Noise::Silent,
-        }
-    }
-
-    fn style_text(&self, cx: &Client, v: &EntityView, attr: &str) -> Msg {
-        self.get_style_words(cx, v, attr)
-            .iter()
-            .filter_map(|w| super::style_part(w))
-            .collect()
+    /// What an attribute of the entity's type says, for the entity's side.
+    fn style_said(&self, v: &EntityView, said: &Option<Sided<Said>>) -> Msg {
+        let allied = self.is_allied(v.player());
+        said.as_ref()
+            .map(|s| s.of(allied).clone())
+            .unwrap_or_default()
     }
 
     /// Whether the entity is on the selected square, or next to it when
@@ -565,11 +561,11 @@ impl GameInterface {
         &self,
         cx: &Client,
         v: &EntityView,
-        attr: &str,
+        attr: impl Fn(&TypeStyle) -> Option<&Sided<Sounds>>,
         alert: bool,
         priority: i32,
     ) {
-        let st = self.get_style_words(cx, v, attr);
+        let st = self.style_sounds(cx, v, attr);
         if st.is_empty() {
             return;
         }
@@ -628,7 +624,14 @@ impl GameInterface {
 
     /// Plays a sound of an event, unless the event came too late for its
     /// sounds.
-    fn event_sound(&self, cx: &Client, v: &EntityView, attr: &str, alert: bool, timing: Timing) {
+    fn event_sound(
+        &self,
+        cx: &Client,
+        v: &EntityView,
+        attr: impl Fn(&TypeStyle) -> Option<&Sided<Sounds>>,
+        alert: bool,
+        timing: Timing,
+    ) {
         if timing == Timing::OnTime {
             self.launch_event_style(cx, v, attr, alert, 0);
         }
@@ -653,71 +656,80 @@ impl GameInterface {
             EntityEvent::DeathBy(a) => self.on_death_by(cx, v, *a, timing),
             EntityEvent::OrderOk => {
                 if v.player() == Some(self.me) {
-                    self.event_sound(cx, v, "order_ok", true, timing);
+                    self.event_sound(cx, v, |t| t.order_ok.as_ref(), true, timing);
                 }
             }
             EntityEvent::OrderImpossible(reason) => {
                 if v.player() == Some(self.me) {
-                    self.event_sound(cx, v, "order_impossible", true, timing);
+                    self.event_sound(cx, v, |t| t.order_impossible.as_ref(), true, timing);
                     if let Some(r) = reason {
                         self.say_reason(cx, r);
                     }
                 }
             }
-            EntityEvent::Attack => self.event_sound(cx, v, "attack", true, timing),
-            EntityEvent::Collision => self.event_sound(cx, v, "blocked", false, timing),
-            EntityEvent::Flee => self.event_sound(cx, v, "flee", true, timing),
+            EntityEvent::Attack => self.event_sound(cx, v, |t| t.attack.as_ref(), true, timing),
+            EntityEvent::Collision => {
+                self.event_sound(cx, v, |t| t.blocked.as_ref(), false, timing)
+            }
+            EntityEvent::Flee => self.event_sound(cx, v, |t| t.flee.as_ref(), true, timing),
             EntityEvent::Complete => self.on_complete(cx, v, timing),
             EntityEvent::Completeness(s) => {
-                self.event_sound(cx, v, "production", false, timing);
-                self.event_sound(cx, v, &format!("proportion_{s}"), false, timing);
+                self.event_sound(cx, v, |t| t.production.as_ref(), false, timing);
+                let tenths = s.to_string();
+                self.event_sound(cx, v, |t| t.proportion.get(&tenths), false, timing);
             }
             EntityEvent::ProductionDeferred => {
-                let m = style_msg(cx.res.style(), "messages", "production_deferred");
+                let m = mine(&cx.res.style().get("messages").production_deferred);
                 let news = News::new(Category::Production, m);
                 cx.news(news.about(Subject::ProductionDeferred));
             }
             EntityEvent::ResearchComplete => {
-                let m = self.style_text(cx, v, "research_complete_msg");
+                let style = cx.res.style().get(v.type_name());
+                let m = self.style_said(v, &style.research_complete_msg);
                 cx.news(News::new(Category::Production, m));
                 self.send_menu_alerts_if_needed(cx);
             }
             EntityEvent::UseComplete(ability) => {
-                let st = cx.res.style().words(ability, "alert");
+                let st = mine(&cx.res.style().get(ability).alert);
                 if !st.is_empty() && timing == Timing::OnTime {
                     let s = st[cx.rng.below(st.len())].clone();
                     self.launch_alert_of(cx, v, &s);
                 }
             }
             EntityEvent::Store(r) => {
-                self.event_sound(cx, v, &format!("store_resource_{r}"), false, timing)
+                let resource = r.to_string();
+                self.event_sound(cx, v, |t| t.store_resource.get(&resource), false, timing)
             }
             EntityEvent::Exhausted => {
                 if cx.cue(Category::Economy) {
-                    self.event_sound(cx, v, "exhausted", false, timing);
+                    self.event_sound(cx, v, |t| t.exhausted.as_ref(), false, timing);
                 }
                 let m = [self.title(cx, v), msg(Phrase::Exhausted)].concat();
                 cx.news(News::new(Category::Economy, m));
             }
             EntityEvent::Added => {
                 if cx.cue(Category::Production) {
-                    self.event_sound(cx, v, "added", true, timing);
+                    self.event_sound(cx, v, |t| t.added.as_ref(), true, timing);
                 }
                 if self.number_must_be_said(v) {
-                    let t = self.style_text(cx, v, "added_msg");
+                    let style = cx.res.style().get(v.type_name());
+                    let t = self.style_said(v, &style.added_msg);
                     let m = substitute_args(t, &self.ext_title(cx, v));
                     cx.news(News::new(Category::Production, m));
                 }
             }
-            other => {
-                let name = other.text();
-                self.event_sound(cx, v, &name, false, timing);
+            EntityEvent::Death => self.event_sound(cx, v, |t| t.death.as_ref(), false, timing),
+            EntityEvent::LaunchAttack => {
+                self.event_sound(cx, v, |t| t.launch_attack.as_ref(), false, timing)
             }
+            EntityEvent::Missed => self.event_sound(cx, v, |t| t.missed.as_ref(), false, timing),
+            EntityEvent::Enter => self.event_sound(cx, v, |t| t.enter.as_ref(), false, timing),
+            EntityEvent::Exit => self.event_sound(cx, v, |t| t.exit.as_ref(), false, timing),
         }
     }
 
     fn say_reason(&self, cx: &mut Client, r: &Reason) {
-        let m = style_msg(cx.res.style(), "messages", &r.name());
+        let m = cx.res.style().get("messages").refusal_msg(r);
         let news = News::new(Category::Production, m);
         cx.news(news.about(Subject::Refusal(r.clone())));
     }
@@ -733,10 +745,11 @@ impl GameInterface {
             return;
         }
         if cx.cue(Category::Production) {
-            self.event_sound(cx, v, "complete", true, timing);
+            self.event_sound(cx, v, |t| t.complete.as_ref(), true, timing);
         }
         if self.number_must_be_said(v) {
-            let t = self.style_text(cx, v, "complete_msg");
+            let style = cx.res.style().get(v.type_name());
+            let t = self.style_said(v, &style.complete_msg);
             let m = substitute_args(t, &self.title(cx, v));
             cx.news(News::new(Category::Production, m));
         }
@@ -755,10 +768,8 @@ impl GameInterface {
         if v.player() == Some(self.me) {
             self.unit_attacked_alert(cx, v, timing);
         }
-        let s = cx
-            .res
-            .style()
-            .words(attacker_type, &format!("attack_hit_level_{level}"));
+        let hit = cx.res.style().get(attacker_type).attack_hit_at(level);
+        let s = hit.map(|s| s.mine().clone()).unwrap_or_default();
         if !s.is_empty() && timing == Timing::OnTime {
             let sound = s[cx.rng.below(s.len())].clone();
             self.launch_event(cx, v, &sound, 1.0, 0, 0.0, false);
@@ -772,20 +783,20 @@ impl GameInterface {
             && self.attack_alert(cx, place)
             && cx.cue(Category::Alert)
         {
-            self.event_sound(cx, v, "alert", true, timing);
+            self.event_sound(cx, v, |t| t.alert.as_ref(), true, timing);
         }
     }
 
     fn on_lose_fight(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
         if cx.cue(Category::Alert) {
-            self.event_sound(cx, v, "lose_fight", true, timing);
+            self.event_sound(cx, v, |t| t.lose_fight.as_ref(), true, timing);
         }
         self.units_alert_if_needed(cx, v.place());
     }
 
     fn on_win_fight(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
         if cx.cue(Category::Alert) {
-            self.event_sound(cx, v, "win_fight", true, timing);
+            self.event_sound(cx, v, |t| t.win_fight.as_ref(), true, timing);
         }
         self.units_alert_if_needed(cx, None);
     }
@@ -860,11 +871,9 @@ impl GameInterface {
         if t.is_empty() {
             return None;
         }
-        let g = style.words(t, "ground");
-        let attr = format!("move_on_{}", g.first()?);
-        style
-            .has(v.type_name(), &attr)
-            .then(|| style.words(v.type_name(), &attr))
+        let ground = style.get(t).ground.as_ref()?.first()?;
+        let steps = style.get(v.type_name()).move_on.get(ground)?;
+        Some(steps.mine().clone())
     }
 
     /// The footstep sounds of the entity: on the terrain, else on the
@@ -872,7 +881,8 @@ impl GameInterface {
     /// square, else its own.
     fn footstep_noise(&self, cx: &Client, v: &EntityView) -> Vec<String> {
         let style = cx.res.style();
-        let mut result = style.words(v.type_name(), "move");
+        let own = style.get(v.type_name());
+        let mut result = mine(&own.footsteps);
         if v.model.airground != AirGround::Ground {
             return result;
         }
@@ -895,12 +905,15 @@ impl GameInterface {
             if o.model.is_mobile {
                 continue;
             }
-            let g = style.words(o.type_name(), "ground");
+            let g = style
+                .get(o.type_name())
+                .ground
+                .as_deref()
+                .unwrap_or_default();
             let Some(g0) = g.first() else { continue };
-            let attr = format!("move_on_{g0}");
-            if !style.has(v.type_name(), &attr) {
+            let Some(steps) = own.move_on.get(g0) else {
                 continue;
-            }
+            };
             let k = g
                 .get(1)
                 .and_then(|k| soundrts_world::nofloat::py_float(k).ok())
@@ -910,7 +923,7 @@ impl GameInterface {
             }
             let d = distance(o.x(), o.y(), v.x(), v.y()) / k;
             if d < d_min {
-                result = style.words(v.type_name(), &attr);
+                result = steps.mine().clone();
                 d_min = d;
             }
         }
@@ -950,6 +963,7 @@ impl GameInterface {
     }
 
     fn noise_style(&self, cx: &Client, v: &EntityView) -> (String, Noise) {
+        let style = cx.res.style().get(v.type_name());
         let view = self.view();
         let activity = if v.is_memory() {
             view.remembered_activity(v.id())
@@ -958,7 +972,7 @@ impl GameInterface {
         };
         if let Some(a) = activity {
             let attr = format!("noise_when_{a}");
-            let st = self.get_style_noise(cx, v, &attr);
+            let st = self.style_noise(v, style.noise_when.get(&a));
             if st != Noise::Silent {
                 return (attr, st);
             }
@@ -966,19 +980,19 @@ impl GameInterface {
         if v.is_creature() {
             let (hp, hp_max) = (v.hp() as f64, v.hp_max() as f64);
             if hp < hp_max / 3.0 {
-                let st = self.get_style_noise(cx, v, "noise_if_very_damaged");
+                let st = self.style_noise(v, style.noise_if_very_damaged.as_ref());
                 if st != Noise::Silent {
                     return ("noise_if_very_damaged".into(), st);
                 }
             }
             if hp < hp_max * 2.0 / 3.0 {
-                let st = self.get_style_noise(cx, v, "noise_if_damaged");
+                let st = self.style_noise(v, style.noise_if_damaged.as_ref());
                 if st != Noise::Silent {
                     return ("noise_if_damaged".into(), st);
                 }
             }
         }
-        ("noise".into(), self.get_style_noise(cx, v, "noise"))
+        ("noise".into(), self.style_noise(v, style.noise.as_ref()))
     }
 
     fn update_noise(&self, cx: &Client, v: &EntityView, anim: &mut AnimState) {
@@ -1027,10 +1041,11 @@ impl GameInterface {
         {
             let noise = |h: i64| (h as f64 * 10.0 / hp_max as f64).trunc() as i64;
             if hp < previous || noise(hp) != noise(previous) {
-                self.launch_event_style(cx, v, &format!("proportion_{}", noise(hp)), false, 0);
+                let tenths = noise(hp).to_string();
+                self.launch_event_style(cx, v, |t| t.proportion.get(&tenths), false, 0);
             }
             if hp > previous && v.model.is_healable {
-                self.launch_event_style(cx, v, "healed", false, 0);
+                self.launch_event_style(cx, v, |t| t.healed.as_ref(), false, 0);
             }
         }
         anim.previous_hp = Some(hp);

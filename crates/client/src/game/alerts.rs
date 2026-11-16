@@ -14,7 +14,8 @@ use super::entity::EntityView;
 use super::news::must_be_said;
 use super::order::{PRECISION, nb2msg_f};
 use super::squares::summary;
-use super::{ALERT_LIMIT, GameInterface, style_msg};
+use super::{ALERT_LIMIT, GameInterface};
+use crate::style::mine;
 
 /// An attack on a place is news again once the place has been quiet for
 /// this many seconds.
@@ -110,7 +111,7 @@ impl GameInterface {
     pub(crate) fn food_msg(&self, cx: &Client) -> Msg {
         [
             nb2msg_f(self.available_food()),
-            style_msg(cx.res.style(), "parameters", "food_title"),
+            mine(&cx.res.style().get("parameters").food_title),
             msg(Phrase::To),
             nb2msg(self.used_food()),
         ]
@@ -136,7 +137,7 @@ impl GameInterface {
                 if must_be_said(r) || cx.voice.is_unheard(&subject) {
                     let m = [
                         nb2msg(r),
-                        style_msg(cx.res.style(), "parameters", &format!("resource_{i}_title")),
+                        cx.res.style().get("parameters").resource_title_msg(i),
                     ]
                     .concat();
                     self.economy_news(cx, m, subject);

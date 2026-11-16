@@ -54,6 +54,18 @@ fn campaigns() -> Vec<Campaign> {
         .collect()
 }
 
+/// The words of the attribute that the original's test styles call `test`.
+/// The game has no attribute of that name, so the imported test packages
+/// give `shortcut` instead, whose words name nothing (see
+/// [`imported_tests_dir`]).
+fn test_attribute(res: &Resources) -> Vec<String> {
+    res.style()
+        .get("peasant")
+        .shortcut
+        .clone()
+        .unwrap_or_default()
+}
+
 fn text0(res: &Resources) -> Option<String> {
     res.sounds().text("nothing")
 }
@@ -116,17 +128,14 @@ fn test_text_with_locale() {
 #[test]
 fn test_get_style() {
     let res = test_stack();
-    assert_eq!(res.style().words("peasant", "test"), ["nothing"]);
+    assert_eq!(test_attribute(&res), ["nothing"]);
 }
 
 #[test]
 fn test_get_style_with_locale() {
     let mut res = test_stack();
     res.set_language("fr");
-    assert_eq!(
-        res.style().words("peasant", "test"),
-        ["you_are_capitalized"]
-    );
+    assert_eq!(test_attribute(&res), ["you_are_capitalized"]);
 }
 
 #[test]
@@ -154,12 +163,12 @@ fn test_folder_map() {
             res.ai_text(),
             format!("{BASE_AI}\n; file: map1/ai.txt\ndef easy\nget 6 peasant\ngoto -1\n")
         );
-        assert_eq!(res.style().words("peasant", "test"), ["6"]);
+        assert_eq!(test_attribute(&res), ["6"]);
         assert_eq!(text0(&res).as_deref(), Some("map1"));
         res.set_map(None);
         assert_eq!(res.rules_text(), BASE_RULES);
         assert_eq!(res.ai_text(), BASE_AI);
-        assert_eq!(res.style().words("peasant", "test"), ["nothing"]);
+        assert_eq!(test_attribute(&res), ["nothing"]);
         assert_eq!(text0(&res).as_deref(), Some("yes"));
     }
 }
@@ -218,10 +227,7 @@ fn test_campaign_map() {
             res.ai_text(),
             format!("{BASE_AI}\n; file: campaign1/ai.txt\ndef easy\nget 5 peasant\ngoto -1\n")
         );
-        assert_eq!(
-            res.style().words("peasant", "test"),
-            ["what_are_your_orders"]
-        );
+        assert_eq!(test_attribute(&res), ["what_are_your_orders"]);
         assert_eq!(text0(&res).as_deref(), Some("campaign1"));
         res.set_map(None);
         res.set_campaign(None);
@@ -249,7 +255,7 @@ fn test_campaign_map_with_special_rules() {
             "{}",
             res.ai_text()
         );
-        assert_eq!(res.style().words("peasant", "test"), ["7"]);
+        assert_eq!(test_attribute(&res), ["7"]);
         assert_eq!(text0(&res).as_deref(), Some("campaign1 map1"));
         res.set_map(None);
         res.set_campaign(None);

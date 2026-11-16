@@ -11,7 +11,6 @@ use soundrts_world::msg::{Phrase, msg};
 
 use crate::campaign::run_campaign;
 use crate::client::Client;
-use crate::game::style_msg;
 use crate::mapfile::Map;
 use crate::menu::{Action, Choice, Exit, Flow, Menu};
 use crate::net::lobby::{computer_name, seat_name_in_sentence, seat_settings};
@@ -165,7 +164,7 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
                 if faction != p.faction {
                     let label = [
                         seat_name_in_sentence(p),
-                        style_msg(cx.res.style(), &r, "title"),
+                        cx.res.style().get(&r).title_msg(),
                     ]
                     .concat();
                     let action = change(t, pn, move |p| p.faction = faction.clone());

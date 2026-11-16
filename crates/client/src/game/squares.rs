@@ -8,10 +8,11 @@ use soundrts_world::{INF, Place, SquareId};
 use crate::audio::{angle, distance};
 use crate::client::Client;
 
+use super::GameInterface;
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::entity::EntityView;
 use super::focus::Zoom;
-use super::{GameInterface, style_msg};
+use crate::style::mine;
 
 /// Keeps the first of each equal item, in order.
 pub fn remove_duplicates<T: PartialEq + Clone>(l: &[T]) -> Vec<T> {
@@ -118,7 +119,7 @@ impl GameInterface {
         let view = self.view();
         let terrain = view.terrain(place);
         if !terrain.is_empty() {
-            let title = style_msg(cx.res.style(), terrain, "title");
+            let title = cx.res.style().get(terrain).title_msg();
             if !title.is_empty() {
                 result.extend(comma());
                 result.extend(title);
@@ -297,7 +298,7 @@ impl GameInterface {
         dyc: i64,
     ) -> (Msg, bool) {
         let style = cx.res.style();
-        let no_path = style_msg(style, "parameters", "no_path_in_this_direction");
+        let no_path = mine(&style.get("parameters").no_path_in_this_direction);
         let Some(new_square) = new_square.filter(|&s| s != place) else {
             return (no_path, true);
         };
@@ -325,7 +326,7 @@ impl GameInterface {
                 || dyc == -1 && v.y() < y
             {
                 let prefix = if cx.config.parameters.play_movement_sound {
-                    style_msg(style, v.type_name(), "when_moving_through")
+                    mine(&style.get(v.type_name()).when_moving_through)
                 } else {
                     Vec::new()
                 };
@@ -655,7 +656,8 @@ impl GameInterface {
             if t.is_empty() {
                 continue;
             }
-            let st = cx.res.style().noise(t, "noise");
+            let st = cx.res.style().get(t).noise.clone();
+            let st = st.unwrap_or(crate::style::Noise::Silent);
             if let Some(n) = NoiseSource::new("noise", &st) {
                 kept.push((s, n));
             }

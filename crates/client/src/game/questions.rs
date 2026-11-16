@@ -12,11 +12,12 @@ use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
 
+use super::GameInterface;
 use super::command::UnitFilter;
 use super::order::{PRECISION, substitute_args};
 use super::selection::TypeFilter;
 use super::squares::summary;
-use super::{GameInterface, compute_title, style_msg};
+use crate::style::mine;
 
 /// How the strength on the player's side of a fight compares with the
 /// enemies'.
@@ -62,13 +63,13 @@ impl GameInterface {
             let Some((o, left)) = v.orders().first().and_then(|o| Some((o, o.time_left?))) else {
                 continue;
             };
-            let mut m = style_msg(style, o.keyword.as_str(), "title");
+            let mut m = style.get(o.keyword.as_str()).title_msg();
             if let Some(t) = o.type_id {
                 let name = &self.view().unit_type_by_id(t).name;
-                m = substitute_args(m, &style_msg(style, name, "title"));
+                m = substitute_args(m, &style.get(name).title_msg());
             }
             if o.is_deferred {
-                m.extend(style_msg(style, "messages", "production_deferred"));
+                m.extend(mine(&style.get("messages").production_deferred));
             } else {
                 m.extend(nb2msg((left + 999) / 1000));
                 m.extend(msg(Phrase::Seconds));
@@ -140,11 +141,7 @@ impl GameInterface {
                 m.extend(comma());
                 m.extend(nb2msg(n));
                 m.extend(msg(Phrase::On));
-                m.extend(style_msg(
-                    cx.res.style(),
-                    "parameters",
-                    &format!("resource_{i}_title"),
-                ));
+                m.extend(cx.res.style().get("parameters").resource_title_msg(i));
             }
         }
         if building > 0 {
@@ -193,7 +190,7 @@ impl GameInterface {
         let Some(faction) = factions.get(p.0 as usize) else {
             return Msg::new();
         };
-        let title = compute_title(cx.res.style(), faction);
+        let title = cx.res.style().get(faction).title_names();
         if title.is_empty() {
             vec![MsgPart::Literal(faction.clone())]
         } else {
@@ -204,13 +201,11 @@ impl GameInterface {
     /// Every resource the rules define: "120 gold , 80 wood , 10 stone".
     pub(crate) fn cmd_all_resources_status(&self, cx: &mut Client) {
         let style = cx.res.style();
-        let resources = self.resources().into_iter().enumerate().map(|(i, n)| {
-            [
-                nb2msg(n),
-                style_msg(style, "parameters", &format!("resource_{i}_title")),
-            ]
-            .concat()
-        });
+        let resources = self
+            .resources()
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| [nb2msg(n), style.get("parameters").resource_title_msg(i)].concat());
         cx.voice.item(&join(resources));
     }
 
@@ -280,7 +275,7 @@ impl GameInterface {
             cx.voice.item(&msg(Phrase::Nothing));
             return;
         };
-        let mut m = compute_title(cx.res.style(), &e.type_name);
+        let mut m = cx.res.style().get(&e.type_name).title_names();
         m.extend(comma());
         if s.damage > 0 {
             m.extend(msg(Phrase::Damage));
