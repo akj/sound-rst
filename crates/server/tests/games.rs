@@ -627,7 +627,6 @@ async fn a_command_takes_effect_and_one_from_outside_the_game_is_refused() {
 
 #[tokio::test]
 async fn a_seat_that_stops_reading_is_caught_up_and_holds_up_nobody() {
-    let t0 = Instant::now();
     let server = hosting_server(|c| c.send_buffer = Some(2048));
     let addr = server.local_addr();
     let (andrew, _) = Client::hello(addr, "andrew").await;
@@ -643,20 +642,11 @@ async fn a_seat_that_stops_reading_is_caught_up_and_holds_up_nobody() {
             )
         })
         .await;
-    eprintln!("DIAG hello {:?}", t0.elapsed());
     room(&mut clients, 2).await;
-    eprintln!("DIAG room {:?}", t0.elapsed());
     let mut seats = start(clients, &texts()).await;
-    eprintln!("DIAG start {:?}", t0.elapsed());
     let (a, b) = seats.split_at_mut(1);
     let (a, b) = (&mut a[0], &mut b[0]);
     tokio::join!(a.play_to(2), b.play_to(2));
-    eprintln!(
-        "DIAG play2 {:?} a {} b {}",
-        t0.elapsed(),
-        a.time(),
-        b.time()
-    );
 
     // Bob stops reading, but keeps sending his units one way then the
     // other, so that each turn he is told their answers and moves, and his
@@ -682,12 +672,6 @@ async fn a_seat_that_stops_reading_is_caught_up_and_holds_up_nobody() {
         }
     };
     tokio::join!(a.read_for(stalled), orders);
-    eprintln!(
-        "DIAG stall {:?} a {} b {}",
-        t0.elapsed(),
-        a.time(),
-        b.time()
-    );
     let gaps: Vec<Duration> = a.arrivals[before..]
         .windows(2)
         .map(|w| w[1] - w[0])
@@ -702,16 +686,18 @@ async fn a_seat_that_stops_reading_is_caught_up_and_holds_up_nobody() {
     assert!(mean < TURN * 2, "mean {mean:?}");
     assert!(longest < TURN * 6, "longest {longest:?}");
 
-    // Bob reads again: the turns he was not sent come as one change.
+    // Bob reads again: the turns he was not sent come as one change, which
+    // takes him to where the game is by then. Whoever is behind reads on.
     let at = a.time() / 300;
     b.play_to(at + 5).await;
-    eprintln!(
-        "DIAG bcatch {:?} a {} b {}",
-        t0.elapsed(),
-        a.time(),
-        b.time()
-    );
-    a.play_to(at + 5).await;
+    while a.time() != b.time() {
+        let (behind, ahead) = if a.time() < b.time() {
+            (&mut *a, &*b)
+        } else {
+            (&mut *b, &*a)
+        };
+        behind.play_to(ahead.time() / 300).await;
+    }
     let skipped = b
         .history
         .windows(2)
