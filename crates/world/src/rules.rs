@@ -23,6 +23,10 @@ use crate::ai::script::Script;
 use crate::defs::{bounded, check_size, preprocess_within_limits};
 use crate::nofloat::{PRECISION, py_int, to_int};
 
+mod properties;
+
+use properties::Written;
+
 /// Game time between two world updates, in milliseconds.
 pub const VIRTUAL_TIME_INTERVAL: i64 = 300;
 /// The largest number of resource types a map can use.
@@ -292,74 +296,6 @@ fn without_level(attr: &str) -> Option<&str> {
     (end.get(..7)? == "_level_").then_some(base)
 }
 
-const STRING_PROPERTIES: &[&str] = &["airground_type"];
-
-const INT_PROPERTIES: &[&str] = &[
-    "nb_of_resource_types",
-    "collision",
-    "corpse",
-    "food_cost",
-    "food_provided",
-    "harm_level",
-    "heal_level",
-    "resource_type",
-    "is_repairable",
-    "is_healable",
-    "is_vulnerable",
-    "is_undead",
-    "is_a_building_land",
-    "is_buildable_anywhere",
-    "bonus_height",
-    "transport_capacity",
-    "transport_volume",
-    "is_invisible",
-    "is_cloakable",
-    "is_a_detector",
-    "is_a_cloaker",
-    "universal_notification",
-    "presence",
-    "provides_survival",
-    "is_ballistic",
-    "is_teleportable",
-    "is_a_gate",
-    "is_buildable_on_exits_only",
-    "is_buildable_near_water_only",
-    "count_limit",
-];
-
-const PRECISION_PROPERTIES: &[&str] = &[
-    "armor",
-    "damage",
-    "minimal_damage",
-    "damage_radius",
-    "range",
-    "minimal_range",
-    "decay",
-    "qty",
-    "extraction_qty",
-    "hp_max",
-    "mana_cost",
-    "mana_max",
-    "mana_start",
-    "extraction_time",
-    "time_cost",
-    "cooldown",
-    "hp_regen",
-    "mana_regen",
-    "speed",
-    "effect_range",
-    "effect_radius",
-    "sight_range",
-    "cloaking_range",
-    "detection_range",
-];
-
-fn is_precision_property(k: &str) -> bool {
-    PRECISION_PROPERTIES.contains(&k)
-        || k.strip_suffix("_bonus")
-            .is_some_and(|base| PRECISION_PROPERTIES.contains(&base))
-}
-
 /// Reads definition text into `defs` (`_Definitions.read` with the
 /// property types of `Rules`). A line that cannot be read is skipped with a
 /// warning, like the original. A text over a limit is an error.
@@ -408,41 +344,42 @@ fn read_rules_text(s: &str, d: &mut Definitions, warnings: &mut Vec<String>) -> 
 /// it cannot be read.
 fn property_value(w0: &str, args: &[String]) -> Option<RawValue> {
     let first = || args.first();
-    Some(if STRING_PROPERTIES.contains(&w0) {
-        RawValue::Str(first()?.clone())
-    } else if INT_PROPERTIES.contains(&w0) {
-        RawValue::Int(int(first()?)?)
-    } else if is_precision_property(w0) {
-        let v = match first()?.as_str() {
-            "square" if w0 == "effect_range" => "6",
-            "nearby" if w0 == "effect_range" => "12",
-            "anywhere" | "inf" if w0 == "effect_range" => "2147483",
-            "inf" => "2147483",
-            other => other,
-        };
-        RawValue::Int(decimal(v)?)
-    } else if w0 == "storable_resource_types" {
-        RawValue::IntList(args.iter().map(|x| int(x)).collect::<Option<_>>()?)
-    } else if w0 == "cost" || w0 == "storage_bonus" {
-        RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
-    } else {
-        let mut words = args.to_vec();
-        if w0 == "effect" && first()? == "bonus" {
-            if is_precision_property(args.get(1)?) {
-                for w in words.iter_mut().skip(2).take(2) {
-                    *w = decimal(w)?.to_string();
-                }
-                args.get(2)?;
-            } else {
-                // The simulation reads these as integers and adds them.
-                for w in words.iter().skip(2).take(2) {
-                    if py_int(w).is_ok() {
-                        int(w)?;
+    Some(match properties::written(w0) {
+        Written::Text => RawValue::Str(first()?.clone()),
+        Written::Int => RawValue::Int(int(first()?)?),
+        Written::Decimal => {
+            let v = match first()?.as_str() {
+                "square" if w0 == "effect_range" => "6",
+                "nearby" if w0 == "effect_range" => "12",
+                "anywhere" | "inf" if w0 == "effect_range" => "2147483",
+                "inf" => "2147483",
+                other => other,
+            };
+            RawValue::Int(decimal(v)?)
+        }
+        Written::Ints => RawValue::IntList(args.iter().map(|x| int(x)).collect::<Option<_>>()?),
+        Written::Decimals => {
+            RawValue::IntList(args.iter().map(|x| decimal(x)).collect::<Option<_>>()?)
+        }
+        Written::Words => {
+            let mut words = args.to_vec();
+            if w0 == "effect" && first()? == "bonus" {
+                if properties::written(args.get(1)?) == Written::Decimal {
+                    for w in words.iter_mut().skip(2).take(2) {
+                        *w = decimal(w)?.to_string();
+                    }
+                    args.get(2)?;
+                } else {
+                    // The simulation reads these as integers and adds them.
+                    for w in words.iter().skip(2).take(2) {
+                        if py_int(w).is_ok() {
+                            int(w)?;
+                        }
                     }
                 }
             }
+            RawValue::Words(words)
         }
-        RawValue::Words(words)
     })
 }
 
@@ -514,21 +451,6 @@ impl BaseClass {
         })
     }
 
-    /// Whether the Python base class has an attribute called `k` that is
-    /// not a method. A rules property that is not one of them is dropped
-    /// with a warning.
-    fn has_attribute(self, k: &str) -> bool {
-        let lists: &[&[&str]] = match self {
-            BaseClass::Worker => &[CREATURE_ATTRS, UNIT_ATTRS, WORKER_ATTRS],
-            BaseClass::Soldier | BaseClass::Effect => &[CREATURE_ATTRS, UNIT_ATTRS],
-            BaseClass::Building => &[CREATURE_ATTRS, BUILDING_ATTRS],
-            BaseClass::Deposit => &[DEPOSIT_ATTRS],
-            BaseClass::Upgrade => &[UPGRADE_ATTRS],
-            BaseClass::Ability => &[ABILITY_ATTRS],
-        };
-        lists.iter().any(|l| l.contains(&k))
-    }
-
     fn is_creature(self) -> bool {
         matches!(
             self,
@@ -536,190 +458,6 @@ impl BaseClass {
         )
     }
 }
-
-/// Attributes shared by every creature class (worldunit.Creature and
-/// worldentity.Entity), as listed by `dir()` without the methods.
-const CREATURE_ATTRS: &[&str] = &[
-    "_previous_square",
-    "_rotations",
-    "_smooth_rotations",
-    "action_target",
-    "activity",
-    "ai_mode",
-    "airground_type",
-    "any_land",
-    "armor",
-    "armor_vs",
-    "basic_abilities",
-    "blocked_exit",
-    "bonus_height",
-    "building_land",
-    "can_build",
-    "can_research",
-    "can_switch_ai_mode",
-    "can_train",
-    "can_upgrade_to",
-    "can_use",
-    "cloaking_range",
-    "collision",
-    "cooldown",
-    "corpse",
-    "cost",
-    "count_limit",
-    "damage",
-    "damage_level",
-    "damage_radius",
-    "damage_vs",
-    "decay",
-    "detection_range",
-    "distance_to_goal",
-    "expanded_is_a",
-    "food_cost",
-    "food_provided",
-    "group",
-    "harm_level",
-    "harm_target_type",
-    "heal_level",
-    "height",
-    "hp_delta",
-    "hp_max",
-    "hp_regen",
-    "id",
-    "inside",
-    "is_a",
-    "is_a_building",
-    "is_a_building_land",
-    "is_a_cloaker",
-    "is_a_detector",
-    "is_a_gate",
-    "is_a_unit",
-    "is_ballistic",
-    "is_buildable_anywhere",
-    "is_cloakable",
-    "is_cloaked",
-    "is_fully_repaired",
-    "is_healable",
-    "is_idle",
-    "is_inside",
-    "is_invisible",
-    "is_melee",
-    "is_memory",
-    "is_moving",
-    "is_near_water",
-    "is_repairable",
-    "is_teleportable",
-    "is_undead",
-    "is_vulnerable",
-    "mana_max",
-    "mana_regen",
-    "mana_start",
-    "menace",
-    "minimal_range",
-    "next_attack_time",
-    "number",
-    "o",
-    "place",
-    "player",
-    "presence",
-    "provides_survival",
-    "qty",
-    "radius",
-    "rallying_point",
-    "range",
-    "repair_cost",
-    "requirements",
-    "sight_range",
-    "speed",
-    "speed_on_terrain",
-    "splash",
-    "stat_type",
-    "storable_resource_types",
-    "storage_bonus",
-    "target_types",
-    "time_cost",
-    "time_limit",
-    "transport_capacity",
-    "transport_volume",
-    "type_name",
-    "upgrades",
-    "walked",
-    "x",
-    "y",
-];
-/// worldunit.Unit adds these.
-const UNIT_ATTRS: &[&str] = &["_basic_abilities", "_destination"];
-/// worldunit.Worker adds these.
-const WORKER_ATTRS: &[&str] = &["auto_gather", "auto_repair", "cargo"];
-/// worldunit.Building adds these.
-const BUILDING_ATTRS: &[&str] = &["is_buildable_near_water_only", "is_buildable_on_exits_only"];
-const DEPOSIT_ATTRS: &[&str] = &[
-    "_previous_square",
-    "activity",
-    "airground_type",
-    "any_land",
-    "blocked_exit",
-    "bonus_height",
-    "building_land",
-    "cloaking_range",
-    "collision",
-    "detection_range",
-    "extraction_qty",
-    "extraction_time",
-    "harm_level",
-    "id",
-    "is_a_building_land",
-    "is_a_cloaker",
-    "is_a_detector",
-    "is_cloakable",
-    "is_cloaked",
-    "is_healable",
-    "is_inside",
-    "is_invisible",
-    "is_memory",
-    "is_moving",
-    "is_near_water",
-    "is_repairable",
-    "is_teleportable",
-    "is_undead",
-    "is_vulnerable",
-    "menace",
-    "o",
-    "place",
-    "player",
-    "qty",
-    "radius",
-    "resource_regen",
-    "resource_type",
-    "sight_range",
-    "speed",
-    "speed_on_terrain",
-    "time_limit",
-    "transport_capacity",
-    "transport_volume",
-    "x",
-    "y",
-];
-const UPGRADE_ATTRS: &[&str] = &[
-    "cost",
-    "count_limit",
-    "effect",
-    "food_cost",
-    "requirements",
-    "time_cost",
-];
-const ABILITY_ATTRS: &[&str] = &[
-    "cost",
-    "count_limit",
-    "effect",
-    "effect_radius",
-    "effect_range",
-    "effect_target",
-    "food_cost",
-    "mana_cost",
-    "requirements",
-    "time_cost",
-    "universal_notification",
-];
 
 macro_rules! stats {
     ($($name:ident),* $(,)?) => {
@@ -1508,10 +1246,7 @@ fn interpret(d: &mut Def, base: BaseClass, name: &str, nb_res: usize, warnings: 
         if k == "class" {
             continue;
         }
-        let known = base.has_attribute(&k)
-            || k.strip_suffix("_bonus")
-                .is_some_and(|s| base.has_attribute(s));
-        if !known {
+        if !properties::is_held_by(&k, base) {
             def_remove(d, &k);
             warnings.push(format!(
                 "in {name}: {base:?} doesn't have any attribute called '{k}'"
