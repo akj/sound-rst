@@ -66,6 +66,7 @@ pub const IN_THE_FOG: &[u64] = &[4209];
 pub const IS_NOW_ON: &[u64] = &[4263];
 pub const IS_NOW_OFF: &[u64] = &[4264];
 pub const LEAVE_THIS_GAME: &[u64] = &[4061]; // explanation of QUIT2
+pub const LEVEL: &[u64] = &[40];
 pub const LOADING: &[u64] = &[4322];
 pub const LOST: &[u64] = &[146];
 pub const MAKE_A_SELECTION: &[u64] = &[4030]; // explanation of MENU

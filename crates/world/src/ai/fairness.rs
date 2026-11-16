@@ -6,7 +6,7 @@ use std::sync::Arc;
 use super::tests::world;
 use super::*;
 use crate::entity::{MemoryRef, PlayerId, Target};
-use crate::msg::{Msg, MsgPart, msg};
+use crate::msg::{Msg, MsgPart, msg, nb2msg};
 use crate::msgparts as mp;
 use crate::player::{Controller, Remembrance};
 use crate::world::World;
@@ -179,14 +179,31 @@ fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
 fn a_computer_is_named_for_its_handicap() {
     let words = |m: Msg| m.iter().map(MsgPart::to_string).collect::<Vec<_>>();
     assert_eq!(
-        words(computer_name("ai2")),
+        words(computer_name("ai2", Skill::Level5)),
         [
             "random computer",
             "with unlimited resources and no requirements"
         ]
     );
-    assert_eq!(computer_name("aggressive"), msg(mp::AGGRESSIVE_COMPUTER));
-    assert_eq!(computer_name("easy"), msg(mp::QUIET_COMPUTER));
+    assert_eq!(
+        computer_name("aggressive", Skill::Level1),
+        [
+            MsgPart::Num(4257),
+            MsgPart::Num(9998),
+            MsgPart::Num(40),
+            MsgPart::Num(1_000_001)
+        ]
+    );
+    assert_eq!(
+        computer_name("easy", Skill::NORMAL),
+        [
+            msg(mp::QUIET_COMPUTER),
+            msg(mp::COMMA),
+            msg(mp::LEVEL),
+            nb2msg(3)
+        ]
+        .concat()
+    );
 }
 
 #[test]

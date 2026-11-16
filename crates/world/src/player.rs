@@ -751,11 +751,13 @@ impl Player {
     }
 
     /// The name said to the other players: a person's login, or the name
-    /// of a computer's type, which says its handicap.
+    /// of a computer's type, which says its level and its handicap.
     pub fn name(&self) -> Msg {
         match &self.controller.kind {
             ControllerKind::Neutral => Vec::new(),
-            ControllerKind::Computer { ai_type, .. } => handicapped_name(ai_type, self.handicap),
+            ControllerKind::Computer { ai_type, skill } => {
+                handicapped_name(ai_type, *skill, self.handicap)
+            }
             ControllerKind::Human { login, .. } => vec![MsgPart::Literal(login.clone())],
         }
     }

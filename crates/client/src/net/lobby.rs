@@ -197,7 +197,7 @@ pub fn player_name(p: &SlotPlayer) -> Msg {
 }
 
 pub fn computer_name(level: AiLevel) -> Msg {
-    soundrts_world::computer_name(level.ai_type())
+    soundrts_world::computer_name(level.ai_type(), soundrts_world::Skill::NORMAL)
 }
 
 /// Names separated by short silences (`insert_silences`).

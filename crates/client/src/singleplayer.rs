@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use soundrts_world::msg::{MsgPart, msg};
 use soundrts_world::msgparts as mp;
-use soundrts_world::{Rules, computer_name};
+use soundrts_world::{Rules, Skill, computer_name};
 
 use crate::campaign::run_campaign;
 use crate::client::Client;
@@ -137,7 +137,7 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
     if n < map.nb_players_max {
         for ai_type in ["easy", "aggressive", "ai2"] {
             menu.append(
-                [msg(mp::INVITE), computer_name(ai_type)].concat(),
+                [msg(mp::INVITE), computer_name(ai_type, Skill::NORMAL)].concat(),
                 add_ai(t, ai_type),
                 None,
             );

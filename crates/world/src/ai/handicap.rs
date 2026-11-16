@@ -1,7 +1,8 @@
 //! What a computer type may do that a human may not, and its name, which
 //! says so. A fair computer has no handicap.
 
-use crate::msg::{Msg, MsgPart, msg};
+use super::Skill;
+use crate::msg::{Msg, MsgPart, msg, nb2msg};
 use crate::msgparts as mp;
 use crate::nofloat::PRECISION;
 
@@ -53,22 +54,29 @@ impl Handicap {
     }
 }
 
-/// The name of a computer of an AI type, with its handicap, as players
-/// choose it and hear it: "quiet computer", "aggressive computer",
-/// "random computer with unlimited resources and no requirements". Another
-/// type of `ai.txt` is named by its login, `ai_` and the type.
-pub fn computer_name(ai_type: &str) -> Msg {
-    handicapped_name(ai_type, Handicap::of(ai_type))
+/// The name of a computer of an AI type at a level, with its handicap, as
+/// players choose it and hear it: "quiet computer, level 3", "aggressive
+/// computer, level 1", "random computer with unlimited resources and no
+/// requirements". Another type of `ai.txt` is named by its login, `ai_` and
+/// the type, then its level. The random computer's level changes nothing,
+/// so its name has none.
+pub fn computer_name(ai_type: &str, skill: Skill) -> Msg {
+    handicapped_name(ai_type, skill, Handicap::of(ai_type))
 }
 
-/// The name of a computer of an AI type with this handicap.
-pub(crate) fn handicapped_name(ai_type: &str, handicap: Handicap) -> Msg {
+/// The name of a computer of an AI type at a level with this handicap.
+pub(crate) fn handicapped_name(ai_type: &str, skill: Skill, handicap: Handicap) -> Msg {
     let mut name = match ai_type {
         "easy" => msg(mp::QUIET_COMPUTER),
         "aggressive" => msg(mp::AGGRESSIVE_COMPUTER),
         RANDOM_AI_TYPE => vec![MsgPart::from("random computer")],
         other => vec![MsgPart::Literal(format!("ai_{other}"))],
     };
+    if ai_type != RANDOM_AI_TYPE {
+        name.extend(msg(mp::COMMA));
+        name.extend(msg(mp::LEVEL));
+        name.extend(nb2msg(skill.number().into()));
+    }
     name.extend(handicap.words().map(MsgPart::from));
     name
 }
