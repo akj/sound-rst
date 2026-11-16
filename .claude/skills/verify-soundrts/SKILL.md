@@ -38,7 +38,7 @@ pwsh -NoProfile -File .claude/skills/verify-soundrts/verify.ps1 doctor
 Run `doctor` first whenever something looks off. It checks four things and stops at the first that fails:
 
 1. `rustc` is the version that `rust-toolchain.toml` pins.
-2. `vendor/soundrts-upstream` is the commit that `scripts/upstream-commit.txt` pins.
+2. `vendor/soundrts-upstream.commit`, which the fetch script writes, names the commit that `scripts/upstream-commit.txt` pins.
 3. The built program starts with `--probe` and finds that data.
 4. The harness builds a client on that data and walks the main menu on the recorded devices.
 
