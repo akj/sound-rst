@@ -248,6 +248,34 @@ fn the_same_menu_speaks_french() {
     );
 }
 
+/// A speaker fixes the game's French in a language file of the player's
+/// folder, and hears the fix at the next start.
+#[test]
+fn a_language_file_in_the_players_folder_overrides_the_games_words() {
+    let user_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(user_dir.path().join("text")).unwrap();
+    std::fs::write(
+        user_dir.path().join("text/fr.txt"),
+        "# Mes corrections.\nsingle_player = Partie solo,\n",
+    )
+    .unwrap();
+    let script = Script::new()
+        .at(5.0)
+        .tap(Key::Down)
+        .at(10.0)
+        .tap(Key::Escape);
+    let mut h = Harness::with_player_folder("fr", script, Default::default(), user_dir);
+    assert_eq!(main_menu(&mut h.client), Ok(()));
+    assert_eq!(
+        h.spoken(),
+        [
+            "SoundRTS 1.3.8.1  , Que souhaitez-vous ?",
+            "Partie solo, , jouer seul sur votre ordinateur",
+            "Quitter,",
+        ]
+    );
+}
+
 #[test]
 fn a_letter_selects_the_next_item_starting_with_it() {
     let script = Script::new()

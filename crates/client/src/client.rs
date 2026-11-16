@@ -148,7 +148,7 @@ pub fn open_resources(
     package_paths.extend(paths.additional_package_paths(&packages.base, &packages.additional));
     let mut res = Resources::new(
         package_paths,
-        paths.downloaded(),
+        paths.user.clone(),
         preferred_language,
         params,
         log.clone(),

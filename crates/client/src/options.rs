@@ -20,6 +20,9 @@ pub struct Options {
     /// Converts the original game, or one of its mods, campaigns or maps,
     /// into the files the game reads, then exits: from, then to.
     pub import: Option<(PathBuf, PathBuf)>,
+    /// Lists the phrases that a language lacks, then exits: a language
+    /// code, or `all` for how many each language lacks.
+    pub untranslated: Option<String>,
 }
 
 /// A command line the program cannot follow.
@@ -30,7 +33,7 @@ impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data] [--check-record <file>] [--import <from> <to>]",
+            "{}\nusage: soundrts [--root <folder>] [-m|--mods <mods>] [-s|--soundpacks <soundpacks>] [--probe] [--fetch-data] [--check-record <file>] [--import <from> <to>] [--untranslated <language>|all]",
             self.0
         )
     }
@@ -65,6 +68,10 @@ impl Options {
                 }
                 "--probe" => options.probe = true,
                 "--fetch-data" => options.fetch_data = true,
+                "--untranslated" => {
+                    options.untranslated =
+                        Some(value("--untranslated")?.to_string_lossy().into_owned())
+                }
                 "--check-record" => {
                     options.check_record = Some(PathBuf::from(value("--check-record")?))
                 }
@@ -110,6 +117,7 @@ mod tests {
                 fetch_data: false,
                 check_record: None,
                 import: None,
+                untranslated: None,
             })
         );
         assert_eq!(
@@ -122,6 +130,11 @@ mod tests {
             Ok(Some("game.jsonl".into()))
         );
         assert!(parse(&["--check-record"]).is_err());
+        assert_eq!(
+            parse(&["--untranslated", "cs"]).map(|o| o.untranslated),
+            Ok(Some("cs".into()))
+        );
+        assert!(parse(&["--untranslated"]).is_err());
         assert_eq!(
             parse(&["--fetch-data"]),
             Ok(Options {

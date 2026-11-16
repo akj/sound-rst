@@ -336,6 +336,27 @@ fn translate(cache: &mut SoundCache) {
     }
 }
 
+/// A language file in the player's folder that cannot be read is refused
+/// whole, with its line in the log, and the game says its own words.
+#[test]
+fn a_hostile_language_file_in_the_players_folder_is_refused() {
+    let user_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(user_dir.path().join("text")).unwrap();
+    let mut bad = b"single_player = Partie solo,\n".to_vec();
+    bad.extend_from_slice(&[0xff, 0xfe, 0x00, b'\n']);
+    bad.extend_from_slice(b"../../evil = x\n");
+    std::fs::write(user_dir.path().join("text/fr.txt"), bad).unwrap();
+    let script = Script::new().at(5.0).tap(soundrts::input::Key::Down);
+    let mut h = Harness::with_player_folder("fr", script, Default::default(), user_dir);
+    let _ = soundrts::mainmenu::main_menu(&mut h.client);
+    assert_eq!(
+        h.spoken()[1],
+        "Un seul joueur, , jouer seul sur votre ordinateur"
+    );
+    let log = h.log_text();
+    assert!(log.contains("text/fr.txt is refused: line 2:"), "{log}");
+}
+
 #[test]
 fn hostile_interface_files_are_read_without_a_panic() {
     let files = files();

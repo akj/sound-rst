@@ -45,6 +45,7 @@ pub mod sound_cache;
 pub mod style;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
+pub mod translation;
 pub mod tts;
 pub mod upstream;
 pub mod voice;

@@ -18,7 +18,7 @@ use soundrts::rodio_output::RodioOutput;
 use soundrts::tts::screen_reader_speech;
 use soundrts::upstream::{self, MissingData};
 use soundrts::window::{self, WindowCommand, WindowLink};
-use soundrts::{mainmenu, notice, probe};
+use soundrts::{mainmenu, notice, probe, translation};
 
 fn main() -> ExitCode {
     let options = match Options::parse(std::env::args_os().skip(1)) {
@@ -36,6 +36,18 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 notice::fatal(&e.to_string());
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if let Some(language) = &options.untranslated {
+        return match translation::report(&options, language) {
+            Ok(report) => {
+                notice::print(&report);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                notice::fatal(&e);
                 ExitCode::FAILURE
             }
         };

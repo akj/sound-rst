@@ -1,10 +1,10 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, and part 11, the names of the sounds, added after `274f9b9`.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, and part 13, a translation in the settings folder, added with issue #93.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
-The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 and part 11 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
+The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6, part 11 and part 13 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
 
 ## How to report
 
@@ -325,3 +325,31 @@ The game no longer reads the original's files. It reads files that an import mad
 12.10. Set the language back. In Options, switch the orc mod on, and start a training game on jl1. Expected: the orc units have their names, such as "peon" and "great hall".
 
 12.11. In a terminal, run `soundrts --root vendor/soundrts-upstream --probe`, or `cargo run -p soundrts -- --root vendor/soundrts-upstream --probe`. Expected: no game starts. The message says that the folder holds the files of the original game, and names the command `soundrts --import`.
+
+## Part 13. A translation in the settings folder
+
+A language file in the settings folder changes what the game says, so that a speaker can correct a translation or add one with a text editor. This part needs only you and a text editor. It changes your `settings.toml` and adds a file to the settings folder: step 13.9 puts them back. For a step that fails, report what you heard: "13.5 fail: still Un seul joueur".
+
+13.1. Close the game. In a terminal in the repository, run `cargo run --release -p soundrts -- --root vendor/game-data --untranslated fr > untranslated.txt`, and open `untranslated.txt` in your editor. Expected: the first line starts with "fr lacks 169 of the 629 phrases", and names the file `C:\Users\andrew\AppData\Roaming\SoundRTS\text\fr.txt`.
+
+13.2. Read on in `untranslated.txt`. Expected: a line "# The phrases of sound-rst: 163 missing.", then a note that starts with "# The help of the cheat console", then the line that starts with "console_help = p: pause/unpause".
+
+13.3. In `%APPDATA%\SoundRTS`, make a folder `text`. In it, make a file `fr.txt` with these three lines, and save it:
+
+```
+single_player = Partie solo,
+random_computer = ordinateur au hasard
+with_unlimited_resources_and_no_requirements = avec des ressources illimitées et sans prérequis
+```
+
+13.4. Note the `language` line of `%APPDATA%\SoundRTS\settings.toml`, if it has one, and write `language = "fr"` in its place.
+
+13.5. Start the game with `cargo run --release -p soundrts -- --root vendor/game-data`. Expected: "SoundRTS 1.3.8.1, Que souhaitez-vous ?". Press Down. Expected: a click, then "Partie solo, jouer seul sur votre ordinateur".
+
+13.6. Press Enter, choose the item that starts a game on a map, and choose jl1. In the menu of the game, press Down until the third computer. Expected: "inviter ordinateur au hasard avec des ressources illimitées et sans prérequis". The accented letters are said as French.
+
+13.7. Quit the game. Add a fourth line to your `fr.txt` with the single word `oops`, and save. Start the game and press Down. Expected: "Un seul joueur, jouer seul sur votre ordinateur": the game ignores the whole file.
+
+13.8. Run the command of 13.1 again. Expected: the first line says that the game refuses your `fr.txt` whole, and ends with "line 4: not 'name = words'."
+
+13.9. Delete the `text` folder you made, and put back the `language` line of `settings.toml` as you noted it in 13.4.

@@ -10,18 +10,24 @@ use crate::options::Options;
 use crate::paths::Paths;
 use crate::resource::preferred_language;
 
-/// The probe report.
-pub fn report(options: &Options) -> Result<String, String> {
-    let paths = Paths::from_environment(options.root.as_deref()).map_err(|e| e.to_string())?;
-    let log = Log::stderr();
+/// The player's settings, else the defaults, without writing a file.
+pub fn read_config(paths: &Paths, log: &Log) -> Config {
     let config_file = paths.settings_file();
-    let config = match std::fs::read(&config_file) {
+    match std::fs::read(&config_file) {
         Ok(bytes) => Config::from_toml(&String::from_utf8_lossy(&bytes)).unwrap_or_else(|e| {
             log.warning(format!("{} is refused: {e}", config_file.display()));
             Config::default()
         }),
         Err(_) => Config::default(),
-    };
+    }
+}
+
+/// The probe report.
+pub fn report(options: &Options) -> Result<String, String> {
+    let paths = Paths::from_environment(options.root.as_deref()).map_err(|e| e.to_string())?;
+    let log = Log::stderr();
+    let config_file = paths.settings_file();
+    let config = read_config(&paths, &log);
     let mods = options.mods.clone().unwrap_or_else(|| config.mods.clone());
     let soundpacks = options
         .soundpacks

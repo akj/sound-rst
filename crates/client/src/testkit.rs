@@ -1236,6 +1236,17 @@ impl Harness {
 
     pub fn with_config(language: &str, script: Script, config: Config) -> Harness {
         let user_dir = tempfile::tempdir().expect("temporary folder");
+        Self::with_player_folder(language, script, config, user_dir)
+    }
+
+    /// A client whose player's folder is `user_dir`, which may already hold
+    /// files of the player, such as a language file.
+    pub fn with_player_folder(
+        language: &str,
+        script: Script,
+        config: Config,
+        user_dir: tempfile::TempDir,
+    ) -> Harness {
         let paths = Paths {
             root: game_root(),
             user: user_dir.path().to_path_buf(),

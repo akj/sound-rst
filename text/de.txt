@@ -1,0 +1,4 @@
+# The words of the phrases that sound-rst adds to SoundRTS, in the language de.
+# One line for each phrase: id = words. A line that starts with # is a comment.
+# To list the phrases that this file lacks, with their English words, run:
+# soundrts --untranslated de
