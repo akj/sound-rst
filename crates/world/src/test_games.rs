@@ -45,6 +45,7 @@ impl Case {
             controllers: self.controllers.clone(),
             default_triggers: multiplayer_default_triggers(),
             allow_cheatmode: true,
+            computer_skill: crate::Skill::NORMAL,
             random_starts: true,
             equivalents: true,
         }

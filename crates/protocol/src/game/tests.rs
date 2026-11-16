@@ -124,6 +124,7 @@ fn a_setup_comes_back_as_it_was_sent() {
         controllers: vec![Controller::human("me", true), Controller::computer("easy")],
         default_triggers: soundrts_world::multiplayer_default_triggers(),
         allow_cheatmode: false,
+        computer_skill: soundrts_world::Skill::NORMAL,
         random_starts: true,
         equivalents: false,
     };

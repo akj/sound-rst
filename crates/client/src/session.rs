@@ -203,6 +203,7 @@ impl Session {
             controllers: self.players.clone(),
             default_triggers: self.kind.default_triggers(),
             allow_cheatmode: self.allow_cheatmode,
+            computer_skill: soundrts_world::Skill::NORMAL,
             random_starts: true,
             equivalents: self.kind.equivalents(),
         };

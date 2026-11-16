@@ -36,6 +36,7 @@ fn setup() -> GameSetup {
         controllers: vec![me, computer],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: crate::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     }
@@ -240,6 +241,33 @@ fn a_record_reads_back_as_written() {
     // Windows line ends read the same.
     let crlf = text.replace('\n', "\r\n");
     assert_eq!(&Record::read(crlf.as_bytes()).unwrap().0, host.record());
+}
+
+/// A record carries each seat's income and each computer's level, and
+/// the level of the computers the map makes.
+#[test]
+fn a_record_carries_skill_and_income() {
+    let mut s = setup();
+    s.controllers[0].income = crate::Income::new(50).unwrap();
+    let mut computer = Controller::computer_at("aggressive", crate::Skill::Level1);
+    computer.alliance = Some("2".into());
+    computer.income = crate::Income::new(150).unwrap();
+    s.controllers[1] = computer;
+    s.computer_skill = crate::Skill::Level5;
+    let host = Host::new(&s).unwrap();
+    let bytes = host.record().to_bytes();
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    assert!(
+        text.contains(r#""kind":{"Computer":{"ai_type":"aggressive","skill":"Level1"}}"#),
+        "{text:.3000}"
+    );
+    assert!(text.contains(r#""income":150"#), "{text:.3000}");
+    assert!(
+        text.contains(r#""computer_skill":"Level5""#),
+        "{text:.3000}"
+    );
+    let (read, _) = Record::read(&bytes).unwrap();
+    assert_eq!(read.setup(), &s);
 }
 
 /// A record cut at every byte of its last lines reads to a whole earlier

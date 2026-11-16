@@ -2,7 +2,7 @@ use super::*;
 use crate::command::{KeywordOrder, Order, OrderTarget, Queue};
 use crate::entity::EntityId;
 use crate::orders::Keyword;
-use crate::player::Controller;
+use crate::player::{Controller, PlayerKind};
 use crate::world::multiplayer_default_triggers;
 use crate::{AiScripts, Rules};
 
@@ -29,6 +29,7 @@ fn training(map: &str, seed: i64) -> GameSetup {
         controllers: vec![me, computer],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: crate::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     }
@@ -666,4 +667,38 @@ fn a_command_naming_no_entity_no_type_or_a_point_far_off_its_square_comes_to_not
     let names: Vec<&str> = host.world.groups.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, [long.as_str()]);
     assert_eq!(warnings, Vec::<String>::new());
+}
+
+/// The computers a campaign mission makes play at the set-up's level for
+/// them, and keep it when a trigger gives them their script.
+#[test]
+fn a_computer_the_map_makes_keeps_the_missions_level_when_a_trigger_sets_its_script() {
+    let mut s = training("single/campaign/5.txt", 18);
+    s.controllers = vec![Controller::human("me", true)];
+    s.random_starts = false;
+    s.equivalents = false;
+    s.computer_skill = crate::Skill::Level1;
+    let mut host = Host::new(&s).unwrap();
+    let me = host.seats()[0];
+    let computers = |host: &Host| -> Vec<PlayerKind> {
+        let w = host.world();
+        w.players
+            .iter()
+            .map(|&p| w.player(p).kind.clone())
+            .filter(|k| *k != PlayerKind::Human)
+            .collect()
+    };
+    let at_level_1 = |ai_type: &str| PlayerKind::Computer {
+        ai_type: ai_type.into(),
+        skill: crate::Skill::Level1,
+    };
+    assert_eq!(
+        computers(&host),
+        [at_level_1("timers"), at_level_1("timers")]
+    );
+    // `trigger computer2 (timer 0) (ai easy)`, checked once a second.
+    for _ in 0..20 {
+        host.step(me);
+    }
+    assert_eq!(computers(&host), [at_level_1("timers"), at_level_1("easy")]);
 }

@@ -144,6 +144,7 @@ fn the_load_menu_lists_the_saves_newest_first_and_delete_asks_first() {
         ],
         default_triggers: soundrts_world::multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: soundrts_world::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };

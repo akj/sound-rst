@@ -33,6 +33,7 @@ pub(crate) fn game() -> (World, PlayerId, PlayerId) {
         controllers: vec![me, them],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: crate::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };

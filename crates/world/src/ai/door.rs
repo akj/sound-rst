@@ -43,6 +43,7 @@ use crate::world::{INF, TPlace, World};
 
 use super::Computer;
 use super::script::Script;
+use super::skill::Skill;
 
 /// What a computer player may read and do: see the [module](self).
 pub(super) struct Door<'w> {
@@ -478,6 +479,19 @@ impl Door<'_> {
 
     pub(super) fn kind(&self) -> &PlayerKind {
         &self.world.pl(self.me).kind
+    }
+
+    /// How well it plays. A player other than a scripted computer plays
+    /// at the normal level.
+    #[expect(
+        dead_code,
+        reason = "the levels play alike until they are given their own play"
+    )]
+    pub(super) fn skill(&self) -> Skill {
+        match self.kind() {
+            PlayerKind::Computer { skill, .. } => *skill,
+            PlayerKind::Human | PlayerKind::Computer2 => Skill::NORMAL,
+        }
     }
 
     pub(super) fn faction(&self) -> Option<FactionId> {

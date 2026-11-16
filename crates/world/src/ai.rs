@@ -33,11 +33,13 @@ use crate::world::TPlace;
 mod door;
 mod handicap;
 pub(crate) mod script;
+mod skill;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 use script::{Plan, Step};
+pub use skill::Skill;
 
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
@@ -295,7 +297,7 @@ impl Door<'_> {
         match self.kind().clone() {
             PlayerKind::Human => Ok(()),
             PlayerKind::Computer2 => self.computer2_play(),
-            PlayerKind::Computer { ai_type } => {
+            PlayerKind::Computer { ai_type, .. } => {
                 if ai_type == "timers" || !self.has_state() {
                     return Ok(());
                 }
@@ -446,7 +448,7 @@ impl Door<'_> {
     /// The name of its AI type, as a warning names it.
     fn ai_type(&self) -> String {
         match self.kind() {
-            PlayerKind::Computer { ai_type } => ai_type.clone(),
+            PlayerKind::Computer { ai_type, .. } => ai_type.clone(),
             PlayerKind::Human | PlayerKind::Computer2 => String::new(),
         }
     }

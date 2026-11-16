@@ -767,12 +767,13 @@ impl World {
         self.pay(p, &neg);
     }
 
-    /// `store`: adds a gathered quantity, with the storage bonus.
+    /// `store`: adds a gathered quantity, with the storage bonus, at the
+    /// player's income.
     pub(crate) fn store(&mut self, p: PlayerId, resource: i64, qty: i64) {
         let r = resource as usize;
         let bonus = self.pl(p).storage_bonus.get(r).copied().unwrap_or(0);
-        let qty = qty + bonus;
         let pl = self.plm(p);
+        let qty = pl.controller.income.of(qty + bonus);
         if let Some(x) = pl.resources.get_mut(r) {
             *x += qty;
         }

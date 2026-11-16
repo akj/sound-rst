@@ -30,6 +30,7 @@ fn record(h: &mut Harness, turns: u64) -> Record {
         ],
         default_triggers: multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: soundrts_world::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };

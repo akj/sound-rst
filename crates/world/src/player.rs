@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use crate::ai::{Computer, Handicap, handicapped_name};
+use crate::ai::{Computer, Handicap, Skill, handicapped_name};
 use crate::entity::{Entity, EntityId, Names, SquareId, StatType};
 use crate::events::Event;
 use crate::message::TurnMessage;
@@ -24,8 +24,9 @@ pub enum ControllerKind {
     /// local human receives events.
     Human { login: String, local: bool },
     /// A computer player with an AI type from `ai.txt` (`timers` does
-    /// nothing; `ai2` makes a random player).
-    Computer { ai_type: String },
+    /// nothing; `ai2` makes a random player), at a skill level. The random
+    /// player has no level: its skill changes nothing.
+    Computer { ai_type: String, skill: Skill },
     /// A neutral computer player: one is created for each `computer_only`
     /// start of the map.
     Neutral,
@@ -38,9 +39,72 @@ impl Hash for ControllerKind {
         std::mem::discriminant(self).hash(state);
         match self {
             ControllerKind::Human { login, local: _ } => login.hash(state),
-            ControllerKind::Computer { ai_type } => ai_type.hash(state),
+            ControllerKind::Computer { ai_type, skill } => {
+                ai_type.hash(state);
+                skill.hash(state);
+            }
             ControllerKind::Neutral => {}
         }
+    }
+}
+
+/// The share of what a seat's workers gather that the seat receives, in
+/// percent: from 25 to 400. A record can come from anyone, so one with an
+/// income outside these bounds is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(try_from = "u16", into = "u16")
+)]
+pub struct Income(u16);
+
+impl Income {
+    /// All that the workers gather, as in the original.
+    pub const FULL: Income = Income(100);
+
+    /// The incomes the menus offer.
+    pub const CHOICES: [Income; 5] = [
+        Income(50),
+        Income(75),
+        Income::FULL,
+        Income(150),
+        Income(200),
+    ];
+
+    /// An income of `percent`, from 25 to 400.
+    pub fn new(percent: u16) -> Option<Income> {
+        (25..=400).contains(&percent).then_some(Income(percent))
+    }
+
+    pub fn percent(self) -> u16 {
+        self.0
+    }
+
+    /// The share of a gathered `amount` that the seat receives, rounded
+    /// down.
+    pub(crate) fn of(self, amount: i64) -> i64 {
+        crate::nofloat::floordiv(amount * i64::from(self.0), 100)
+    }
+}
+
+impl Default for Income {
+    fn default() -> Income {
+        Income::FULL
+    }
+}
+
+impl TryFrom<u16> for Income {
+    type Error = &'static str;
+
+    fn try_from(percent: u16) -> Result<Income, Self::Error> {
+        Income::new(percent).ok_or("an income is from 25 to 400 percent")
+    }
+}
+
+impl From<Income> for u16 {
+    fn from(income: Income) -> u16 {
+        income.0
     }
 }
 
@@ -53,6 +117,8 @@ pub struct Controller {
     pub alliance: Option<String>,
     /// A faction name, or `random_faction`.
     pub faction: String,
+    /// The share of what its workers gather that the seat receives.
+    pub income: Income,
 }
 
 impl Controller {
@@ -65,18 +131,27 @@ impl Controller {
             },
             alliance: None,
             faction: "random_faction".into(),
+            income: Income::FULL,
         }
     }
 
-    /// A computer player, allied with the other computers (alliance `ai`),
-    /// with a random faction.
+    /// A computer player at the normal level, allied with the other
+    /// computers (alliance `ai`), with a random faction.
     pub fn computer(ai_type: &str) -> Controller {
+        Controller::computer_at(ai_type, Skill::NORMAL)
+    }
+
+    /// A computer player at a skill level, allied with the other computers
+    /// (alliance `ai`), with a random faction.
+    pub fn computer_at(ai_type: &str, skill: Skill) -> Controller {
         Controller {
             kind: ControllerKind::Computer {
                 ai_type: ai_type.to_owned(),
+                skill,
             },
             alliance: Some("ai".into()),
             faction: "random_faction".into(),
+            income: Income::FULL,
         }
     }
 
@@ -85,6 +160,7 @@ impl Controller {
             kind: ControllerKind::Neutral,
             alliance: Some("ai".into()),
             faction: "random_faction".into(),
+            income: Income::FULL,
         }
     }
 
@@ -96,7 +172,7 @@ impl Controller {
     pub fn login(&self) -> String {
         match &self.kind {
             ControllerKind::Human { login, .. } => login.clone(),
-            ControllerKind::Computer { ai_type } => format!("ai_{ai_type}"),
+            ControllerKind::Computer { ai_type, .. } => format!("ai_{ai_type}"),
             ControllerKind::Neutral => "ai_timers".into(),
         }
     }
@@ -106,10 +182,11 @@ impl Controller {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PlayerKind {
     Human,
-    /// The scripted computer player; `ai_type` is `timers` for one that
-    /// does nothing.
+    /// The scripted computer player, at a skill level; `ai_type` is
+    /// `timers` for one that does nothing.
     Computer {
         ai_type: String,
+        skill: Skill,
     },
     /// The random computer player.
     Computer2,
@@ -479,7 +556,7 @@ impl Player {
         faction: Option<FactionId>,
     ) -> Player {
         let handicap = match &controller.kind {
-            ControllerKind::Computer { ai_type } => Handicap::of(ai_type),
+            ControllerKind::Computer { ai_type, .. } => Handicap::of(ai_type),
             ControllerKind::Human { .. } | ControllerKind::Neutral => Handicap::NONE,
         };
         Player {
@@ -649,14 +726,14 @@ impl Player {
     /// `ai_type` of a computer player.
     pub fn ai_type(&self) -> Option<&str> {
         match &self.kind {
-            PlayerKind::Computer { ai_type } => Some(ai_type),
+            PlayerKind::Computer { ai_type, .. } => Some(ai_type),
             _ => None,
         }
     }
 
     /// Units move cleverly (flee, regroup): computers other than `timers`.
     pub fn smart_units(&self) -> bool {
-        matches!(&self.kind, PlayerKind::Computer { ai_type } if ai_type != "timers")
+        matches!(&self.kind, PlayerKind::Computer { ai_type, .. } if ai_type != "timers")
     }
 
     pub fn is_cpu_intensive(&self) -> bool {
@@ -678,7 +755,7 @@ impl Player {
     pub fn name(&self) -> Msg {
         match &self.controller.kind {
             ControllerKind::Neutral => Vec::new(),
-            ControllerKind::Computer { ai_type } => handicapped_name(ai_type, self.handicap),
+            ControllerKind::Computer { ai_type, .. } => handicapped_name(ai_type, self.handicap),
             ControllerKind::Human { login, .. } => vec![MsgPart::Literal(login.clone())],
         }
     }

@@ -22,7 +22,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use soundrts_world::{
-    AiScripts, Command, Controller, EntityId, Event, Rules, World, multiplayer_default_triggers,
+    AiScripts, Command, Controller, EntityId, Event, GameSetup, Host, ReadError, Record, Rules,
+    World, multiplayer_default_triggers,
 };
 
 /// The longest a load may take: `Rules::load`, `AiScripts::load` or
@@ -639,5 +640,41 @@ fn commands_naming_freed_entities_aim_at_nothing() {
                 "an order aims at {t:?}"
             );
         }
+    }
+}
+
+/// A record is a file anyone can hand over. One that gives a seat an
+/// income outside 25 to 400 percent is refused as damaged; one at the
+/// bounds reads.
+#[test]
+fn a_record_with_an_income_out_of_bounds_is_refused() {
+    let setup = GameSetup::multiplayer(
+        common::read("res/rules.txt"),
+        common::read("res/ai.txt"),
+        common::read(PLAYED_MAP),
+        0,
+        vec![Controller::human("a", true), Controller::computer("easy")],
+    );
+    let host = Host::new(&setup).unwrap();
+    let text = String::from_utf8(host.record().to_bytes()).unwrap();
+    let with_income =
+        |percent: u32| text.replacen(r#""income":100"#, &format!(r#""income":{percent}"#), 1);
+    for percent in [0, 24, 401, 1000] {
+        let changed = with_income(percent);
+        assert_ne!(changed, text);
+        assert!(
+            matches!(
+                Record::read(changed.as_bytes()),
+                Err(ReadError::Damaged { .. })
+            ),
+            "{percent}"
+        );
+    }
+    for percent in [25, 400] {
+        let (record, _) = Record::read(with_income(percent).as_bytes()).unwrap();
+        assert_eq!(
+            record.setup().controllers[0].income.percent(),
+            u16::try_from(percent).unwrap()
+        );
     }
 }

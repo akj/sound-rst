@@ -1202,3 +1202,33 @@ fn a_trigger_order_with_an_unreadable_choice_gives_no_order() {
     assert!(w.e(townhall).orders().is_empty());
     assert_eq!(w.pl(a).resources, resources);
 }
+
+// Income
+
+/// What one load of gold, gathered and delivered by a peasant of a seat
+/// at `percent` income, adds to the seat's gold.
+fn one_load_of_gold(percent: u16) -> i64 {
+    let rules = Rules::load(&[read("res/rules.txt")]);
+    let ai = AiScripts::load(&[read("res/ai.txt")]);
+    let mut w = World::new(rules, ai, Vec::new(), 0);
+    let map = "square_width 12\nnb_columns 1\nnb_lines 1\nnb_meadows_by_square 9\n\
+               goldmines 75 a1\nnb_players_min 1\nnb_players_max 1\nstarting_squares a1\n\
+               starting_units townhall peasant\nstarting_resources 0 0\n";
+    w.load_and_build_map(map).unwrap();
+    let mut me = Controller::human("me", true);
+    me.income = crate::Income::new(percent).unwrap();
+    let p = w.populate_map(&[me], false, false).unwrap()[0];
+    let peasant = find(&w, p, "peasant");
+    let mine = w.entities().find(|e| e.is_deposit()).unwrap().id;
+    order(&mut w, p, &[peasant], &format!("gather {mine}"));
+    update_until(&mut w, |w| w.pl(p).resources[0] != 0);
+    w.pl(p).resources[0]
+}
+
+#[test]
+fn a_worker_delivers_its_load_at_its_seats_income() {
+    // A load of gold is 1, held in thousandths.
+    assert_eq!(one_load_of_gold(100), 1000);
+    assert_eq!(one_load_of_gold(150), 1500);
+    assert_eq!(one_load_of_gold(75), 750);
+}
