@@ -162,11 +162,8 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
                     continue;
                 };
                 if faction != p.faction {
-                    let label = [
-                        seat_name_in_sentence(p),
-                        cx.res.style().get(&r).title_msg(),
-                    ]
-                    .concat();
+                    let label =
+                        [seat_name_in_sentence(p), cx.res.style().get(&r).title_msg()].concat();
                     let action = change(t, pn, move |p| p.faction = faction.clone());
                     menu.append(label, action, None);
                 }

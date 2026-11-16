@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn the_level_is_normal_unless_one_was_chosen_and_is_kept_beside_the_bookmark() {
-        let package = Package::from_path(&upstream_tests_dir().join("single/campaign1")).unwrap();
+        let package = Package::from_path(&imported_tests_dir().join("single/campaign1")).unwrap();
         let c = Campaign::new(package, "campaign1");
         let dir = tempfile::tempdir().unwrap();
         let ini = dir.path().join("campaigns.ini");
