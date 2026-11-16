@@ -141,6 +141,9 @@ pub enum RoomTopic {
     Players,
     Faction(SlotIndex),
     Alliance(SlotIndex),
+    /// A computer's level.
+    Skill(SlotIndex),
+    Income(SlotIndex),
     Ready(SlotIndex),
     /// Who organizes the game.
     Host,

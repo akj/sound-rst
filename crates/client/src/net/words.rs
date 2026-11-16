@@ -41,6 +41,15 @@ pub const NOT_READY: &str = "is not ready";
 pub const I_AM_READY: &str = "I am ready";
 pub const I_AM_NOT_READY: &str = "I am not ready";
 pub const REMOVE: &str = "remove";
+/// As in "set quiet computer, level 3, to level 4".
+pub const SET: &str = "set";
+pub const TO: &str = "to";
+/// As in "150 percent income": the share of what a seat's workers gather
+/// that it receives.
+pub const INCOME: &str = "income";
+/// Every computer of a campaign's missions, as in "set the computers,
+/// level 3, to level 4".
+pub const THE_COMPUTERS: &str = "the computers";
 pub const IS_NOW_THE_ORGANIZER: &str = "is now the organizer";
 pub const YOU_HAVE_BEEN_REMOVED: &str = "you have been removed from the game";
 pub const SHARE_ADDRESS: &str = "the address to give to the other players is";

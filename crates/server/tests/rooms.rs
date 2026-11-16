@@ -12,6 +12,7 @@ fn slot(player: SlotPlayer, alliance: u8, ready: bool) -> Slot {
         faction: Faction::random(),
         alliance,
         ready,
+        income: Income::FULL,
     }
 }
 
@@ -410,7 +411,7 @@ async fn joining_needs_the_same_content_a_free_slot_and_a_room() {
     all[2].expect(refused(Refusal::RoomFull)).await;
     all[0]
         .send(ClientMsg::AddComputer {
-            level: AiLevel::Easy,
+            computer: Computer::Quiet(Skill::NORMAL),
         })
         .await;
     all[0].expect(refused(Refusal::RoomFull)).await;
@@ -430,7 +431,11 @@ async fn ready_factions_and_alliances() {
     let mut slots = vec![
         slot(human(&andrew), 1, true),
         slot(human(&bob), 2, false),
-        slot(SlotPlayer::Computer(AiLevel::Easy), 3, true),
+        slot(
+            SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            3,
+            true,
+        ),
     ];
     let state = |slots: &Vec<Slot>| RoomState {
         id: room,
@@ -545,17 +550,17 @@ async fn the_host_adds_and_removes_computers_and_players() {
     // Only the host.
     all[1]
         .send(ClientMsg::AddComputer {
-            level: AiLevel::Ai2,
+            computer: Computer::Random,
         })
         .await;
     all[1].expect(refused(Refusal::NotNow)).await;
 
     all[0]
         .send(ClientMsg::AddComputer {
-            level: AiLevel::Ai2,
+            computer: Computer::Random,
         })
         .await;
-    let ai2 = SlotPlayer::Computer(AiLevel::Ai2);
+    let ai2 = SlotPlayer::Computer(Computer::Random);
     let state = RoomState {
         id: room,
         host: andrew.clone(),
@@ -670,7 +675,7 @@ async fn the_host_leaving_hands_the_room_over_and_the_last_human_closes_it() {
             reason: RoomExit::Left,
         })
         .await;
-    let easy = SlotPlayer::Computer(AiLevel::Easy);
+    let easy = SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL));
     // Bob is host now, so ready.
     let slots_after = vec![
         slot(human(&bob), 2, true),
@@ -806,7 +811,11 @@ async fn a_good_start() {
     let slots = [
         slot(human(&andrew), 1, true),
         slot(human(&bob), 2, true),
-        slot(SlotPlayer::Computer(AiLevel::Easy), 3, true),
+        slot(
+            SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            3,
+            true,
+        ),
     ];
     let summary = RoomSummary {
         id: room,
@@ -860,10 +869,214 @@ async fn a_good_start() {
     all[2].expect(refused(Refusal::NotNow)).await;
     all[0]
         .send(ClientMsg::AddComputer {
-            level: AiLevel::Easy,
+            computer: Computer::Quiet(Skill::NORMAL),
+        })
+        .await;
+    all[0].expect(refused(Refusal::NotNow)).await;
+    all[0]
+        .send(ClientMsg::SetSkill {
+            slot: 2,
+            skill: Skill::Level5,
+        })
+        .await;
+    all[0].expect(refused(Refusal::NotNow)).await;
+    all[0]
+        .send(ClientMsg::SetIncome {
+            slot: 0,
+            income: Income::new(200).unwrap(),
         })
         .await;
     all[0].expect(refused(Refusal::NotNow)).await;
     all[1].send(ClientMsg::LeaveRoom).await;
     all[1].expect(refused(Refusal::NotNow)).await;
+}
+
+#[tokio::test]
+async fn the_host_sets_a_computers_level_and_a_seats_income() {
+    let server = server(|_| {});
+    let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let (info, data) = map(2, 4);
+    let room = open_room(&mut all, 0, &(info.clone(), data), true).await;
+    join_room(&mut all, 1, room).await;
+    add_computer(&mut all, room).await;
+    let (andrew, bob) = (all[0].login.clone(), all[1].login.clone());
+    let mut slots = vec![
+        slot(human(&andrew), 1, true),
+        slot(human(&bob), 2, false),
+        slot(
+            SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            3,
+            true,
+        ),
+    ];
+    let state = |slots: &Vec<Slot>| RoomState {
+        id: room,
+        host: andrew.clone(),
+        map: info.clone(),
+        speed: Speed::Fast4,
+        open: true,
+        content: content(),
+        takes_watchers: true,
+        watchers: Vec::new(),
+        slots: slots.clone(),
+    };
+
+    // A level is part of who plays: the lobby hears it too.
+    all[0]
+        .send(ClientMsg::SetSkill {
+            slot: 2,
+            skill: Skill::Level4,
+        })
+        .await;
+    slots[2].player = SlotPlayer::Computer(Computer::Quiet(Skill::Level4));
+    for c in &mut all {
+        c.expect(ServerMsg::Room {
+            change: RoomChange::Skill { slot: 2 },
+            room: state(&slots),
+        })
+        .await;
+        let msg = c.recv().await;
+        assert!(
+            matches!(&msg, ServerMsg::Lobby { change: LobbyChange::RoomChanged { room: r } } if r.players[2] == slots[2].player),
+            "{msg:?}"
+        );
+    }
+
+    // Any seat's income, a human's as a computer's: the room hears it.
+    for (slot, percent) in [(1, 150), (2, 50)] {
+        let income = Income::new(percent).unwrap();
+        all[0].send(ClientMsg::SetIncome { slot, income }).await;
+        slots[slot].income = income;
+        for c in &mut all {
+            c.expect(ServerMsg::Room {
+                change: RoomChange::Income { slot },
+                room: state(&slots),
+            })
+            .await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn hostile_levels_and_incomes_are_refused_and_change_nothing() {
+    let server = server(|_| {});
+    let mut all = clients(server.local_addr(), &["andrew", "bob"]).await;
+    let (info, data) = map(2, 4);
+    let room = open_room(&mut all, 0, &(info.clone(), data), true).await;
+    join_room(&mut all, 1, room).await;
+    add_computer(&mut all, room).await;
+    all[0]
+        .send(ClientMsg::AddComputer {
+            computer: Computer::Random,
+        })
+        .await;
+    for c in &mut all {
+        c.skip_until(|m| matches!(m, ServerMsg::Lobby { change: LobbyChange::RoomChanged { room: r } } if r.players.len() == 4))
+            .await;
+    }
+    let income = Income::new(150).unwrap();
+    let cases = [
+        // Not the host: the member of the room, for any seat.
+        (
+            1,
+            ClientMsg::SetSkill {
+                slot: 2,
+                skill: Skill::Level1,
+            },
+            Refusal::NotNow,
+        ),
+        (1, ClientMsg::SetIncome { slot: 1, income }, Refusal::NotNow),
+        (
+            1,
+            ClientMsg::AddComputer {
+                computer: Computer::Quiet(Skill::Level5),
+            },
+            Refusal::NotNow,
+        ),
+        // A slot the room does not have.
+        (
+            0,
+            ClientMsg::SetSkill {
+                slot: 4,
+                skill: Skill::Level1,
+            },
+            Refusal::NoSuchPlayer,
+        ),
+        (
+            0,
+            ClientMsg::SetIncome { slot: 99, income },
+            Refusal::NoSuchPlayer,
+        ),
+        // A human has no level.
+        (
+            0,
+            ClientMsg::SetSkill {
+                slot: 0,
+                skill: Skill::Level1,
+            },
+            Refusal::NotNow,
+        ),
+        (
+            0,
+            ClientMsg::SetSkill {
+                slot: 1,
+                skill: Skill::Level1,
+            },
+            Refusal::NotNow,
+        ),
+        // Nor the random computer, and its income is not set.
+        (
+            0,
+            ClientMsg::SetSkill {
+                slot: 3,
+                skill: Skill::Level1,
+            },
+            Refusal::NotNow,
+        ),
+        (0, ClientMsg::SetIncome { slot: 3, income }, Refusal::NotNow),
+    ];
+    for (who, msg, reason) in cases {
+        all[who].send(msg.clone()).await;
+        let heard = all[who].recv().await;
+        assert_eq!(heard, refused(reason), "{msg:?}");
+    }
+    // An income or a level out of range cannot be read at all.
+    for json in [
+        r#"{"type":"set_income","slot":0,"income":24}"#,
+        r#"{"type":"set_income","slot":0,"income":401}"#,
+        r#"{"type":"set_income","slot":0,"income":-100}"#,
+        r#"{"type":"set_income","slot":0,"income":65636}"#,
+        r#"{"type":"set_skill","slot":2,"skill":"Level6"}"#,
+        r#"{"type":"add_computer","computer":{"type":"random","skill":"Level1"}}"#,
+        r#"{"type":"add_computer","computer":{"type":"quiet"}}"#,
+    ] {
+        all[0].send_text(json).await;
+        let heard = all[0].recv().await;
+        assert_eq!(heard, refused(Refusal::Invalid), "{json}");
+        // A message read between keeps the connection: the server closes
+        // it after a few that cannot be read in a row.
+        all[0].send(ClientMsg::SetReady { ready: false }).await;
+        all[0].expect(refused(Refusal::NotNow)).await;
+    }
+    // Nothing changed: the next change shows the room as it was.
+    all[1].send(ClientMsg::SetReady { ready: true }).await;
+    let ServerMsg::Room { room: state, .. } = all[1].recv().await else {
+        panic!("the room");
+    };
+    assert_eq!(
+        state
+            .slots
+            .iter()
+            .map(|s| (s.player.clone(), s.income))
+            .collect::<Vec<_>>(),
+        [
+            (human(&all[0].login), Income::FULL),
+            (human(&all[1].login), Income::FULL),
+            (
+                SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+                Income::FULL
+            ),
+            (SlotPlayer::Computer(Computer::Random), Income::FULL),
+        ]
+    );
 }

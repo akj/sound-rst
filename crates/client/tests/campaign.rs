@@ -167,3 +167,61 @@ fn a_mission_packages_resources_are_unloaded_when_it_ends() {
         .collect();
     assert_eq!(layers, ["default", "packaged"]);
 }
+
+#[test]
+fn the_level_chosen_in_the_campaign_menu_is_kept_and_builds_its_missions() {
+    // Single player, the campaign, "set the computers, level 3, to level
+    // 4" (after the prologue and levels 1 and 2), then the prologue, whose
+    // cut scene runs chapter 1.
+    let mut script = Script::new().keep_open();
+    let mut t = 5.0;
+    for (downs, gap) in [(1, 10.0), (1, 15.0), (4, 15.0), (1, 15.0)] {
+        for _ in 0..downs {
+            script = script.at(t).tap(Key::Down);
+            t += 6.0;
+        }
+        script = script.at(t).tap(Key::Return);
+        t += gap;
+    }
+    let live = LiveKeys::default();
+    let mut h = Harness::new("en", script.with_live(live.clone()).deadline(3000.0));
+    h.client.game.seed = Some(3);
+    let steps = vec![
+        Step::Turn(3),
+        Step::Probe("level", |g| {
+            g.host()
+                .record()
+                .setup()
+                .computer_skill
+                .number()
+                .to_string()
+        }),
+        // Cancel the game, quit after the defeat, then leave.
+        Step::Keys(
+            "after",
+            vec![
+                (0.0, Key::F10, N),
+                (3.0, Key::Down, N),
+                (6.0, Key::Return, N),
+                (300.0, Key::Escape, N),
+                (320.0, Key::Escape, N),
+                (340.0, Key::Escape, N),
+            ],
+        ),
+    ];
+    let player = ScriptedPlayer::new(steps, live, h.utterance_log.clone());
+    install(&mut h.client, &player);
+    assert_eq!(main_menu(&mut h.client), Ok(()));
+    let all = h.said_since(0);
+    assert!(
+        all.contains(&"set the computers , level 3 , to level 4".to_owned()),
+        "{all:#?}"
+    );
+    assert_eq!(player.borrow().note("level"), "4");
+    // The level is kept beside the bookmark.
+    let ini = h.client.paths.campaigns_config();
+    assert_eq!(
+        std::fs::read_to_string(&ini).unwrap(),
+        "[campaign]\nlevel = 4\nchapter = 1\n\n"
+    );
+}

@@ -4,8 +4,9 @@
 use std::sync::Arc;
 
 use soundrts_protocol::{
-    AiLevel, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_TITLE_SOUNDS, MapInfo, RoomChange,
-    RoomId, RoomState, RoomSummary, ServerName, SlotIndex, SlotPlayer, Whereabouts,
+    Computer, Income, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_TITLE_SOUNDS, MapInfo,
+    RoomChange, RoomId, RoomState, RoomSummary, ServerName, Skill, Slot, SlotIndex, SlotPlayer,
+    Whereabouts,
 };
 use soundrts_world::msg::{Msg, msg, nb2msg};
 use soundrts_world::msgparts as mp;
@@ -188,16 +189,99 @@ pub struct RoomModel {
     pub map: MapState,
 }
 
-/// How a player of a room is named: the login, or the kind of computer.
+/// How a player of a room is named: the login, or the kind of computer
+/// with its level.
 pub fn player_name(p: &SlotPlayer) -> Msg {
     match p {
         SlotPlayer::Human(login) => vec![literal(login.as_str())],
-        SlotPlayer::Computer(level) => computer_name(*level),
+        SlotPlayer::Computer(computer) => computer_name(*computer),
     }
 }
 
-pub fn computer_name(level: AiLevel) -> Msg {
-    soundrts_world::computer_name(level.ai_type(), soundrts_world::Skill::NORMAL)
+/// The world's name of a computer: "quiet computer, level 3".
+pub fn computer_name(computer: Computer) -> Msg {
+    soundrts_world::computer_name(computer.ai_type(), computer.skill().unwrap_or_default())
+}
+
+/// An income as said: "150 percent income".
+pub fn income_words(income: Income) -> Msg {
+    [
+        nb2msg(i64::from(income.percent())),
+        text(words::PERCENT),
+        text(words::INCOME),
+    ]
+    .concat()
+}
+
+/// How a seat is named: its player's name, then its income when it is
+/// not the full income, so that everyone in the room hears it: "bob, 150
+/// percent income".
+pub fn seat_name(slot: &Slot) -> Msg {
+    let mut name = player_name(&slot.player);
+    if slot.income != Income::FULL {
+        name.extend(msg(mp::COMMA));
+        name.extend(income_words(slot.income));
+    }
+    name
+}
+
+/// A seat's name inside a sentence: followed by a comma when it ends with
+/// a level or an income, so that what comes next is heard apart from it:
+/// "set quiet computer, level 3, to level 4".
+pub fn seat_name_in_sentence(slot: &Slot) -> Msg {
+    let mut name = seat_name(slot);
+    let listed = slot.income != Income::FULL
+        || matches!(slot.player, SlotPlayer::Computer(c) if c.skill().is_some());
+    if listed {
+        name.extend(msg(mp::COMMA));
+    }
+    name
+}
+
+/// What a seat's level or income becomes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeatSetting {
+    Skill(Skill),
+    Income(Income),
+}
+
+impl SeatSetting {
+    /// Gives the seat this level or income: a level only to a computer
+    /// that has one.
+    pub fn apply(self, slot: &mut Slot) {
+        match (self, &mut slot.player) {
+            (SeatSetting::Skill(skill), SlotPlayer::Computer(c)) => {
+                *c = c.at(skill).unwrap_or(*c);
+            }
+            (SeatSetting::Skill(_), SlotPlayer::Human(_)) => {}
+            (SeatSetting::Income(income), _) => slot.income = income,
+        }
+    }
+}
+
+/// The choices of a seat's level, for a quiet or an aggressive computer,
+/// and of its income, for any seat but the random computer: one for each
+/// value the seat does not have, as the organizer of a room or of a
+/// training game hears them: "set quiet computer, level 3, to level 4",
+/// "set bob to 150 percent income".
+pub fn seat_settings(slot: &Slot) -> Vec<(Msg, SeatSetting)> {
+    let name = seat_name_in_sentence(slot);
+    let set = |value: Msg| [text(words::SET), name.clone(), text(words::TO), value].concat();
+    let mut choices = Vec::new();
+    if let SlotPlayer::Computer(c) = slot.player
+        && let Some(current) = c.skill()
+    {
+        for skill in Skill::ALL.into_iter().filter(|s| *s != current) {
+            let level = [msg(mp::LEVEL), nb2msg(skill.number().into())].concat();
+            choices.push((set(level), SeatSetting::Skill(skill)));
+        }
+    }
+    if slot.player.takes_income() {
+        for income in Income::CHOICES.into_iter().filter(|i| *i != slot.income) {
+            choices.push((set(income_words(income)), SeatSetting::Income(income)));
+        }
+    }
+    choices
 }
 
 /// Names separated by short silences (`insert_silences`).
@@ -286,9 +370,7 @@ impl RoomModel {
             m.extend(nb2msg(i64::from(map.nb_players_min)));
         }
         m.extend(msg(mp::PERIOD));
-        m.extend(names(
-            self.state.slots.iter().map(|s| player_name(&s.player)),
-        ));
+        m.extend(names(self.state.slots.iter().map(seat_name)));
         let watchers = self.watchers();
         if !watchers.is_empty() {
             m.extend(msg(mp::PERIOD));
@@ -304,7 +386,7 @@ impl RoomModel {
             self.state
                 .slots
                 .get(slot)
-                .map(|s| player_name(&s.player))
+                .map(seat_name_in_sentence)
                 .unwrap_or_default()
         };
         Some(match change {
@@ -339,12 +421,30 @@ impl RoomModel {
                 (
                     [
                         msg(mp::MOVE),
-                        slot_name(*slot),
+                        seat_name_in_sentence(s),
                         msg(mp::TO_ALLIANCE),
                         nb2msg(i64::from(s.alliance)),
                     ]
                     .concat(),
                     RoomTopic::Alliance(*slot),
+                )
+            }
+            // The computer's name says its new level.
+            RoomChange::Skill { slot } => (
+                player_name(&self.state.slots.get(*slot)?.player),
+                RoomTopic::Skill(*slot),
+            ),
+            // Said even when it is back to the full income.
+            RoomChange::Income { slot } => {
+                let s = self.state.slots.get(*slot)?;
+                (
+                    [
+                        player_name(&s.player),
+                        msg(mp::COMMA),
+                        income_words(s.income),
+                    ]
+                    .concat(),
+                    RoomTopic::Income(*slot),
                 )
             }
             RoomChange::Ready { slot } => {
@@ -377,7 +477,7 @@ impl RoomModel {
             .slots
             .iter()
             .filter(|s| !s.ready)
-            .map(|s| player_name(&s.player))
+            .map(seat_name)
             .collect()
     }
 }

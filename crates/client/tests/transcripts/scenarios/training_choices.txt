@@ -1,0 +1,83 @@
+# The players menu of a training game: a quiet computer invited at level
+# 3, set to level 4, then to 150 percent income; the player's own income
+# set to 200 percent; the game starts, and the list of players names the
+# computer at level 4. Then cancelled, and back to the main menu.
+language en
+login player
+seed 7
+limit 900
+# main menu > single player > start a game on > jl1
+key DOWN
+key RETURN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+key j
+key j
+key j
+key j
+key j
+key RETURN
+# invite quiet computer
+key DOWN
+key RETURN
+# set quiet computer, level 3, to level 4: start, the player's 4
+# incomes, then the computer's levels 1, 2 and 4
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# set quiet computer, level 4, to 150 percent income: after its 4 levels, its incomes 50, 75 and 150
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# set player to 200 percent income
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# the seats as they are now: the player's incomes, then the computer's
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+# start, after cancel (the menu wraps round)
+key DOWN
+key DOWN
+key RETURN
+# the players
+wait_turns 3
+key F11
+# cancel the game, then back to the main menu and quit
+key F10
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

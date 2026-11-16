@@ -9,7 +9,7 @@ use soundrts_protocol::ClientMsg;
 use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::{
-    Controller, DefaultTrigger, GameSetup, Host, PlayerId, multiplayer_default_triggers,
+    Controller, DefaultTrigger, GameSetup, Host, PlayerId, Skill, multiplayer_default_triggers,
 };
 
 use crate::campaign::Campaign;
@@ -64,6 +64,8 @@ pub struct Session {
     pub players: Vec<Controller>,
     pub seed: i64,
     pub allow_cheatmode: bool,
+    /// The level of the computers the map makes: a mission's.
+    pub computer_skill: Skill,
     /// Whether the local player won, once the game is over.
     pub has_victory: bool,
     /// What a save of the game says it is.
@@ -74,22 +76,9 @@ pub struct Session {
 }
 
 impl Session {
-    /// A training game. `players` are the local login then computer types
-    /// (`easy`, `aggressive`, `ai2`); `factions` and `alliances` go with
-    /// them in order.
-    pub fn training(
-        cx: &Client,
-        map: Arc<Map>,
-        players: &[String],
-        factions: &[String],
-        alliances: &[String],
-    ) -> Session {
-        let mut controllers = vec![Controller::human(cx.config.login.as_str(), true)];
-        controllers.extend(players.iter().skip(1).map(|p| Controller::computer(p)));
-        for ((c, f), a) in controllers.iter_mut().zip(factions).zip(alliances) {
-            c.faction = f.clone();
-            c.alliance = Some(a.clone());
-        }
+    /// A training game: `players` are the local player then the
+    /// computers, each with its faction, alliance, level and income.
+    pub fn training(cx: &Client, map: Arc<Map>, players: Vec<Controller>) -> Session {
         let save = SaveInfo {
             game: SavedGame::Training {
                 map: map.name.clone(),
@@ -99,17 +88,25 @@ impl Session {
         Session {
             kind: SessionKind::Training,
             map,
-            players: controllers,
+            players,
             seed: Self::new_seed(cx),
             allow_cheatmode: true,
+            computer_skill: Skill::NORMAL,
             has_victory: false,
             save,
             loaded: None,
         }
     }
 
-    /// A mission on the map of chapter `chapter` of `campaign`, alone.
-    pub fn mission(cx: &Client, map: Arc<Map>, campaign: &Campaign, chapter: usize) -> Session {
+    /// A mission on the map of chapter `chapter` of `campaign`, alone,
+    /// against computers at `skill`.
+    pub fn mission(
+        cx: &Client,
+        map: Arc<Map>,
+        campaign: &Campaign,
+        chapter: usize,
+        skill: Skill,
+    ) -> Session {
         let save = SaveInfo {
             game: SavedGame::Mission {
                 campaign: campaign.name.clone(),
@@ -128,6 +125,7 @@ impl Session {
             players: vec![Controller::human(cx.config.login.as_str(), true)],
             seed: Self::new_seed(cx),
             allow_cheatmode: true,
+            computer_skill: skill,
             has_victory: false,
             save,
             loaded: None,
@@ -144,6 +142,7 @@ impl Session {
             players: setup.controllers.clone(),
             seed: setup.seed,
             allow_cheatmode: setup.allow_cheatmode,
+            computer_skill: setup.computer_skill,
             has_victory: false,
             save,
             loaded: Some(game),
@@ -203,7 +202,7 @@ impl Session {
             controllers: self.players.clone(),
             default_triggers: self.kind.default_triggers(),
             allow_cheatmode: self.allow_cheatmode,
-            computer_skill: soundrts_world::Skill::NORMAL,
+            computer_skill: self.computer_skill,
             random_starts: true,
             equivalents: self.kind.equivalents(),
         };

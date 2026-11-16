@@ -31,7 +31,7 @@ use soundrts::sound_cache::{SoundCache, update_text_table};
 use soundrts::style::Style;
 use soundrts::testkit::{FakeStream, Harness, Script, TestGame, slot, upstream_root};
 use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
-use soundrts_protocol::{AiLevel, ClockChange, Login, SeatChange, Speed};
+use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, Speed};
 use soundrts_world::msg::MsgPart;
 use soundrts_world::player::{Objective, StatEvent, StatTarget};
 use soundrts_world::{Event, Place};
@@ -404,7 +404,10 @@ fn real_stream(h: &mut Harness) -> Vec<Vec<u8>> {
             soundrts_protocol::SlotPlayer::Human(Login::new("andrew").unwrap()),
             1,
         ),
-        slot(soundrts_protocol::SlotPlayer::Computer(AiLevel::Easy), 2),
+        slot(
+            soundrts_protocol::SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            2,
+        ),
     ];
     let mut stream = FakeStream::new(h, "jl1", &slots, 0, 1);
     let map = h.multiplayer_map("jl1").info().unwrap();
@@ -686,7 +689,10 @@ fn slots() -> [soundrts_protocol::Slot; 2] {
             soundrts_protocol::SlotPlayer::Human(Login::new("andrew").unwrap()),
             1,
         ),
-        slot(soundrts_protocol::SlotPlayer::Computer(AiLevel::Easy), 2),
+        slot(
+            soundrts_protocol::SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
+            2,
+        ),
     ]
 }
 

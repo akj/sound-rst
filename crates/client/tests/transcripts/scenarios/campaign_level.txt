@@ -1,0 +1,45 @@
+# The level of a campaign's computers: the chapter menu offers each other
+# level; level 4 is chosen, and the menu says it at once. Back to the
+# single player menu, and in the campaign again: the level was kept. Then
+# the prologue and chapter 1, cancelled, and back to the main menu.
+language en
+login player
+seed 3
+limit 900
+# main menu > single player > campaign
+key DOWN
+key RETURN
+key c
+key RETURN
+# prologue, then the levels 1, 2 and 4
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key RETURN
+# the choices now say level 4
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+key DOWN
+# back, and in the campaign again
+key ESCAPE
+key c
+key RETURN
+key DOWN
+key DOWN
+# the prologue: its cut scene, then chapter 1, cancelled
+key UP
+key RETURN
+wait_turns 3
+key F10
+key DOWN
+key RETURN
+# the defeat menu: quit; back to the main menu, and quit
+key DOWN
+key DOWN
+key RETURN
+key ESCAPE
+key ESCAPE

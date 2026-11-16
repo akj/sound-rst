@@ -288,3 +288,85 @@ fn a_command_given_before_changing_player_is_the_new_players() {
     assert!(world.player(other).has_victory);
     assert!(!world.player(me).has_victory);
 }
+
+/// Each player of the game: `login` or `ai_type level`, and its income.
+fn seats(g: &soundrts::game::GameInterface) -> String {
+    use soundrts_world::ControllerKind;
+    g.host()
+        .record()
+        .setup()
+        .controllers
+        .iter()
+        .map(|c| {
+            let who = match &c.kind {
+                ControllerKind::Human { login, .. } => login.clone(),
+                ControllerKind::Computer { ai_type, skill } => {
+                    format!("{ai_type} {}", skill.number())
+                }
+                ControllerKind::Neutral => "neutral".into(),
+            };
+            format!("{who} {}%", c.income.percent())
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[test]
+fn the_training_menu_builds_the_game_with_each_players_level_and_income() {
+    let index = map_index("jl1");
+    let mut script = Script::new()
+        .keep_open()
+        .at(5.0)
+        .tap(Key::Down)
+        .at(15.0)
+        .tap(Key::Return)
+        .at(30.0)
+        .type_text("s")
+        .at(50.0)
+        .tap(Key::Return);
+    let mut t = 65.0;
+    for _ in 0..=index {
+        script = script.at(t).tap(Key::Down);
+        t += 10.0;
+    }
+    // The map; invite a quiet computer; "set quiet computer, level 3, to
+    // level 4", the eighth item; "set player to 200 percent income", the
+    // fifth; start, the first.
+    script = script.at(t).tap(Key::Return);
+    t += 15.0;
+    for downs in [1, 8, 5, 1] {
+        for _ in 0..downs {
+            script = script.at(t).tap(Key::Down);
+            t += 8.0;
+        }
+        script = script.at(t).tap(Key::Return);
+        t += 15.0;
+    }
+    let live = LiveKeys::default();
+    let mut h = Harness::new("en", script.with_live(live.clone()).deadline(3000.0));
+    h.client.game.seed = Some(1);
+    let steps = vec![
+        Step::Turn(3),
+        Step::Probe("seats", seats),
+        Step::Keys(
+            "game menu",
+            vec![
+                (0.0, Key::F10, N),
+                (3.0, Key::Down, N),
+                (6.0, Key::Return, N),
+                (400.0, Key::Escape, N),
+                (420.0, Key::Escape, N),
+            ],
+        ),
+    ];
+    let player = ScriptedPlayer::new(steps, live, h.utterance_log.clone());
+    install(&mut h.client, &player);
+    assert_eq!(main_menu(&mut h.client), Ok(()));
+    let all = h.said_since(0);
+    assert!(
+        all.contains(&"set quiet computer , level 3 , to level 4".to_owned())
+            && all.contains(&"set player to 200 percent income".to_owned()),
+        "{all:#?}"
+    );
+    assert_eq!(player.borrow().note("seats"), "player 200%, easy 4 100%");
+}

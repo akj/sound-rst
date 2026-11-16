@@ -27,10 +27,11 @@ use crate::tts::{Progress, SpeechBackend};
 use crate::voice::{Utterance, UtteranceLog, UtterancePart};
 use soundrts_protocol::game::{Role, RulesHash, SeatFrame, decode_command, decode_frame};
 use soundrts_protocol::{
-    AiLevel, ClientMsg, Faction, LobbyPlayer, LobbySnapshot, Login, MapInfo, PROTOCOL_VERSION,
-    RoomId, RoomState, SeatToken, ServerMsg, Slot, SlotPlayer, Speed, Whereabouts,
+    ClientMsg, Computer, Faction, Income, LobbyPlayer, LobbySnapshot, Login, MapInfo,
+    PROTOCOL_VERSION, RoomId, RoomState, SeatToken, ServerMsg, Slot, SlotPlayer, Speed,
+    Whereabouts,
 };
-use soundrts_world::{Command, GameSetup, Host, PlayerId, TurnMessage};
+use soundrts_world::{Command, Controller, GameSetup, Host, PlayerId, TurnMessage};
 
 /// The upstream checkout the tests read the game data from. Panics with
 /// instructions if it is missing.
@@ -959,7 +960,7 @@ impl FakeStream {
             texts.ai.into_string(),
             texts.map.into_string(),
             seed,
-            slots.iter().map(controller).collect(),
+            slots.iter().map(Slot::controller).collect(),
         );
         let host = Host::new(&setup).expect("a game");
         let seat = host.seats()[you];
@@ -1047,18 +1048,6 @@ impl FakeStream {
     }
 }
 
-/// Who plays a slot, as a server makes it of the room: every human told
-/// the events.
-pub fn controller(slot: &Slot) -> soundrts_world::Controller {
-    let mut c = match &slot.player {
-        SlotPlayer::Human(login) => soundrts_world::Controller::human(login.as_str(), true),
-        SlotPlayer::Computer(level) => soundrts_world::Controller::computer(level.ai_type()),
-    };
-    c.faction = slot.faction.as_str().to_owned();
-    c.alliance = Some(slot.alliance.to_string());
-    c
-}
-
 /// A slot of a room, ready, with a random faction.
 pub fn slot(player: SlotPlayer, alliance: u8) -> Slot {
     Slot {
@@ -1066,6 +1055,7 @@ pub fn slot(player: SlotPlayer, alliance: u8) -> Slot {
         faction: Faction::random(),
         alliance,
         ready: true,
+        income: Income::FULL,
     }
 }
 
@@ -1268,12 +1258,8 @@ impl Harness {
         self.client.game.seed = Some(seed);
         let m = self.multiplayer_map(map);
         self.client.res.set_map(Some(&m));
-        let mut players = vec![self.client.config.login.as_str().to_owned()];
-        players.extend(computers.iter().map(|c| (*c).to_owned()));
-        let factions = vec!["random_faction".to_owned(); players.len()];
-        let mut alliances = vec!["1".to_owned()];
-        alliances.extend(std::iter::repeat_n("2".to_owned(), players.len() - 1));
-        let mut session = Session::training(&self.client, m, &players, &factions, &alliances);
+        let players = training_players(&self.client, computers);
+        let mut session = Session::training(&self.client, m, players);
         let mut game = session.start(&mut self.client).expect("a valid map");
         self.client.input.clear();
         game.set_turn_due(self.client.clock.now());
@@ -1365,7 +1351,7 @@ impl Harness {
     pub fn start_on_server(
         &mut self,
         map: &str,
-        computers: &[AiLevel],
+        computers: &[Computer],
         speed: Speed,
         seed: i64,
     ) -> (soundrts_server::ServerHandle, TestGame) {
@@ -1377,7 +1363,7 @@ impl Harness {
     pub fn start_on_server_with(
         &mut self,
         map: &str,
-        computers: &[AiLevel],
+        computers: &[Computer],
         speed: Speed,
         seed: i64,
         wrap: impl FnOnce(Connection) -> Connection,
@@ -1414,7 +1400,7 @@ impl Harness {
     /// Creates a room on the multiplayer map `map` at `speed` and adds
     /// these computers: the room's id. Only those invited join it; anyone
     /// invited may watch. Waits in real time for the server.
-    pub fn open_room(&mut self, map: &str, computers: &[AiLevel], speed: Speed) -> RoomId {
+    pub fn open_room(&mut self, map: &str, computers: &[Computer], speed: Speed) -> RoomId {
         self.create_room(map, computers, speed, false, true)
     }
 
@@ -1423,7 +1409,7 @@ impl Harness {
     pub fn create_room(
         &mut self,
         map: &str,
-        computers: &[AiLevel],
+        computers: &[Computer],
         speed: Speed,
         open: bool,
         watchers: bool,
@@ -1439,8 +1425,8 @@ impl Harness {
             watchers,
         });
         self.pump_until(|n| n.room.is_some());
-        for (i, &level) in computers.iter().enumerate() {
-            crate::net::send(&mut self.client, ClientMsg::AddComputer { level });
+        for (i, &computer) in computers.iter().enumerate() {
+            crate::net::send(&mut self.client, ClientMsg::AddComputer { computer });
             self.pump_until(|n| n.room.as_ref().is_some_and(|r| r.state.slots.len() > i + 1));
         }
         self.room_id()
@@ -1450,6 +1436,17 @@ impl Harness {
     pub fn room_id(&self) -> RoomId {
         let net = self.client.net.as_ref().expect("on the server");
         net.room.as_ref().expect("in a room").state.id
+    }
+
+    /// Sends `msg` about the room, as its menu does, and waits until the
+    /// room is as `done` says. Waits in real time for the server.
+    pub fn change_room(
+        &mut self,
+        msg: ClientMsg,
+        done: impl Fn(&soundrts_protocol::RoomState) -> bool,
+    ) {
+        crate::net::send(&mut self.client, msg);
+        self.pump_until(|n| n.room.as_ref().is_some_and(|r| done(&r.state)));
     }
 
     /// Invites `login` to the room, once they are on the server.
@@ -1613,6 +1610,18 @@ pub fn test_server(
     };
     adjust(&mut config);
     soundrts_server::start(config).expect("a server")
+}
+
+/// The players of a training game, as its menu makes them: the local
+/// player in alliance 1, then computers of these types at the normal
+/// level in alliance 2, each with a random faction.
+pub fn training_players(client: &Client, computers: &[&str]) -> Vec<Controller> {
+    let mut players = vec![Controller::human(client.config.login.as_str(), true)];
+    players.extend(computers.iter().map(|c| Controller::computer(c)));
+    for (i, p) in players.iter_mut().enumerate() {
+        p.alliance = Some(if i == 0 { "1" } else { "2" }.to_owned());
+    }
+    players
 }
 
 /// A game started by [`Harness::start_training`], or on a server by

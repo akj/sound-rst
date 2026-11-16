@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use soundrts::config::Config;
 use soundrts::net::conn::Liveness;
-use soundrts::testkit::{Cable, Harness, Script, TestGame, WAIT_LIMIT, controller, test_server};
-use soundrts_protocol::{AiLevel, Login, Speed};
+use soundrts::testkit::{Cable, Harness, Script, TestGame, WAIT_LIMIT, test_server};
+use soundrts_protocol::{Computer, Login, Skill, Speed};
 use soundrts_server::{ServerConfig, ServerHandle};
 use soundrts_world::{GameSetup, Host, TurnMessage};
 
@@ -97,7 +97,7 @@ impl Table {
         andrew.connect_to(&cable.addr().to_string(), |c| c);
         let mut bob = player("bob");
         bob.connect_to(&server.local_addr().to_string(), |c| c);
-        let room = andrew.open_room("jl2", &[AiLevel::Aggressive], Speed::Fast4);
+        let room = andrew.open_room("jl2", &[Computer::Aggressive(Skill::NORMAL)], Speed::Fast4);
         andrew.invite("bob");
         bob.join_room(room);
         andrew.wait_for_ready(3);
@@ -153,7 +153,10 @@ fn played_here(t: &mut Table, until: i64) -> HashMap<i64, TurnMessage> {
         texts.ai.into_string(),
         texts.map.into_string(),
         SEED,
-        room.slots.iter().map(controller).collect(),
+        room.slots
+            .iter()
+            .map(soundrts_protocol::Slot::controller)
+            .collect(),
     );
     let mut host = Host::new(&setup).unwrap();
     let me = host.seats()[you];
@@ -241,7 +244,7 @@ fn a_client_whose_connection_is_cut_twice_returns_twice() {
     let cable = Cable::new(server.local_addr());
     let mut h = player("andrew");
     h.connect_to(&cable.addr().to_string(), |c| c);
-    h.open_room("jl1", &[AiLevel::Easy], Speed::Fast4);
+    h.open_room("jl1", &[Computer::Quiet(Skill::NORMAL)], Speed::Fast4);
     let mut g = h.start_room_game("jl1");
     let from = h.utterances().len();
     let run_until = |h: &mut Harness,

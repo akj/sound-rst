@@ -16,11 +16,12 @@ use std::fmt;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+pub use soundrts_world::{Income, Skill};
 
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -498,23 +499,64 @@ impl Speed {
     }
 }
 
-/// The computer players of the original.
+/// A computer player of the original, at its level. The random computer
+/// has no level: its resources are reset each time it plays, and it gives
+/// random orders.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AiLevel {
-    Easy,
-    Aggressive,
-    Ai2,
+#[serde(rename_all = "snake_case", tag = "type", content = "skill")]
+pub enum Computer {
+    Quiet(Skill),
+    Aggressive(Skill),
+    Random,
 }
 
-impl AiLevel {
-    /// The name the simulation knows it by (`Controller::computer`).
+impl Computer {
+    /// Each computer, at the normal level.
+    pub const NORMAL: [Computer; 3] = [
+        Computer::Quiet(Skill::NORMAL),
+        Computer::Aggressive(Skill::NORMAL),
+        Computer::Random,
+    ];
+
+    /// The name the simulation knows its type by (`Controller::computer`).
     pub fn ai_type(self) -> &'static str {
         match self {
-            AiLevel::Easy => "easy",
-            AiLevel::Aggressive => "aggressive",
-            AiLevel::Ai2 => "ai2",
+            Computer::Quiet(_) => "easy",
+            Computer::Aggressive(_) => "aggressive",
+            Computer::Random => "ai2",
         }
+    }
+
+    /// Its level, if it has one.
+    pub fn skill(self) -> Option<Skill> {
+        match self {
+            Computer::Quiet(s) | Computer::Aggressive(s) => Some(s),
+            Computer::Random => None,
+        }
+    }
+
+    /// The same computer at `skill`; the random computer has no level.
+    pub fn at(self, skill: Skill) -> Option<Computer> {
+        match self {
+            Computer::Quiet(_) => Some(Computer::Quiet(skill)),
+            Computer::Aggressive(_) => Some(Computer::Aggressive(skill)),
+            Computer::Random => None,
+        }
+    }
+
+    /// Who plays it in a game: at its level, or at the normal level for
+    /// the random computer, whose level changes nothing.
+    pub fn controller(self) -> soundrts_world::Controller {
+        soundrts_world::Controller::computer_at(
+            self.ai_type(),
+            self.skill().unwrap_or(Skill::NORMAL),
+        )
+    }
+
+    /// Whether its income can be set: not the random computer's, whose
+    /// resources are reset to 1000 of each anyway.
+    pub fn takes_income(self) -> bool {
+        self != Computer::Random
     }
 }
 
@@ -636,7 +678,18 @@ pub enum LobbyChange {
 #[serde(rename_all = "snake_case", tag = "kind", content = "who")]
 pub enum SlotPlayer {
     Human(Login),
-    Computer(AiLevel),
+    Computer(Computer),
+}
+
+impl SlotPlayer {
+    /// Whether the seat's income can be set: any seat but the random
+    /// computer's.
+    pub fn takes_income(&self) -> bool {
+        match self {
+            SlotPlayer::Human(_) => true,
+            SlotPlayer::Computer(c) => c.takes_income(),
+        }
+    }
 }
 
 /// A place in a room, and in the game that starts from it. The slots' order
@@ -649,6 +702,24 @@ pub struct Slot {
     pub alliance: u8,
     /// Humans say they are ready; the host and computers always are.
     pub ready: bool,
+    /// The share of what its workers gather that the seat receives.
+    /// Everyone in the room hears it.
+    pub income: Income,
+}
+
+impl Slot {
+    /// Who plays the slot in the game a server builds of the room: every
+    /// human is told the events, as the server tells each their own.
+    pub fn controller(&self) -> soundrts_world::Controller {
+        let mut c = match &self.player {
+            SlotPlayer::Human(login) => soundrts_world::Controller::human(login.as_str(), true),
+            SlotPlayer::Computer(computer) => computer.controller(),
+        };
+        c.faction = self.faction.as_str().to_owned();
+        c.alliance = Some(self.alliance.to_string());
+        c.income = self.income;
+        c
+    }
 }
 
 /// An index in [`RoomState::slots`].
@@ -687,6 +758,13 @@ pub enum RoomChange {
         slot: SlotIndex,
     },
     Alliance {
+        slot: SlotIndex,
+    },
+    /// A computer's level.
+    Skill {
+        slot: SlotIndex,
+    },
+    Income {
         slot: SlotIndex,
     },
     Ready {
@@ -852,8 +930,10 @@ pub enum ClientMsg {
     Invite {
         login: Login,
     },
+    /// Adds a computer, at its level: the menus add one at the normal
+    /// level.
     AddComputer {
-        level: AiLevel,
+        computer: Computer,
     },
     /// Removes a computer, or a human who then returns to the lobby.
     RemoveSlot {
@@ -862,6 +942,16 @@ pub enum ClientMsg {
     SetAlliance {
         slot: SlotIndex,
         alliance: u8,
+    },
+    /// Sets the level of a quiet or an aggressive computer.
+    SetSkill {
+        slot: SlotIndex,
+        skill: Skill,
+    },
+    /// Sets the income of any seat but the random computer's.
+    SetIncome {
+        slot: SlotIndex,
+        income: Income,
     },
 
     /// Your own slot, or a computer's if you are the host.
