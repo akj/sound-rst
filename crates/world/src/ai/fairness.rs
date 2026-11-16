@@ -65,10 +65,7 @@ fn a_computer_looks_for_a_meadow_where_it_remembers_it() {
     );
     let remembered = Mark::of(Target::Memory(MemoryRef { owner: p, snapshot }));
     let candidates = [Mark::of(Target::Entity(near)), remembered];
-    let first = w
-        .door(p)
-        .remove_far_candidates(&candidates, Some(Place::Square(a1)), 1)
-        .unwrap();
+    let first = w.door(p).remove_far_candidates(&candidates, a1, 1);
     let ids: Vec<EntityId> = first.iter().filter_map(Mark::entity_id).collect();
     assert_eq!(ids, [far]);
 }

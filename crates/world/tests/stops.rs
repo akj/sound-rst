@@ -31,8 +31,8 @@ const COLUMNS: [&str; 6] = [
 #[rustfmt::skip]
 const COMMITTED: &[(&str, Counts)] = &[
     // file                   trig inv uncl unwrap expect index
-    ("ai.rs",                 [  0,  0, 11,  0,  0,  4]),
-    ("ai/door.rs",            [  0,  0,  3,  0,  2,  0]),
+    ("ai.rs",                 [  0,  0,  9,  0,  0,  4]),
+    ("ai/door.rs",            [  0,  0,  1,  0,  2,  0]),
     ("map.rs",                [  0,  0,  0,  0,  7,  2]),
     ("nofloat.rs",            [  0,  0,  0,  0,  0,  3]),
     ("orders.rs",             [  0, 20,  0,  0, 14,  3]),

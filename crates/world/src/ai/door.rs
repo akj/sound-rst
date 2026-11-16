@@ -796,15 +796,10 @@ impl Door<'_> {
     /// all perceived.
     pub(super) fn nearest_warehouse(
         &mut self,
-        place: Place,
+        start: SquareId,
         resource_type: i64,
         include_building_sites: bool,
     ) -> Res<Option<EntityId>> {
-        let Place::Square(start) = place else {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'shortest_path_distance_to'",
-            ));
-        };
         let rules = &self.world.rules;
         let stores = |t: TypeId| rules.ty(t).storable_resource_types.contains(&resource_type);
         let mut found: Vec<(EntityId, Option<Place>)> = Vec::new();
@@ -839,10 +834,11 @@ impl Door<'_> {
 
     /// Gives an order to one of its units, as a human's order is given:
     /// refused, with the sound of an impossible order, if the unit's menu
-    /// does not have it.
+    /// does not have it. A unit no longer its own, which died or changed
+    /// sides during its turn, is given nothing.
     pub(super) fn give(&mut self, u: EntityId, r: Request, forget_previous: bool) -> Res {
         if self.unit(u).is_none() {
-            return Err(Abort::new("not one of the player's units"));
+            return Ok(());
         }
         self.world.take_order(u, r, forget_previous, false, None)
     }

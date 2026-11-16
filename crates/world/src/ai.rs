@@ -235,20 +235,11 @@ struct Enemies {
     used: bool,
 }
 
-/// The square of a place, or the original's error for another place.
-fn square_of(place: Option<Place>) -> Res<SquareId> {
+/// The square of a place: none for the place inside a unit, or none.
+fn square_of(place: Option<Place>) -> Option<SquareId> {
     match place {
-        Some(Place::Square(s)) => Ok(s),
-        Some(Place::Inside(_)) => Err(Abort::new("'Inside' object has no attribute 'exits'")),
-        None => Err(Abort::new("'NoneType' object has no attribute 'exits'")),
-    }
-}
-
-/// A place as the target of an order: only a square is one.
-fn square_target(place: Option<Place>) -> Res<TargetRef> {
-    match place {
-        Some(Place::Square(s)) => Ok(TargetRef::Square(s)),
-        _ => Err(Abort::new("the place has no id")),
+        Some(Place::Square(s)) => Some(s),
+        Some(Place::Inside(_)) | None => None,
     }
 }
 
@@ -765,8 +756,12 @@ impl Door<'_> {
         let Some(deposit) = self.choose(Kind::DepositOf(to as i64), None, place, true)? else {
             return Ok(());
         };
-        let start = square_of(place)?;
-        let dest = square_of(self.target_place_of(&deposit))?;
+        // The worker is on a square, and so is a deposit.
+        let (Some(start), Some(dest)) =
+            (square_of(place), square_of(self.target_place_of(&deposit)))
+        else {
+            return Ok(());
+        };
         if self.distance(start, dest, true)? == crate::INF {
             return Ok(());
         }
@@ -827,15 +822,19 @@ impl Door<'_> {
             if self.value_as_an_explorer(explorer) == self.value_as_an_explorer(best) {
                 return Ok(());
             }
+            // The former explorer goes back to the square of its first
+            // unit; with the first unit inside another, it explores on.
             let first = self.units().first().copied();
-            let t = square_target(first.and_then(|f| self.unit(f)).and_then(Own::place))?;
-            self.give(explorer, Request::go(t), true)?;
+            let place = first.and_then(|f| self.unit(f)).and_then(Own::place);
+            if let Some(s) = square_of(place) {
+                self.give(explorer, Request::go(TargetRef::Square(s)), true)?;
+            }
         }
         self.give(best, Request::auto_explore(), true)
     }
 
-    /// `_idle_fighters`: soldiers without orders, or only going to a square
-    /// without enemies.
+    /// `_idle_fighters`: soldiers on a square without orders, or only going
+    /// to a square without enemies. A unit inside another takes no order.
     fn idle_fighters(&self) -> Vec<EntityId> {
         self.units()
             .iter()
@@ -843,6 +842,7 @@ impl Door<'_> {
             .filter(|&u| {
                 self.unit(u).is_some_and(|e| {
                     e.class() == EntityClass::Soldier
+                        && square_of(e.place()).is_some()
                         && (!e.has_orders()
                             || e.orders().len() == 1
                                 && e.first_order().is_some_and(|o| {
@@ -868,9 +868,13 @@ impl Door<'_> {
         }
         let mut places = places;
         places.sort_by_key(|&pl| self.place_enemy_menace(pl));
+        // A place that is not a square, such as a unit inside another, is
+        // not attacked.
         for &place in &places {
-            if self.units_should_attack(&units, place)? {
-                return self.send_units(units, place);
+            if let Some(s) = square_of(place)
+                && self.units_should_attack(&units, s)?
+            {
+                return self.send_units(units, s);
             }
         }
         let (Some(&first), Some(&last)) = (places.first(), places.last()) else {
@@ -884,12 +888,17 @@ impl Door<'_> {
                     .is_some_and(|e| e.time_limit().is_some_and(|t| t != 0) && e.speed() != 0)
             })
             .collect();
-        if !temp.is_empty() {
+        if !temp.is_empty()
+            && let Some(first) = square_of(first)
+        {
             self.send_units(temp, first)?;
         }
         if self.friendly_presence(last) {
             return Ok(());
         }
+        let Some(last_square) = square_of(last) else {
+            return Ok(());
+        };
         let mut enemies = Enemies {
             place: last,
             used: false,
@@ -899,19 +908,23 @@ impl Door<'_> {
             if busy || !self.cataclysm_is_efficient(a, &mut enemies) {
                 continue;
             }
-            let start = square_of(self.unit(u).and_then(Own::place))?;
-            let path = self.path_through_walls(start, square_of(last)?)?;
+            // A user inside another stays there.
+            let Some(start) = square_of(self.unit(u).and_then(Own::place)) else {
+                continue;
+            };
+            let path = self.path_through_walls(start, last_square)?;
             if let [.., before, _] = path[..]
                 && path.len() > 2
             {
                 self.give(u, Request::go(TargetRef::Square(before)), false)?;
             }
-            let t = square_target(last)?;
+            let t = TargetRef::Square(last_square);
             let cataclysm = Request::use_ability(self.name_of(a)).at(t);
             self.give(u, cataclysm, false)?;
-            if self.first_order_is_possible(u) {
-                let t = square_target(self.unit(u).and_then(Own::place))?;
-                self.give(u, Request::go(t), false)?;
+            if self.first_order_is_possible(u)
+                && let Some(s) = square_of(self.unit(u).and_then(Own::place))
+            {
+                self.give(u, Request::go(TargetRef::Square(s)), false)?;
             }
         }
         Ok(())
@@ -959,14 +972,16 @@ impl Door<'_> {
         false
     }
 
-    fn units_should_attack(&mut self, units: &[EntityId], place: Option<Place>) -> Res<bool> {
-        let m = self.place_enemy_menace(place);
+    fn units_should_attack(&mut self, units: &[EntityId], place: SquareId) -> Res<bool> {
+        let m = self.enemy_menace(place);
         if !self.is_powerful_enough(units, m) {
             return Ok(false);
         }
         let first = units.first().and_then(|&u| self.unit(u));
-        let start = square_of(first.and_then(Own::place))?;
-        let path = self.path_through_walls(start, square_of(place)?)?;
+        let Some(start) = square_of(first.and_then(Own::place)) else {
+            return Ok(false);
+        };
+        let path = self.path_through_walls(start, place)?;
         match path[..] {
             [] => Ok(false),
             [_] | [_, _] => Ok(true),
@@ -974,41 +989,40 @@ impl Door<'_> {
         }
     }
 
-    fn send_units(&mut self, units: Vec<EntityId>, place: Option<Place>) -> Res {
-        let Some(place) = place else {
-            return Ok(());
-        };
-        let units: Vec<EntityId> = units
+    /// Sends units to a square. Those on it already stay, and a unit inside
+    /// another, which takes no order, stays inside.
+    fn send_units(&mut self, units: Vec<EntityId>, place: SquareId) -> Res {
+        let units: Vec<(EntityId, SquareId)> = units
             .into_iter()
-            .filter(|&u| self.unit(u).and_then(Own::place) != Some(place))
+            .filter_map(|u| square_of(self.unit(u).and_then(Own::place)).map(|s| (u, s)))
+            .filter(|&(_, s)| s != place)
             .collect();
-        for &u in &units {
+        for &(u, _) in &units {
             self.stop(u)?;
         }
+        let t = TargetRef::Square(place);
         let mut used_teleportation = false;
         for (u, a) in self.state().teleportation_users.clone() {
-            let t = square_target(Some(place))?;
             self.give(u, Request::use_ability(self.name_of(a)).at(t), true)?;
             if self.first_order_is_possible(u) {
                 used_teleportation = true;
             }
         }
+        let place_ = Some(Place::Square(place));
         let mut enemies = Enemies {
-            place: Some(place),
+            place: place_,
             used: false,
         };
-        for u in units {
-            let start = square_of(self.unit(u).and_then(Own::place))?;
-            let path = self.path_through_walls(start, square_of(Some(place))?)?;
+        for (u, start) in units {
+            let path = self.path_through_walls(start, place)?;
             if !used_teleportation
                 && let [.., before, _] = path[..]
                 && path.len() > 2
             {
                 self.give(u, Request::go(TargetRef::Square(before)), false)?;
-                if !self.friendly_presence(Some(place)) {
+                if !self.friendly_presence(place_) {
                     for (u_, a) in self.state().cataclysm_users.clone() {
                         if u_ == u && self.cataclysm_is_efficient(a, &mut enemies) {
-                            let t = square_target(Some(place))?;
                             let cataclysm = Request::use_ability(self.name_of(a)).at(t);
                             self.give(u, cataclysm, false)?;
                         }
@@ -1017,19 +1031,16 @@ impl Door<'_> {
             }
             for (u_, a) in self.state().summon_users.clone() {
                 if u_ == u {
-                    let t = square_target(Some(place))?;
                     let summon = Request::use_ability(self.name_of(a)).at(t);
                     self.give(u, summon, false)?;
                 }
             }
             for (u_, a) in self.state().detector_users.clone() {
                 if u_ == u {
-                    let t = square_target(Some(place))?;
                     let detector = Request::use_ability(self.name_of(a)).at(t);
                     self.give(u, detector, false)?;
                 }
             }
-            let t = square_target(Some(place))?;
             self.give(u, Request::go(t), false)?;
         }
         Ok(())
@@ -1070,8 +1081,10 @@ impl Door<'_> {
         }
         // regroup at a valuable place (and get healed or repaired)
         let fighters = self.idle_fighters();
-        let place = self.builders_place()?;
-        self.send_units(fighters, place)?;
+        // Builders inside a unit are not a place to regroup at.
+        if let Some(place) = square_of(self.builders_place()?) {
+            self.send_units(fighters, place)?;
+        }
         // build static defenses
         let gate = self.rules().roles.get(Role::Gate);
         if let (Some(b), Some(gate)) = (self.state().sensible_building, gate) {
@@ -1079,7 +1092,10 @@ impl Door<'_> {
             let Some(e) = self.unit(b) else {
                 return Ok(());
             };
-            let s = square_of(e.place())?;
+            // A building stands on a square.
+            let Some(s) = square_of(e.place()) else {
+                return Ok(());
+            };
             let (bx, by) = e.xy();
             let mut exits = self.exits(s).to_vec();
             exits.sort_by_key(|&x| {
@@ -1202,7 +1218,12 @@ impl Door<'_> {
                 "'NoneType' object has no attribute 'shortest_path_distance_to'",
             ));
         };
-        let wh = self.nearest_warehouse(dp, rt, true)?;
+        let Place::Square(dp_square) = dp else {
+            return Err(Abort::new(
+                "'Inside' object has no attribute 'shortest_path_distance_to'",
+            ));
+        };
+        let wh = self.nearest_warehouse(dp_square, rt, true)?;
         let wh = wh.and_then(|w| self.known(w));
         if let Some(wh) = wh
             && wh.class() == EntityClass::BuildingSite
@@ -1214,13 +1235,9 @@ impl Door<'_> {
             }
             return Ok(());
         }
-        let far = match wh.map(Seen::place) {
-            None => true,
-            Some(place) => {
-                let start = square_of(Some(dp))?;
-                let dest = square_of(place)?;
-                self.distance(start, dest, true)? > self.square_width()
-            }
+        let far = match wh.map(Seen::place).map(square_of) {
+            Some(Some(dest)) => self.distance(dp_square, dest, true)? > self.square_width(),
+            Some(None) | None => true,
         };
         if far && let Some(meadow) = self.choose(Kind::Meadow, None, Some(dp), false)? {
             let Some(id) = meadow.entity_id() else {
@@ -1309,18 +1326,25 @@ impl Door<'_> {
         candidates.retain(|(_, o)| self.choose_is_ok(o, resource_type));
         candidates.sort_by_key(|c| c.0);
         let mut candidates: Vec<Mark> = candidates.into_iter().map(|(_, o)| o).collect();
-        if candidates.len() > 10 {
-            candidates = self.remove_far_candidates(&candidates, start, 10)?;
-        } else if !candidates.is_empty() {
-            let start = square_of(start)?;
-            let mut keyed = Vec::new();
-            for o in candidates {
-                let dest = square_of(self.target_place_of(&o))?;
-                let d = self.distance(start, dest, true)?;
-                keyed.push((d, o));
+        if !candidates.is_empty() {
+            // Nothing is near a start inside a unit, and meadows and
+            // deposits are on squares.
+            let Some(start) = square_of(start) else {
+                return Ok(None);
+            };
+            if candidates.len() > 10 {
+                candidates = self.remove_far_candidates(&candidates, start, 10);
+            } else {
+                let mut keyed = Vec::new();
+                for o in candidates {
+                    if let Some(dest) = square_of(self.target_place_of(&o)) {
+                        let d = self.distance(start, dest, true)?;
+                        keyed.push((d, o));
+                    }
+                }
+                keyed.sort_by_key(|(d, _)| *d);
+                candidates = keyed.into_iter().map(|(_, o)| o).collect();
             }
-            keyed.sort_by_key(|(d, _)| *d);
-            candidates = keyed.into_iter().map(|(_, o)| o).collect();
         }
         if random && let Some(c0) = candidates.first() {
             let p0 = self.target_place_of(c0);
@@ -1347,10 +1371,9 @@ impl Door<'_> {
     fn remove_far_candidates(
         &self,
         candidates: &[Mark],
-        start: Option<Place>,
+        start: SquareId,
         limit: usize,
-    ) -> Res<Vec<Mark>> {
-        let start = square_of(start)?;
+    ) -> Vec<Mark> {
         let mut on: BTreeMap<SquareId, BTreeMap<EntityId, Mark>> = BTreeMap::new();
         for o in candidates {
             if let (Some(Place::Square(s)), Some(id)) = (self.target_place_of(o), o.entity_id()) {
@@ -1379,7 +1402,7 @@ impl Door<'_> {
             }
             done.push(room);
         }
-        Ok(c)
+        c
     }
 
     fn deposit_priority(&self, d: &Option<Mark>) -> Res<DepositPriority> {
@@ -1598,13 +1621,18 @@ impl Door<'_> {
             }
             let meadow = if let Some(&rt) = t.storable_resource_types.first() {
                 let meadow = self.choose(Kind::Meadow, Some(rt), None, false)?;
+                // Builders inside a unit are far from any meadow.
                 let far = match &meadow {
                     None => true,
                     Some(m) => {
-                        let start = square_of(self.target_place_of(m))?;
-                        let bp = self.builders_place()?;
-                        let dest = square_of(bp)?;
-                        self.distance_through_walls(start, dest)? > self.square_width() * 3
+                        let start = square_of(self.target_place_of(m));
+                        let dest = square_of(self.builders_place()?);
+                        match (start, dest) {
+                            (Some(start), Some(dest)) => {
+                                self.distance_through_walls(start, dest)? > self.square_width() * 3
+                            }
+                            _ => true,
+                        }
                     }
                 };
                 if far {
@@ -1995,6 +2023,39 @@ starting_resources 100 100
     }
 
     #[test]
+    fn a_soldier_inside_a_transport_does_not_stop_the_computer() {
+        let (mut w, p) = scripted("def easy\nattack\n", "townhall 2 peasant");
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let create = |w: &mut World, t: &str| {
+            let tid = w.rules.type_id(t).unwrap();
+            w.create_creature(tid, Some(p), Place::Square(a1), x, y)
+                .unwrap()
+        };
+        let footman = create(&mut w, "footman");
+        let transport = create(&mut w, "new_flyingmachine");
+        w.load(transport, footman);
+        // It was attacked on its square: its idle soldiers would fight.
+        for _ in 0..30 {
+            w.computer_state(p).attacked_places = vec![Some(Place::Square(a1))];
+            w.update();
+        }
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
+    }
+
+    #[test]
+    fn an_order_to_a_unit_no_longer_its_own_is_not_given() {
+        let (mut w, p) = scripted("def easy\n", "townhall 2 peasant");
+        let theirs = w.pl(p).units[0];
+        w.plm(p).units.retain(|&u| u != theirs);
+        w.cm(theirs).unwrap().player = None;
+        let before = w.e(theirs).orders().len();
+        assert!(w.door(p).give(theirs, Request::stop(), true).is_ok());
+        assert_eq!(w.e(theirs).orders().len(), before);
+    }
+
+    #[test]
     fn computer2_aims_only_the_abilities_that_ask_for_a_target() {
         let mut w = world(
             "
@@ -2061,10 +2122,7 @@ starting_squares a1
             w.plm(p).perception.insert(m);
         }
         let a1 = w.square_by_name("a1").unwrap();
-        let near = w
-            .door(p)
-            .remove_far_candidates(&meadows, Some(Place::Square(a1)), 10)
-            .unwrap();
+        let near = w.door(p).remove_far_candidates(&meadows, a1, 10);
         let ids: Vec<EntityId> = near.iter().filter_map(Mark::entity_id).collect();
         let expected: Vec<EntityId> = meadows.iter().filter_map(Mark::entity_id).collect();
         assert_eq!(ids, expected);

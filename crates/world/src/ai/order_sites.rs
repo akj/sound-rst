@@ -105,9 +105,7 @@ fn teleportation_is_used_on_the_place_units_are_sent_to() {
     let footman = add(&mut w, "footman", c, s);
     // The order does not depend on the ability: the mage's own is used.
     w.computer_state(c).teleportation_users = vec![(mage, ty(&w, "a_meteors"))];
-    w.door(c)
-        .send_units(vec![footman], Some(Place::Square(far)))
-        .unwrap();
+    w.door(c).send_units(vec![footman], far).unwrap();
     assert_eq!(
         orders(&w, mage),
         [words(&["use", "a_meteors", &id(&w, far)])]
@@ -123,9 +121,7 @@ fn a_cataclysm_and_a_detector_are_used_on_the_place_units_are_sent_to() {
     seen_enemies(&mut w, you, c, far, 1);
     w.computer_state(c).cataclysm_users = vec![(mage, ty(&w, "a_meteors"))];
     w.computer_state(c).detector_users = vec![(mage, ty(&w, "a_meteors"))];
-    w.door(c)
-        .send_units(vec![mage], Some(Place::Square(far)))
-        .unwrap();
+    w.door(c).send_units(vec![mage], far).unwrap();
     let use_far = words(&["use", "a_meteors", &id(&w, far)]);
     let o = orders(&w, mage);
     assert_eq!(o.len(), 4, "{o:?}");
