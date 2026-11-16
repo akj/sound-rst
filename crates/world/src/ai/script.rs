@@ -16,7 +16,7 @@ pub(crate) enum Step<U> {
     /// `label <name>`: a line to go to. It goes on to the next line.
     Label,
     /// `goto_random`: on to one of the lines, drawn at random.
-    GotoRandom(Vec<i64>),
+    GotoRandom(i64, Vec<i64>),
     /// `attack`: attack constantly from now on, then the next line.
     Attack,
     Watchdog(i64),
@@ -94,7 +94,7 @@ impl Script {
                     .map_or(Step::Raw, Step::Get),
                 Step::Goto(n) => Step::Goto(*n),
                 Step::Label => Step::Label,
-                Step::GotoRandom(d) => Step::GotoRandom(d.clone()),
+                Step::GotoRandom(first, rest) => Step::GotoRandom(*first, rest.clone()),
                 Step::Attack => Step::Attack,
                 Step::Watchdog(v) => Step::Watchdog(*v),
                 Step::ConstantAttacks(v) => Step::ConstantAttacks(*v),
@@ -147,10 +147,9 @@ fn step(lines: &[String], i: usize) -> Option<Step<String>> {
             Step::Label
         }
         "goto_random" => {
-            if args.is_empty() {
-                return None;
-            }
-            Step::GotoRandom(args.iter().map(|d| label(d)).collect::<Option<_>>()?)
+            let (first, rest) = args.split_first()?;
+            let rest = rest.iter().map(|d| label(d)).collect::<Option<_>>()?;
+            Step::GotoRandom(label(first)?, rest)
         }
         "attack" => Step::Attack,
         "watchdog" => Step::Watchdog(int(args.first())?),

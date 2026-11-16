@@ -446,10 +446,17 @@ impl Door<'_> {
         (x.x, x.y)
     }
 
-    /// The place on the other side of an exit, and whether it has one.
-    pub(super) fn beyond_exit(&self, e: EntityId) -> Option<Option<Place>> {
-        let os = self.world.exit_other_side(e)?;
-        Some(self.world.e(os).place)
+    /// The squares the exits of a square lead to, in the order of its
+    /// exits. The map makes each exit with its other side on a square.
+    pub(super) fn squares_beyond(&self, s: SquareId) -> Vec<SquareId> {
+        self.exits(s)
+            .iter()
+            .filter_map(|&e| self.world.exit_other_side(e))
+            .filter_map(|os| match self.world.e(os).place {
+                Some(Place::Square(beyond)) => Some(beyond),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The script of an AI type, from `ai.txt`.
@@ -861,6 +868,17 @@ impl Door<'_> {
     /// An index drawn at random below `len`, from the game's draws.
     pub(super) fn choice_index(&mut self, len: usize) -> Option<usize> {
         self.world.random.choice_index(len)
+    }
+
+    /// One of `first` and `rest`, drawn at random from the game's draws as
+    /// the original's `choice` draws from them all.
+    pub(super) fn pick<T: Copy>(&mut self, first: T, rest: &[T]) -> T {
+        let n = u64::try_from(rest.len()).map_or(u64::MAX, |n| n.saturating_add(1));
+        let i = self.world.random.randbelow(n);
+        i.checked_sub(1)
+            .and_then(|i| rest.get(usize::try_from(i).ok()?))
+            .copied()
+            .unwrap_or(first)
     }
 
     pub(super) fn warn(&mut self, s: impl Into<String>) {

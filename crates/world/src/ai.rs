@@ -207,6 +207,30 @@ fn same_opt(a: &Option<Mark>, b: &Option<Mark>) -> bool {
     }
 }
 
+/// The orders `Computer2` chooses from, sorted by keyword: every order but
+/// `attack`, `auto_attack`, `auto_explore`, `block`, the cancels, `enter`,
+/// `join_group`, `patrol`, `rallying_point`, `stop` and `wait`.
+const COMPUTER2_ORDERS: [Keyword; 18] = [
+    Keyword::Build,
+    Keyword::BuildPhaseTwo,
+    Keyword::DisableAutoGather,
+    Keyword::DisableAutoRepair,
+    Keyword::EnableAutoGather,
+    Keyword::EnableAutoRepair,
+    Keyword::Gather,
+    Keyword::Go,
+    Keyword::Load,
+    Keyword::LoadAll,
+    Keyword::ModeDefensive,
+    Keyword::ModeOffensive,
+    Keyword::Repair,
+    Keyword::Research,
+    Keyword::Train,
+    Keyword::UnloadAll,
+    Keyword::UpgradeTo,
+    Keyword::Use,
+];
+
 /// Lazily lists the type names of the enemies on a square, once: the
 /// original passes a generator, which the first use exhausts.
 struct Enemies {
@@ -329,38 +353,9 @@ impl Door<'_> {
         Ok(())
     }
 
-    /// The orders `Computer2` chooses from, sorted by keyword.
-    fn computer2_orders() -> Vec<Keyword> {
-        const EXCLUDED: &[Keyword] = &[
-            Keyword::Enter,
-            Keyword::Stop,
-            Keyword::Attack,
-            Keyword::Patrol,
-            Keyword::Wait,
-            Keyword::AutoExplore,
-            Keyword::AutoAttack,
-            Keyword::Block,
-            Keyword::JoinGroup,
-            Keyword::CancelBuilding,
-            Keyword::CancelTraining,
-            Keyword::CancelUpgrading,
-            Keyword::RallyingPoint,
-        ];
-        let mut v: Vec<Keyword> = Keyword::ALL
-            .iter()
-            .copied()
-            .filter(|k| !EXCLUDED.contains(k))
-            .collect();
-        v.sort_by_key(|k| k.as_str());
-        v
-    }
-
     fn random_order(&mut self, unit: EntityId, targets: &[EntityId]) -> Res<Option<Request>> {
-        let orders = Self::computer2_orders();
-        let i = self
-            .choice_index(orders.len())
-            .ok_or_else(|| Abort::new("Cannot choose from an empty sequence"))?;
-        let kw = orders[i];
+        let [first, rest @ ..] = &COMPUTER2_ORDERS;
+        let kw = self.pick(*first, rest);
         let mut menu = self.order_menu(unit, kw, true);
         let Some(i) = self.choice_index(menu.len()) else {
             return Ok(None);
@@ -386,7 +381,7 @@ impl Door<'_> {
     // Computer: the turn
 
     fn computer_play(&mut self) -> Res {
-        if !self.should_play_this_turn()? {
+        if !self.should_play_this_turn() {
             return Ok(());
         }
         self.state_mut().lacking = None;
@@ -445,14 +440,12 @@ impl Door<'_> {
     }
 
     /// The cpu intensive players play in turns, one tenth of them each turn.
-    fn should_play_this_turn(&self) -> Res<bool> {
+    /// A scripted computer that plays is one of them.
+    fn should_play_this_turn(&self) -> bool {
         let players = self.planning_computers();
-        let i = players
-            .iter()
-            .position(|&x| x == self.me())
-            .ok_or_else(|| Abort::new("x not in list"))?;
-        let turn = (i * 10 / players.len()) as i64;
-        Ok(self.turn().rem_euclid(10) == turn)
+        let i = players.iter().take_while(|&&x| x != self.me()).count();
+        let turn = (i * 10 / players.len().max(1)) as i64;
+        self.turn().rem_euclid(10) == turn
     }
 
     /// What the player's faction uses instead of the class `name`.
@@ -487,10 +480,9 @@ impl Door<'_> {
         match step {
             &Step::Goto(n) => self.set_line_nb(n),
             Step::Label => self.set_line_nb(next),
-            Step::GotoRandom(lines) => {
-                if let Some(&n) = self.choice_index(lines.len()).and_then(|i| lines.get(i)) {
-                    self.set_line_nb(n);
-                }
+            Step::GotoRandom(first, rest) => {
+                let n = self.pick(*first, rest);
+                self.set_line_nb(n);
             }
             Step::Attack => {
                 self.state_mut().constant_attacks = 1;
@@ -826,7 +818,7 @@ impl Door<'_> {
         let Some(cost) = self.state().lacking.clone() else {
             return Ok(());
         };
-        let lacking = self.missing_resources(&cost)?;
+        let lacking = self.missing_resources(&cost);
         let Some(&first_lacking) = lacking.first() else {
             return Ok(());
         };
@@ -1214,8 +1206,8 @@ impl Door<'_> {
                 };
                 let cost = self.rules().ty(t).cost.clone();
                 if self.future_nb(&Sel::List(vec![t])) == 0
-                    && self.missing_resources(&cost)?.is_empty()
-                    && self.potential(&cost)? > 3
+                    && self.missing_resources(&cost).is_empty()
+                    && self.potential(&cost) > 3
                 {
                     self.give(u, Request::research(self.name_of(t)), true)?;
                 }
@@ -1243,7 +1235,7 @@ impl Door<'_> {
             return Ok(());
         };
         let cost = self.rules().ty(warehouse).cost.clone();
-        if !self.missing_resources(&cost)?.is_empty() {
+        if !self.missing_resources(&cost).is_empty() {
             return Ok(());
         }
         let mut deposits = Vec::new();
@@ -1470,11 +1462,7 @@ impl Door<'_> {
                     break;
                 }
             }
-            for &e in self.exits(room) {
-                let beyond = self
-                    .beyond_exit(e)
-                    .ok_or_else(|| Abort::new("'NoneType' object has no attribute 'place'"))?;
-                let next = square_of(beyond)?;
+            for next in self.squares_beyond(room) {
                 if !done.contains(&next) {
                     queue.push_back(next);
                 }
@@ -1546,33 +1534,28 @@ impl Door<'_> {
         self.nb(sel) + self.nb_in_production(sel)
     }
 
-    fn missing_resources(&self, cost: &[i64]) -> Res<Vec<usize>> {
-        let r = self.resources();
-        let mut result = Vec::new();
-        for (i, &c) in cost.iter().enumerate() {
-            let have = r
-                .get(i)
-                .copied()
-                .ok_or_else(|| Abort::new("list index out of range"))?;
-            if c > have {
-                result.push(i);
-            }
-        }
-        Ok(result)
+    // A cost has a value for each of the player's resources: the rules
+    // give a cost, and the map the resources, for each resource type of
+    // the rules.
+
+    /// The resources, by index, of which the player has less than `cost`.
+    fn missing_resources(&self, cost: &[i64]) -> Vec<usize> {
+        cost.iter()
+            .zip(self.resources())
+            .enumerate()
+            .filter(|(_, (c, have))| c > have)
+            .map(|(i, _)| i)
+            .collect()
     }
 
-    fn potential(&self, cost: &[i64]) -> Res<i64> {
-        let mut result = 9999;
-        for (i, &res) in self.resources().iter().enumerate() {
-            let c = cost
-                .get(i)
-                .copied()
-                .ok_or_else(|| Abort::new("tuple index out of range"))?;
-            if c != 0 {
-                result = result.min(floordiv(res, c));
-            }
-        }
-        Ok(result)
+    /// How many times over the player could pay `cost`, 9999 at most.
+    fn potential(&self, cost: &[i64]) -> i64 {
+        self.resources()
+            .iter()
+            .zip(cost)
+            .filter(|&(_, &c)| c != 0)
+            .map(|(&res, &c)| floordiv(res, c))
+            .fold(9999, i64::min)
     }
 
     /// `get`: works toward having `nb` units of the type; true if they are
@@ -1614,7 +1597,7 @@ impl Door<'_> {
     /// farm when food is missing.
     fn gather(&mut self, cost: &[i64], food: i64, depth: usize) -> Res<bool> {
         let depth = deeper(depth)?;
-        if !self.missing_resources(cost)?.is_empty() {
+        if !self.missing_resources(cost).is_empty() {
             self.state_mut()
                 .lacking
                 .get_or_insert_with(|| cost.to_vec());
@@ -1724,7 +1707,7 @@ impl Door<'_> {
             let nb_maker = self.nb(&maker_sel);
             if self.nb(&Sel::Workers) != 0
                 && nb > nb_maker * 3
-                && self.potential(&t.cost)? > nb_maker * 100
+                && self.potential(&t.cost) > nb_maker * 100
             {
                 // additional production sites
                 self.build_or_train_or_upgradeto_or_summon(maker, 1, depth)?;
@@ -1744,8 +1727,11 @@ impl Door<'_> {
                 if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
                     let mut target = None;
                     if self.rules().ty(a).effect_target == ["ask"] {
-                        let first = self.units().first().copied();
-                        let first = first.ok_or_else(|| Abort::new("list index out of range"))?;
+                        // The maker is one of its units: an upgrade, which a
+                        // player has without a unit, makes nothing.
+                        let Some(&first) = self.units().first() else {
+                            break;
+                        };
                         target = Some(first);
                     }
                     self.order(1, maker_sel, Task::Use(a, target), false)?;
@@ -2105,10 +2091,29 @@ starting_squares a1
 
     #[test]
     fn computer2_chooses_from_the_original_list_of_orders() {
-        let names: Vec<&str> = Door::computer2_orders()
+        const EXCLUDED: &[Keyword] = &[
+            Keyword::Enter,
+            Keyword::Stop,
+            Keyword::Attack,
+            Keyword::Patrol,
+            Keyword::Wait,
+            Keyword::AutoExplore,
+            Keyword::AutoAttack,
+            Keyword::Block,
+            Keyword::JoinGroup,
+            Keyword::CancelBuilding,
+            Keyword::CancelTraining,
+            Keyword::CancelUpgrading,
+            Keyword::RallyingPoint,
+        ];
+        let mut all: Vec<Keyword> = Keyword::ALL
             .iter()
-            .map(|k| k.as_str())
+            .copied()
+            .filter(|k| !EXCLUDED.contains(k))
             .collect();
+        all.sort_by_key(|k| k.as_str());
+        assert_eq!(all, COMPUTER2_ORDERS);
+        let names: Vec<&str> = COMPUTER2_ORDERS.iter().map(|k| k.as_str()).collect();
         assert_eq!(
             names,
             [
