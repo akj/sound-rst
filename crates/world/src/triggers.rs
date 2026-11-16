@@ -195,7 +195,7 @@ impl World {
                         .square_by_name(x)
                         .ok_or_else(|| TriggerError::NoSuchSquare(x.to_owned()))?;
                     for &o in &self.square(s).objects {
-                        if self.pl(first).units.contains(&o) && self.e(o).stats.presence != 0 {
+                        if self.pl(first).units.contains(&o) && self.e(o).stats.presence {
                             return Ok(true);
                         }
                     }
@@ -223,7 +223,7 @@ impl World {
                 .pl(p)
                 .units
                 .iter()
-                .any(|&u| self.e(u).stats.provides_survival != 0)),
+                .any(|&u| self.e(u).stats.provides_survival)),
             "victory" => {
                 self.victory(p);
                 Ok(false)
@@ -478,7 +478,7 @@ impl World {
             };
             (place, x, y)
         } else {
-            let anywhere = self.rules.ty(tid).stats.is_buildable_anywhere != 0;
+            let anywhere = self.rules.ty(tid).stats.is_buildable_anywhere;
             let (x, y, l) = self.find_and_remove_meadow(square, anywhere);
             land = l;
             (Place::Square(square), x, y)

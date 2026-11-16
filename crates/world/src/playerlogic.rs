@@ -112,7 +112,7 @@ impl World {
                                 && self.player_is_an_enemy(owner, p)
                                 && self.pl(owner).units.contains(u)
                         }) && self.pl(p).perception.contains(u)
-                            && e.stats.is_vulnerable != 0
+                            && e.stats.is_vulnerable
                             && !e.is_inside()
                     })
                     .collect();
@@ -594,9 +594,7 @@ impl World {
                 }
             } else if o.is_corpse() {
                 corpses.insert(place);
-            } else if o.player().is_some_and(|op| allied.contains(&op))
-                && o.stats.is_vulnerable != 0
-            {
+            } else if o.player().is_some_and(|op| allied.contains(&op)) && o.stats.is_vulnerable {
                 friends.insert(place);
             }
             if o.time_limit().is_some_and(|t| t != 0) && o.stats.harm_level != 0 {
@@ -618,7 +616,7 @@ impl World {
                 Some(Place::Square(s)) => self.square(s).is_ground,
                 _ => true,
             };
-            if e.stats.is_vulnerable != 0 && e.airground_type == AirGround::Ground && !on_ground {
+            if e.stats.is_vulnerable && e.airground_type == AirGround::Ground && !on_ground {
                 self.die(u, None)?;
             }
         }
@@ -973,7 +971,7 @@ impl World {
             self.warn(format!("couldn't create an initial unit: {type_name}"));
             return;
         }
-        let (x, y, land) = self.find_and_remove_meadow(place, t.stats.is_buildable_anywhere != 0);
+        let (x, y, land) = self.find_and_remove_meadow(place, t.stats.is_buildable_anywhere);
         let Some((x, y)) = self.find_free_space(place, t.airground_type, x, y) else {
             return;
         };

@@ -160,7 +160,7 @@ impl<'a> Own<'a> {
     }
 
     pub(super) fn is_a_building(self) -> bool {
-        self.e.stats.is_a_building != 0
+        self.e.stats.is_a_building
     }
 
     pub(super) fn class(self) -> EntityClass {

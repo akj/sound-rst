@@ -55,7 +55,7 @@ impl World {
             .iter()
             .map(|&o| self.e(o))
             .filter(|u| {
-                u.stats.collision != 0
+                u.stats.collision
                     && u.airground_type == a
                     && !player.is_some_and(|p| self.player_is_an_enemy_of_entity(p, u))
             })
@@ -98,7 +98,7 @@ impl World {
     /// `is_buildable_anywhere` as `getattr(o, ..., False)`: only creatures
     /// have it.
     fn occupies_land(&self, e: &Entity) -> bool {
-        e.is_creature() && e.stats.is_buildable_anywhere != 0
+        e.is_creature() && e.stats.is_buildable_anywhere
     }
 
     /// `ZoomTarget.any_land`: the subsquare, if no building that can stand

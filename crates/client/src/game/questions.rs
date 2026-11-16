@@ -328,8 +328,7 @@ fn combat_stats(view: &SeatView, e: &KnownEntity) -> Option<Stats> {
             _ => continue,
         };
         if let Some(s) = Stat::parse(stat) {
-            let v = stats.get_mut(s);
-            *v = v.saturating_add(value);
+            stats.add(s, value);
         }
     }
     Some(stats)

@@ -57,12 +57,8 @@ impl World {
         x: i64,
         y: i64,
     ) -> Result<EntityId, NotEnoughSpace> {
-        let (x, y) = self.initial_position(
-            e.stats.collision != 0,
-            e.airground_type,
-            place,
-            Some((x, y)),
-        )?;
+        let (x, y) =
+            self.initial_position(e.stats.collision, e.airground_type, place, Some((x, y)))?;
         let id = self.insert_entity(e, place, x, y, 90);
         self.set_player(id, player);
         let md = self.rules.minimal_damage();
@@ -171,8 +167,7 @@ impl World {
         e.airground_type = t.airground_type;
         e.stats.qty = q;
         let place = Place::Square(square);
-        let (x, y) =
-            self.initial_position(e.stats.collision != 0, e.airground_type, place, None)?;
+        let (x, y) = self.initial_position(e.stats.collision, e.airground_type, place, None)?;
         Ok(self.insert_entity(e, place, x, y, 90))
     }
 
@@ -393,8 +388,7 @@ impl World {
     ) -> Res {
         let e = self.em(unit);
         let stat = Stat::parse(stat).ok_or(Invariant::EffectUnread)?;
-        let v = e.stats.get_mut(stat);
-        *v += base + incr * start_level;
+        e.stats.add(stat, base + incr * start_level);
         if stat == Stat::Damage
             && let Some(c) = e.creature_mut()
         {
@@ -670,7 +664,7 @@ impl World {
 
     fn would_collide_if(&self, id: EntityId, x: i64, y: i64) -> Res<bool> {
         let e = self.e(id);
-        if e.stats.collision == 0 {
+        if !e.stats.collision {
             return Ok(false);
         }
         if !matches!(e.place, Some(Place::Square(_))) {
@@ -824,7 +818,7 @@ impl World {
             return Ok(false);
         }
         let mut actual_range = e.stats.range;
-        if e.stats.is_ballistic != 0 {
+        if e.stats.is_ballistic {
             let (h, th) = (self.height_of(e)?, self.height_of(t)?);
             if h > th {
                 actual_range += (h - th) * PRECISION;
@@ -852,8 +846,8 @@ impl World {
         let e = self.e(id);
         match self.t_entity(other) {
             Some(o)
-                if e.stats.collision != 0
-                    && o.stats.collision != 0
+                if e.stats.collision
+                    && o.stats.collision
                     && o.airground_type == e.airground_type =>
             {
                 e.radius() + o.radius()
@@ -1205,7 +1199,7 @@ impl World {
         match &e.kind {
             Kind::Creature(c) => match &c.kind {
                 CreatureKind::Worker { .. } | CreatureKind::Soldier { .. } => {
-                    if e.stats.corpse != 0 {
+                    if e.stats.corpse {
                         let dead = e.with_kind(c.clone());
                         self.create_corpse(dead);
                     }
@@ -1243,7 +1237,7 @@ impl World {
                 let (place, x, y, a) = (e.place, e.x, e.y, e.airground_type);
                 let _ = self.move_to(o, place, Some((x, y)), 90);
                 if self.e(o).place == Some(Place::Inside(id)) {
-                    self.em(o).stats.collision = 0;
+                    self.em(o).stats.collision = false;
                     let _ = self.move_to(o, place, Some((x, y)), 90);
                 }
                 if a != AirGround::Ground {
@@ -1329,7 +1323,7 @@ impl World {
         let allies = self.pl(p).allied.clone();
         // The units of players: creatures.
         let units = self.get_objects2(e.x, e.y, 6 * PRECISION, &allies, |x| {
-            x.stats.is_healable != 0 && x.creature().map_or(0, |c| c.hp) < x.stats.hp_max
+            x.stats.is_healable && x.creature().map_or(0, |c| c.hp) < x.stats.hp_max
         });
         for u in units {
             let ue = self.em(u);
@@ -1345,8 +1339,7 @@ impl World {
         let hp = floordiv(e.stats.harm_level * PRECISION, 25);
         let (x, y) = (e.x, e.y);
         let my_type = e.type_name.to_string();
-        let candidates =
-            self.get_objects2(x, y, 6 * PRECISION, &[], |o| o.stats.is_vulnerable != 0);
+        let candidates = self.get_objects2(x, y, 6 * PRECISION, &[], |o| o.stats.is_vulnerable);
         let mut units = Vec::new();
         for u in candidates {
             let t = self.e(u).type_name.to_string();
@@ -1392,7 +1385,7 @@ impl World {
         if !reaches {
             return false;
         }
-        o.stats.is_vulnerable != 0
+        o.stats.is_vulnerable
     }
 
     /// `can_attack`: without moving to another square.
@@ -1522,7 +1515,7 @@ impl World {
                 for u in self.pl(a).units.clone() {
                     let ue = self.e(u);
                     if ue.place == place
-                        && ue.stats.is_repairable != 0
+                        && ue.stats.is_repairable
                         && ue.creature().map_or(0, |c| c.hp) < ue.stats.hp_max
                         && !ue.is_building_site()
                     {
@@ -1833,7 +1826,7 @@ impl World {
     pub(crate) fn is_fully_repaired(&self, id: EntityId) -> bool {
         let e = self.e(id);
         !e.is_building_site()
-            && e.stats.is_repairable != 0
+            && e.stats.is_repairable
             && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
     }
 
@@ -1865,8 +1858,8 @@ impl World {
                 // another layer may find that layer full: it then waits,
                 // finished, until there is room for it.
                 let bt = self.rules.ty(site.building_type);
-                let (collision, airground) = (bt.stats.collision != 0, bt.airground_type);
-                let room_freed = e.stats.collision != 0 && e.airground_type == airground;
+                let (collision, airground) = (bt.stats.collision, bt.airground_type);
+                let room_freed = e.stats.collision && e.airground_type == airground;
                 if !room_freed
                     && self
                         .initial_position(collision, airground, place, Some((x, y)))

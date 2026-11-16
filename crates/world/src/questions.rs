@@ -182,11 +182,11 @@ impl EntityFacts for &Entity {
     }
 
     fn is_repairable(&self) -> bool {
-        self.stats.is_repairable != 0
+        self.stats.is_repairable
     }
 
     fn is_a_gate(&self) -> bool {
-        self.stats.is_a_gate != 0
+        self.stats.is_a_gate
     }
 
     fn is_a_threat(&self) -> bool {

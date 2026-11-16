@@ -1731,7 +1731,7 @@ impl World {
                 let repairable = t
                     .as_ref()
                     .and_then(|t| self.t_entity(t))
-                    .is_some_and(|e| e.stats.is_repairable != 0);
+                    .is_some_and(|e| e.stats.is_repairable);
                 self.set_target(unit, uid, t);
                 if !repairable {
                     self.mark_as_impossible(unit, uid, None);
@@ -1794,7 +1794,7 @@ impl World {
         };
         let mut t = self.resolve_given(unit, aim)?;
         let cannot = Some(Reason::CannotBuildHere);
-        if bt.stats.is_buildable_on_exits_only != 0 {
+        if bt.stats.is_buildable_on_exits_only {
             let is_exit = t
                 .as_ref()
                 .and_then(|t| self.t_entity(t))
@@ -1817,13 +1817,13 @@ impl World {
                 self.mark_as_impossible(unit, uid, cannot);
                 return Ok(());
             }
-        } else if bt.stats.is_buildable_near_water_only != 0
+        } else if bt.stats.is_buildable_near_water_only
             && !t.as_ref().is_some_and(|t| self.target_is_near_water(t))
         {
             self.set_target(unit, uid, t);
             self.mark_as_impossible(unit, uid, cannot);
             return Ok(());
-        } else if bt.stats.is_buildable_anywhere != 0 {
+        } else if bt.stats.is_buildable_anywhere {
             t = match &t {
                 Some(t) => self.target_any_land(t),
                 None => None,
@@ -1966,7 +1966,7 @@ impl World {
                 let t = self.target_of(unit, uid);
                 // A unit inside another is out of reach.
                 let vulnerable = t.as_ref().and_then(|t| self.t_entity(t)).is_some_and(|e| {
-                    e.stats.is_vulnerable != 0 && matches!(e.place, Some(Place::Square(_)))
+                    e.stats.is_vulnerable && matches!(e.place, Some(Place::Square(_)))
                 });
                 if !vulnerable {
                     self.mark_as_impossible(unit, uid, None);
@@ -2069,7 +2069,7 @@ impl World {
                             // no hit points has 0.
                             let e = &m.snapshot;
                             !e.is_building_site()
-                                && e.stats.is_repairable != 0
+                                && e.stats.is_repairable
                                 && e.creature().map_or(0, |c| c.hp) == e.stats.hp_max
                         }
                         _ => false,
@@ -2387,7 +2387,7 @@ impl World {
             Product::Train(type_id) => {
                 let t = self.rules.ty(type_id).clone();
                 let found = if t.airground_type == AirGround::Water
-                    && self.e(unit).stats.is_buildable_near_water_only != 0
+                    && self.e(unit).stats.is_buildable_near_water_only
                 {
                     match self.nearest_water(unit) {
                         None => None,
@@ -2438,10 +2438,9 @@ impl World {
                     (c.hp, c.rallying_point, c.group.clone())
                 });
                 let hp_max = e.stats.hp_max;
-                let leave_meadow =
-                    e.stats.is_buildable_anywhere == 0 && t.stats.is_buildable_anywhere != 0;
+                let leave_meadow = !e.stats.is_buildable_anywhere && t.stats.is_buildable_anywhere;
                 let consume_meadow =
-                    e.stats.is_buildable_anywhere != 0 && t.stats.is_buildable_anywhere == 0;
+                    e.stats.is_buildable_anywhere && !t.stats.is_buildable_anywhere;
                 let blocked_exit = e.blocked_exit();
                 let mut meadow = None;
                 if consume_meadow {
@@ -2465,15 +2464,10 @@ impl World {
                 // The old building frees room for the new one only in its
                 // own layer: a mod's new type may be in another, and find
                 // that layer full.
-                let room_freed = e.stats.collision != 0 && e.airground_type == t.airground_type;
+                let room_freed = e.stats.collision && e.airground_type == t.airground_type;
                 if !room_freed
                     && self
-                        .initial_position(
-                            t.stats.collision != 0,
-                            t.airground_type,
-                            place,
-                            Some((x, y)),
-                        )
+                        .initial_position(t.stats.collision, t.airground_type, place, Some((x, y)))
                         .is_err()
                 {
                     self.order_cancel(unit, o, true);
@@ -2515,7 +2509,7 @@ impl World {
                     } else {
                         let _ = self.move_to(o, Some(place), Some((x, y)), 90);
                         if self.e(o).place == Some(Place::Inside(unit)) {
-                            self.em(o).stats.collision = 0;
+                            self.em(o).stats.collision = false;
                             let _ = self.move_to(o, Some(place), Some((x, y)), 90);
                         }
                         self.notify(o, EntityEvent::Exit, false);
@@ -2781,7 +2775,7 @@ impl World {
             },
         };
         let is_exit = target.entity_id().is_some_and(|e| self.e(e).is_exit());
-        let remember_land = !(is_exit || bt.stats.is_buildable_anywhere != 0);
+        let remember_land = !(is_exit || bt.stats.is_buildable_anywhere);
         // The land of a building that needs it is a meadow: a remembered
         // one was made its entity above.
         if remember_land {
@@ -2886,7 +2880,7 @@ impl World {
         if let Some(c) = self.cm(unit) {
             c.mana -= t.stats.mana_cost;
         }
-        let universal = t.stats.universal_notification != 0;
+        let universal = t.stats.universal_notification;
         self.notify(unit, EntityEvent::UseComplete(t.name.clone()), universal);
         self.mark_as_complete(unit, uid);
         Ok(())
@@ -2905,13 +2899,13 @@ impl World {
             "teleportation" => {
                 let (x, y) = (self.e(unit).x, self.e(unit).y);
                 self.get_objects(x, y, r, |e| {
-                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
             "recall" => {
                 let (x, y) = self.t_xy(target);
                 self.get_objects(x, y, r, |e| {
-                    e.player() == p && p.is_some() && e.stats.is_teleportable != 0
+                    e.player() == p && p.is_some() && e.stats.is_teleportable
                 })
             }
             "raise_dead" => {

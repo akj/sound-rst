@@ -460,19 +460,24 @@ impl BaseClass {
 }
 
 macro_rules! stats {
-    ($($name:ident: $stat:ident),* $(,)?) => {
+    (
+        numbers { $($number:ident: $number_stat:ident),* $(,)? }
+        flags { $($flag:ident: $flag_stat:ident),* $(,)? }
+    ) => {
         /// A statistic of an entity or a unit type, which an upgrade's
         /// effect may name.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum Stat {
-            $($stat,)*
+            $($number_stat,)*
+            $($flag_stat,)*
         }
 
         impl Stat {
             /// The statistic the rules call `name`.
             pub fn parse(name: &str) -> Option<Stat> {
                 match name {
-                    $(stringify!($name) => Some(Stat::$stat),)*
+                    $(stringify!($number) => Some(Stat::$number_stat),)*
+                    $(stringify!($flag) => Some(Stat::$flag_stat),)*
                     _ => None,
                 }
             }
@@ -480,91 +485,107 @@ macro_rules! stats {
             /// The name the rules give the statistic.
             pub fn name(self) -> &'static str {
                 match self {
-                    $(Stat::$stat => stringify!($name),)*
+                    $(Stat::$number_stat => stringify!($number),)*
+                    $(Stat::$flag_stat => stringify!($flag),)*
                 }
             }
         }
 
-        /// The numeric attributes of an entity or a unit type, by their
-        /// Python names. Booleans are 0 or 1, as Python treats them as
-        /// integers. Decimal values are multiplied by [`PRECISION`].
+        /// The attributes of an entity or a unit type, by their Python
+        /// names: numbers, decimals multiplied by [`PRECISION`], and
+        /// yes-or-no flags.
         #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
         pub struct Stats {
-            $(pub $name: i64,)*
+            $(pub $number: i64,)*
+            $(pub $flag: bool,)*
         }
 
         impl Stats {
-            /// The value of a statistic.
+            /// The value of a statistic, a flag as 0 or 1, as Python counts
+            /// a boolean.
             pub fn get(&self, stat: Stat) -> i64 {
                 match stat {
-                    $(Stat::$stat => self.$name,)*
+                    $(Stat::$number_stat => self.$number,)*
+                    $(Stat::$flag_stat => i64::from(self.$flag),)*
                 }
             }
 
-            /// A statistic, to change it.
-            pub fn get_mut(&mut self, stat: Stat) -> &mut i64 {
+            /// Sets a statistic to the value the rules give it. A flag is
+            /// set when the value is not 0.
+            pub fn set(&mut self, stat: Stat, value: i64) {
                 match stat {
-                    $(Stat::$stat => &mut self.$name,)*
+                    $(Stat::$number_stat => self.$number = value,)*
+                    $(Stat::$flag_stat => self.$flag = value != 0,)*
                 }
+            }
+
+            /// Adds `delta` to a statistic, as an upgrade's bonus does. A
+            /// flag counts as 0 or 1, and is set when the sum is not 0.
+            pub fn add(&mut self, stat: Stat, delta: i64) {
+                self.set(stat, self.get(stat).saturating_add(delta));
             }
         }
     };
 }
 
 stats! {
-    collision: Collision,
-    bonus_height: BonusHeight,
-    harm_level: HarmLevel,
-    heal_level: HealLevel,
-    qty: Qty,
-    is_vulnerable: IsVulnerable,
-    is_repairable: IsRepairable,
-    is_healable: IsHealable,
-    is_undead: IsUndead,
-    is_teleportable: IsTeleportable,
-    is_a_building_land: IsABuildingLand,
-    transport_capacity: TransportCapacity,
-    transport_volume: TransportVolume,
-    is_invisible: IsInvisible,
-    is_cloakable: IsCloakable,
-    sight_range: SightRange,
-    is_a_detector: IsADetector,
-    detection_range: DetectionRange,
-    is_a_cloaker: IsACloaker,
-    cloaking_range: CloakingRange,
-    speed: Speed,
-    hp_max: HpMax,
-    hp_regen: HpRegen,
-    mana_max: ManaMax,
-    mana_start: ManaStart,
-    mana_regen: ManaRegen,
-    time_cost: TimeCost,
-    food_cost: FoodCost,
-    food_provided: FoodProvided,
-    armor: Armor,
-    damage: Damage,
-    damage_radius: DamageRadius,
-    range: Range,
-    is_ballistic: IsBallistic,
-    minimal_range: MinimalRange,
-    cooldown: Cooldown,
-    decay: Decay,
-    corpse: Corpse,
-    presence: Presence,
-    count_limit: CountLimit,
-    is_a_gate: IsAGate,
-    provides_survival: ProvidesSurvival,
-    is_buildable_anywhere: IsBuildableAnywhere,
-    is_buildable_on_exits_only: IsBuildableOnExitsOnly,
-    is_buildable_near_water_only: IsBuildableNearWaterOnly,
-    is_a_unit: IsAUnit,
-    is_a_building: IsABuilding,
-    mana_cost: ManaCost,
-    effect_range: EffectRange,
-    effect_radius: EffectRadius,
-    universal_notification: UniversalNotification,
-    extraction_time: ExtractionTime,
-    extraction_qty: ExtractionQty,
+    numbers {
+        bonus_height: BonusHeight,
+        harm_level: HarmLevel,
+        heal_level: HealLevel,
+        qty: Qty,
+        transport_capacity: TransportCapacity,
+        transport_volume: TransportVolume,
+        sight_range: SightRange,
+        detection_range: DetectionRange,
+        cloaking_range: CloakingRange,
+        speed: Speed,
+        hp_max: HpMax,
+        hp_regen: HpRegen,
+        mana_max: ManaMax,
+        mana_start: ManaStart,
+        mana_regen: ManaRegen,
+        time_cost: TimeCost,
+        food_cost: FoodCost,
+        food_provided: FoodProvided,
+        armor: Armor,
+        damage: Damage,
+        damage_radius: DamageRadius,
+        range: Range,
+        minimal_range: MinimalRange,
+        cooldown: Cooldown,
+        decay: Decay,
+        count_limit: CountLimit,
+        mana_cost: ManaCost,
+        effect_range: EffectRange,
+        effect_radius: EffectRadius,
+        extraction_time: ExtractionTime,
+        extraction_qty: ExtractionQty,
+    }
+    flags {
+        collision: Collision,
+        is_vulnerable: IsVulnerable,
+        is_repairable: IsRepairable,
+        is_healable: IsHealable,
+        is_undead: IsUndead,
+        is_teleportable: IsTeleportable,
+        is_a_building_land: IsABuildingLand,
+        is_invisible: IsInvisible,
+        is_cloakable: IsCloakable,
+        is_a_detector: IsADetector,
+        is_a_cloaker: IsACloaker,
+        is_ballistic: IsBallistic,
+        corpse: Corpse,
+        presence: Presence,
+        is_a_gate: IsAGate,
+        provides_survival: ProvidesSurvival,
+        is_buildable_anywhere: IsBuildableAnywhere,
+        is_buildable_on_exits_only: IsBuildableOnExitsOnly,
+        is_buildable_near_water_only: IsBuildableNearWaterOnly,
+        is_a_unit: IsAUnit,
+        is_a_building: IsABuilding,
+        universal_notification: UniversalNotification,
+    }
 }
 
 /// The kind of Python class an entity is an instance of.
@@ -611,7 +632,7 @@ impl EntityClass {
     /// The class attribute defaults of the Python class.
     pub fn default_stats(self) -> Stats {
         let mut s = Stats {
-            collision: 1,
+            collision: true,
             transport_volume: 99,
             sight_range: 85 * PRECISION / 10,
             detection_range: 85 * PRECISION / 10,
@@ -621,46 +642,46 @@ impl EntityClass {
         match self {
             EntityClass::Deposit => {}
             EntityClass::Meadow => {
-                s.is_a_building_land = 1;
-                s.collision = 0;
+                s.is_a_building_land = true;
+                s.collision = false;
             }
-            EntityClass::Corpse | EntityClass::Exit => s.collision = 0,
+            EntityClass::Corpse | EntityClass::Exit => s.collision = false,
             EntityClass::Worker
             | EntityClass::Soldier
             | EntityClass::Effect
             | EntityClass::Building
             | EntityClass::BuildingSite => {
                 // Creature
-                s.is_buildable_anywhere = 1;
+                s.is_buildable_anywhere = true;
                 s.transport_volume = 1;
-                s.is_vulnerable = 1;
-                s.is_healable = 1;
-                s.corpse = 1;
-                s.presence = 1;
+                s.is_vulnerable = true;
+                s.is_healable = true;
+                s.corpse = true;
+                s.presence = true;
                 if self.is_unit() {
                     s.food_cost = 1;
-                    s.is_cloakable = 1;
-                    s.is_a_gate = 1;
-                    s.is_a_unit = 1;
+                    s.is_cloakable = true;
+                    s.is_a_gate = true;
+                    s.is_a_unit = true;
                 }
                 match self {
-                    EntityClass::Worker | EntityClass::Soldier => s.is_teleportable = 1,
+                    EntityClass::Worker | EntityClass::Soldier => s.is_teleportable = true,
                     EntityClass::Effect => {
-                        s.collision = 0;
-                        s.corpse = 0;
+                        s.collision = false;
+                        s.corpse = false;
                         s.food_cost = 0;
-                        s.is_vulnerable = 0;
-                        s.presence = 0;
+                        s.is_vulnerable = false;
+                        s.presence = false;
                     }
                     EntityClass::Building | EntityClass::BuildingSite => {
-                        s.is_repairable = 1;
-                        s.is_healable = 0;
-                        s.is_a_building = 1;
+                        s.is_repairable = true;
+                        s.is_healable = false;
+                        s.is_a_building = true;
                         s.transport_volume = 99;
-                        s.corpse = 0;
+                        s.corpse = false;
                         if self == EntityClass::Building {
-                            s.is_buildable_anywhere = 0;
-                            s.provides_survival = 1;
+                            s.is_buildable_anywhere = false;
+                            s.provides_survival = true;
                         }
                     }
                     EntityClass::Deposit
@@ -1453,10 +1474,11 @@ fn build_type(
             }
             _ => {
                 if let Some(stat) = Stat::parse(k) {
-                    *t.stats.get_mut(stat) = match v {
+                    let value = match v {
                         RawValue::Int(n) => *n,
                         other => i64::from(other.is_truthy()),
                     };
+                    t.stats.set(stat, value);
                 } else if let (Some(s), RawValue::Int(n)) =
                     (k.strip_suffix("_bonus").and_then(Stat::parse), v)
                 {

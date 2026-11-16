@@ -817,7 +817,7 @@ impl World {
 
     pub(crate) fn occupy_space(&mut self, id: EntityId) {
         let e = self.e(id);
-        if e.stats.collision == 0 {
+        if !e.stats.collision {
             return;
         }
         if let Some(Place::Square(_)) = e.place {
@@ -850,7 +850,7 @@ impl World {
             (None, Some(Place::Inside(c))) => (self.e(c).x, self.e(c).y),
             (None, None) => (0, 0),
         };
-        let collision = self.e(id).stats.collision != 0;
+        let collision = self.e(id).stats.collision;
         if let (Some(np), true) = (new_place, collision) {
             match np {
                 Place::Square(s) => {
@@ -1048,11 +1048,11 @@ impl World {
                 let mut r = true;
                 for &t in &unit.harm_target_type {
                     let fails = match t {
-                        HarmTarget::Healable => other.stats.is_healable == 0,
-                        HarmTarget::Building => other.stats.is_a_building == 0,
+                        HarmTarget::Healable => !other.stats.is_healable,
+                        HarmTarget::Building => !other.stats.is_a_building,
                         HarmTarget::Layer(a) => other.airground_type.ground_or_air() != a,
-                        HarmTarget::Unit => other.stats.is_a_unit == 0,
-                        HarmTarget::Undead => other.stats.is_undead == 0,
+                        HarmTarget::Unit => !other.stats.is_a_unit,
+                        HarmTarget::Undead => !other.stats.is_undead,
                     };
                     if fails {
                         r = false;
@@ -1365,7 +1365,7 @@ impl World {
     pub(crate) fn update_cloaking(&mut self) {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
-                if self.e(u).stats.is_cloakable != 0
+                if self.e(u).stats.is_cloakable
                     && let Some(c) = self.cm(u)
                 {
                     c.is_cloaked = false;
@@ -1375,7 +1375,7 @@ impl World {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
                 let e = self.e(u);
-                if e.stats.is_a_cloaker == 0 {
+                if !e.stats.is_a_cloaker {
                     continue;
                 }
                 let r2 = e.stats.cloaking_range * e.stats.cloaking_range;
@@ -1383,7 +1383,7 @@ impl World {
                 for vp in self.pl(p).allied.clone() {
                     for vu in self.potential_neighbors(vp, ux, uy) {
                         let v = self.e(vu);
-                        if v.stats.is_cloakable == 0 || v.is_cloaked() {
+                        if !v.stats.is_cloakable || v.is_cloaked() {
                             continue;
                         }
                         if crate::nofloat::square_of_distance(v.x, v.y, ux, uy) < r2
@@ -1404,7 +1404,7 @@ impl World {
         for p in self.players.clone() {
             for u in self.pl(p).units.clone() {
                 let e = self.e(u);
-                if e.stats.is_a_detector == 0 {
+                if !e.stats.is_a_detector {
                     continue;
                 }
                 let r2 = e.stats.detection_range * e.stats.detection_range;

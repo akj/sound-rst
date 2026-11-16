@@ -191,7 +191,7 @@ fn a_friendly_gate_lets_the_player_through() {
     let home = square_of(&w, unit(&w, me, "townhall"));
     let exit = w.square(home).exits[0];
     let gate = unit(&w, me, "farm");
-    w.entity_mut(gate).unwrap().stats.is_a_gate = 1;
+    w.entity_mut(gate).unwrap().stats.is_a_gate = true;
     w.entity_mut(exit)
         .unwrap()
         .exit_mut()

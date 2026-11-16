@@ -735,7 +735,7 @@ starting_resources 10 10
                 .unit_type_mut("new_flyingmachine")
                 .unwrap()
                 .stats
-                .is_a_cloaker = 1;
+                .is_a_cloaker = true;
         }
         let mut c1 = Controller::computer(ai.0);
         let mut c2 = Controller::computer(ai.1);
@@ -1409,7 +1409,7 @@ starting_resources 10 10
         // without collision: the same result
         let (a, x, y) = (w.e(p).airground_type, w.e(p).x, w.e(p).y);
         w.collision_mut(a).remove(x, y);
-        w.em(p).stats.collision = 0;
+        w.em(p).stats.collision = false;
         w.move_to(p, Some(Place::Square(a2)), Some(start), 90)
             .unwrap();
         assert_eq!(start, pos(w));
