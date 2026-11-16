@@ -196,77 +196,158 @@ pub enum GameCommand {
     Cmd(String),
 }
 
-/// Every command name the interface knows.
-pub const COMMAND_NAMES: &[&str] = &[
-    "resource_status",
-    "all_resources_status",
-    "food_status",
-    "unit_hp_status",
-    "production_status",
-    "workers_status",
-    "fight_status",
-    "combat_status",
-    "examine",
-    "unit_status",
-    "select_square",
-    "select_scouted_square",
-    "select_conflict_square",
-    "select_unknown_square",
-    "select_resource_square",
-    "toggle_zoom",
-    "select_target",
-    "select_order",
-    "order_shortcut",
-    "validate",
-    "default",
-    "do_again",
-    "select_unit",
-    "select_units",
-    "command_unit",
-    "group",
-    "ungroup",
-    "recall_group",
-    "set_group",
-    "append_group",
-    "escape",
-    "help",
-    "fullscreen",
-    "toggle_cheatmode",
-    "say_time",
-    "toggle_tick",
-    "toggle_talking_clock",
-    "change_player",
-    "history_previous",
-    "history_next",
-    "history_stop",
-    "unheard",
-    "review_previous",
-    "review_next",
-    "review_category",
-    "copy_message",
-    "jump_to_alert",
-    "objectives",
-    "follow_player",
-    "listen_speed",
-    "listen_pause",
-    "listen_jump",
-    "gamemenu",
-    "say_players",
-    "say_faction",
-    "players_status",
-    "say",
-    "say_allies",
-    "flare",
-    "chat_previous",
-    "chat_next",
-    "volume",
-    "immersion",
-    "rotate_left",
-    "rotate_right",
-    "console",
-    "reload_parameters",
-    "key_help",
-    "cmd",
+/// How a command reads its arguments.
+type Parse = fn(&[String]) -> Result<GameCommand, String>;
+
+use GameCommand as C;
+
+/// Every command name the interface knows, with how it reads its arguments.
+const COMMANDS: &[(&str, Parse)] = &[
+    ("resource_status", |a| one_int(a, C::ResourceStatus)),
+    ("all_resources_status", |a| none(a, C::AllResourcesStatus)),
+    ("food_status", |a| none(a, C::FoodStatus)),
+    ("unit_hp_status", |a| none(a, C::UnitHpStatus)),
+    ("production_status", |a| none(a, C::ProductionStatus)),
+    ("workers_status", |a| none(a, C::WorkersStatus)),
+    ("fight_status", |a| none(a, C::FightStatus)),
+    ("combat_status", |a| none(a, C::CombatStatus)),
+    ("examine", |a| none(a, C::Examine)),
+    ("unit_status", |a| none(a, C::UnitStatus)),
+    ("select_square", |a| {
+        arity(a, 2, usize::MAX)?;
+        Ok(C::SelectSquare {
+            dx: int(&a[0])?,
+            dy: int(&a[1])?,
+            no_collision: a[2..].iter().any(|a| a == "no_collision"),
+        })
+    }),
+    ("select_scouted_square", |a| {
+        one_int(a, C::SelectScoutedSquare)
+    }),
+    ("select_conflict_square", |a| {
+        one_int(a, C::SelectConflictSquare)
+    }),
+    ("select_unknown_square", |a| {
+        one_int(a, C::SelectUnknownSquare)
+    }),
+    ("select_resource_square", |a| {
+        one_int(a, C::SelectResourceSquare)
+    }),
+    ("toggle_zoom", |a| none(a, C::ToggleZoom)),
+    ("select_target", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::SelectTarget {
+            inc: int(&a[0])?,
+            types: rest(a).to_vec(),
+        })
+    }),
+    ("select_order", |a| {
+        arity(a, 1, usize::MAX)?;
+        let has = |f: &str| rest(a).iter().any(|a| a == f);
+        Ok(C::SelectOrder {
+            inc: int(&a[0])?,
+            menu: if has("inactive_included") {
+                OrderMenu::Included
+            } else if has("inactive_only") {
+                OrderMenu::InactiveOnly
+            } else {
+                OrderMenu::Active
+            },
+        })
+    }),
+    ("order_shortcut", |a| none(a, C::OrderShortcut)),
+    ("validate", |a| Ok(C::Validate(OrderFlags::from_args(a)))),
+    ("default", |a| Ok(C::Default(OrderFlags::from_args(a)))),
+    ("do_again", |a| {
+        Ok(C::DoAgain {
+            now: a.iter().any(|a| a == "now"),
+            flags: OrderFlags::from_args(a),
+        })
+    }),
+    ("select_unit", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::SelectUnit {
+            inc: int(&a[0])?,
+            filter: UnitFilter::from_args(rest(a)),
+        })
+    }),
+    ("select_units", |a| {
+        Ok(C::SelectUnits(UnitFilter::from_args(a)))
+    }),
+    ("command_unit", |a| none(a, C::CommandUnit)),
+    ("group", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::Group {
+            portion: positive(&a[0])?,
+            filter: UnitFilter::from_args(rest(a)),
+        })
+    }),
+    ("ungroup", |a| none(a, C::Ungroup)),
+    ("recall_group", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::RecallGroup(a[0].clone()))
+    }),
+    ("set_group", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::SetGroup {
+            name: a[0].clone(),
+            flags: OrderFlags::from_args(rest(a)),
+        })
+    }),
+    ("append_group", |a| {
+        arity(a, 1, usize::MAX)?;
+        Ok(C::AppendGroup {
+            name: a[0].clone(),
+            flags: OrderFlags::from_args(rest(a)),
+        })
+    }),
+    ("escape", |a| none(a, C::Escape)),
+    ("help", |a| one_int(a, C::Help)),
+    ("fullscreen", |a| none(a, C::Fullscreen)),
+    ("toggle_cheatmode", |a| none(a, C::ToggleCheatmode)),
+    ("say_time", |a| none(a, C::SayTime)),
+    ("toggle_tick", |a| none(a, C::ToggleTick)),
+    ("toggle_talking_clock", |a| none(a, C::ToggleTalkingClock)),
+    ("change_player", |a| none(a, C::ChangePlayer)),
+    ("history_previous", |a| none(a, C::HistoryPrevious)),
+    ("history_next", |a| none(a, C::HistoryNext)),
+    ("history_stop", |a| none(a, C::HistoryStop)),
+    ("unheard", |a| none(a, C::Unheard)),
+    ("review_previous", |a| none(a, C::ReviewPrevious)),
+    ("review_next", |a| none(a, C::ReviewNext)),
+    ("review_category", |a| none(a, C::ReviewCategory)),
+    ("copy_message", |a| none(a, C::CopyMessage)),
+    ("jump_to_alert", |a| none(a, C::JumpToAlert)),
+    ("objectives", |a| Ok(C::Objectives(optional_int(a)?))),
+    ("follow_player", |a| Ok(C::FollowPlayer(optional_int(a)?))),
+    ("listen_speed", |a| {
+        Ok(C::ListenSpeed(optional_int(a)?.signum()))
+    }),
+    ("listen_pause", |a| none(a, C::ListenPause)),
+    ("listen_jump", |a| {
+        arity(a, 1, 1)?;
+        match int(&a[0])? {
+            0 => Err("0 minutes is no jump".into()),
+            n => Ok(C::ListenJump(n.clamp(-600, 600))),
+        }
+    }),
+    ("gamemenu", |a| none(a, C::GameMenu)),
+    ("say_players", |a| none(a, C::SayPlayers)),
+    ("say_faction", |a| none(a, C::SayFaction)),
+    ("players_status", |a| none(a, C::PlayersStatus)),
+    ("say", |a| none(a, C::Say)),
+    ("say_allies", |a| none(a, C::SayAllies)),
+    ("flare", |a| none(a, C::Flare)),
+    ("chat_previous", |a| none(a, C::ChatPrevious)),
+    ("chat_next", |a| none(a, C::ChatNext)),
+    ("volume", |a| Ok(C::Volume(optional_int(a)?))),
+    ("immersion", |a| none(a, C::Immersion)),
+    ("rotate_left", |a| none(a, C::RotateLeft)),
+    ("rotate_right", |a| none(a, C::RotateRight)),
+    ("console", |a| none(a, C::Console)),
+    ("reload_parameters", |a| none(a, C::ReloadParameters)),
+    ("key_help", |a| none(a, C::KeyHelp)),
+    ("cmd", |a| Ok(C::Cmd(a.join(" ")))),
 ];
 
 fn int(s: &str) -> Result<i64, String> {
@@ -292,182 +373,44 @@ fn arity(args: &[String], min: usize, max: usize) -> Result<(), String> {
     }
 }
 
+/// A command that takes no argument.
+fn none(args: &[String], c: GameCommand) -> Result<GameCommand, String> {
+    arity(args, 0, 0).map(|()| c)
+}
+
+/// A command that takes one whole number.
+fn one_int(args: &[String], f: fn(i64) -> GameCommand) -> Result<GameCommand, String> {
+    arity(args, 1, 1)?;
+    Ok(f(int(&args[0])?))
+}
+
+/// At most one whole number, 1 when it is left out.
+fn optional_int(args: &[String]) -> Result<i64, String> {
+    arity(args, 0, 1)?;
+    match args.first() {
+        Some(a) => int(a),
+        None => Ok(1),
+    }
+}
+
+/// The arguments after the first.
+fn rest(args: &[String]) -> &[String] {
+    args.get(1..).unwrap_or_default()
+}
+
+/// Whether `name` is a command the interface knows.
+pub fn is_command(name: &str) -> bool {
+    COMMANDS.iter().any(|(n, _)| *n == name)
+}
+
 impl GameCommand {
     /// The command `name` with `args`: an error for an unknown name, or
     /// arguments the command cannot take.
     pub fn parse(name: &str, args: Vec<String>) -> Result<GameCommand, BindingError> {
-        if !COMMAND_NAMES.contains(&name) {
+        let Some((_, parse)) = COMMANDS.iter().find(|(n, _)| *n == name) else {
             return Err(BindingError(format!("'{name}' is not a command")));
-        }
-        Self::parse_known(name, &args).map_err(|e| BindingError(format!("{name}: {e}")))
-    }
-
-    fn parse_known(name: &str, args: &[String]) -> Result<GameCommand, String> {
-        use GameCommand as C;
-        let none = |c: GameCommand| arity(args, 0, 0).map(|()| c);
-        let one_int = |f: fn(i64) -> GameCommand| -> Result<GameCommand, String> {
-            arity(args, 1, 1)?;
-            Ok(f(int(&args[0])?))
         };
-        let rest = || args.get(1..).unwrap_or_default();
-        Ok(match name {
-            "resource_status" => one_int(C::ResourceStatus)?,
-            "all_resources_status" => none(C::AllResourcesStatus)?,
-            "food_status" => none(C::FoodStatus)?,
-            "unit_hp_status" => none(C::UnitHpStatus)?,
-            "production_status" => none(C::ProductionStatus)?,
-            "workers_status" => none(C::WorkersStatus)?,
-            "fight_status" => none(C::FightStatus)?,
-            "combat_status" => none(C::CombatStatus)?,
-            "examine" => none(C::Examine)?,
-            "unit_status" => none(C::UnitStatus)?,
-            "select_square" => {
-                arity(args, 2, usize::MAX)?;
-                C::SelectSquare {
-                    dx: int(&args[0])?,
-                    dy: int(&args[1])?,
-                    no_collision: args[2..].iter().any(|a| a == "no_collision"),
-                }
-            }
-            "select_scouted_square" => one_int(C::SelectScoutedSquare)?,
-            "select_conflict_square" => one_int(C::SelectConflictSquare)?,
-            "select_unknown_square" => one_int(C::SelectUnknownSquare)?,
-            "select_resource_square" => one_int(C::SelectResourceSquare)?,
-            "toggle_zoom" => none(C::ToggleZoom)?,
-            "select_target" => {
-                arity(args, 1, usize::MAX)?;
-                C::SelectTarget {
-                    inc: int(&args[0])?,
-                    types: rest().to_vec(),
-                }
-            }
-            "select_order" => {
-                arity(args, 1, usize::MAX)?;
-                let has = |f: &str| rest().iter().any(|a| a == f);
-                C::SelectOrder {
-                    inc: int(&args[0])?,
-                    menu: if has("inactive_included") {
-                        OrderMenu::Included
-                    } else if has("inactive_only") {
-                        OrderMenu::InactiveOnly
-                    } else {
-                        OrderMenu::Active
-                    },
-                }
-            }
-            "order_shortcut" => none(C::OrderShortcut)?,
-            "validate" => C::Validate(OrderFlags::from_args(args)),
-            "default" => C::Default(OrderFlags::from_args(args)),
-            "do_again" => C::DoAgain {
-                now: args.iter().any(|a| a == "now"),
-                flags: OrderFlags::from_args(args),
-            },
-            "select_unit" => {
-                arity(args, 1, usize::MAX)?;
-                C::SelectUnit {
-                    inc: int(&args[0])?,
-                    filter: UnitFilter::from_args(rest()),
-                }
-            }
-            "select_units" => C::SelectUnits(UnitFilter::from_args(args)),
-            "command_unit" => none(C::CommandUnit)?,
-            "group" => {
-                arity(args, 1, usize::MAX)?;
-                C::Group {
-                    portion: positive(&args[0])?,
-                    filter: UnitFilter::from_args(rest()),
-                }
-            }
-            "ungroup" => none(C::Ungroup)?,
-            "recall_group" => {
-                arity(args, 1, usize::MAX)?;
-                C::RecallGroup(args[0].clone())
-            }
-            "set_group" => {
-                arity(args, 1, usize::MAX)?;
-                C::SetGroup {
-                    name: args[0].clone(),
-                    flags: OrderFlags::from_args(rest()),
-                }
-            }
-            "append_group" => {
-                arity(args, 1, usize::MAX)?;
-                C::AppendGroup {
-                    name: args[0].clone(),
-                    flags: OrderFlags::from_args(rest()),
-                }
-            }
-            "escape" => none(C::Escape)?,
-            "help" => one_int(C::Help)?,
-            "fullscreen" => none(C::Fullscreen)?,
-            "toggle_cheatmode" => none(C::ToggleCheatmode)?,
-            "say_time" => none(C::SayTime)?,
-            "toggle_tick" => none(C::ToggleTick)?,
-            "toggle_talking_clock" => none(C::ToggleTalkingClock)?,
-            "change_player" => none(C::ChangePlayer)?,
-            "history_previous" => none(C::HistoryPrevious)?,
-            "history_next" => none(C::HistoryNext)?,
-            "history_stop" => none(C::HistoryStop)?,
-            "unheard" => none(C::Unheard)?,
-            "review_previous" => none(C::ReviewPrevious)?,
-            "review_next" => none(C::ReviewNext)?,
-            "review_category" => none(C::ReviewCategory)?,
-            "copy_message" => none(C::CopyMessage)?,
-            "jump_to_alert" => none(C::JumpToAlert)?,
-            "objectives" => {
-                arity(args, 0, 1)?;
-                C::Objectives(match args.first() {
-                    Some(a) => int(a)?,
-                    None => 1,
-                })
-            }
-            "follow_player" => {
-                arity(args, 0, 1)?;
-                C::FollowPlayer(match args.first() {
-                    Some(a) => int(a)?,
-                    None => 1,
-                })
-            }
-            "listen_speed" => {
-                arity(args, 0, 1)?;
-                C::ListenSpeed(match args.first() {
-                    Some(a) => int(a)?.signum(),
-                    None => 1,
-                })
-            }
-            "listen_pause" => none(C::ListenPause)?,
-            "listen_jump" => {
-                arity(args, 1, 1)?;
-                match int(&args[0])? {
-                    0 => return Err("0 minutes is no jump".into()),
-                    n => C::ListenJump(n.clamp(-600, 600)),
-                }
-            }
-            "gamemenu" => none(C::GameMenu)?,
-            "say_players" => none(C::SayPlayers)?,
-            "say_faction" => none(C::SayFaction)?,
-            "players_status" => none(C::PlayersStatus)?,
-            "say" => none(C::Say)?,
-            "say_allies" => none(C::SayAllies)?,
-            "flare" => none(C::Flare)?,
-            "chat_previous" => none(C::ChatPrevious)?,
-            "chat_next" => none(C::ChatNext)?,
-            "volume" => {
-                arity(args, 0, 1)?;
-                C::Volume(match args.first() {
-                    Some(a) => int(a)?,
-                    None => 1,
-                })
-            }
-            "immersion" => none(C::Immersion)?,
-            "rotate_left" => none(C::RotateLeft)?,
-            "rotate_right" => none(C::RotateRight)?,
-            "console" => none(C::Console)?,
-            "reload_parameters" => none(C::ReloadParameters)?,
-            "key_help" => none(C::KeyHelp)?,
-            "cmd" => C::Cmd(args.join(" ")),
-            other => unreachable!("{other} is in COMMAND_NAMES"),
-        })
+        parse(&args).map_err(|e| BindingError(format!("{name}: {e}")))
     }
 }
 
@@ -782,6 +725,16 @@ mod tests {
             Err(BindingError("group: 0 is not above 0".into()))
         );
         assert!(parse("dance").is_err());
+    }
+
+    #[test]
+    fn each_command_name_has_one_row() {
+        for (i, (name, _)) in COMMANDS.iter().enumerate() {
+            assert!(
+                !COMMANDS[..i].iter().any(|(n, _)| n == name),
+                "{name} has two rows, and the second is never read"
+            );
+        }
     }
 
     fn describe(line: &str) -> String {
