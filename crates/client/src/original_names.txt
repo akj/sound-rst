@@ -20,7 +20,7 @@ package res
 23 and ; and
 38 you_have ; You have
 39 hit_points_on ; hit points on
-40 level unused ; level
+40 level ; level
 54 at_distance ; at
 55 meters ; meters
 59 the_player unused ; the player

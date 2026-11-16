@@ -21,9 +21,9 @@ use soundrts::mainmenu::main_menu;
 use soundrts::menu::py_repr;
 use soundrts::message::{Category, Policy};
 use soundrts::net::conn::{Connection, Link, NetEvent, Outgoing};
-use soundrts::testkit::{Harness, LiveKeys, Script, WAIT_LIMIT, controller, slot};
+use soundrts::testkit::{Harness, LiveKeys, Script, WAIT_LIMIT, slot};
 use soundrts_protocol::game::SeatFrame;
-use soundrts_protocol::{AiLevel, Login, MapHash, SlotPlayer, Speed};
+use soundrts_protocol::{Computer, Login, MapHash, Skill, SlotPlayer, Speed};
 use soundrts_world::orders::Keyword;
 use soundrts_world::{
     Command, EntityId, GameSetup, KeywordOrder, Order, OrderTarget, Place, Queue, SquareId,
@@ -585,7 +585,7 @@ fn a_game_on_a_server_is_heard_as_the_same_game_played_here() {
     const TURNS: usize = 400;
     let slots = [
         slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
-        slot(SlotPlayer::Computer(AiLevel::Aggressive), 2),
+        slot(SlotPlayer::Computer(Computer::Aggressive(Skill::NORMAL)), 2),
     ];
 
     // Here: a host in the client, built as the server builds the game.
@@ -600,7 +600,10 @@ fn a_game_on_a_server_is_heard_as_the_same_game_played_here() {
         texts.ai.into_string(),
         texts.map.into_string(),
         SEED,
-        slots.iter().map(controller).collect(),
+        slots
+            .iter()
+            .map(soundrts_protocol::Slot::controller)
+            .collect(),
     );
     let mut g = h.start_local("jl1", &setup);
     g.game.speed = Speed::Fast4.factor();
@@ -631,7 +634,7 @@ fn a_game_on_a_server_is_heard_as_the_same_game_played_here() {
     let due: VecDeque<f64> = here_turns.iter().copied().collect();
     let (server, mut g) = h.start_on_server_with(
         "jl1",
-        &[AiLevel::Aggressive],
+        &[Computer::Aggressive(Skill::NORMAL)],
         Speed::Fast4,
         SEED,
         move |inner| {

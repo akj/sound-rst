@@ -145,6 +145,7 @@ mod tests {
             controllers: vec![soundrts_world::Controller::human("me", true)],
             default_triggers: Vec::new(),
             allow_cheatmode: false,
+            computer_skill: soundrts_world::Skill::NORMAL,
             random_starts: false,
             equivalents: false,
         })

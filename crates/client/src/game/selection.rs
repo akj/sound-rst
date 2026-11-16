@@ -1060,7 +1060,7 @@ mod tests {
     impl UpgradeOnAServer {
         fn new() -> UpgradeOnAServer {
             use crate::clock::Clock;
-            use crate::testkit::{FakeStream, Harness, Script, controller, slot, upstream_root};
+            use crate::testkit::{FakeStream, Harness, Script, slot, upstream_root};
             use soundrts_protocol::game::SeatFrame;
             use soundrts_protocol::{Login, SlotPlayer, Speed};
             use soundrts_world::{Cheat, GameSetup, Host, KeywordOrder, Queue, TurnChange};
@@ -1074,7 +1074,10 @@ mod tests {
             let stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1);
             let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
             h.run_until_turn(&mut g, 0);
-            let controllers = slots.iter().map(controller).collect();
+            let controllers = slots
+                .iter()
+                .map(soundrts_protocol::Slot::controller)
+                .collect();
             let mut setup = GameSetup::multiplayer(
                 read("res/rules.txt"),
                 read("res/ai.txt"),

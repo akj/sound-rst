@@ -13,9 +13,8 @@ use soundrts_protocol::game::{Role, RulesHash, SeatFrame, decode_frame, encode_c
 use soundrts_protocol::*;
 use soundrts_server::{ServerConfig, ServerHandle};
 use soundrts_world::{
-    Command, Controller, EntityEvent, EntityId, Event, GameEnd, GameSetup, GameStart, Host,
-    KeywordOrder, Order, OrderTarget, PlayerId, Queue, Rules, SeatView, TurnMessage,
-    orders::Keyword,
+    Command, EntityEvent, EntityId, Event, GameEnd, GameSetup, GameStart, Host, KeywordOrder,
+    Order, OrderTarget, PlayerId, Queue, Rules, SeatView, TurnMessage, orders::Keyword,
 };
 
 /// Every game here is played from this seed, so a local host can play it
@@ -43,18 +42,6 @@ fn jl2() -> (MapInfo, MapData) {
     (info, data)
 }
 
-/// Who plays a slot, as the server makes it of the room: every human told
-/// the events.
-fn controller(slot: &Slot) -> Controller {
-    let mut c = match &slot.player {
-        SlotPlayer::Human(login) => Controller::human(login.as_str(), true),
-        SlotPlayer::Computer(level) => Controller::computer(level.ai_type()),
-    };
-    c.faction = slot.faction.as_str().to_owned();
-    c.alliance = Some(slot.alliance.to_string());
-    c
-}
-
 /// The slots of a room here: the seats' humans in order, then easy
 /// computers, as many as the game has players, each in an alliance of
 /// its own, with random factions.
@@ -64,11 +51,12 @@ fn room_slots(seats: &[&Seat]) -> Vec<Slot> {
         .map(|i| Slot {
             player: match seats.iter().find(|s| s.slot == i) {
                 Some(s) => SlotPlayer::Human(s.c.login.clone()),
-                None => SlotPlayer::Computer(AiLevel::Easy),
+                None => SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)),
             },
             faction: Faction::random(),
             alliance: u8::try_from(i + 1).unwrap(),
             ready: true,
+            income: Income::FULL,
         })
         .collect()
 }
@@ -79,7 +67,7 @@ fn setup(texts: &GameTexts, slots: &[Slot]) -> GameSetup {
         texts.ai.as_str().to_owned(),
         texts.map.as_str().to_owned(),
         SEED,
-        slots.iter().map(controller).collect(),
+        slots.iter().map(Slot::controller).collect(),
     )
 }
 
@@ -698,10 +686,18 @@ async fn a_seat_that_stops_reading_is_caught_up_and_holds_up_nobody() {
     assert!(mean < TURN * 2, "mean {mean:?}");
     assert!(longest < TURN * 6, "longest {longest:?}");
 
-    // Bob reads again: the turns he was not sent come as one change.
+    // Bob reads again: the turns he was not sent come as one change, which
+    // takes him to where the game is by then. Whoever is behind reads on.
     let at = a.time() / 300;
     b.play_to(at + 5).await;
-    a.play_to(at + 5).await;
+    while a.time() != b.time() {
+        let (behind, ahead) = if a.time() < b.time() {
+            (&mut *a, &*b)
+        } else {
+            (&mut *b, &*a)
+        };
+        behind.play_to(ahead.time() / 300).await;
+    }
     let skipped = b
         .history
         .windows(2)
@@ -1763,7 +1759,7 @@ async fn a_closed_room_is_watched_only_by_those_invited_who_then_do_nothing_a_pl
             faction: Faction::random(),
         },
         ClientMsg::AddComputer {
-            level: AiLevel::Easy,
+            computer: Computer::Quiet(Skill::NORMAL),
         },
         ClientMsg::RemoveSlot { slot: 0 },
         ClientMsg::Start { texts: texts() },
@@ -2122,4 +2118,99 @@ async fn the_server_records_a_game_and_its_record_replays_to_the_game_it_played(
     check_against_host(&texts, &[&*a, &*b], &given);
     let replayed = Host::replay(&record, |_| std::ops::ControlFlow::Continue(())).unwrap();
     assert_eq!(replayed.record(), &record);
+}
+
+#[tokio::test]
+async fn a_started_game_is_built_with_the_rooms_levels_and_incomes() {
+    use soundrts_world::{ControllerKind, Income, Record, Skill};
+    let dir = tempfile::tempdir().unwrap();
+    let records = dir.path().join("records");
+    let server = hosting_server(|c| c.records = Some(records.clone()));
+    let mut clients = clients(server.local_addr(), &["andrew"]).await;
+    room(&mut clients, 1).await;
+    let c = &mut clients[0];
+    c.send(ClientMsg::SetSkill {
+        slot: 1,
+        skill: Skill::Level1,
+    })
+    .await;
+    c.skip_until(|m| {
+        matches!(
+            m,
+            ServerMsg::Room {
+                change: RoomChange::Skill { .. },
+                ..
+            }
+        )
+    })
+    .await;
+    for (slot, percent) in [(0, 75), (1, 200)] {
+        c.send(ClientMsg::SetIncome {
+            slot,
+            income: Income::new(percent).unwrap(),
+        })
+        .await;
+        c.skip_until(|m| {
+            matches!(
+                m,
+                ServerMsg::Room {
+                    change: RoomChange::Income { .. },
+                    ..
+                }
+            )
+        })
+        .await;
+    }
+    let texts = texts();
+    let mut seats = start(clients, &texts).await;
+    let a = &mut seats[0];
+    a.play_to(2).await;
+    // The computer is named at its level in the game.
+    assert_eq!(
+        a.view().game_start().player_names[1],
+        soundrts_world::computer_name("easy", Skill::Level1)
+    );
+    a.command(Command::Quit).await;
+    while !a.left {
+        assert!(a.step(TIMEOUT).await);
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let file = loop {
+        let found = std::fs::read_dir(&records).ok().and_then(|d| {
+            d.filter_map(Result::ok)
+                .map(|e| e.path())
+                .find(|p| p.extension().is_some_and(|e| e == "jsonl"))
+        });
+        if let Some(f) = found {
+            break f;
+        }
+        assert!(Instant::now() < deadline, "no record");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let (record, _) = Record::read(&std::fs::read(&file).unwrap()).unwrap();
+    let seats: Vec<_> = record
+        .setup()
+        .controllers
+        .iter()
+        .map(|c| (c.kind.clone(), c.income.percent()))
+        .collect();
+    assert_eq!(
+        seats,
+        [
+            (
+                ControllerKind::Human {
+                    login: "andrew".into(),
+                    local: true
+                },
+                75
+            ),
+            (
+                ControllerKind::Computer {
+                    ai_type: "easy".into(),
+                    skill: Skill::Level1
+                },
+                200
+            ),
+        ]
+    );
 }

@@ -33,14 +33,13 @@ use crate::world::TPlace;
 mod door;
 mod handicap;
 pub(crate) mod script;
+mod skill;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 use script::{Plan, Step};
-
-/// The number of workers a scripted computer keeps getting.
-const NB_WORKERS_TO_GET: i64 = 10;
+pub use skill::Skill;
 
 /// The deepest the computer player's planning may go. Getting a unit asks
 /// for its makers, its requirements, resources and food, and each of these
@@ -295,7 +294,7 @@ impl Door<'_> {
         match self.kind().clone() {
             PlayerKind::Human => Ok(()),
             PlayerKind::Computer2 => self.computer2_play(),
-            PlayerKind::Computer { ai_type } => {
+            PlayerKind::Computer { ai_type, .. } => {
                 if ai_type == "timers" || !self.has_state() {
                     return Ok(());
                 }
@@ -396,12 +395,15 @@ impl Door<'_> {
             self.eventually_attack(places)?;
             self.state_mut().attacked_places.clear();
         } else if self.state().constant_attacks != 0 {
-            let places = self
-                .enemy_presence()
-                .iter()
-                .map(|&s| Some(Place::Square(s)))
-                .collect();
-            self.eventually_attack(places)?;
+            // During its grace, it starts no attack.
+            if self.time() >= self.skill().settings().grace {
+                let places = self
+                    .enemy_presence()
+                    .iter()
+                    .map(|&s| Some(Place::Square(s)))
+                    .collect();
+                self.eventually_attack(places)?;
+            }
         } else {
             self.defensive_routine()?;
         }
@@ -411,7 +413,7 @@ impl Door<'_> {
         self.raise_dead()?;
         self.build_a_warehouse_if_useful()?;
         let worker = self.role_type(Role::Worker);
-        match self.get(NB_WORKERS_TO_GET, worker) {
+        match self.get(self.skill().settings().workers.kept(), worker) {
             Ok(_) => {}
             Err(Unplanned::TooDeep) => {
                 let ai_type = self.ai_type();
@@ -446,18 +448,20 @@ impl Door<'_> {
     /// The name of its AI type, as a warning names it.
     fn ai_type(&self) -> String {
         match self.kind() {
-            PlayerKind::Computer { ai_type } => ai_type.clone(),
+            PlayerKind::Computer { ai_type, .. } => ai_type.clone(),
             PlayerKind::Human | PlayerKind::Computer2 => String::new(),
         }
     }
 
-    /// The cpu intensive players play in turns, one tenth of them each turn.
-    /// A scripted computer that plays is one of them.
+    /// The cpu intensive players play in turns: at the normal level, one
+    /// tenth of them each turn. A scripted computer that plays is one of
+    /// them.
     fn should_play_this_turn(&self) -> bool {
+        let every = self.skill().settings().turns_between_decisions;
         let players = self.planning_computers();
-        let i = players.iter().take_while(|&&x| x != self.me()).count();
-        let turn = (i * 10 / players.len().max(1)) as i64;
-        self.turn().rem_euclid(10) == turn
+        let i = players.iter().take_while(|&&x| x != self.me()).count() as i64;
+        let turn = i * every / (players.len() as i64).max(1);
+        self.turn().rem_euclid(every) == turn
     }
 
     fn follow_plan(&mut self) -> Planned {
@@ -506,9 +510,16 @@ impl Door<'_> {
                 self.set_line_nb(next);
             }
             Step::Get(items) => {
+                let worker = self.role_type(Role::Worker);
+                let workers = self.skill().settings().workers;
                 for &(n, t) in items {
                     // What its faction uses instead, as it is now.
                     let t = t.map(|t| self.rules().equivalent(self.faction(), t));
+                    let n = if t.is_some() && t == worker {
+                        workers.asked(n)
+                    } else {
+                        n
+                    };
                     if !self.get(n, t)? {
                         return Ok(());
                     }
@@ -1808,6 +1819,9 @@ mod fairness;
 
 #[cfg(test)]
 mod order_sites;
+
+#[cfg(test)]
+mod levels;
 
 #[cfg(test)]
 mod tests {

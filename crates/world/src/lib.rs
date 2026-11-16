@@ -121,7 +121,7 @@ mod upstream_tests;
 mod wire;
 pub mod world;
 
-pub use ai::{Handicap, computer_name};
+pub use ai::{Handicap, Skill, computer_name};
 pub use change::{
     ById, EntitiesChange, EntityFields, Ids, Malformed, OwnFields, SeenAgain, SquaresChange,
     StateChange, TurnChange,
@@ -138,7 +138,7 @@ pub use message::{
     ControlledPlayer, GameEnd, GameMap, GameStart, KnownSquares, MapExit, SeatState, SquareInfo,
     StartMessage, TurnMessage,
 };
-pub use player::{Controller, ControllerKind, Player, PlayerKind};
+pub use player::{Controller, ControllerKind, Income, Player, PlayerKind};
 pub use received::MAX_OBJECTIVES;
 #[cfg(feature = "serde")]
 pub use record::{Completeness, ReadError};
@@ -152,12 +152,12 @@ pub use world::{DefaultTrigger, INF, World, multiplayer_default_triggers};
 /// the same version. Bump it whenever a change makes the simulation compute
 /// a different result from the same inputs, which includes a change to
 /// the digest of a world (`World::digest_u64`).
-pub const SIM_VERSION: u32 = 17;
+pub const SIM_VERSION: u32 = 18;
 
 /// The hash of the recorded traces under `tests/traces/expected` for
 /// [`SIM_VERSION`]. A test fails when the traces change and this does not.
 #[cfg(test)]
-const TRACES_HASH: u64 = 0xe1e2_1647_e07f_cc99;
+const TRACES_HASH: u64 = 0xeec1_fcb0_5bcd_bf05;
 
 #[cfg(test)]
 mod sim_version {

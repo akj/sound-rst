@@ -2,7 +2,7 @@
 //! in single-player it waits only on purpose, while a story is told or
 //! the game menu or the console is open.
 
-use soundrts_protocol::{AiLevel, Login, SlotPlayer, Speed};
+use soundrts_protocol::{Computer, Login, Skill, SlotPlayer, Speed};
 use soundrts_world::msg::{Msg, MsgPart};
 
 use super::testing::training;
@@ -328,7 +328,7 @@ fn on_a_server_neither_a_cut_scene_nor_an_important_message_stops_the_turns() {
     let server = h.join_fake_server("andrew", &[]);
     let slots = [
         slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
-        slot(SlotPlayer::Computer(AiLevel::Easy), 2),
+        slot(SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)), 2),
     ];
     let mut stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1);
     let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);

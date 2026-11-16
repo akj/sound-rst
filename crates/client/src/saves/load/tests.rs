@@ -144,6 +144,7 @@ fn the_load_menu_lists_the_saves_newest_first_and_delete_asks_first() {
         ],
         default_triggers: soundrts_world::multiplayer_default_triggers(),
         allow_cheatmode: true,
+        computer_skill: soundrts_world::Skill::NORMAL,
         random_starts: true,
         equivalents: true,
     };
@@ -292,7 +293,8 @@ fn a_mission_saved_loads_in_its_campaign_with_its_resources() {
         })
         .expect("a mission");
     h.client.res.set_campaign(Some(&campaign));
-    let mut session = Session::mission(&h.client, Arc::new(map), &campaign, number);
+    let skill = soundrts_world::Skill::NORMAL;
+    let mut session = Session::mission(&h.client, Arc::new(map), &campaign, number, skill);
     let mut g = TestGame {
         game: session.start(&mut h.client).expect("started"),
         session: Some(session),

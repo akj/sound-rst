@@ -295,13 +295,15 @@ impl World {
         }
     }
 
-    /// `set_ai`: changes the AI type of a computer player.
+    /// `set_ai`: changes the AI type of a computer player, which keeps
+    /// its skill level.
     fn set_ai(&mut self, p: PlayerId, ai_type: &str) -> Res {
-        if !matches!(self.pl(p).kind, PlayerKind::Computer { .. }) {
+        let PlayerKind::Computer { skill, .. } = self.pl(p).kind else {
             return Ok(());
-        }
+        };
         self.plm(p).kind = PlayerKind::Computer {
             ai_type: ai_type.to_owned(),
+            skill,
         };
         self.computer_set_ai(p, ai_type);
         Ok(())

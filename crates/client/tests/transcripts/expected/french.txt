@@ -96,91 +96,91 @@ length 9999 208980
 @63230 voice menu "Que souhaitez-vous ?"
 @65230 sounds 1 e1b06c7ed8cc1430
 @65230 step 24 key DOWN
-@65230 voice item "inviter ordinateur calme ,"
-@67830 sounds 1 52d5e646b5a56d58
-@67830 step 25 key RETURN
-@67830 voice confirmation "inviter ordinateur calme"
-@70240 voice menu "Que souhaitez-vous ?"
-@72240 sounds 1 9bcc7e9b396e719d
-@72240 step 26 key DOWN
-@72240 voice item "commencer ,"
-@73340 sounds 1 05c7edef7acb75ef
-@73340 step 27 key RETURN
-@73340 voice confirmation "commencer"
-@74250 voice info "objectif : neutralisé ennemi"
-@77052 sounds 1 7cad61c2313b3be8
-@77052 step 28 key z
-@77052 voice item "10 or"
-@77151 voice item "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
-@83451 voice info ", 1 mine d'or et 2 bois en a 3"
-@87051 voice info ", 1 bois en a 4"
-@88951 voice info ", 1 mine d'or en c 4"
-@91352 sounds 101 fdb2c167d2dfd2ce
-@91352 step 29 key x
-@91352 voice item "10 bois"
-@92452 sounds 6 9b4f577a63803ed0
-@92452 step 30 key c
-@92452 voice item "9 rations pour 1"
-@94452 sounds 16 74591e3881aa7b01
-@94452 step 31 key e
-@94452 voice item "paysan 1 en b 4 , à vos ordres"
-@97852 sounds 23 5fe3cb9a3d6c9d14
-@97852 step 32 key SPACE
-@97852 voice item "b 4 Vous dirigez paysan 1 en b 4 ,"
-@101852 sounds 26 ba70ae882d0fe3d9
-@101852 step 33 key a
-@101852 voice item "aller vers , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
-@111652 voice info "1 paysan ennemi en a 3"
-@114253 sounds 102 7a350a2753da80b9
-@114253 step 34 key a
-@114253 voice item "exploiter , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
-@123953 sounds 68 be07b0d1ca512d6f
-@123953 step 35 key a
-@123953 voice item "construire ferme sur , nécessite 5 or et 5 bois , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
-@137653 sounds 97 2d1b8361beb15c48
-@137653 step 36 key ESCAPE
-@137653 voice item "annuler"
-@138353 sounds 3 ac3057eb4e3afe1a
-@138353 step 37 key TAB
-@138353 voice item [1003] "une prairie au sud-èst" vol=0.129,0.992
-@140572 sounds 19 8a4db5b94492b727
-@140572 step 38 key TAB
-@140572 voice item [1003] "un passage a l'est" vol=0.156,0.988
-@142391 sounds 11 5bd2ec57a93dd6cc
-@142391 step 39 key UP
-@142391 voice item [1027] "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
-@148885 sounds 47 6d5faaaa98180b47
-@148885 step 40 key CTRL UP
-@148885 voice item "b 1 , inconnue"
-@150485 step 41 key F3
-@150485 voice item "1 minutes 13 secondes , vitesse 1.0"
-@154985 step 42 key F9
-@154985 voice item "neutralisé ennemi , 1 of 1"
-@157985 step 43 key F1
-@157985 voice item "f 10 pour accéder au menu"
-@217751 step 44 wait_turns 200
-@217752 step 45 key F3
-@217752 voice item "2 minutes 21 secondes , vitesse 1.0"
-@222252 step 46 key F10
-@222252 voice menu "Menu"
-@222652 step 47 key DOWN
-@222652 voice item "abandonner la partie ,"
-@224852 sounds 1 916bda963cda0e8f
-@224852 step 48 key RETURN
-@224852 voice confirmation "abandonner la partie"
-@226854 voice info "Défaite en 2 minutes 25 secondes"
-@230654 voice info "1 unités produite , 0 perdu , 0 neutralisé"
-@235454 voice info "2 bâtiment produit , 0 perdu , 0 neutralisé"
-@240354 voice info "10 or récolté , 0 consommé"
-@243554 voice info "10 bois récolté , 0 consommé"
-@246954 voice info "score 23 Appuyez sur F5 pour réécouter tout ceci"
-@252354 voice menu "Que souhaitez-vous ?"
-@254354 sounds 1 962cb9a6ef3817d2
-@254354 step 49 key ESCAPE
-@254354 voice confirmation "retour"
-@254964 voice menu "SoundRTS 1.3.8.1  , Que souhaitez-vous ?"
-@259764 sounds 1 63cb2375309cbd04
-@259764 step 50 key ESCAPE
-@259764 voice confirmation "Quitter,"
-@260574 sounds 1 d95eeb091900223e
-@260574 end
+@65230 voice item "inviter ordinateur calme , Niveau 3 ,"
+@69130 sounds 1 52d5e646b5a56d58
+@69130 step 25 key RETURN
+@69130 voice confirmation "inviter ordinateur calme , Niveau 3"
+@72840 voice menu "Que souhaitez-vous ?"
+@74840 sounds 1 0ce6b9f08ff1e30c
+@74840 step 26 key DOWN
+@74840 voice item "commencer ,"
+@75940 sounds 1 e9646e43a1917b3f
+@75940 step 27 key RETURN
+@75940 voice confirmation "commencer"
+@76850 voice info "objectif : neutralisé ennemi"
+@79652 sounds 1 aa2625c2cf795b24
+@79652 step 28 key z
+@79652 voice item "10 or"
+@79751 voice item "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
+@86051 voice info ", 1 mine d'or et 2 bois en a 3"
+@89651 voice info ", 1 bois en a 4"
+@91551 voice info ", 1 mine d'or en c 4"
+@93952 sounds 101 11503949beea8db8
+@93952 step 29 key x
+@93952 voice item "10 bois"
+@95052 sounds 6 0357dac555c66b1e
+@95052 step 30 key c
+@95052 voice item "9 rations pour 1"
+@97052 sounds 16 361f084c2e56a131
+@97052 step 31 key e
+@97052 voice item "paysan 1 en b 4 , à vos ordres"
+@100452 sounds 23 4e07457a79e89fb8
+@100452 step 32 key SPACE
+@100452 voice item "b 4 Vous dirigez paysan 1 en b 4 ,"
+@104452 sounds 26 db0b4fcfcc580456
+@104452 step 33 key a
+@104452 voice item "aller vers , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@114252 voice info "1 paysan ennemi en a 3"
+@116853 sounds 102 d2aa6f5710b9f271
+@116853 step 34 key a
+@116853 voice item "exploiter , , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@126553 sounds 68 b883a4a2a29c8acb
+@126553 step 35 key a
+@126553 voice item "construire ferme sur , nécessite 5 or et 5 bois , Appuyez sur Tab pour sélectionner la cible puis sur Entrée pour confirmer la cible."
+@140253 sounds 97 4aada4a354f8f85b
+@140253 step 36 key ESCAPE
+@140253 voice item "annuler"
+@140953 sounds 3 82b1a6e501463847
+@140953 step 37 key TAB
+@140953 voice item [1003] "une prairie au sud-èst" vol=0.129,0.992
+@143172 sounds 19 297a0e6ed199d391
+@143172 step 38 key TAB
+@143172 voice item [1003] "un passage a l'est" vol=0.156,0.988
+@144991 sounds 11 45a19b1079a8c07f
+@144991 step 39 key UP
+@144991 voice item [1027] "b 4 , prairies , 1 hôtel de ville , 1 ferme et 1 paysan"
+@151485 sounds 47 1f64f7e0f7eb0ac3
+@151485 step 40 key CTRL UP
+@151485 voice item "b 1 , inconnue"
+@153085 step 41 key F3
+@153085 voice item "1 minutes 13 secondes , vitesse 1.0"
+@157585 step 42 key F9
+@157585 voice item "neutralisé ennemi , 1 of 1"
+@160585 step 43 key F1
+@160585 voice item "f 10 pour accéder au menu"
+@220351 step 44 wait_turns 200
+@220352 step 45 key F3
+@220352 voice item "2 minutes 21 secondes , vitesse 1.0"
+@224852 step 46 key F10
+@224852 voice menu "Menu"
+@225252 step 47 key DOWN
+@225252 voice item "abandonner la partie ,"
+@227452 sounds 1 493365a59aca1988
+@227452 step 48 key RETURN
+@227452 voice confirmation "abandonner la partie"
+@229454 voice info "Défaite en 2 minutes 25 secondes"
+@233254 voice info "1 unités produite , 0 perdu , 0 neutralisé"
+@238054 voice info "2 bâtiment produit , 0 perdu , 0 neutralisé"
+@242954 voice info "10 or récolté , 0 consommé"
+@246154 voice info "10 bois récolté , 0 consommé"
+@249554 voice info "score 23 Appuyez sur F5 pour réécouter tout ceci"
+@254954 voice menu "Que souhaitez-vous ?"
+@256954 sounds 1 e3b1536b24807d61
+@256954 step 49 key ESCAPE
+@256954 voice confirmation "retour"
+@257564 voice menu "SoundRTS 1.3.8.1  , Que souhaitez-vous ?"
+@262364 sounds 1 119170675d8687b0
+@262364 step 50 key ESCAPE
+@262364 voice confirmation "Quitter,"
+@263174 sounds 1 3603afaa3a343ab8
+@263174 end

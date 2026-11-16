@@ -290,6 +290,8 @@ phrases! {
         LetterX = "x",
         LetterY = "y",
         LetterZ = "z",
+        /// How well a computer plays, as in "quiet computer, level 3".
+        Level = "level",
         Loading = "Loading",
         Local = "local",
         Lost = "lost",
@@ -430,6 +432,16 @@ phrases! {
         IAmReady = "I am ready",
         IAmNotReady = "I am not ready",
         Remove = "remove",
+        /// As in "set quiet computer, level 3, to level 2".
+        Set = "set",
+        /// As in "set quiet computer, level 3, to level 2".
+        SetTo = "to",
+        /// As in "150 percent income": the share of what a seat's workers
+        /// gather that it receives.
+        Income = "income",
+        /// Every computer of a campaign's missions, as in "set the computers,
+        /// level 3, to level 2".
+        TheComputers = "the computers",
         IsNowTheOrganizer = "is now the organizer",
         YouHaveBeenRemoved = "you have been removed from the game",
         ShareAddress = "the address to give to the other players is",

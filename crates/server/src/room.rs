@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 use crate::connection::{ConnId, Outbox, encode};
 use crate::game::{GameTx, SeatId, WatcherId};
 use soundrts_protocol::{
-    AiLevel, ContentHash, Faction, Login, MapInfo, RoomChange, RoomId, RoomState, RoomSummary,
-    ServerMsg, Slot, SlotIndex, SlotPlayer, Speed,
+    Computer, ContentHash, Faction, Income, Login, MapInfo, RoomChange, RoomId, RoomState,
+    RoomSummary, ServerMsg, Slot, SlotIndex, SlotPlayer, Speed,
 };
 
 pub(crate) struct Room {
@@ -41,11 +41,12 @@ pub(crate) struct RoomSlot {
     pub occupant: Occupant,
     pub faction: Faction,
     pub alliance: u8,
+    pub income: Income,
 }
 
 pub(crate) enum Occupant {
     Human(Member),
-    Computer(AiLevel),
+    Computer(Computer),
 }
 
 pub(crate) struct Member {
@@ -103,6 +104,7 @@ impl Room {
             occupant,
             faction: Faction::random(),
             alliance,
+            income: Income::FULL,
         });
         self.slots.len() - 1
     }
@@ -204,6 +206,7 @@ impl Room {
                 faction: s.faction.clone(),
                 alliance: s.alliance,
                 ready: self.is_ready(s),
+                income: s.income,
             })
             .collect()
     }
@@ -257,7 +260,7 @@ impl RoomSlot {
     pub fn player(&self) -> SlotPlayer {
         match &self.occupant {
             Occupant::Human(m) => SlotPlayer::Human(m.login.clone()),
-            Occupant::Computer(level) => SlotPlayer::Computer(*level),
+            Occupant::Computer(computer) => SlotPlayer::Computer(*computer),
         }
     }
 }

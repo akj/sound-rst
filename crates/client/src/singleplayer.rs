@@ -5,14 +5,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use soundrts_world::msg::{MsgPart, Phrase, msg};
-use soundrts_world::{Rules, computer_name};
+use soundrts_protocol::{Computer, Faction, Income, Login, Slot, SlotPlayer};
+use soundrts_world::Rules;
+use soundrts_world::msg::{Phrase, msg};
 
 use crate::campaign::run_campaign;
 use crate::client::Client;
 use crate::game::style_msg;
 use crate::mapfile::Map;
 use crate::menu::{Action, Choice, Exit, Flow, Menu};
+use crate::net::lobby::{computer_name, seat_name_in_sentence, seat_settings};
 use crate::session::Session;
 
 /// The campaigns, a training game, loading a saved game if there is one,
@@ -74,33 +76,47 @@ pub fn training_menu(cx: &mut Client) -> Result<(), Exit> {
     menu.run(cx)
 }
 
-/// The players of the training game being prepared.
+/// The players of the training game being prepared: the local player in
+/// alliance 1, then the computers invited, in alliance 2. They are named,
+/// and their level and income chosen, as in a game room on a server.
 struct Training {
     map: Arc<Map>,
-    players: Vec<String>,
-    factions: Vec<String>,
+    players: Vec<Slot>,
     /// An action changed the players: the menu must be built again.
     changed: bool,
 }
 
 type TrainingRef = Rc<RefCell<Training>>;
 
-fn add_ai(t: &TrainingRef, ai_type: &'static str) -> Action {
+/// A player of the training game, with a random faction.
+fn seat(player: SlotPlayer, alliance: u8) -> Slot {
+    Slot {
+        player,
+        faction: Faction::random(),
+        alliance,
+        ready: true,
+        income: Income::FULL,
+    }
+}
+
+/// Changes the player `pn` of the training game.
+fn change(t: &TrainingRef, pn: usize, f: impl Fn(&mut Slot) + 'static) -> Action {
     let t = t.clone();
     Action::run(move |_| {
         let mut t = t.borrow_mut();
-        t.players.push(ai_type.to_owned());
-        t.factions.push("random_faction".to_owned());
+        if let Some(p) = t.players.get_mut(pn) {
+            f(p);
+        }
         t.changed = true;
         Ok(Flow::Stay)
     })
 }
 
-fn set_faction(t: &TrainingRef, pn: usize, faction: String) -> Action {
+fn add_ai(t: &TrainingRef, computer: Computer) -> Action {
     let t = t.clone();
     Action::run(move |_| {
         let mut t = t.borrow_mut();
-        t.factions[pn] = faction.clone();
+        t.players.push(seat(SlotPlayer::Computer(computer), 2));
         t.changed = true;
         Ok(Flow::Stay)
     })
@@ -109,34 +125,29 @@ fn set_faction(t: &TrainingRef, pn: usize, faction: String) -> Action {
 fn run_game(t: &TrainingRef) -> Action {
     let t = t.clone();
     Action::run(move |cx| {
-        let (map, players, factions) = {
+        let (map, players) = {
             let t = t.borrow();
-            (t.map.clone(), t.players.clone(), t.factions.clone())
+            let players = t.players.iter().map(Slot::controller).collect();
+            (t.map.clone(), players)
         };
-        let mut alliances = vec!["1".to_owned()];
-        alliances.extend(std::iter::repeat_n("2".to_owned(), players.len() - 1));
-        Session::training(cx, map, &players, &factions, &alliances).run(cx)?;
+        Session::training(cx, map, players).run(cx)?;
         Ok(Flow::CloseMenu)
     })
 }
 
-/// Inviting computers, choosing factions, starting, or cancelling.
+/// Inviting computers, choosing factions, levels and incomes, starting, or
+/// cancelling.
 fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
     let mut menu = Menu::new(Vec::new(), Vec::new());
-    let (n, map, players, factions) = {
+    let (n, map, players) = {
         let tr = t.borrow();
-        (
-            tr.players.len() as i64,
-            tr.map.clone(),
-            tr.players.clone(),
-            tr.factions.clone(),
-        )
+        (tr.players.len() as i64, tr.map.clone(), tr.players.clone())
     };
     if n < map.nb_players_max {
-        for ai_type in ["easy", "aggressive", "ai2"] {
+        for computer in Computer::NORMAL {
             menu.append(
-                [msg(Phrase::Invite), computer_name(ai_type)].concat(),
-                add_ai(t, ai_type),
+                [msg(Phrase::Invite), computer_name(computer)].concat(),
+                add_ai(t, computer),
                 None,
             );
         }
@@ -146,17 +157,26 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
     }
     let rule_factions = Rules::load(&[cx.res.rules_text()]).factions();
     if rule_factions.len() > 1 {
-        for (pn, (p, pr)) in players.iter().zip(&factions).enumerate() {
+        for (pn, p) in players.iter().enumerate() {
             for r in std::iter::once("random_faction".to_owned()).chain(rule_factions.clone()) {
-                if r != *pr {
+                let Ok(faction) = Faction::new(r.as_str()) else {
+                    continue;
+                };
+                if faction != p.faction {
                     let label = [
-                        vec![MsgPart::literal(p.as_str())],
+                        seat_name_in_sentence(p),
                         style_msg(cx.res.style(), &r, "title"),
                     ]
                     .concat();
-                    menu.append(label, set_faction(t, pn, r), None);
+                    let action = change(t, pn, move |p| p.faction = faction.clone());
+                    menu.append(label, action, None);
                 }
             }
+        }
+    }
+    for (pn, p) in players.iter().enumerate() {
+        for (label, setting) in seat_settings(p) {
+            menu.append(label, change(t, pn, move |p| setting.apply(p)), None);
         }
     }
     menu.append(
@@ -169,10 +189,13 @@ fn build_players_menu(cx: &Client, t: &TrainingRef) -> Menu {
 
 /// The players menu of a map, until the game is played or cancelled.
 fn players_menu(cx: &mut Client, map: Arc<Map>) -> Result<(), Exit> {
+    let Ok(login) = Login::new(cx.config.login.as_str()) else {
+        // A login of the settings is always one.
+        return Ok(());
+    };
     let t = Rc::new(RefCell::new(Training {
         map: map.clone(),
-        players: vec![cx.config.login.as_str().to_owned()],
-        factions: vec!["random_faction".to_owned()],
+        players: vec![seat(SlotPlayer::Human(login), 1)],
         changed: false,
     }));
     cx.res.set_map(Some(&map));

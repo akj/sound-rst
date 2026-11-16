@@ -1,0 +1,128 @@
+soundrts-ui-transcript 1
+scenario campaign_level
+settings language=en login=player mods= soundpacks= seed=3 limit=900
+length 1000 8091043
+length 1034 17823
+length 1035 14331
+length 1037 13515
+length 1056 1681996
+length 1058 1975873
+length 1061 730839
+length 1062 578571
+length 1063 578571
+length 1064 1551043
+length 1065 3132608
+length 1069 367120
+length 1070 155873
+length 1194 928345
+length 6115 6871
+length 6116 3719
+length 9999 208980
+@0 title SoundRTS 1.3.8.1  
+@0 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@5100 step 1 key DOWN
+@5100 voice item "single player, , play on your computer"
+@8900 sounds 1 42507bad93becb42
+@8900 step 2 key RETURN
+@8900 voice confirmation "single player,"
+@10310 voice menu "please make a selection"
+@12610 sounds 1 3657aeb304350b3e
+@12610 step 3 key c
+@12610 voice item "campaign"
+@13410 sounds 1 344f4e764c960118
+@13410 step 4 key RETURN
+@13410 voice confirmation "campaign"
+@14220 voice menu "campaign"
+@15020 sounds 1 d2d506bcc8dfa376
+@15020 step 5 key DOWN
+@15020 voice item "prologue ,"
+@16020 sounds 1 d444a70de2bdc93a
+@16020 step 6 key DOWN
+@16020 voice item "set the computers , level 3 , to level 1 ,"
+@20620 sounds 1 3f428492263a7fdd
+@20620 step 7 key DOWN
+@20620 voice item "set the computers , level 3 , to level 2 ,"
+@25220 sounds 1 d75ac9f959a25b28
+@25220 step 8 key RETURN
+@25220 voice confirmation "set the computers , level 3 , to level 2"
+@29630 voice menu "campaign"
+@30430 sounds 1 d1add2433f6335d4
+@30430 step 9 key DOWN
+@30430 voice item "prologue ,"
+@31430 sounds 1 41599357298c75f8
+@31430 step 10 key DOWN
+@31430 voice item "set the computers , level 2 , to level 1 ,"
+@36030 sounds 1 7b16184bc3014701
+@36030 step 11 key DOWN
+@36030 voice item "set the computers , level 2 , to level 3 ,"
+@40630 sounds 1 ff655feb8cf5c586
+@40630 step 12 key DOWN
+@40630 voice item "go back to the previous menu ,"
+@43630 sounds 1 9f0afce10762013b
+@43630 step 13 key ESCAPE
+@43630 voice confirmation "go back to the previous menu"
+@46440 voice menu "please make a selection"
+@48740 sounds 1 bd75b23af15c1f79
+@48740 step 14 key c
+@48740 voice item "campaign"
+@49540 sounds 1 314b45db4252123f
+@49540 step 15 key RETURN
+@49540 voice confirmation "campaign"
+@50350 voice menu "campaign"
+@51150 sounds 1 7dc799a8115bd9f9
+@51150 step 16 key DOWN
+@51150 voice item "prologue ,"
+@52150 sounds 1 6b14f9849846cfb6
+@52150 step 17 key DOWN
+@52150 voice item "set the computers , level 2 , to level 1 ,"
+@56750 sounds 1 41b18ef2209b0f79
+@56750 step 18 key UP
+@56750 voice item "prologue ,"
+@57750 sounds 1 e16d831d3f53f2f7
+@57750 step 19 key RETURN
+@57750 voice confirmation "prologue"
+@58560 voice important "prologue"
+@59360 voice important "A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done..."
+@69160 voice important "chapter 1"
+@70260 voice info "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
+@82761 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
+@83261 sounds 5 fa30709572fa1e14
+@83261 step 20 wait_turns 3
+@90261 voice info "new objective build 1 farm"
+@93061 voice info "new objective build 1 barracks"
+@96261 voice info ", 1 gold mine and 1 wood at a 1"
+@99961 voice info ", 1 wood at c 1"
+@101862 sounds 42 a97c9c9052a36c5c
+@101862 step 21 key F10
+@101862 voice menu "Menu"
+@102262 step 22 key DOWN
+@102262 voice item "cancel game ,"
+@103562 sounds 1 7f08f99022105619
+@103562 step 23 key RETURN
+@103562 voice confirmation "cancel game"
+@104664 voice info "Defeat at 0 minutes 19 seconds"
+@108264 voice info "2 units produced , 0 lost , 0 neutralized"
+@112964 voice info "2 building produced , 0 lost , 0 neutralized"
+@117964 voice info "5 gold gathered , 0 consumed"
+@121164 voice info "10 wood gathered , 0 consumed"
+@124664 voice info "score 19 press F5 to listen again"
+@128564 voice menu "please make a selection"
+@130864 sounds 4 7ffde6db5c65ccfb
+@130864 step 24 key DOWN
+@130864 voice item "restart ,"
+@131764 sounds 1 7cc0c9d6460448d6
+@131764 step 25 key DOWN
+@131764 voice item "Quit ,"
+@132364 sounds 1 1a44471e4d5ce416
+@132364 step 26 key RETURN
+@132364 voice confirmation "Quit"
+@132774 voice menu "please make a selection"
+@135074 sounds 1 8a7ca9430e1cbb90
+@135074 step 27 key ESCAPE
+@135074 voice confirmation "go back to the previous menu"
+@137884 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@142984 sounds 1 d1efbecff4619faf
+@142984 step 28 key ESCAPE
+@142984 voice confirmation "quit,"
+@143494 sounds 1 6aa0df4b2695c53d
+@143494 end

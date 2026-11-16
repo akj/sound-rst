@@ -390,7 +390,7 @@ pub async fn join_room(clients: &mut [Client], who: usize, room: RoomId) {
 pub async fn add_computer(clients: &mut [Client], room: RoomId) {
     clients[0]
         .send(ClientMsg::AddComputer {
-            level: AiLevel::Easy,
+            computer: Computer::Quiet(Skill::NORMAL),
         })
         .await;
     for c in clients.iter_mut() {

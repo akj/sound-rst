@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use soundrts_protocol::game::SeatFrame;
 use soundrts_protocol::{
-    AiLevel, CHAT_HISTORY_LINES, Channel, ChatLine, ChatText, ClientMsg, ContentHash, Faction,
-    GameTexts, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_ALLIANCE, MAX_LOGIN_CHARS,
-    MAX_TITLE_SOUNDS, MapData, MapHash, MapInfo, Refusal, Rejection, RoomChange, RoomExit, RoomId,
-    SeatToken, ServerMsg, ServerName, Slot, SlotIndex, SlotPlayer, Speed, Whereabouts,
+    CHAT_HISTORY_LINES, Channel, ChatLine, ChatText, ClientMsg, Computer, ContentHash, Faction,
+    GameTexts, Income, LobbyChange, LobbyPlayer, LobbySnapshot, Login, MAX_ALLIANCE,
+    MAX_LOGIN_CHARS, MAX_TITLE_SOUNDS, MapData, MapHash, MapInfo, Refusal, Rejection, RoomChange,
+    RoomExit, RoomId, SeatToken, ServerMsg, ServerName, Skill, Slot, SlotIndex, Speed, Whereabouts,
 };
-use soundrts_world::{Command, Controller, GameSetup};
+use soundrts_world::{Command, GameSetup};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 use tracing::{info, warn};
@@ -395,9 +395,11 @@ impl Lobby {
                 Ok(())
             }
             ClientMsg::Invite { login } => self.invite(conn, login),
-            ClientMsg::AddComputer { level } => self.add_computer(conn, level),
+            ClientMsg::AddComputer { computer } => self.add_computer(conn, computer),
             ClientMsg::RemoveSlot { slot } => self.remove_slot(conn, slot),
             ClientMsg::SetAlliance { slot, alliance } => self.set_alliance(conn, slot, alliance),
+            ClientMsg::SetSkill { slot, skill } => self.set_skill(conn, slot, skill),
+            ClientMsg::SetIncome { slot, income } => self.set_income(conn, slot, income),
             ClientMsg::SetFaction { slot, faction } => self.set_faction(conn, slot, faction),
             ClientMsg::SetReady { ready } => self.set_ready(conn, ready),
             ClientMsg::LeaveGame => {
@@ -754,15 +756,15 @@ impl Lobby {
         Ok(())
     }
 
-    fn add_computer(&mut self, conn: ConnId, level: AiLevel) -> Answer {
+    fn add_computer(&mut self, conn: ConnId, computer: Computer) -> Answer {
         let id = self.hosted_room(conn)?;
         let room = self.rooms.get_mut(&id).expect("hosted");
         if room.is_full() {
             return Err(Refusal::RoomFull);
         }
-        room.add(Occupant::Computer(level));
+        room.add(Occupant::Computer(computer));
         room.notify(RoomChange::Joined {
-            player: soundrts_protocol::SlotPlayer::Computer(level),
+            player: soundrts_protocol::SlotPlayer::Computer(computer),
         });
         self.room_changed(id);
         Ok(())
@@ -806,6 +808,34 @@ impl Lobby {
             .ok_or(Refusal::NoSuchPlayer)?
             .alliance = alliance;
         room.notify(RoomChange::Alliance { slot });
+        Ok(())
+    }
+
+    /// Sets the level of a quiet or an aggressive computer: the host only.
+    fn set_skill(&mut self, conn: ConnId, slot: SlotIndex, skill: Skill) -> Answer {
+        let id = self.hosted_room(conn)?;
+        let room = self.rooms.get_mut(&id).expect("hosted");
+        let target = room.slots.get_mut(slot).ok_or(Refusal::NoSuchPlayer)?;
+        let Occupant::Computer(computer) = &mut target.occupant else {
+            return Err(Refusal::NotNow);
+        };
+        *computer = computer.at(skill).ok_or(Refusal::NotNow)?;
+        room.notify(RoomChange::Skill { slot });
+        self.room_changed(id);
+        Ok(())
+    }
+
+    /// Sets the income of any seat but the random computer's, whose
+    /// resources are reset anyway: the host only.
+    fn set_income(&mut self, conn: ConnId, slot: SlotIndex, income: Income) -> Answer {
+        let id = self.hosted_room(conn)?;
+        let room = self.rooms.get_mut(&id).expect("hosted");
+        let target = room.slots.get_mut(slot).ok_or(Refusal::NoSuchPlayer)?;
+        if !target.player().takes_income() {
+            return Err(Refusal::NotNow);
+        }
+        target.income = income;
+        room.notify(RoomChange::Income { slot });
         Ok(())
     }
 
@@ -884,7 +914,7 @@ impl Lobby {
             texts.ai.into_string(),
             texts.map.into_string(),
             seed,
-            slots.iter().map(controller).collect(),
+            slots.iter().map(Slot::controller).collect(),
         );
         let players = room.members().map(|(slot, m)| Joining {
             seat: SeatId::Player(slot),
@@ -1270,18 +1300,6 @@ impl Lobby {
             player.outbox.send_text(text.clone());
         }
     }
-}
-
-/// Who plays a slot in a game. Every human receives events: the
-/// server tells each their own.
-fn controller(slot: &Slot) -> Controller {
-    let mut c = match &slot.player {
-        SlotPlayer::Human(login) => Controller::human(login.as_str(), true),
-        SlotPlayer::Computer(level) => Controller::computer(level.ai_type()),
-    };
-    c.faction = slot.faction.as_str().to_owned();
-    c.alliance = Some(slot.alliance.to_string());
-    c
 }
 
 fn lobby_player(player: &Player) -> LobbyPlayer {

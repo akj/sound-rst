@@ -1,5 +1,6 @@
 //! The description of a game's set-up: everything a world is built from.
 
+use crate::ai::Skill;
 use crate::entity::PlayerId;
 use crate::player::Controller;
 use crate::rules::{AiScripts, Rules};
@@ -25,6 +26,9 @@ pub struct GameSetup {
     pub default_triggers: Vec<DefaultTrigger>,
     /// Whether the players may cheat.
     pub allow_cheatmode: bool,
+    /// The level of the computers that the map makes, as in a campaign
+    /// mission.
+    pub computer_skill: Skill,
     /// The players start at random starting places, not in seat order.
     pub random_starts: bool,
     /// The factions replace the start units with their own.
@@ -52,6 +56,7 @@ impl GameSetup {
             controllers,
             default_triggers: crate::world::multiplayer_default_triggers(),
             allow_cheatmode: false,
+            computer_skill: Skill::NORMAL,
             random_starts: true,
             equivalents: true,
         }
@@ -65,6 +70,7 @@ impl GameSetup {
         let ai = AiScripts::load(&[self.ai.as_str()]);
         let mut world = World::new(rules, ai, self.default_triggers.clone(), self.seed);
         world.allow_cheatmode = self.allow_cheatmode;
+        world.computer_skill = self.computer_skill;
         world.load_and_build_map(&self.map).map_err(|e| e.0)?;
         let players = world
             .populate_map(&self.controllers, self.random_starts, self.equivalents)
