@@ -9,8 +9,8 @@ The port reads the original game's data files unchanged: rules, maps, sounds, tr
 Single-player and multiplayer games work.
 
 - The main menu, the options menu (login, sound and speech, mods, soundpacks), and the single-player menus.
-- Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
-- The campaigns, with cut scenes, objectives, and the chapter bookmark.
+- Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`), each quiet or aggressive computer at a level from 1 to 5, and an income for each player. See [Levels and income](#levels-and-income). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
+- The campaigns, with cut scenes, objectives, the chapter bookmark, and the level of their computers.
 - Saving and loading a single-player game. See [Saved games](#saved-games).
 - Listening to a recorded game, yours or someone else's. See [Listen to a game](#listen-to-a-game).
 - Multiplayer: hosting a server from the game, joining one, the lobby, game rooms, chat, and games with other players and computers.
@@ -70,7 +70,7 @@ The keys are those of the original. `vendor/soundrts-upstream/res/ui/bindings.tx
 
 To hear what a key does without doing it, press Control F1 in a game. The game says "key help on". Each key or chord you press then says its name and what it does, for example "Control Tab: next useful target", and does nothing else. A key with no command says "no command". A modifier pressed alone, such as Left Control, is described when you release it, because it acts then. Escape or Control F1 turns key help off. The game goes on while key help is on, as it does on a server.
 
-The settings folder is `user` inside the data folder if that folder exists. Otherwise the settings folder is `%APPDATA%\SoundRTS`. It holds your settings in `settings.toml`, the campaign bookmarks, and the log `tmp/client.log`.
+The settings folder is `user` inside the data folder if that folder exists. Otherwise the settings folder is `%APPDATA%\SoundRTS`. It holds your settings in `settings.toml`, the campaign bookmarks and levels, and the log `tmp/client.log`.
 
 `settings.toml` is a text file. The options menu writes it, and you can edit it in a text editor while the game is closed. A setting that the file leaves out takes its default. Settings that mean yes or no take `true` or `false`. If the game cannot read the file, it uses the defaults, keeps your file as `settings.toml.old`, writes a new `settings.toml`, and names the line of the first error in the log. The `[parameters]` table holds the tuning values of the original's `cfg/parameters.toml`, such as the volume of each sound. The game does not read the original's `SoundRTS.ini`, `cfg/parameters.toml` or `cfg/language.txt`.
 
@@ -85,6 +85,14 @@ In a text field, such as your login, a server's address, a chat message or the c
 The speed you choose in the game menu of a single-player game is also the speed of your next single-player game.
 
 The map lists remember the map you chose last and open on it: press Down to hear it. A letter goes to the next item that starts with it, from where you are, and wraps around.
+
+### Levels and income
+
+In the players menu of a training game, the invite items add a quiet computer, an aggressive computer or the random computer. The game names a quiet or an aggressive computer with its level, for example "quiet computer, level 3", in the menus and in the game. A computer starts at level 3, which plays as the original's computers do. Levels 1 and 2 are weaker, and levels 4 and 5 are stronger. The menu has a choice for each other level, for example "set quiet computer, level 3, to level 4". The random computer has no level.
+
+Every player but the random computer also has an income: the share of what the player's workers gather that the player receives. It is 100 percent unless you change it to 50, 75, 150 or 200 percent, for example with "set player to 150 percent income". The menu then names the player with the income: "player, 150 percent income". An income evens out a game between players of different strength. The random computer has no income to set, because its resources are set to 1000 of each anyway.
+
+In a campaign's menu, after the chapters, a choice for each other level sets the level of the computers of its missions, for example "set the computers, level 3, to level 4". The menu says the new level at once. The game keeps the level beside the campaign's bookmark, and every mission that you start from then on uses it. A saved mission keeps the level that it was played at.
 
 ### Saved games
 
@@ -219,7 +227,7 @@ On a server, the menu lists the invitations you received, the open games you can
 
 A map from a server can bring its own rules, and names and sounds for its own units. It cannot change your keys, the game's own words, sounds or help, or anything a mod you installed defines. The game ignores those parts of the map and notes them in `tmp/client.log`. A map that you put in a `multi` folder yourself keeps every power.
 
-In a game room, the host invites players and computers, sets the alliances and factions, and starts the game. The other players choose their faction and say when they are ready.
+In a game room, the host invites players and computers, sets the alliances, the factions, the computers' levels and every player's income, and starts the game. The host's menu has the same level and income choices as a training game, for example "set quiet computer, level 3, to level 4" and "set bob to 150 percent income". See [Levels and income](#levels-and-income). An income is never hidden: everyone in the room hears each change, for example "bob, 150 percent income", and the room names a player whose income is not 100 percent with the income. The other players choose their faction and say when they are ready.
 
 | Key | In the menus | In a game |
 | --- | --- | --- |
