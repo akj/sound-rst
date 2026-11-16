@@ -13,13 +13,12 @@
 )]
 
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::campaign::Campaign;
 use crate::log::Log;
 use crate::mapfile::Map;
-use crate::package::{Package, PackageStack, read_file};
+use crate::package::{Package, PackageStack};
 use crate::parameters::Parameters;
 use crate::sound_cache::{SoundCache, Sounds, TXT_FILE};
 use crate::style::Style;
@@ -92,22 +91,16 @@ pub fn best_language_match<S: AsRef<str>>(lang: Option<&str>, available: &[S]) -
     "en".to_owned()
 }
 
-/// The language the player asked for in `cfg/language.txt`, else the
-/// system's.
-pub fn preferred_language(language_file: &std::path::Path, log: &Log) -> Option<String> {
-    let Ok(bytes) = read_file(language_file, 4096) else {
-        log.warning("couldn't read cfg/language.txt");
-        return Some("en".to_owned());
-    };
-    let cfg = String::from_utf8_lossy(&bytes).trim().to_owned();
-    if !cfg.is_empty() {
-        return Some(cfg);
+/// The language the player chose in `settings.toml`, else the system's.
+pub fn preferred_language(chosen: Option<&str>, log: &Log) -> Option<String> {
+    if let Some(chosen) = chosen.map(str::trim).filter(|l| !l.is_empty()) {
+        return Some(chosen.to_owned());
     }
     let system = sys_locale::get_locale();
     if system.is_none() {
         log.warning(
-            "Couldn't get the system language. To use another language, edit \
-             'cfg/language.txt' and write 'pl' for example.",
+            "Couldn't get the system language. To use another language, write \
+             language = \"pl\" for example in settings.toml.",
         );
     }
     system
@@ -137,7 +130,7 @@ pub struct Resources {
     preferred_language: Option<String>,
     style: Style,
     sounds: Sounds,
-    params: Rc<Parameters>,
+    params: Arc<Parameters>,
     log: Log,
     on_change: Option<ChangeListener>,
     multi_maps: Option<(String, Vec<Arc<Map>>)>,
@@ -150,7 +143,7 @@ impl Resources {
         package_paths: Vec<PathBuf>,
         downloaded: PathBuf,
         preferred_language: Option<String>,
-        params: Rc<Parameters>,
+        params: Arc<Parameters>,
         log: Log,
     ) -> Resources {
         let empty = SoundCache::new(&[], &[], params.clone(), log.clone());
@@ -192,12 +185,8 @@ impl Resources {
         self.sounds.clone()
     }
 
-    pub fn params(&self) -> Rc<Parameters> {
-        self.params.clone()
-    }
-
     /// Replaces the parameters used for the sounds loaded from now on.
-    pub fn set_params(&mut self, params: Rc<Parameters>) {
+    pub fn set_params(&mut self, params: Arc<Parameters>) {
         self.params = params;
     }
 
@@ -619,7 +608,7 @@ mod tests {
                 .collect(),
             dir.join("no-downloads"),
             Some("en".into()),
-            Rc::new(Parameters::default()),
+            Arc::new(Parameters::default()),
             Log::silent(),
         )
     }
@@ -743,7 +732,7 @@ mod tests {
             vec![root.join("res"), root.clone()],
             root.join("no-downloads"),
             Some("en".into()),
-            Rc::new(Parameters::default()),
+            Arc::new(Parameters::default()),
             Log::silent(),
         );
         assert!(!r.official_multiplayer_maps().is_empty());
@@ -796,7 +785,7 @@ mod tests {
             vec![root.join("res"), root.clone()],
             root.join("no-downloads"),
             Some("en".into()),
-            Rc::new(Parameters::default()),
+            Arc::new(Parameters::default()),
             Log::silent(),
         )
     }
@@ -894,7 +883,7 @@ mod tests {
             vec![root.join("res"), mine, downloaded.clone()],
             downloaded,
             Some("en".into()),
-            Rc::new(Parameters::default()),
+            Arc::new(Parameters::default()),
             Log::silent(),
         );
         let maps = r.multiplayer_maps();

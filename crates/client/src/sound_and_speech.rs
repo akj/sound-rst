@@ -94,11 +94,11 @@ fn nvda_direct_choice() -> Choice {
         explanation: Some(text(words::NVDA_DIRECT_EXPLANATION)),
         ..Choice::setting(
             text(words::NVDA_DIRECT),
-            |cx| on_off(cx.config.nvda_direct != 0),
+            |cx| on_off(cx.config.nvda_direct),
             |cx| {
-                cx.config.nvda_direct = i64::from(cx.config.nvda_direct == 0);
+                cx.config.nvda_direct = !cx.config.nvda_direct;
                 cx.save_config();
-                Ok(on_off(cx.config.nvda_direct != 0))
+                Ok(on_off(cx.config.nvda_direct))
             },
         )
     }

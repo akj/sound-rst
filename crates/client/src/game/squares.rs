@@ -97,7 +97,7 @@ impl GameInterface {
     pub(crate) fn move_to_square(&mut self, cx: &Client, square: SquareId) {
         if self.place != Some(square) {
             self.place = Some(square);
-            if cx.params.flag_or("silence_previous_square", true) {
+            if cx.config.parameters.silence_previous_square {
                 self.silence_square(cx);
             }
         }
@@ -325,7 +325,7 @@ impl GameInterface {
                 || dyc == 1 && v.y() > y
                 || dyc == -1 && v.y() < y
             {
-                let prefix = if cx.params.flag_or("play_movement_sound", true) {
+                let prefix = if cx.config.parameters.play_movement_sound {
                     style_msg(style, v.type_name(), "when_moving_through")
                 } else {
                     Vec::new()
@@ -601,8 +601,8 @@ impl GameInterface {
             let y = sw * (yc as f64 + 1.0 / 8.0);
             if (x, y) != (self.x, self.y) {
                 let k = ((cx.clock.now() - self.previous_animation)
-                    * cx.params.number("observer_reactivity", 1000.0))
-                .min(1.0);
+                    * cx.config.parameters.observer_reactivity)
+                    .min(1.0);
                 self.x += (x - self.x) * k;
                 self.y += (y - self.y) * k;
             }
@@ -618,7 +618,7 @@ impl GameInterface {
     pub(crate) fn animate_terrain(&mut self, cx: &mut Client) {
         let Some(p) = self.place else { return };
         let mut squares = vec![p];
-        if cx.params.flag_or("render_nearby_land", false) {
+        if cx.config.parameters.render_nearby_land {
             squares.extend(self.view().square(p).neighbors().iter().copied());
         }
         squares.retain(|s| {
@@ -629,7 +629,7 @@ impl GameInterface {
             sounds: &cx.sounds,
             rng: &cx.rng,
             now: cx.clock.now(),
-            fog_of_war_factor: cx.params.number("fog_of_war_factor", 0.5),
+            fog_of_war_factor: cx.config.parameters.fog_of_war_factor,
         };
         let mut kept = Vec::new();
         for (s, mut n) in std::mem::take(&mut self.terrain_noises) {

@@ -122,7 +122,7 @@ fn arrivals_and_departures_are_said_in_the_lobby() {
 #[test]
 fn arrivals_and_departures_are_not_said_with_the_option_off() {
     let mut c = config("andrew");
-    c.announce_arrivals = 0;
+    c.announce_arrivals = false;
     let script = Script::new().at(30.0).tap(Key::LShift);
     let (h, _) = on_fake_server(script, c, |_, s| {
         s.at(10.0, arrived("carol"));
@@ -1335,7 +1335,7 @@ fn left_fake_server(
 #[test]
 fn a_server_that_lists_more_players_than_a_client_keeps_is_left() {
     let mut c = config("andrew");
-    c.announce_arrivals = 0;
+    c.announce_arrivals = false;
     let (h, _) = left_fake_server(c, |_, s| {
         // With Andrew and Bob, one more than the client keeps.
         for i in 0..soundrts::net::lobby::MAX_LOBBY_PLAYERS - 1 {

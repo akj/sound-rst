@@ -4,7 +4,7 @@
 //! Rules and computer players belong to the simulation, which takes them
 //! as text; these tests check the text the resource stack hands over.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use soundrts::campaign::{Campaign, Chapter};
 use soundrts::log::Log;
@@ -20,7 +20,7 @@ fn stack(path: std::path::PathBuf) -> Resources {
         vec![path],
         upstream_tests_dir().join("no-downloads"),
         Some("en".into()),
-        Rc::new(Parameters::default()),
+        Arc::new(Parameters::default()),
         Log::silent(),
     )
 }

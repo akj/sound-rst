@@ -249,7 +249,7 @@ Call them Bob and Carol.
 
 ## Part 9. Optional
 
-9.1. NVDA says when speech ends. Run `pwsh scripts/fetch-nvda-controller.ps1`, then in Options, Sound and speech, turn on the NVDA item. Repeat steps 1.4 to 1.6. Expected: no silences between queued messages and nothing cut off early, at any speech rate. If the game goes silent, press Alt+F4 and turn the setting off in `SoundRTS.ini` with `nvda_direct = 0`.
+9.1. NVDA says when speech ends. Run `pwsh scripts/fetch-nvda-controller.ps1`, then in Options, Sound and speech, turn on the NVDA item. Repeat steps 1.4 to 1.6. Expected: no silences between queued messages and nothing cut off early, at any speech rate. If the game goes silent, press Alt+F4 and turn the setting off in `settings.toml` with `nvda_direct = false`.
 
 9.2. Encrypted connections. In Multiplayer, choose "enter the IP address of the server" and enter `wss://wrong.host.badssl.com`. Expected: "not connected: the server's certificate is for another name". With `wss://expired.badssl.com`: "is out of date". With `wss://self-signed.badssl.com`: "is not trusted". Nothing offers to connect anyway.
 

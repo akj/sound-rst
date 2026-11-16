@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use soundrts::bindings::{BindingError, Bindings, Chord};
@@ -296,7 +296,7 @@ fn read(kind: Kind, base: &str, text: &str) {
         Kind::Translation => {
             let mut table = HashMap::new();
             update_text_table(&mut table, text, &log);
-            let params = Rc::new(Parameters::default());
+            let params = Arc::new(Parameters::default());
             let mut cache = SoundCache::new(
                 &[base.to_owned(), text.to_owned()],
                 &[],

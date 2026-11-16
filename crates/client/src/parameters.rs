@@ -1,111 +1,89 @@
-//! `cfg/parameters.toml`: tuning values for sound, speech and packages.
+//! The `[parameters]` table of `settings.toml`: tuning values for sound,
+//! speech and packages. The defaults are the values of the original's
+//! `cfg/parameters.toml`.
 
-use std::path::Path;
+use std::collections::BTreeMap;
 
-use crate::log::Log;
+use serde::{Deserialize, Serialize};
 
-/// The parameters file, with typed accessors for the values the client
-/// reads. Any other value stays available through [`Parameters::get`].
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Parameters {
-    table: toml::Table,
+    /// When estimating how long speech lasts, a digit counts this many
+    /// characters.
+    pub tts_digit_coefficient: f64,
+    /// How much the y coordinate of positional sounds is flattened: above 1,
+    /// objects sound closer to each other.
+    pub flattening_factor: f64,
+    /// The volume of objects and terrain in the fog of war is multiplied by
+    /// this factor.
+    pub fog_of_war_factor: f64,
+    /// The seconds between two animation updates.
+    pub animation_delay: f64,
+    /// Play the noises of the nearby terrain.
+    pub render_nearby_land: bool,
+    /// Play the noises and events of nearby objects.
+    pub render_nearby_objects: bool,
+    /// Stop the sounds of the square the cursor leaves.
+    pub silence_previous_square: bool,
+    /// Play the square's "when moving through" sound when the cursor moves.
+    pub play_movement_sound: bool,
+    /// How fast the listener moves to the cursor: 1000 is instant, 5 is
+    /// smooth.
+    pub observer_reactivity: f64,
+    /// The volume of each package's sounds, by package name.
+    pub default_volume: BTreeMap<String, f64>,
+    /// The volume of a sound, by sound name, over its package's.
+    pub volume: BTreeMap<String, f64>,
+    pub packages: Packages,
+}
+
+impl Default for Parameters {
+    fn default() -> Self {
+        Parameters {
+            tts_digit_coefficient: 3.0,
+            flattening_factor: 2.0,
+            fog_of_war_factor: 0.5,
+            animation_delay: 0.1,
+            render_nearby_land: true,
+            render_nearby_objects: true,
+            silence_previous_square: true,
+            play_movement_sound: true,
+            observer_reactivity: 1000.0,
+            default_volume: BTreeMap::from([("res".into(), 1.0), ("soundpack".into(), 0.8)]),
+            volume: BTreeMap::from([("1000".into(), 0.5)]),
+            packages: Packages::default(),
+        }
+    }
+}
+
+/// Where the packages are, relative to the game root. A package is a folder
+/// or a zip file.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Packages {
+    pub base: String,
+    pub additional: Vec<String>,
+}
+
+impl Default for Packages {
+    fn default() -> Self {
+        Packages {
+            base: "res".into(),
+            additional: vec![String::new(), "user".into(), "user/downloaded".into()],
+        }
+    }
 }
 
 impl Parameters {
-    pub fn from_toml(text: &str, log: &Log) -> Parameters {
-        match text.parse::<toml::Table>() {
-            Ok(table) => Parameters { table },
-            Err(e) => {
-                log.warning(format!("error in parameters.toml: {e}"));
-                Parameters::default()
-            }
-        }
-    }
-
-    /// Reads the file. A missing file gives an error; a file with a syntax
-    /// error gives empty parameters, as upstream did.
-    pub fn load(path: &Path, log: &Log) -> std::io::Result<Parameters> {
-        let bytes = std::fs::read(path)?;
-        Ok(Self::from_toml(&String::from_utf8_lossy(&bytes), log))
-    }
-
-    pub fn get(&self, key: &str) -> Option<&toml::Value> {
-        self.table.get(key)
-    }
-
-    /// A number, integer or float, or the default.
-    pub fn number(&self, key: &str, default: f64) -> f64 {
-        self.table.get(key).and_then(as_number).unwrap_or(default)
-    }
-
-    /// A flag written as a number or a boolean.
-    pub fn flag(&self, key: &str) -> bool {
-        self.flag_or(key, false)
-    }
-
-    /// A flag, or `default` when the file does not set it.
-    pub fn flag_or(&self, key: &str, default: bool) -> bool {
-        match self.table.get(key) {
-            Some(toml::Value::Boolean(b)) => *b,
-            Some(v) => as_number(v).is_some_and(|n| n != 0.0),
-            None => default,
-        }
-    }
-
-    /// When estimating how long speech lasts, a digit counts this many
-    /// characters.
-    pub fn tts_digit_coefficient(&self) -> f64 {
-        self.number("tts_digit_coefficient", 1.0)
-    }
-
-    /// How much the y coordinate of positional sounds is flattened.
-    pub fn flattening_factor(&self) -> f64 {
-        self.number("flattening_factor", 2.0)
-    }
-
     /// The volume of the sound `name` from the package `mod_name`: its own
-    /// entry in `[volume]`, else its package's in `[default_volume]`, else 1.
+    /// entry in `volume`, else its package's in `default_volume`, else 1.
     pub fn sound_volume(&self, name: &str, mod_name: &str) -> f64 {
-        let entry = |table: &str, key: &str| {
-            self.table
-                .get(table)
-                .and_then(toml::Value::as_table)
-                .and_then(|t| t.get(key))
-                .and_then(as_number)
-        };
-        entry("volume", name)
-            .or_else(|| entry("default_volume", mod_name))
+        self.volume
+            .get(name)
+            .or_else(|| self.default_volume.get(mod_name))
+            .copied()
             .unwrap_or(1.0)
-    }
-
-    /// The base package path and the additional package paths, relative to
-    /// the game root.
-    pub fn packages(&self) -> (String, Vec<String>) {
-        let packages = self.table.get("packages").and_then(toml::Value::as_table);
-        let base = packages
-            .and_then(|p| p.get("base"))
-            .and_then(toml::Value::as_str)
-            .unwrap_or("res")
-            .to_owned();
-        let additional = packages
-            .and_then(|p| p.get("additional"))
-            .and_then(toml::Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(toml::Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![String::new(), "user".into(), "user/downloaded".into()]);
-        (base, additional)
-    }
-}
-
-fn as_number(v: &toml::Value) -> Option<f64> {
-    match v {
-        toml::Value::Integer(i) => Some(*i as f64),
-        toml::Value::Float(f) => Some(*f),
-        _ => None,
     }
 }
 
@@ -113,27 +91,43 @@ fn as_number(v: &toml::Value) -> Option<f64> {
 mod tests {
     use super::*;
 
+    /// The defaults are the values of the original's `cfg/parameters.toml`,
+    /// read as that file wrote them: flags as 0 or 1, numbers either way.
     #[test]
-    fn the_upstream_parameters_give_the_upstream_values() {
+    fn the_defaults_are_the_originals_parameters() {
         let text =
             std::fs::read_to_string(crate::testkit::upstream_root().join("cfg/parameters.toml"))
                 .unwrap();
-        let p = Parameters::from_toml(&text, &Log::silent());
-        assert_eq!(p.tts_digit_coefficient(), 3.0);
-        assert_eq!(p.flattening_factor(), 2.0);
-        assert_eq!(p.sound_volume("1000", "default"), 0.5);
+        let original: toml::Table = text.parse().unwrap();
+        let number = |key: &str| match &original[key] {
+            toml::Value::Integer(i) => *i as f64,
+            toml::Value::Float(f) => *f,
+            v => panic!("{key} = {v}"),
+        };
+        let flag = |key: &str| number(key) != 0.0;
+        let p = Parameters::default();
+        assert_eq!(p.tts_digit_coefficient, number("tts_digit_coefficient"));
+        assert_eq!(p.flattening_factor, number("flattening_factor"));
+        assert_eq!(p.fog_of_war_factor, number("fog_of_war_factor"));
+        assert_eq!(p.animation_delay, number("animation_delay"));
+        assert_eq!(p.render_nearby_land, flag("render_nearby_land"));
+        assert_eq!(p.render_nearby_objects, flag("render_nearby_objects"));
+        assert_eq!(p.silence_previous_square, flag("silence_previous_square"));
+        assert_eq!(p.play_movement_sound, flag("play_movement_sound"));
+        assert_eq!(p.observer_reactivity, number("observer_reactivity"));
+        let tables: toml::Table = toml::from_str(&toml::to_string(&p).unwrap()).unwrap();
+        for table in ["default_volume", "volume", "packages"] {
+            assert_eq!(tables[table], original[table], "{table}");
+        }
+        // Every value of the original is one of the parameters.
+        let keys = |t: &toml::Table| {
+            let mut k: Vec<String> = t.keys().cloned().collect();
+            k.sort();
+            k
+        };
+        assert_eq!(keys(&tables), keys(&original));
+        assert_eq!(p.sound_volume("1000", "res"), 0.5);
         assert_eq!(p.sound_volume("1001", "soundpack"), 0.8);
         assert_eq!(p.sound_volume("1001", "default"), 1.0);
-        assert_eq!(
-            p.packages(),
-            (
-                "res".to_owned(),
-                vec![
-                    "".to_owned(),
-                    "user".to_owned(),
-                    "user/downloaded".to_owned()
-                ]
-            )
-        );
     }
 }

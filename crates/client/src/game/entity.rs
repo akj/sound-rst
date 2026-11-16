@@ -553,7 +553,7 @@ impl GameInterface {
         match v.place() {
             Some(Place::Square(s)) if s == ip => true,
             Some(Place::Square(s)) => {
-                cx.params.flag_or("render_nearby_objects", false)
+                cx.config.parameters.render_nearby_objects
                     && self.view().square(ip).neighbors().contains(&s)
             }
             _ => false,
@@ -604,7 +604,7 @@ impl GameInterface {
             _ => return,
         }
         if v.is_memory() {
-            volume *= cx.params.number("fog_of_war_factor", 0.5);
+            volume *= cx.config.parameters.fog_of_war_factor;
         }
         cx.audio.play(
             cx.sounds.get_sound(sound),
@@ -991,7 +991,7 @@ impl GameInterface {
                     sounds: &cx.sounds,
                     rng: &cx.rng,
                     now: cx.clock.now(),
-                    fog_of_war_factor: cx.params.number("fog_of_war_factor", 0.5),
+                    fog_of_war_factor: cx.config.parameters.fog_of_war_factor,
                 };
                 n.update(
                     &player,

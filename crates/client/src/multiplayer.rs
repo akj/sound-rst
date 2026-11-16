@@ -73,7 +73,7 @@ pub fn multiplayer_menu(cx: &mut Client) -> Result<(), Exit> {
                 Choice::new(
                     arrivals_label(cx),
                     Action::run(|cx| {
-                        cx.config.announce_arrivals = i64::from(cx.config.announce_arrivals == 0);
+                        cx.config.announce_arrivals = !cx.config.announce_arrivals;
                         cx.save_config();
                         Ok(Flow::Stay)
                     }),
@@ -90,7 +90,7 @@ pub fn multiplayer_menu(cx: &mut Client) -> Result<(), Exit> {
 
 /// The arrivals option and its state.
 fn arrivals_label(cx: &Client) -> Msg {
-    let state = if cx.config.announce_arrivals != 0 {
+    let state = if cx.config.announce_arrivals {
         words::ON
     } else {
         words::OFF

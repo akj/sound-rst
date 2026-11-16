@@ -1,7 +1,7 @@
 //! The options menu's sound and speech settings, and the volume keys, run
 //! with scripted keys on the real game data, the recorded speech device
 //! and the manual clock. These check what the client sends to the speech
-//! device and writes to `SoundRTS.ini`, not what a screen reader says.
+//! device and writes to `settings.toml`, not what a screen reader says.
 
 use soundrts::clock::Clock;
 use soundrts::config::Config;
@@ -82,7 +82,7 @@ fn said_in_submenu(h: &Harness) -> Vec<String> {
 }
 
 fn config_text(h: &Harness) -> String {
-    std::fs::read_to_string(h.client.paths.config_file()).expect("SoundRTS.ini")
+    std::fs::read_to_string(h.client.paths.settings_file()).expect("settings.toml")
 }
 
 const VOLUME_50: &str = "volume , 50 percent , Enter or Home raises it, End lowers it";
@@ -133,7 +133,7 @@ fn the_volume_is_saved_when_it_changes_and_survives_a_restart() {
     assert!(config_text(&h).contains("\nmain_volume = 70\n"));
 
     // The next start reads the file.
-    let config = Config::load(&h.client.paths.config_file(), &Log::silent());
+    let config = Config::load(&h.client.paths.settings_file(), &Log::silent());
     assert_eq!(config.main_volume, 70);
     let script = Keys::to_sound_and_speech().tap(Key::Down).quit();
     let mut again = Harness::with_config("en", script, config);
@@ -236,10 +236,10 @@ fn each_news_item_cycles_through_its_four_values_and_is_written_to_the_file() {
         ]
     );
     assert!(config_text(&h).contains(
-        "[news]\nalert = sound\nproduction = log\neconomy = drop\nscouting = speak\n\
-         chat = speak\nsystem = speak\nstory = speak\n"
+        "[news]\nalert = \"sound\"\nproduction = \"log\"\neconomy = \"drop\"\n\
+         scouting = \"speak\"\nchat = \"speak\"\nsystem = \"speak\"\nstory = \"speak\"\n"
     ));
-    let read = Config::load(&h.client.paths.config_file(), &Log::silent());
+    let read = Config::load(&h.client.paths.settings_file(), &Log::silent());
     assert_eq!(read.news.of(Category::Economy), Policy::Drop);
     // The game hears the new policy at once.
     assert_eq!(h.client.config.news.of(Category::Production), Policy::Log);
@@ -255,7 +255,7 @@ fn the_nvda_item_switches_and_is_written_to_the_file() {
     let mut h = Harness::new("en", script);
     assert_eq!(main_menu(&mut h.client), Ok(()));
     assert_eq!(said_in_submenu(&h)[9..12], ["on", "off", "on"]);
-    assert!(config_text(&h).contains("[tts]\nwait_delay_per_character = 0.1\nnvda_direct = 1\n"));
+    assert!(config_text(&h).contains("\nnvda_direct = true\n"));
 }
 
 /// From the sound and speech menu's title to the speech rate item.
@@ -292,7 +292,7 @@ fn the_speech_rate_is_measured_from_the_start_of_the_sentence_to_the_key() {
         ]
     );
     assert_eq!(h.client.config.wait_delay_per_character, 0.06);
-    assert!(config_text(&h).contains("[tts]\nwait_delay_per_character = 0.06\n"));
+    assert!(config_text(&h).contains("\nwait_delay_per_character = 0.06\n"));
 
     // The estimate of the end of speech uses it at once: ten characters
     // now take 0.6 seconds, not 1.
@@ -398,7 +398,7 @@ fn the_speed_chosen_in_the_game_menu_starts_the_next_game() {
     );
     assert_eq!(g.game.speed, 2.0);
     assert_eq!(h.client.config.speed, 2.0);
-    assert!(config_text(&h).contains("\nspeed = 2\n"));
+    assert!(config_text(&h).contains("\nspeed = 2.0\n"));
     let next = h.start_training("jl1", &["easy"], 1);
     assert_eq!(next.game.speed, 2.0);
 }
