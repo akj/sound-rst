@@ -2,35 +2,33 @@
 
 33 open findings from the design review of the Rust port of SoundRTS, grouped by what they affect: what you hear, multiplayer, gameplay, and code structure. The six multiplayer fixes, the game record and the recording cutover are merged and are not repeated here.
 
-Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54, again the same day against `6506741`, after pull requests 6 to 63, and a third time that day against `64ef866`, after pull requests 6 to 73.
+Written 14 November 2026 against commit `612afd1` on `main`. Status updated 15 November 2026 against commit `1a1f1f7`, after pull requests 6 to 54, again the same day against `6506741`, after pull requests 6 to 63, a third time that day against `64ef866`, after pull requests 6 to 73, and a fourth against `607cb30`, after pull requests 6 to 97.
 
 ## Status on 15 November 2026
 
-Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. The statuses changed by pull requests 57, 60, 62 and 63 (M1, M2, M4, M8, N2, N4 to N8, N10, and N18 to N21) were set by the agent that merged them, from their tests and descriptions, against `6506741`. The same holds for those changed by pull requests 65 to 73 (M10, G5, C1, C5, N9, N11, N12, N14 to N16, N21 and N22), against `64ef866`. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
+Each status below was checked by reading the code at `1a1f1f7`, not from pull request titles. The statuses changed by pull requests 57, 60, 62 and 63 (M1, M2, M4, M8, N2, N4 to N8, N10, and N18 to N21) were set by the agent that merged them, from their tests and descriptions, against `6506741`. The same holds for those changed by pull requests 65 to 73 (M10, G5, C1, C5, N9, N11, N12, N14 to N16, N21 and N22), against `64ef866`, and for those changed by pull requests 75 to 97 (M10, G1, G4, C1, C4, N22 and N23), against `607cb30`. A fixed finding names the pull request and the test or the code that shows it. Where no test would fail if the problem came back, it says "fixed by reading, no test".
 
 Two limits apply to every status.
 
 - **What you hear.** Every fix is proved on the recorded speech device only. You have not yet reported on a listening check of the game itself. So "fixed" for a finding about what you hear means fixed in the recorded speech tests, not yet heard through NVDA.
 - **Multiplayer.** Every fix is proved only by tests through a real server on 127.0.0.1, or against the client's fake server where a finding says so. Nobody has played over a real network.
 
-Fixed, 15 findings:
+Fixed, 18 findings:
 
 - H1, H2, H3, H4, H5, H8
-- M1, M2, M3, M4, M7, M8, M9
-- G3, G5
+- M1, M2, M3, M4, M7, M8, M9, M10
+- G1, G3, G4, G5
 
-Partly fixed, 8 findings:
+Partly fixed, 6 findings:
 
 - H6
-- M10
-- G1
 - C1, C2, C4, C6, C7
 
-Open, 6 findings:
+Open, 5 findings:
 
 - H7
 - M5, M6
-- G2, G4
+- G2
 - C5
 
 Changed, 2 findings: the finding no longer describes the code, and something different is true now.
@@ -41,7 +39,9 @@ Decided against, or put off on purpose, 2 findings:
 
 - C3, C8
 
-That is 33. Twenty-two findings from the work since, N1 to N22, are at the end. Of those, N2, N4 to N10 and N14 to N16 are fixed, and N11 and N21 partly.
+That is 33. Twenty-three findings from the work since, N1 to N23, are at the end. Of those, N2, N4 to N10 and N14 to N16 are fixed, and N11 and N21 partly.
+
+Issues 83 to 96, opened on 15 November, plan work that several entries here point at: levels and handicaps for the computer players (G1, N18), typed rules (C1), and named phrases and sounds. They are named where they apply.
 
 ## How far each finding was checked
 
@@ -333,7 +333,7 @@ Checked today for the square width; the timing point is from Sol's review of pul
 
 ### M10. Game records stop at out-of-sync reports
 
-**Partly fixed** in pull request 73, in the recorded speech tests; not yet heard through NVDA. Every game keeps a record: what it was built from, then each turn's commands in the order they ran (`Record` in `crates/world/src/record.rs`; the host keeps it itself, so no caller can forget a command). A single-player game is saved from the game menu, and by itself when you quit one that is not over; "load a game" in the single-player menu replays the record without speech or sound and hands you the game at that point. An hour of a 4-player game loaded in 3.3 seconds in a release build. The server writes each game's record when given `--records`, and `soundrts --check-record` replays a record or a save. Tests: `a_recorded_game_replays_to_the_same_digest_at_every_turn` and `a_record_cut_short_reads_to_a_whole_earlier_turn` in `crates/world/src/record/tests.rs`; `a_game_saved_and_loaded_tells_what_it_told_and_plays_on_the_same` in `crates/client/src/saves/load/tests.rs`. Not built: listening to a recorded game. A save or record loads only on the version of the simulation that wrote it, as decided (`docs/refactor-design.md`, section 13). Loose ends are in N22.
+**Fixed** in pull requests 73 and 80, in the recorded speech tests; not yet heard through NVDA. Every game keeps a record: what it was built from, then each turn's commands in the order they ran (`Record` in `crates/world/src/record.rs`; the host keeps it itself, so no caller can forget a command). A single-player game is saved from the game menu, and by itself when you quit one that is not over; "load a game" replays the record without speech or sound and hands you the game at that point. "Listen to a game" plays a save, the last finished game, or a record put in the `records` folder: you hear one player's side as a watcher does, slower or faster, paused, or a minute or five ahead or back. The server writes each game's record when given `--records`, and `soundrts --check-record` replays one. Tests: `a_recorded_game_replays_to_the_same_digest_at_every_turn` in `crates/world/src/record/tests.rs`; `a_game_saved_and_loaded_tells_what_it_told_and_plays_on_the_same` in `crates/client/src/saves/load/tests.rs`; `listening_from_the_start_says_and_plays_what_the_player_heard_live` and `a_jump_lands_on_its_turn_and_says_nothing_of_the_stretch_skipped` in `crates/client/src/game/replay/tests.rs`. A save or record loads only on the version of the simulation that wrote it, as decided (`docs/refactor-design.md`, section 13). Loose ends are in N22 and N23.
 
 Checked today. Size: small for the first step, large for saved games.
 
@@ -374,15 +374,14 @@ All of these change the recordings. Since the cutover that means re-recording wi
 
 ### G1. Computer players play by different rules
 
-**Partly fixed** in pull request 23. Fixed:
+**Fixed** in pull requests 23, 68, 77 and 97, for what this finding lists. A computer knows only what a player in its seat is told, and gives only the orders a player could: its code reads and acts through one type whose world is private (`Door` in `crates/world/src/ai/door.rs`), so it cannot name the world. Measured by the sweep, it plays about as strongly as before. Tests in `crates/world/src/ai/fairness.rs`, among them `a_computer_looks_for_a_meadow_where_it_remembers_it` and `a_computer_plans_its_paths_through_the_forests_it_has_seen`. Point by point:
 
-- Computers remember a unit for 3 minutes, as a human does (`memory_duration` in `crates/world/src/player.rs`). Test: `a_computer_forgets_a_unit_three_minutes_after_losing_sight_of_it` in `crates/world/src/upstream_tests.rs`.
-- A computer chooses a warehouse place by what it has seen (`is_ok_for_warehouse` in `crates/world/src/ai.rs`). Test: `a_computer_judges_a_warehouse_place_by_what_it_has_seen` in `upstream_tests.rs`.
+- Computers remember a unit for 3 minutes, as a human does. Test: `a_computer_forgets_a_unit_three_minutes_after_losing_sight_of_it` in `crates/world/src/upstream_tests.rs`.
+- A computer chooses a warehouse place by what it has seen. Test: `a_computer_judges_a_warehouse_place_by_what_it_has_seen` in `upstream_tests.rs`.
+- Computer 2 keeps its two privileges, 1000 of each resource every time it plays and no requirements, as a named handicap (`Handicap` in `crates/world/src/ai/handicap.rs`), and is called "random computer with unlimited resources and no requirements" wherever it is chosen or heard, in English only. Test: `a_computer_is_named_for_its_handicap` in `fairness.rs`. Issue 83 asks for one name in every language.
+- The roles (worker, farm, town hall, gate, wood) are looked up once when the rules load (`Roles` in `crates/world/src/rules.rs`).
 
-Not fixed:
-
-- Computer 2 still gets 1000 of each resource every time it plays and ignores requirements (`computer2_play` in `crates/world/src/ai.rs`). Pull request 23 left this as a separate decision. The design's decision 6, fair computers with a handicap setting, is not built.
-- The four roles are unchanged. The gate is still looked up by name.
+Still to come, as issues: a level of skill apart from the script (84 to 86), an announced income handicap for any seat (87), and a difficulty for the campaign (88). Fleeing and regrouping are still things only a computer's units do.
 
 Pull request 52 added a measurement over many maps and seeds, `crates/world/tests/ai_sweep.rs`, to judge changes like these. N1 to N3 come from it.
 
@@ -460,7 +459,7 @@ The port copied these on purpose so that it matched the Python game turn for tur
 
 ### G4. The simulation imitates Python's errors
 
-**Open.** By the same count as before, `Abort::new` in `crates/world/src`, there are 109 such stops outside tests, against 114 at `612afd1`. Three of them are now in `crates/world/src/questions.rs`, which the interface shares.
+**Fixed** in pull requests 79 and 97. No stop in the simulation quotes Python. Of the 86 outside the computer player, 9 could not happen and were removed, 35 became ordinary events with an outcome, such as an order marked impossible, and 42 name the rule of the simulation that broke (`Abort` in `crates/world/src/abort.rs`). The computer player's 28 went the same way: none fired in any of 480 measured games, and with a broken mod or map the computer now plays on where it used to abandon its turn every turn. Seven half-done states behind the stops were bugs and are fixed, each with a test. A test counts the stops, and the uses of `unwrap`, `expect` and unchecked indexing, and fails if a count rises: `the_places_that_stop_or_panic_only_become_fewer` in `crates/world/tests/stops.rs`.
 
 Count checked today. Size: large in total. Do it alongside other work, not as a project.
 
@@ -495,10 +494,9 @@ None of these changes what a player hears. Each says what would make it worth do
 
 ### C1. Orders travel as text and are parsed again at every step
 
-**Partly fixed** in pull requests 10, 19, 53, 54 and 68. The interface builds typed commands (`Command` in `crates/world/src/command.rs`), and a game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`. An order in a unit's queue holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). The order menu is typed entries the client reads without parsing (`MenuEntry` in `crates/world/src/questions.rs`), and a rallying point is the target it was given. These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
+**Partly fixed** in pull requests 10, 19, 53, 54, 68 and 97. The interface builds typed commands (`Command` in `crates/world/src/command.rs`), and a game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`. An order in a unit's queue holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). The order menu is typed entries the client reads without parsing (`MenuEntry` in `crates/world/src/questions.rs`), and a rallying point is the target it was given. The computer player holds type ids and typed tasks, and its script is read once into typed steps (`crates/world/src/ai/script.rs`). These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
 
-- The computer player still gives its orders by name.
-- A unit type's own lists (what it can train, build and research, and its requirements) are still names inside the rules.
+- A unit type's own lists (what it can train, build and research, and its requirements) and its effects are still names inside the rules. Issue 94 plans this.
 - Map triggers are text by nature, and the recorded traces read text orders behind the `truth` feature.
 
 From the review. Size: large.
@@ -541,7 +539,7 @@ Checked today. Size: small.
 
 - The move test no longer copies the occupied space (pull request 8): `would_collide_if` in `crates/world/src/unit.rs` calls `would_collide_without`. Every trace stayed the same, so this is fixed by reading, no test of its own.
 - The sync check that walked every unit each turn is off the play path (pull request 54). The digest remains for tests.
-- Still true: a deleted unit is never freed. The list of entities in `crates/world/src/world.rs` only grows.
+- A thing that left the map is freed once nothing names it, and a player who left the game forgets what it knew (pull request 81). On the busiest map over 4,000 turns the entities stored went from 4,204 to 2,720, against 2,587 on the map, for about 4 percent more time a turn. Test: `a_long_game_stores_little_beyond_what_is_on_the_map` in `crates/world/tests/storage.rs`.
 - Each turn the server now builds one message per seat. Pull request 20 timed it at 0.026 milliseconds a turn for eight seats on jl7, against about 0.65 milliseconds for the turn itself.
 - The other points are unmeasured.
 
@@ -813,7 +811,7 @@ Each is from the pull request named, as its agent reported it. Open. None was re
 
 - A training save loads with the mods you have now, not the ones it was saved with.
 - The server writes no record of a game stopped because a turn took too long, or cut off by shutting the server down.
-- Listening to a recorded game is not built.
+- Listening to a recorded game was built in pull request 80 (M10).
 
 **Flares and the organizer (66).**
 
@@ -831,4 +829,33 @@ Each is from the pull request named, as its agent reported it. Open. None was re
 - An exit's blockers and each blocker's exit record the same link from both ends.
 - "No goal" for a unit is still a very large number, which a seat is sent.
 - Rules cannot declare which type plays the worker, farm, town hall, gate and wood roles; today's names are used.
-- The copied Python error stops did not fall with the new types (G4).
+- The copied Python error stops are gone since pull requests 79 and 97 (G4).
+
+### N23. Loose ends of the work of pull requests 75 to 97
+
+Each is from the pull request named, as its agent reported it. Open. None was reproduced for this list.
+
+**Groups and allies (81).**
+
+- A dead unit stays in its recallable group, and its speed still counts toward the group's slowest. Suspected.
+- A player who left the game still lists its dead units, and its allies' check of what they see still looks at them, at position 0, 0. Suspected.
+
+**Watching and listening (80).**
+
+- After a change of the player followed, news that was waiting for the first player is still said. A watcher on a server and a listener to a record both do this.
+- A computer's side has no events, because the simulation tells a computer none: a watcher on a server cannot follow a computer, and a listener to a record hears only its units and resources.
+- The game menu does not pause a recording; Shift Space does.
+
+**The computer players (77, 97).**
+
+- A computer draws from the simulation's random numbers, and its own units are read as the simulation holds them. Both stand between it and a crate of its own.
+- A unit inside a transport can no longer be hit, by melee either (79). No ordinary order could aim at one.
+
+**The recordings (75).**
+
+- No recorded game cloaks a unit, upgrades a cannon tower, or has a human player use recall.
+- What only a computer player's choices reach can drop out of the recordings when its logic changes.
+
+**Storage (81).**
+
+- The table that finds an entity by its id keeps 4 bytes for every id ever given: about 55 kilobytes an hour on the busiest map.
