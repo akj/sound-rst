@@ -27,7 +27,7 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, EntityClass, Role, TypeId};
+use crate::rules::{AirGround, EffectTarget, EntityClass, Role, TypeId};
 use crate::world::TPlace;
 
 mod door;
@@ -1693,7 +1693,7 @@ impl Door<'_> {
                 };
                 if effect.first().map(String::as_str) == Some("summon") && effect.contains(&name) {
                     let mut target = None;
-                    if self.rules().ty(a).effect_target == ["ask"] {
+                    if self.rules().ty(a).effect_target == Some(EffectTarget::Ask) {
                         // The maker is one of its units: an upgrade, which a
                         // player has without a unit, makes nothing.
                         let Some(&first) = self.units().first() else {

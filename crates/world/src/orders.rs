@@ -12,7 +12,7 @@ use crate::entity::{
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance, to_int};
 use crate::questions;
-use crate::rules::{AirGround, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// The most orders a unit can queue.
@@ -449,7 +449,7 @@ impl Request {
     fn lacks_its_target(&self, w: &World) -> bool {
         let asks = || {
             let ability = self.type_name.as_deref().and_then(|n| w.rules.type_id(n));
-            ability.is_some_and(|t| w.rules.ty(t).effect_target == ["ask"])
+            ability.is_some_and(|t| w.rules.ty(t).effect_target == Some(EffectTarget::Ask))
         };
         match self.keyword {
             Keyword::JoinGroup => self.arg.is_none(),
@@ -1889,7 +1889,7 @@ impl World {
         let Some(p) = self.e(unit).player() else {
             return Ok(());
         };
-        if t.effect_target == ["ask"] {
+        if t.effect_target == Some(EffectTarget::Ask) {
             let target = match aim.given {
                 Some(given) => self.resolve_target(p, &given),
                 None => None,
@@ -1900,7 +1900,7 @@ impl World {
                 self.mark_as_impossible(unit, uid, None);
                 return Ok(());
             }
-        } else if t.effect_target == ["random"] {
+        } else if t.effect_target == Some(EffectTarget::Random) {
             let i = self
                 .random
                 .choice_index(self.squares.len())
@@ -1910,7 +1910,7 @@ impl World {
                 uid,
                 Some(Target::Square(crate::entity::SquareId(i as u32))),
             );
-        } else if t.effect_target == ["self"] {
+        } else if t.effect_target == Some(EffectTarget::User) {
             self.set_target(unit, uid, Some(Target::Entity(unit)));
         }
         if self.c(unit).map_or(0, |c| c.mana) < t.stats.mana_cost {

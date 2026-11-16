@@ -460,7 +460,31 @@ impl BaseClass {
 }
 
 macro_rules! stats {
-    ($($name:ident),* $(,)?) => {
+    ($($name:ident: $stat:ident),* $(,)?) => {
+        /// A statistic of an entity or a unit type, which an upgrade's
+        /// effect may name.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum Stat {
+            $($stat,)*
+        }
+
+        impl Stat {
+            /// The statistic the rules call `name`.
+            pub fn parse(name: &str) -> Option<Stat> {
+                match name {
+                    $(stringify!($name) => Some(Stat::$stat),)*
+                    _ => None,
+                }
+            }
+
+            /// The name the rules give the statistic.
+            pub fn name(self) -> &'static str {
+                match self {
+                    $(Stat::$stat => stringify!($name),)*
+                }
+            }
+        }
+
         /// The numeric attributes of an entity or a unit type, by their
         /// Python names. Booleans are 0 or 1, as Python treats them as
         /// integers. Decimal values are multiplied by [`PRECISION`].
@@ -470,22 +494,17 @@ macro_rules! stats {
         }
 
         impl Stats {
-            /// Every attribute name.
-            pub const NAMES: &'static [&'static str] = &[$(stringify!($name)),*];
-
-            /// The value of the attribute called `name`.
-            pub fn get(&self, name: &str) -> Option<i64> {
-                match name {
-                    $(stringify!($name) => Some(self.$name),)*
-                    _ => None,
+            /// The value of a statistic.
+            pub fn get(&self, stat: Stat) -> i64 {
+                match stat {
+                    $(Stat::$stat => self.$name,)*
                 }
             }
 
-            /// The attribute called `name`, to change it.
-            pub fn get_mut(&mut self, name: &str) -> Option<&mut i64> {
-                match name {
-                    $(stringify!($name) => Some(&mut self.$name),)*
-                    _ => None,
+            /// A statistic, to change it.
+            pub fn get_mut(&mut self, stat: Stat) -> &mut i64 {
+                match stat {
+                    $(Stat::$stat => &mut self.$name,)*
                 }
             }
         }
@@ -493,15 +512,59 @@ macro_rules! stats {
 }
 
 stats! {
-    collision, bonus_height, harm_level, heal_level, qty, is_vulnerable, is_repairable,
-    is_healable, is_undead, is_teleportable, is_a_building_land, transport_capacity,
-    transport_volume, is_invisible, is_cloakable, sight_range, is_a_detector, detection_range,
-    is_a_cloaker, cloaking_range, speed, hp_max, hp_regen, mana_max, mana_start, mana_regen,
-    time_cost, food_cost, food_provided, armor, damage, damage_radius, range, is_ballistic,
-    minimal_range, cooldown, decay, corpse, presence, count_limit, is_a_gate, provides_survival,
-    is_buildable_anywhere, is_buildable_on_exits_only, is_buildable_near_water_only, is_a_unit,
-    is_a_building, mana_cost, effect_range, effect_radius, universal_notification,
-    extraction_time, extraction_qty,
+    collision: Collision,
+    bonus_height: BonusHeight,
+    harm_level: HarmLevel,
+    heal_level: HealLevel,
+    qty: Qty,
+    is_vulnerable: IsVulnerable,
+    is_repairable: IsRepairable,
+    is_healable: IsHealable,
+    is_undead: IsUndead,
+    is_teleportable: IsTeleportable,
+    is_a_building_land: IsABuildingLand,
+    transport_capacity: TransportCapacity,
+    transport_volume: TransportVolume,
+    is_invisible: IsInvisible,
+    is_cloakable: IsCloakable,
+    sight_range: SightRange,
+    is_a_detector: IsADetector,
+    detection_range: DetectionRange,
+    is_a_cloaker: IsACloaker,
+    cloaking_range: CloakingRange,
+    speed: Speed,
+    hp_max: HpMax,
+    hp_regen: HpRegen,
+    mana_max: ManaMax,
+    mana_start: ManaStart,
+    mana_regen: ManaRegen,
+    time_cost: TimeCost,
+    food_cost: FoodCost,
+    food_provided: FoodProvided,
+    armor: Armor,
+    damage: Damage,
+    damage_radius: DamageRadius,
+    range: Range,
+    is_ballistic: IsBallistic,
+    minimal_range: MinimalRange,
+    cooldown: Cooldown,
+    decay: Decay,
+    corpse: Corpse,
+    presence: Presence,
+    count_limit: CountLimit,
+    is_a_gate: IsAGate,
+    provides_survival: ProvidesSurvival,
+    is_buildable_anywhere: IsBuildableAnywhere,
+    is_buildable_on_exits_only: IsBuildableOnExitsOnly,
+    is_buildable_near_water_only: IsBuildableNearWaterOnly,
+    is_a_unit: IsAUnit,
+    is_a_building: IsABuilding,
+    mana_cost: ManaCost,
+    effect_range: EffectRange,
+    effect_radius: EffectRadius,
+    universal_notification: UniversalNotification,
+    extraction_time: ExtractionTime,
+    extraction_qty: ExtractionQty,
 }
 
 /// The kind of Python class an entity is an instance of.
@@ -640,10 +703,58 @@ impl AirGround {
     }
 
     /// `ground_or_air`: water units count as ground units.
-    pub fn ground_or_air(self) -> &'static str {
+    pub fn ground_or_air(self) -> AirGround {
         match self {
-            AirGround::Air => "air",
-            _ => "ground",
+            AirGround::Air => AirGround::Air,
+            AirGround::Ground | AirGround::Water => AirGround::Ground,
+        }
+    }
+}
+
+/// A kind of unit that a type's harm (`harm_target_type`) is limited to.
+/// The harm reaches a type only if it is of every kind listed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HarmTarget {
+    Healable,
+    Building,
+    /// Air units, or ground units (water units among them).
+    Layer(AirGround),
+    Unit,
+    Undead,
+}
+
+impl HarmTarget {
+    fn parse(s: &str) -> Option<HarmTarget> {
+        Some(match s {
+            "healable" => HarmTarget::Healable,
+            "building" => HarmTarget::Building,
+            "air" => HarmTarget::Layer(AirGround::Air),
+            "ground" => HarmTarget::Layer(AirGround::Ground),
+            "unit" => HarmTarget::Unit,
+            "undead" => HarmTarget::Undead,
+            _ => return None,
+        })
+    }
+}
+
+/// Where an ability aims (`effect_target`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectTarget {
+    /// The player chooses the target (`ask`).
+    Ask,
+    /// A square chosen at random (`random`).
+    Random,
+    /// The unit that uses the ability (`self`).
+    User,
+}
+
+impl EffectTarget {
+    fn parse(words: &[String]) -> Option<EffectTarget> {
+        match words {
+            [w] if w == "ask" => Some(EffectTarget::Ask),
+            [w] if w == "random" => Some(EffectTarget::Random),
+            [w] if w == "self" => Some(EffectTarget::User),
+            _ => None,
         }
     }
 }
@@ -666,21 +777,24 @@ pub struct UnitType {
     pub can_use: Vec<String>,
     pub can_research: Vec<String>,
     pub can_upgrade_to: Vec<String>,
-    pub target_types: Vec<String>,
-    pub harm_target_type: Vec<String>,
+    /// The layers of the units it can attack: ground, air, or both.
+    pub target_types: Vec<AirGround>,
+    pub harm_target_type: Vec<HarmTarget>,
     pub speed_on_terrain: Vec<String>,
     pub storable_resource_types: Vec<i64>,
     pub storage_bonus: Vec<i64>,
     pub damage_vs: Vec<(String, i64)>,
     pub armor_vs: Vec<(String, i64)>,
     pub splash: bool,
-    /// The `<stat>_bonus` values, by stat name.
-    pub bonuses: Vec<(String, i64)>,
+    /// The `<stat>_bonus` values.
+    pub bonuses: Vec<(Stat, i64)>,
     /// Deposits: the resource it holds.
     pub resource_type: Option<i64>,
     /// Upgrades and abilities: the effect and its arguments.
     pub effect: Option<Vec<String>>,
-    pub effect_target: Vec<String>,
+    /// Abilities: where it aims. `None` for an ability that names no
+    /// target the simulation knows: it aims at nothing.
+    pub effect_target: Option<EffectTarget>,
 }
 
 impl UnitType {
@@ -697,10 +811,10 @@ impl UnitType {
     }
 
     /// `getattr(type, stat + "_bonus", 0)`.
-    pub fn bonus(&self, stat: &str) -> i64 {
+    pub fn bonus(&self, stat: Stat) -> i64 {
         self.bonuses
             .iter()
-            .find(|(k, _)| k == stat)
+            .find(|(k, _)| *k == stat)
             .map_or(0, |(_, v)| *v)
     }
 
@@ -747,7 +861,7 @@ impl UnitType {
             can_use: Vec::new(),
             can_research: Vec::new(),
             can_upgrade_to: Vec::new(),
-            target_types: vec!["ground".into()],
+            target_types: vec![AirGround::Ground],
             harm_target_type: Vec::new(),
             speed_on_terrain: Vec::new(),
             storable_resource_types: Vec::new(),
@@ -758,11 +872,7 @@ impl UnitType {
             bonuses: Vec::new(),
             resource_type: None,
             effect: None,
-            effect_target: if base == BaseClass::Ability {
-                vec!["self".into()]
-            } else {
-                Vec::new()
-            },
+            effect_target: (base == BaseClass::Ability).then_some(EffectTarget::User),
         }
     }
 }
@@ -1293,11 +1403,28 @@ fn build_type(
             "can_use" => t.can_use = words(),
             "can_research" => t.can_research = words(),
             "can_upgrade_to" => t.can_upgrade_to = words(),
-            "target_types" => t.target_types = words(),
-            "harm_target_type" => t.harm_target_type = words(),
+            "target_types" => {
+                t.target_types = known_words(name, k, &words(), warnings, |w| match w {
+                    "ground" => Some(AirGround::Ground),
+                    "air" => Some(AirGround::Air),
+                    _ => None,
+                });
+            }
+            "harm_target_type" => {
+                t.harm_target_type = known_words(name, k, &words(), warnings, HarmTarget::parse);
+            }
             "speed_on_terrain" => t.speed_on_terrain = words(),
             "effect" => t.effect = Some(words()),
-            "effect_target" => t.effect_target = words(),
+            "effect_target" => {
+                let w = words();
+                t.effect_target = EffectTarget::parse(&w);
+                if t.effect_target.is_none() {
+                    warnings.push(format!(
+                        "in {name}: unknown effect_target '{}'",
+                        w.join(" ")
+                    ));
+                }
+            }
             "storable_resource_types" | "storage_bonus" => {
                 let l = match v {
                     RawValue::IntList(l) => l.clone(),
@@ -1325,13 +1452,15 @@ fn build_type(
                 }
             }
             _ => {
-                if let Some(stat) = t.stats.get_mut(k) {
-                    *stat = match v {
+                if let Some(stat) = Stat::parse(k) {
+                    *t.stats.get_mut(stat) = match v {
                         RawValue::Int(n) => *n,
                         other => i64::from(other.is_truthy()),
                     };
-                } else if let (Some(s), RawValue::Int(n)) = (k.strip_suffix("_bonus"), v) {
-                    t.bonuses.push((s.to_owned(), *n));
+                } else if let (Some(s), RawValue::Int(n)) =
+                    (k.strip_suffix("_bonus").and_then(Stat::parse), v)
+                {
+                    t.bonuses.push((s, *n));
                 } else {
                     warnings.push(format!(
                         "in {name}: the property '{k}' is not supported by this port"
@@ -1344,6 +1473,25 @@ fn build_type(
     t
 }
 
+/// The words of a list property that name a kind `parse` knows, in order.
+/// Each other word is dropped with a warning: it never matched anything.
+fn known_words<T>(
+    name: &str,
+    property: &str,
+    words: &[String],
+    warnings: &mut Vec<String>,
+    parse: impl Fn(&str) -> Option<T>,
+) -> Vec<T> {
+    let mut known = Vec::new();
+    for w in words {
+        match parse(w) {
+            Some(k) => known.push(k),
+            None => warnings.push(format!("in {name}: unknown {property} '{w}'")),
+        }
+    }
+    known
+}
+
 /// The effect of an upgrade or an ability, if the simulation can apply it.
 /// One it cannot read is dropped with a warning: an upgrade without an
 /// effect has none, and an ability without one is never allowed.
@@ -1354,11 +1502,7 @@ fn readable_effect(
     warnings: &mut Vec<String>,
 ) -> Option<Vec<String>> {
     let effect = effect?;
-    let stat = |i: usize| {
-        effect
-            .get(i)
-            .is_some_and(|s| Stats::default().get(s).is_some())
-    };
+    let stat = |i: usize| effect.get(i).is_some_and(|s| Stat::parse(s).is_some());
     let integer = |i: usize| effect.get(i).is_some_and(|s| py_int(s).is_ok());
     let readable = match (base, effect.first().map(String::as_str)) {
         (BaseClass::Upgrade, Some("bonus")) => {
@@ -1500,6 +1644,31 @@ mod tests {
         assert_eq!(
             r.unit_type("u").unwrap().effect.as_deref(),
             Some(&["bonus".to_owned(), "damage".to_owned(), "1500".to_owned()][..])
+        );
+    }
+
+    #[test]
+    fn target_kinds_are_read_and_an_unknown_one_is_dropped_with_a_warning() {
+        let r = Rules::load(&[
+            "def a\nclass soldier\ntarget_types air sea\nharm_target_type undead dragon\n\
+             def s\nclass ability\neffect recall\neffect_target ask\n\
+             def z\nclass ability\neffect recall\neffect_target there\n",
+        ]);
+        let a = r.unit_type("a").unwrap();
+        assert_eq!(a.target_types, [AirGround::Air]);
+        assert_eq!(a.harm_target_type, [HarmTarget::Undead]);
+        assert_eq!(
+            r.unit_type("s").unwrap().effect_target,
+            Some(EffectTarget::Ask)
+        );
+        assert_eq!(r.unit_type("z").unwrap().effect_target, None);
+        assert_eq!(
+            r.warnings,
+            [
+                "in a: unknown target_types 'sea'",
+                "in a: unknown harm_target_type 'dragon'",
+                "in z: unknown effect_target 'there'"
+            ]
         );
     }
 

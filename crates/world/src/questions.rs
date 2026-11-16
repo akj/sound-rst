@@ -17,7 +17,7 @@ use crate::orders::{
     BuildStep, GatherStep, Keyword, MenuEntry, Order, OrderInfo, OrderKind, TargetRef,
 };
 use crate::player::Upgrades;
-use crate::rules::{EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
+use crate::rules::{EffectTarget, EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType};
 use crate::seat_view::Comrades;
 use crate::world::World;
 
@@ -787,7 +787,9 @@ pub(crate) fn order_info(
         (true, None) => return None,
     };
     let nb_args = match priced {
-        Some((t, _)) if kw == Keyword::Use => usize::from(t.effect_target == ["ask"]),
+        Some((t, _)) if kw == Keyword::Use => {
+            usize::from(t.effect_target == Some(EffectTarget::Ask))
+        }
         _ => kw.nb_args(),
     };
     Some(OrderInfo {

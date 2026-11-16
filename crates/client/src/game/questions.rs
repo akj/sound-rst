@@ -9,7 +9,7 @@ use soundrts_world::msg::{Msg, MsgPart, msg, nb2msg};
 use soundrts_world::msgparts as mp;
 use soundrts_world::nofloat::py_int;
 use soundrts_world::orders::Keyword;
-use soundrts_world::rules::Stats;
+use soundrts_world::rules::{Stat, Stats};
 use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
@@ -322,10 +322,13 @@ fn combat_stats(view: &SeatView, e: &KnownEntity) -> Option<Stats> {
         };
         let (stat, value) = match effect {
             [kind, stat, base, ..] if kind == "bonus" => (stat, py_int(base).unwrap_or(0)),
-            [kind, stat, ..] if kind == "apply_bonus" => (stat, t.bonus(stat)),
+            [kind, stat, ..] if kind == "apply_bonus" => {
+                (stat, Stat::parse(stat).map_or(0, |s| t.bonus(s)))
+            }
             _ => continue,
         };
-        if let Some(v) = stats.get_mut(stat) {
+        if let Some(s) = Stat::parse(stat) {
+            let v = stats.get_mut(s);
             *v = v.saturating_add(value);
         }
     }

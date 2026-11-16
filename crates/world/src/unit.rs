@@ -16,7 +16,7 @@ use crate::orders::{Keyword, OrderKind, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
@@ -369,7 +369,8 @@ impl World {
                 let base = self
                     .e(unit)
                     .type_id()
-                    .map_or(0, |t| self.rules.ty(t).bonus(&stat));
+                    .zip(Stat::parse(&stat))
+                    .map_or(0, |(t, s)| self.rules.ty(t).bonus(s));
                 self.effect_bonus(unit, start_level, &stat, base, 0)?;
                 if stat == "damage"
                     && let Some(c) = self.cm(unit)
@@ -391,9 +392,10 @@ impl World {
         incr: i64,
     ) -> Res {
         let e = self.em(unit);
-        let v = e.stats.get_mut(stat).ok_or(Invariant::EffectUnread)?;
+        let stat = Stat::parse(stat).ok_or(Invariant::EffectUnread)?;
+        let v = e.stats.get_mut(stat);
         *v += base + incr * start_level;
-        if stat == "damage"
+        if stat == Stat::Damage
             && let Some(c) = e.creature_mut()
         {
             c.damage_level += 1;
@@ -1384,11 +1386,10 @@ impl World {
             return false;
         }
         let kind = o.airground_type.ground_or_air();
-        let targets = self
-            .type_of(id)
-            .map(|t| t.target_types.clone())
-            .unwrap_or_else(|| vec!["ground".into()]);
-        if !targets.iter().any(|t| t == kind) {
+        let reaches = self.type_of(id).map_or(kind == AirGround::Ground, |t| {
+            t.target_types.contains(&kind)
+        });
+        if !reaches {
             return false;
         }
         o.stats.is_vulnerable != 0

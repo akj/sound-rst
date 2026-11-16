@@ -18,7 +18,7 @@ use crate::map::MapDef;
 use crate::pathfinding::{Graphs, PathCache};
 use crate::player::{EndOfTurn, Player};
 use crate::pyrandom::PyRandom;
-use crate::rules::{AiScripts, AirGround, Rules, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AiScripts, AirGround, HarmTarget, Rules, VIRTUAL_TIME_INTERVAL};
 use crate::square::Square;
 
 /// `float("inf")` for path distances.
@@ -1046,13 +1046,14 @@ impl World {
             }
             (Some(unit), Some(other)) => {
                 let mut r = true;
-                for t in &unit.harm_target_type {
-                    let fails = (t == "healable" && other.stats.is_healable == 0)
-                        || (t == "building" && other.stats.is_a_building == 0)
-                        || ((t == "air" || t == "ground")
-                            && other.airground_type.ground_or_air() != t)
-                        || (t == "unit" && other.stats.is_a_unit == 0)
-                        || (t == "undead" && other.stats.is_undead == 0);
+                for &t in &unit.harm_target_type {
+                    let fails = match t {
+                        HarmTarget::Healable => other.stats.is_healable == 0,
+                        HarmTarget::Building => other.stats.is_a_building == 0,
+                        HarmTarget::Layer(a) => other.airground_type.ground_or_air() != a,
+                        HarmTarget::Unit => other.stats.is_a_unit == 0,
+                        HarmTarget::Undead => other.stats.is_undead == 0,
+                    };
                     if fails {
                         r = false;
                         break;
