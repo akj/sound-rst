@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::abort::{Abort, Res};
 use crate::entity::{EntityId, Place, SquareId};
-use crate::nofloat::{floordiv, py_int, square_of_distance};
+use crate::nofloat::{floordiv, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
 use crate::rules::{AirGround, EntityClass, Role, TypeId};
@@ -35,7 +35,7 @@ pub(crate) mod script;
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
-use script::{Plan, Step, is_digits, is_signed_number};
+use script::{Plan, Step};
 
 /// The number of workers a scripted computer keeps getting.
 const NB_WORKERS_TO_GET: i64 = 10;
@@ -247,7 +247,11 @@ impl Door<'_> {
         let Some(script) = self.script(&name) else {
             return Err(Abort::new(format!("KeyError: '{name}'")));
         };
-        let plan = script.plan(self.rules(), self.faction());
+        let mut warnings = Vec::new();
+        let plan = script.plan(self.rules(), self.faction(), &mut warnings);
+        for w in warnings {
+            self.warn(w);
+        }
         let time = self.time();
         let c = self.state_mut();
         c.plan = Some(plan);
@@ -427,16 +431,6 @@ impl Door<'_> {
         self.turn().rem_euclid(10) == turn
     }
 
-    /// What the player's faction uses instead of the class `name`.
-    fn equivalent(&self, name: &str) -> String {
-        let faction = self.faction();
-        let rules = self.rules();
-        match rules.type_id(name) {
-            Some(t) => rules.ty(rules.equivalent(faction, t)).name.clone(),
-            None => rules.equivalent_name(faction, name),
-        }
-    }
-
     fn follow_plan(&mut self) -> Res {
         let Some(plan) = self.state().plan.clone() else {
             return Ok(());
@@ -445,7 +439,10 @@ impl Door<'_> {
             return Ok(());
         }
         let c = self.state();
-        if c.watchdog != 0 && self.time() > c.previous_linechange + c.watchdog * 1000 {
+        let deadline = c
+            .previous_linechange
+            .saturating_add(c.watchdog.saturating_mul(1000));
+        if c.watchdog != 0 && self.time() > deadline {
             let n = c.line_nb + 1;
             self.set_line_nb(n);
         }
@@ -487,102 +484,7 @@ impl Door<'_> {
                 }
                 self.set_line_nb(next);
             }
-            Step::Raw => return self.follow_raw_line(plan.lines(), line_nb),
-        }
-        Ok(())
-    }
-
-    /// Plays a line of the plan as the original reads it.
-    fn follow_raw_line(&mut self, plan: &[String], line_nb: i64) -> Res {
-        let Some(line) = plan.get(line_nb as usize) else {
-            return Ok(());
-        };
-        let cmd: Vec<&str> = line.split_whitespace().collect();
-        let Some(&first) = cmd.first() else {
-            return Ok(());
-        };
-        let arg = |i: usize| -> Res<&str> {
-            cmd.get(i)
-                .copied()
-                .ok_or_else(|| Abort::new("list index out of range"))
-        };
-        let label_index = |name: &str| plan.iter().position(|l| *l == format!("label {name}"));
-        match first {
-            "goto" => {
-                let dest = arg(1)?;
-                let n = if is_signed_number(dest) {
-                    line_nb + py_int(dest).map_err(|_| Abort::new("invalid literal for int()"))?
-                } else if let Some(i) = label_index(dest) {
-                    i as i64
-                } else if is_digits(dest) {
-                    py_int(dest).map_err(|_| Abort::new("invalid literal for int()"))?
-                } else {
-                    self.warn(format!("goto: wrong destination: {dest}"));
-                    line_nb + 1
-                };
-                self.set_line_nb(n);
-            }
-            "label" => {
-                self.set_line_nb(line_nb + 1);
-                arg(1)?;
-            }
-            "goto_random" => {
-                let choices = &cmd[1..];
-                let Some(i) = self.choice_index(choices.len()) else {
-                    return Err(Abort::new("Cannot choose from an empty sequence"));
-                };
-                let dest = choices[i];
-                let n = match label_index(dest) {
-                    Some(i) => i as i64,
-                    None => {
-                        self.warn(format!("goto_random: label not found: {dest}"));
-                        line_nb + 1
-                    }
-                };
-                self.set_line_nb(n);
-            }
-            "attack" => {
-                self.state_mut().constant_attacks = 1;
-                self.set_line_nb(line_nb + 1);
-            }
-            "watchdog" | "constant_attacks" | "research" => {
-                let v = py_int(arg(1)?).map_err(|_| Abort::new("invalid literal for int()"))?;
-                let c = self.state_mut();
-                match first {
-                    "watchdog" => c.watchdog = v,
-                    "constant_attacks" => c.constant_attacks = v,
-                    _ => c.research = v,
-                }
-                self.set_line_nb(line_nb + 1);
-            }
-            "get" => {
-                let mut n = 1;
-                let mut done = true;
-                for &w in &cmd[1..] {
-                    if is_digits(w) {
-                        n = py_int(w).map_err(|_| Abort::new("invalid literal for int()"))?;
-                    } else if self.rules().has_class(w) {
-                        let t = self.equivalent(w);
-                        let t = self.rules().type_id(&t);
-                        if !self.get(n, t)? {
-                            done = false;
-                            break;
-                        }
-                        n = 1;
-                    } else {
-                        self.warn(format!("get: unknown unit: '{w}' (in ai.txt)"));
-                        n = 1;
-                    }
-                }
-                if done {
-                    let line_nb = self.state().line_nb;
-                    self.set_line_nb(line_nb + 1);
-                }
-            }
-            other => {
-                self.warn(format!("unknown command: '{other}' (in ai.txt)"));
-                self.set_line_nb(line_nb + 1);
-            }
+            Step::Skip => self.set_line_nb(next),
         }
         Ok(())
     }
@@ -1990,6 +1892,48 @@ starting_resources 0 50
         let farm = Sel::One(w.rules.type_id("farm").unwrap());
         let door = w.door(p);
         assert_eq!((door.nb(&farm), door.future_nb(&farm)), (1, 2));
+    }
+
+    /// A computer of the script `easy` alone on a square with a town hall
+    /// and two peasants.
+    pub(super) fn scripted(script: &str) -> (World, PlayerId) {
+        let mut w = world(
+            "
+square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 4
+goldmines 1000 a1
+woods 1000 a1
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+starting_units townhall 2 peasant
+",
+        );
+        w.ai_scripts = crate::AiScripts::load(&[script]);
+        let p = w
+            .populate_map(&[crate::Controller::computer("easy")], false, false)
+            .unwrap()[0];
+        (w, p)
+    }
+
+    #[test]
+    fn a_script_line_with_a_mistake_is_skipped_and_the_computer_plays_on() {
+        let (mut w, p) = scripted("def easy\nwatchdog soon\ngoto_random\nattack\n");
+        assert_eq!(
+            w.ai_scripts.warnings,
+            [
+                "in ai.txt, easy, \"watchdog soon\": watchdog needs a number",
+                "in ai.txt, easy, \"goto_random\": goto_random needs labels",
+            ]
+        );
+        // The computer plays one turn in 10.
+        for _ in 0..30 {
+            w.update();
+        }
+        assert_eq!(w.drain_warnings(), Vec::<String>::new());
+        assert_eq!(w.computer_state(p).constant_attacks, 1);
     }
 
     #[test]

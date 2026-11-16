@@ -1711,7 +1711,10 @@ impl AiScripts {
         }
         self.scripts = scripts
             .into_iter()
-            .map(|(n, lines)| (n, Script::parse(lines)))
+            .map(|(n, lines)| {
+                let script = Script::parse(&n, lines, &mut self.warnings);
+                (n, script)
+            })
             .collect();
         Ok(())
     }
