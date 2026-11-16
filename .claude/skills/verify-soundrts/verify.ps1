@@ -28,6 +28,8 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $Upstream = Join-Path $Repo 'vendor\soundrts-upstream'
+# The original, imported: what the game reads.
+$Data = Join-Path $Repo 'vendor\game-data'
 $Pin = (Get-Content (Join-Path $Repo 'scripts/upstream-commit.txt') -Raw).Trim()
 $Stage = 'soundrts-verify'
 
@@ -150,8 +152,8 @@ function Invoke-Doctor {
     Write-Result "ok: Rust $want"
 
     $head = if (Test-Path (Join-Path $Upstream '.git')) { "$(git -C $Upstream rev-parse HEAD)".Trim() } else { 'nothing' }
-    if ($head -ne $Pin -or -not (Test-Path (Join-Path $Upstream 'res/rules.txt'))) {
-        throw "The game data in $Upstream is at $head, and scripts/upstream-commit.txt pins $Pin. Run the launch command."
+    if ($head -ne $Pin -or -not (Test-Path (Join-Path $Data 'import.txt'))) {
+        throw "The original in $Upstream is at $head, scripts/upstream-commit.txt pins $Pin, and its imported data belongs in $Data. Run the launch command."
     }
     Write-Result "ok: the game data is the pinned commit $Pin"
 
@@ -159,12 +161,12 @@ function Invoke-Doctor {
     Assert-Ran 'cargo' @('build', '--locked', '-p', 'soundrts')
     $folder = New-Scratch 'doctor'
     try {
-        $probe = Invoke-Game (Get-Game) @('--root', "`"$Upstream`"", '--probe') (Join-Path $folder 'appdata') $folder 60
+        $probe = Invoke-Game (Get-Game) @('--root', "`"$Data`"", '--probe') (Join-Path $folder 'appdata') $folder 60
     }
     finally { Remove-Item -Recurse -Force $folder }
     $root = Get-ProbeValue $probe.Text 'game root'
-    if ($probe.ExitCode -ne 0 -or $root -ne $Upstream) {
-        throw "soundrts.exe --probe ended with exit code $($probe.ExitCode) and found its data in '$root', not in '$Upstream'."
+    if ($probe.ExitCode -ne 0 -or $root -ne $Data) {
+        throw "soundrts.exe --probe ended with exit code $($probe.ExitCode) and found its data in '$root', not in '$Data'."
     }
     Write-Result "ok: the built program starts and finds the game data. It would speak through: $(Get-ProbeValue $probe.Text 'speaking through')"
 
@@ -237,8 +239,8 @@ function Invoke-FirstStart {
         if ($fetch.ExitCode -ne 0 -or -not $fetch.Text.Contains("The game data is ready in $root")) {
             throw "--fetch-data did not report the game data ready in $root."
         }
-        $same = (Get-FileHash (Join-Path $root 'res/rules.txt')).Hash -eq (Get-FileHash (Join-Path $Upstream 'res/rules.txt')).Hash
-        if (-not $same) { throw "res/rules.txt in $root differs from the one in $Upstream." }
+        $same = (Get-FileHash (Join-Path $root 'res/rules.txt')).Hash -eq (Get-FileHash (Join-Path $Data 'res/rules.txt')).Hash
+        if (-not $same) { throw "res/rules.txt in $root differs from the one in $Data." }
         Write-Result 'ok: --fetch-data downloaded the game data, with the res/rules.txt of the checkout'
 
         $after = Invoke-Game $game @('--probe') $appData $folder 60

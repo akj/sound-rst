@@ -14,9 +14,9 @@ A blind player has no screen to fall back on. Treat a message that comes late, i
 
 The fog of war applies to everything the game says and plays. The interface answers from what its player was told, never from the whole world. An answer counts nothing that the player has not seen.
 
-### 3. The original's files, as they are
+### 3. The original's files, imported
 
-The port reads the original's rules, maps, sounds, translations, and key bindings unchanged. Rules, maps, and computer players are text files, so a modder needs only a text editor. The original's keys keep their meaning. The port adds commands only on keys that the original leaves free.
+The game reads only its own layout, and the importer (`crates/import`) converts the original's rules, maps, sounds, translations, and key bindings into it. An import keeps what each file means. It changes one thing: a phrase or a sound has a name where the original has a number, through the table `crates/import/src/original_names.txt`. Rules, style, maps, and computer players keep the original's line syntax, and the words of a language are one text file of `name = words` lines, so a modder needs only a text editor. A name that does not exist is refused when the files load, with its file and its line. Each package's names are its own: a map from a server cannot replace what the game says. The original's keys keep their meaning. The port adds commands only on keys that the original leaves free.
 
 ### 4. The same input gives the same game
 
@@ -31,6 +31,8 @@ The rest of this file helps you find your way and change the game without breaki
 - **the developer** means the person you work for.
 - **the player** means a person who plays the game.
 - **the original** means the Python SoundRTS at the commit in `scripts/upstream-commit.txt`. It supplies the game data, and its source is the reference for the port.
+- **imported** means converted by the importer from the original's files into the layout the game reads. The game data in `vendor/game-data` is imported from `vendor/soundrts-upstream`.
+- **name** means what a file calls a phrase or a sound. A phrase is a bare word, `cannot_build_there`. A sound is its path under `sounds/`, `footstep/grass_1`. A number in the same place is a count that the game reads aloud.
 - **said** means the game's voice started the message, or a recorded speech device received its text. A test can show that.
 - **heard** means a person listened through a screen reader and reported the result. No test can show that.
 - **recording** means a file in an `expected/` folder. A _trace_ records the simulation, and a _transcript_ records what the interface says and plays.
@@ -42,13 +44,14 @@ Most features reach several of the places below. Before you call a change to the
 
 - **Single-player and a game on a server.** In single-player the client runs the game, and the game waits while a story is told or while the game menu or the console is open. On a server the server runs the game, and there is no console and no cheats. A story or an open menu does not stop a game on a server. Only the organizer's pause does.
 - **Seats.** A player, a watcher, and a player who returns after a lost connection. A watcher hears one player's side and gives no orders.
-- **Input from strangers.** A map, a network message, and a command can come from someone hostile. Refuse a bad one. It must never crash the game or the server. Add the case to the `hostile` tests of the crate that reads the input.
+- **Input from strangers.** A map, a network message, a command, and a package to import can come from someone hostile. Refuse a bad one. It must never crash the game or the server. Add the case to the `hostile` tests of the crate that reads the input.
+- **Packages.** The game, a mod, a campaign, and a map with files of its own are read the same way. A map that came from a server adds names and never replaces one.
 - **Keys.** A new command takes a key that the original's `res/ui/bindings.txt` leaves free, and that neither Windows nor a screen reader takes.
 - **The README.** The README is the player's manual. When a change alters what a key does or what the player hears, change the sentence that describes it.
 
 ## Verifying
 
-- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. The tests read the original's data from there.
+- A new worktree has no `vendor/`. Run `pwsh scripts/fetch-upstream.ps1` once. It fetches the original into `vendor/soundrts-upstream` and imports it into `vendor/game-data`, which the tests read. Run it again after a change to `crates/import/src/original_names.txt`: the game reads only data that its own table imported.
 - Before you push, run what CI checks:
 
   ```powershell
@@ -59,11 +62,12 @@ Most features reach several of the places below. Before you call a change to the
   ```
 
   The third command builds the interface without the simulation's `truth` feature. It fails when the interface reads the whole world.
-- While you iterate, run one test, for example `cargo test -p soundrts --test transcripts menus_main`. The package of `crates/client` is `soundrts`. The other packages are `soundrts-world`, `soundrts-protocol`, `soundrts-server`, and `listening-room`.
+- While you iterate, run one test, for example `cargo test -p soundrts --test transcripts menus_main`. The package of `crates/client` is `soundrts`. The other packages are `soundrts-world`, `soundrts-import`, `soundrts-protocol`, `soundrts-server`, and `listening-room`.
 - No test speaks, plays a sound, or opens a window. The client tests run on a recorded speech device, a recorded audio device, scripted keys, and a manual clock. The multiplayer tests run real servers on 127.0.0.1 only.
-- CI runs every test in its own process, several at a time. A test must pass alone and beside any other test. CI also runs the tests of `soundrts-world`, `soundrts-protocol`, and `soundrts-server` on Linux. The client needs Windows.
+- CI runs every test in its own process, several at a time. A test must pass alone and beside any other test. CI also runs the tests of `soundrts-world`, `soundrts-import`, `soundrts-protocol`, and `soundrts-server` on Linux. The client needs Windows.
 - A change to what the game says ships with a test that expects the literal words and fails without the change.
 - A change that is meant to keep the behaviour leaves `expected/` as it is. If only the way the simulation stores its state changed, only the `*.digest.txt` files may change.
+- The recordings name a sound, and a map's title, by the original's number. The tests write each name back as its number through the table, so the recordings still compare with what the original said and played.
 - To prove that a feature works, follow `.claude/skills/verify-soundrts/SKILL.md`. It gives the commands for each feature, and it says what each proof covers: the tests, the built program, or a listener.
 
 ## Said is not heard
@@ -82,7 +86,7 @@ The tests show what the game said: each message that the voice started, in order
 
 ## How it works
 
-The _simulation_ (`crates/world`) runs the game in _turns_. A _host_ owns one game. It takes each seat's _commands_, runs one turn, and gives each seat a _message_ of what that seat's player knows. In single-player the client runs the host. In a game on a server, the server (`crates/server`) runs the host and sends each seat its message in the binary form of `crates/protocol`. The _interface_ (`crates/client`) answers every key from those messages. What the interface says goes through the _voice_, which queues news by category, to the speech device. On Windows the speech device is Tolk by default. Tolk reaches NVDA and JAWS, and falls back to the system voice. With the `nvda_direct` setting, speech goes to NVDA's own controller client first.
+The _simulation_ (`crates/world`) runs the game in _turns_. A _host_ owns one game. It takes each seat's _commands_, runs one turn, and gives each seat a _message_ of what that seat's player knows. In single-player the client runs the host. In a game on a server, the server (`crates/server`) runs the host and sends each seat its message in the binary form of `crates/protocol`. The _importer_ (`crates/import`) converts the original's files once, before the game reads anything: the fetch script and the game's first-start download both run it, and so does `soundrts --import` for a mod or a map of the original. The _interface_ (`crates/client`) answers every key from those messages. What the interface says goes through the _voice_, which queues news by category, to the speech device. On Windows the speech device is Tolk by default. Tolk reaches NVDA and JAWS, and falls back to the system voice. With the `nvda_direct` setting, speech goes to NVDA's own controller client first.
 
 ## Where to read more
 
@@ -97,3 +101,4 @@ The _simulation_ (`crates/world`) runs the game in _turns_. A _host_ owns one ga
 - The simulation reads no file, clock, sound device, or window. No check enforces this rule yet, so keep to it without one. Outside data arrives as text, and time arrives as turns.
 - Put what you know into types. Use an id that is resolved when the rules load, an enum with one variant per kind, and `Option` for absence. Avoid a name compared as text, a group of flags, and a sentinel value.
 - One thing has one name in what the player hears. Use the original's word where the original has one, as the game does with "organizer".
+- The game knows no number of the original. Only the importer and its table do. Do not add a lookup by number, or a word of a file that is said as written.

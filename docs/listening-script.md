@@ -18,7 +18,8 @@ Build and start the game from the base repository:
 cd C:\Users\andrew\.t3\projects\sound-rst
 git fetch origin
 git switch --detach origin/main
-cargo run --release -p soundrts -- --root vendor/soundrts-upstream
+pwsh scripts/fetch-upstream.ps1
+cargo run --release -p soundrts -- --root vendor/game-data
 ```
 
 If the game is ever silent and does not answer, press Alt+F4. NVDA keeps working outside the game. Then tell me at which step.
@@ -262,14 +263,14 @@ This decides the sound work, which has not started. Use headphones.
 ```powershell
 cd C:\Users\andrew\.t3\projects\sound-rst
 $env:LIBCLANG_PATH = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin'
-cargo run -p listening-room --features binaural -- --root vendor/soundrts-upstream
+cargo run -p listening-room --features binaural -- --root vendor/game-data
 ```
 
 It runs seven steps over four renderers and saves your answers in `listening-room-results.txt` in that folder. Type `q` at any question to stop; what you answered so far is kept. Send the file back.
 
 ## Part 11. The names of the sounds
 
-Each recording of the original now has a name that says what the sound is, such as `footstep/grass_1`. The names are in `crates/client/src/original_names.txt`. They were proposed from where the game uses each sound, and nobody has listened to check them. This part needs only you, and no game.
+Each recording of the original now has a name that says what the sound is, such as `footstep/grass_1`. The names are in `crates/import/src/original_names.txt`. They were proposed from where the game uses each sound, and nobody has listened to check them. This part needs only you, and no game.
 
 For a name that is wrong, report the name and a better one: "11.4 fail: combat/arrow_hit is a sword". A name says what the sound is, not where the game plays it.
 
@@ -298,3 +299,29 @@ For a name that is wrong, report the name and a better one: "11.4 fail: combat/a
 11.12. Play `res/multi/jl4/creature/stone_golem.ogg`. Expected: a stone golem.
 
 11.13. Play some of the 47 files under `mods/soundpack`. Expected: each is another recording of the same thing as the file of the same name under `res`.
+
+## Part 12. The same game from imported files
+
+The game no longer reads the original's files. It reads files that an import made from them, in which every recording has a new path and every phrase a name. Nothing you hear should change. This part checks that the words and the sounds still arrive. For a sound that is missing or wrong, report the step and what you heard: "12.6 fail: the peasant walks without footsteps".
+
+12.1. In the repository, run `pwsh scripts/fetch-upstream.ps1`. Expected: the last line starts with "The imported game data is ready at".
+
+12.2. Run `cargo run --release -p soundrts -- --root vendor/game-data`. Expected: "SoundRTS 1.3.8.1, please make a selection".
+
+12.3. Press Down. Expected: a click, then "single player, play on your computer".
+
+12.4. Press Enter. Expected: another click, "single player", then "please make a selection".
+
+12.5. Start a training game on jl1 against a quiet computer. Expected: "objective: neutralized enemy", then "b 1, meadows, 1 town hall, 1 farm and 1 peasant", with the sounds of the town hall and the farm under the voice, as before.
+
+12.6. Select the peasant and send it to the gold mine at a 1. Expected: the peasant's voice accepts the order, you hear its footsteps on the grass, and then the pick in the mine.
+
+12.7. Press W for the town hall, A until "recruit peasant", then Enter. Expected: the sound of a production that starts, and later "peasant 2 ready!".
+
+12.8. Open the console with the backquote key, type `a`, a space, `zzz`, and press Enter. Expected: a beep.
+
+12.9. Press F10, choose quit, and confirm. In Options, set the language to French, and start the game again. Expected: "SoundRTS 1.3.8.1, Que souhaitez-vous ?". Press Down. Expected: "Un seul joueur, jouer seul sur votre ordinateur".
+
+12.10. Set the language back. In Options, switch the orc mod on, and start a training game on jl1. Expected: the orc units have their names, such as "peon" and "great hall".
+
+12.11. In a terminal, run `soundrts --root vendor/soundrts-upstream --probe`, or `cargo run -p soundrts -- --root vendor/soundrts-upstream --probe`. Expected: no game starts. The message says that the folder holds the files of the original game, and names the command `soundrts --import`.

@@ -33,7 +33,7 @@ Preconditions:
 
 For Andrew, with NVDA running. Each step passes when NVDA says the quoted words.
 
-1. In a terminal, run `cargo run -p soundrts -- --root vendor/soundrts-upstream`. Wait for the main menu.
+1. In a terminal, run `cargo run -p soundrts -- --root vendor/game-data`. Wait for the main menu.
 2. Press Down, then Enter. You hear "single player", then "please make a selection".
 3. Press S, then Enter. You hear "start a game on" three times: the item, your choice, and the title of the map list.
 4. Press J until you hear "jl1 1", then press Enter. You hear "jl1 1", then "please make a selection".

@@ -25,7 +25,7 @@ The helper needs Windows, PowerShell 7, Git, and rustup. Run every command below
 pwsh -NoProfile -File .claude/skills/verify-soundrts/verify.ps1 launch
 ```
 
-`launch` fetches the original game's data into `vendor/soundrts-upstream` at the pinned commit, builds the game and the client's tests, and then runs `doctor`. On a new checkout the build takes several minutes. Run `launch` in the foreground with the longest time limit your tool allows, and stay in your turn until it ends. If the time limit cuts `launch` off, run it again. `launch` is safe to rerun, and Cargo keeps what it has built.
+`launch` fetches the original game into `vendor/soundrts-upstream` at the pinned commit, imports its data into `vendor/game-data`, builds the game and the client's tests, and then runs `doctor`. On a new checkout the build takes several minutes. Run `launch` in the foreground with the longest time limit your tool allows, and stay in your turn until it ends. If the time limit cuts `launch` off, run it again. `launch` is safe to rerun, and Cargo keeps what it has built.
 
 The checkout is ready when the last line is `doctor: ready`. Nothing keeps running after `launch`. Each drive starts its own test process or its own short run of the program, with a new, empty settings folder.
 
@@ -38,7 +38,7 @@ pwsh -NoProfile -File .claude/skills/verify-soundrts/verify.ps1 doctor
 Run `doctor` first whenever something looks off. It checks four things and stops at the first that fails:
 
 1. `rustc` is the version that `rust-toolchain.toml` pins.
-2. `vendor/soundrts-upstream` is the commit that `scripts/upstream-commit.txt` pins.
+2. `vendor/soundrts-upstream` is the commit that `scripts/upstream-commit.txt` pins, and `vendor/game-data` is that commit imported.
 3. The built program starts with `--probe` and finds that data.
 4. The harness builds a client on that data and walks the main menu on the recorded devices.
 

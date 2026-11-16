@@ -13,6 +13,13 @@ checks what it says and plays against recorded transcripts.
   `french` and `square_orders`. For the longer games only the hashes of
   each step are kept.
 
+A transcript names a sound by the original's number, such as `[1029]` or
+`stereo 6115`. The game names a sound by its name, `ui/beep`. The test
+writes each name as the number that `crates/import/src/original_names.txt`
+gives it (`recorded` in `../transcripts.rs`), so that the transcripts still
+compare with what the original played. A sound that the table lacks is
+written by its name.
+
 The transcripts were recorded from the original Python game. Up to the Git
 tag `last-python-parity`, the port matched them byte for byte. Since then
 they are the port's own. The driver that recorded them, and its

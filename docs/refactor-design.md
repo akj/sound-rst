@@ -712,6 +712,12 @@ Decided by Andrew on 14 November 2026:
 3. **Saved games across updates: accepted.** With saves and replays as command logs, an update to the game invalidates them (section 7). Players are told so.
 4. **Three-dimensional sound: the listening room is built early**, in phase 0.
 
+Decided by Andrew on 15 November 2026:
+
+9. **The original's files: imported, not read.** Decision 2 said that the data would be replaced before shipping. The game now reads only its own layout, and an importer converts the original's files into it, one way. The fetch script and the first-start download both run the importer, and `soundrts --import` converts a mod or a map of the original.
+10. **Names in place of numbers.** The original names every phrase and every sound with a number in one number space. In the game's files a phrase is a bare word, `cannot_build_there`, and a sound is its path under `sounds/`, `footstep/grass_1`. One table gives each number of the original its name, and only the importer reads it. A name that does not exist is refused when the files load, with its file and line. Each package's names are its own, so a map from a server cannot replace the game's prompts.
+11. **The formats: the line syntax stays.** No database: the content is about 1,400 lines, loaded whole and never queried, and a database gives up text-editor modding, comments, diffs and drop-a-folder mods. No JSON for a file that a person writes: it has no comments, and by ear it is mostly punctuation. Rules, style, maps and computer players keep the original's line syntax, which is easier to hear and to type than TOML. The words of a language are one file of `id = words` lines, the simple subset of Fluent, which translation tools read. The key is the id and not the English words: in the original's 12 translations, 12 of the 13 English texts that repeat are translated in two ways somewhere.
+
 Not asked, so decided as recommended, and open to change:
 
 5. **How far the announcer goes:** the full subsystem in section 6.
@@ -723,7 +729,7 @@ Not asked, so decided as recommended, and open to change:
 
 - The square-and-exit map, in-square positions, and the movement and collision code.
 - The 300 millisecond turn, the integer maths, and every number in `rules.txt`.
-- The text formats, as what people write. They gain a strict loader, not a replacement.
+- The line syntax of the text formats, as what people write (decision 11). The files gained names in place of numbers and a strict loader, not another syntax.
 - The lobby half of the protocol and the server's connection handling. They were written for the port, are typed, and need hardening, not redesign.
 - The copy of Python's random number generator. It is small and tested.
 - The fixed limits: 26 columns, 10 resource types, a food limit of 80.
