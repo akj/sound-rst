@@ -330,7 +330,7 @@ The game no longer reads the original's files. It reads files that an import mad
 
 A language file in the settings folder changes what the game says, so that a speaker can correct a translation or add one with a text editor. This part needs only you and a text editor. It changes your `settings.toml` and adds a file to the settings folder: step 13.9 puts them back. For a step that fails, report what you heard: "13.5 fail: still Un seul joueur".
 
-13.1. Close the game. In a terminal in the repository, run `cargo run --release -p soundrts -- --root vendor/game-data --untranslated fr > untranslated.txt`, and open `untranslated.txt` in your editor. Expected: the first line starts with "fr lacks 169 of the 629 phrases", and names the file `C:\Users\andrew\AppData\Roaming\SoundRTS\text\fr.txt`.
+13.1. Close the game. In a terminal in the repository, run `cargo run --release -p soundrts -- --root vendor/game-data --untranslated fr > untranslated.txt`, and open `untranslated.txt` in your editor. Expected: the first line starts with "fr lacks 169 of the 629 phrases", and names the file `fr.txt` in the folder `text` of `%APPDATA%\SoundRTS`.
 
 13.2. Read on in `untranslated.txt`. Expected: a line "# The phrases of sound-rst: 163 missing.", then a note that starts with "# The help of the cheat console", then the line that starts with "console_help = p: pause/unpause".
 
