@@ -1,7 +1,9 @@
 //! What an upgrade or an ability does (`effect`), read when the rules
 //! load.
 
-use super::{BaseClass, Stat, decimal, int};
+use super::{BaseClass, Stat, TypeId, decimal, int};
+use crate::map::MAX_START_UNITS;
+use crate::nofloat::py_int;
 
 /// The effect of an upgrade or an ability. The rules give it as a kind
 /// and its arguments: `effect summon 15 meteors`.
@@ -26,25 +28,55 @@ pub enum Effect {
     Conversion,
     /// `summon <decay> <items>`: adds the units the items name at the
     /// target, for a time, in thousandths of a second.
-    Summon { decay: i64, items: Vec<String> },
+    Summon { decay: i64, items: Vec<Summoned> },
     /// `raise_dead <decay> <items>`: raises the units the items name from
     /// the corpses around the target, for a time.
-    RaiseDead { decay: i64, items: Vec<String> },
+    RaiseDead { decay: i64, items: Vec<Summoned> },
     /// `resurrection <count>`: brings back to life up to that many of the
     /// player's dead units around the target.
     Resurrection { count: i64 },
 }
 
+/// An item of a summon: a type, and how many units of it. The rules
+/// write `2 dragon`, or `dragon` for one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Summoned {
+    pub count: i64,
+    pub ty: TypeId,
+}
+
 impl Effect {
-    /// The effect written as `words`, if a type of `base` can have it and
-    /// its arguments can be read. The words of a `bonus` value are already
-    /// read: a decimal statistic's multiplied by
+    /// The effect written as `words`: `None` if a type of `base` cannot
+    /// have it or its arguments cannot be read, and the item that names no
+    /// type of `type_id` as an error. The words of a `bonus` value are
+    /// already read: a decimal statistic's multiplied by
     /// [`crate::nofloat::PRECISION`].
-    pub(super) fn parse(base: BaseClass, words: &[String]) -> Option<Effect> {
+    pub(super) fn parse(
+        base: BaseClass,
+        words: &[String],
+        type_id: impl Fn(&str) -> Option<TypeId>,
+    ) -> Result<Option<Effect>, String> {
+        let Some(effect) = Effect::parse_words(base, words) else {
+            return Ok(None);
+        };
+        Ok(Some(match effect {
+            Parsed::Done(e) => e,
+            Parsed::Summon(decay, items) => Effect::Summon {
+                decay,
+                items: summoned(items, type_id)?,
+            },
+            Parsed::RaiseDead(decay, items) => Effect::RaiseDead {
+                decay,
+                items: summoned(items, type_id)?,
+            },
+        }))
+    }
+
+    fn parse_words(base: BaseClass, words: &[String]) -> Option<Parsed<'_>> {
         let (kind, args) = words.split_first()?;
         let arg = |i: usize| args.get(i).map(String::as_str);
         let stat = |i: usize| arg(i).and_then(Stat::parse);
-        Some(match (base, kind.as_str()) {
+        Some(Parsed::Done(match (base, kind.as_str()) {
             (BaseClass::Upgrade, "bonus") => Effect::Bonus {
                 stat: stat(0)?,
                 value: int(arg(1)?)?,
@@ -57,19 +89,23 @@ impl Effect {
             (BaseClass::Ability, "teleportation") => Effect::Teleportation,
             (BaseClass::Ability, "recall") => Effect::Recall,
             (BaseClass::Ability, "conversion") => Effect::Conversion,
-            (BaseClass::Ability, "summon") => Effect::Summon {
-                decay: decimal(arg(0)?)?,
-                items: args.get(1..).unwrap_or_default().to_vec(),
-            },
-            (BaseClass::Ability, "raise_dead") => Effect::RaiseDead {
-                decay: decimal(arg(0)?)?,
-                items: args.get(1..).unwrap_or_default().to_vec(),
-            },
+            (BaseClass::Ability, "summon") => {
+                return Some(Parsed::Summon(
+                    decimal(arg(0)?)?,
+                    args.get(1..).unwrap_or_default(),
+                ));
+            }
+            (BaseClass::Ability, "raise_dead") => {
+                return Some(Parsed::RaiseDead(
+                    decimal(arg(0)?)?,
+                    args.get(1..).unwrap_or_default(),
+                ));
+            }
             (BaseClass::Ability, "resurrection") => Effect::Resurrection {
                 count: int(arg(0)?)?,
             },
             _ => return None,
-        })
+        }))
     }
 
     /// Whether a unit may use an ability with this effect: an upgrade's
@@ -77,4 +113,31 @@ impl Effect {
     pub fn is_used(&self) -> bool {
         !matches!(self, Effect::Bonus { .. } | Effect::ApplyBonus(_))
     }
+}
+
+/// An effect read but for the items of a summon.
+enum Parsed<'a> {
+    Done(Effect),
+    Summon(i64, &'a [String]),
+    RaiseDead(i64, &'a [String]),
+}
+
+/// The items of a summon: each type name, with the number before it, or
+/// 1. A number that no type follows counts for nothing.
+fn summoned(
+    words: &[String],
+    type_id: impl Fn(&str) -> Option<TypeId>,
+) -> Result<Vec<Summoned>, String> {
+    let mut items = Vec::new();
+    let mut count = 1;
+    for w in words {
+        if !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()) {
+            count = py_int(w).unwrap_or(1).min(MAX_START_UNITS);
+        } else {
+            let ty = type_id(w).ok_or_else(|| w.clone())?;
+            items.push(Summoned { count, ty });
+            count = 1;
+        }
+    }
+    Ok(items)
 }

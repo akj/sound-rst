@@ -45,6 +45,12 @@ fn sq(w: &World, name: &str) -> SquareId {
     w.square_by_name(name).unwrap()
 }
 
+/// Whether a player has a unit of the class called `class`, or the
+/// upgrade.
+fn has(w: &World, p: PlayerId, class: &str) -> bool {
+    w.has(p, w.rules.class_id(class).expect("a class of the rules"))
+}
+
 fn words(s: &str) -> Vec<String> {
     s.split_whitespace().map(str::to_owned).collect()
 }
@@ -203,7 +209,12 @@ mod test_worldunit {
         assert!(w.e(unit).orders().is_empty());
     }
 
+    // The original's rules for these tests name a parent they lack, which
+    // the port refuses: it is defined here.
     const DAMAGE_VS_RULES: &str = "
+def archer
+class soldier
+
 def pikeman
 class soldier
 damage 6
@@ -255,6 +266,9 @@ is_a cavalry archer
 
     const ARMOR_VS_RULES: &str = "
 def archer
+class soldier
+
+def cavalry
 class soldier
 
 def horse_archer
@@ -755,16 +769,19 @@ starting_resources 10 10
     #[test]
     fn computer_test_init_and_get_a_peasant() {
         let mut s = default_set_up();
-        let sorted = |mut v: Vec<String>| {
+        let makers = |name: &str| {
+            let rules = &s.w.rules;
+            let mut v: Vec<&str> = rules
+                .get_makers(rules.type_id(name).unwrap())
+                .iter()
+                .map(|&t| rules.ty(t).name.as_str())
+                .collect();
             v.sort();
             v
         };
-        assert_eq!(
-            sorted(s.w.rules.get_makers("peasant")),
-            ["castle", "keep", "townhall"]
-        );
-        assert_eq!(sorted(s.w.rules.get_makers("footman")), ["barracks"]);
-        assert_eq!(sorted(s.w.rules.get_makers("barracks")), ["peasant"]);
+        assert_eq!(makers("peasant"), ["castle", "keep", "townhall"]);
+        assert_eq!(makers("footman"), ["barracks"]);
+        assert_eq!(makers("barracks"), ["peasant"]);
         let th = find(&s.w, s.cp, "townhall", 0).unwrap();
         assert!(keywords(&s.w, th).is_empty());
         assert!(!s.w.ai_get(s.cp, 1000, "peasant").unwrap());
@@ -835,10 +852,10 @@ starting_resources 10 10
         let first = w.player(s.cp).units[0];
         w.die(first, None).unwrap();
         assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
-        assert!(!w.has(s.cp, "townhall"));
+        assert!(!has(w, s.cp, "townhall"));
         add(w, s.cp, "a1 keep"); // is a townhall
         assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
-        assert!(w.has(s.cp, "townhall"));
+        assert!(has(w, s.cp, "townhall"));
     }
 
     #[test]
@@ -849,13 +866,13 @@ starting_resources 10 10
         let first = w.player(s.cp).units[0];
         w.die(first, None).unwrap();
         assert_eq!(w.computer_nb(s.cp, "townhall"), 0);
-        assert!(!w.has(s.cp, "townhall"));
+        assert!(!has(w, s.cp, "townhall"));
         add(w, s.cp, "a1 keep"); // is a townhall
         assert_eq!(w.computer_nb(s.cp, "peasant"), 1);
         let p = find(w, s.cp, "peasant", 0).unwrap();
         assert!(keywords(w, p).is_empty());
         assert_eq!(w.computer_nb(s.cp, "blacksmith"), 0);
-        assert!(w.has(s.cp, "townhall"));
+        assert!(has(w, s.cp, "townhall"));
         w.update_effect_users_and_workers(s.cp);
         w.update_buckets();
         w.update_perception(s.cp).unwrap();
@@ -1106,16 +1123,16 @@ starting_resources 10 10
         let w = &mut s.w;
         let c = find(w, cp, "castle", 0).unwrap();
         for t in ["castle", "keep", "townhall"] {
-            assert!(w.has(cp, t));
+            assert!(has(w, cp, t));
         }
         let th = find(w, cp, "townhall", 0).unwrap();
         w.delete(th);
         for t in ["castle", "keep", "townhall"] {
-            assert!(w.has(cp, t));
+            assert!(has(w, cp, t));
         }
         w.delete(c);
         for t in ["castle", "keep", "townhall"] {
-            assert!(!w.has(cp, t));
+            assert!(!has(w, cp, t));
         }
     }
 
@@ -1126,12 +1143,12 @@ starting_resources 10 10
         let w = &mut s.w;
         let c = find(w, cp, "castle", 0).unwrap();
         for t in ["castle", "keep", "townhall"] {
-            assert!(w.has(cp, t));
+            assert!(has(w, cp, t));
         }
         w.delete(c);
-        assert!(!w.has(cp, "castle"));
-        assert!(!w.has(cp, "keep"));
-        assert!(w.has(cp, "townhall"));
+        assert!(!has(w, cp, "castle"));
+        assert!(!has(w, cp, "keep"));
+        assert!(has(w, cp, "townhall"));
     }
 
     #[test]
@@ -1256,7 +1273,7 @@ starting_resources 10 10
         );
         assert_eq!(nb(w, cp, "keep"), 1);
         assert_eq!(nb(w, cp, "townhall"), 0);
-        assert!(w.has(cp, "townhall"));
+        assert!(has(w, cp, "townhall"));
         let k = find(w, cp, "keep", 0).unwrap();
         assert_eq!(&*w.e(k).type_name, "keep");
     }

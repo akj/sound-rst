@@ -15,7 +15,7 @@ use crate::orders::{Keyword, OrderKind, Request, TargetRef};
 use crate::pathfinding::{Node, Viewer};
 use crate::player::StatEvent;
 use crate::questions;
-use crate::rules::{AirGround, Effect, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{AirGround, ClassId, Effect, EntityClass, Stat, TypeId, VIRTUAL_TIME_INTERVAL};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// Extra distance allowed when reaching a target, in millimeters.
@@ -296,10 +296,7 @@ impl World {
                 c.damage_level = 0;
             }
         }
-        for name in self.can_use(id) {
-            let Some(upg) = self.rules.type_id(&name) else {
-                continue;
-            };
+        for upg in self.can_use(id) {
             // An ability has no level; a mod may research one, to no effect.
             if !self.rules.ty(upg).is_upgrade() {
                 continue;
@@ -328,11 +325,7 @@ impl World {
             Vec::new()
         };
         for u in units {
-            if self
-                .can_use(u)
-                .iter()
-                .any(|c| *c == self.rules.ty(upgrade).name)
-            {
+            if self.can_use(u).contains(&upgrade) {
                 self.apply_upgrade_effect(upgrade, u, level)?;
             }
         }
@@ -393,7 +386,7 @@ impl World {
         self.e(id).type_id().map(|t| self.rules.ty(t))
     }
 
-    pub(crate) fn can_use(&self, id: EntityId) -> Vec<String> {
+    pub(crate) fn can_use(&self, id: EntityId) -> Vec<TypeId> {
         self.type_of(id)
             .map(|t| t.can_use.clone())
             .unwrap_or_default()
@@ -404,9 +397,16 @@ impl World {
         questions::entity_cost(&self.rules, &self.e(id))
     }
 
-    pub(crate) fn expanded_is_a(&self, e: &Entity) -> Vec<String> {
+    /// The classes of an entity's type, its own first, then those it
+    /// derives from, nearest first.
+    fn classes_of(&self, e: &Entity) -> Vec<ClassId> {
         e.type_id()
-            .map(|t| self.rules.ty(t).expanded_is_a.clone())
+            .map(|t| {
+                let t = self.rules.ty(t);
+                std::iter::once(t.class)
+                    .chain(t.expanded_is_a.iter().copied())
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -1328,12 +1328,16 @@ impl World {
         let e = self.e(id);
         let hp = floordiv(e.stats.harm_level * PRECISION, 25);
         let (x, y) = (e.x, e.y);
-        let my_type = e.type_name.to_string();
+        // What has no type harms nothing, and nothing harms what has none.
+        let Some(my_type) = e.type_id() else {
+            return Ok(());
+        };
         let candidates = self.get_objects2(x, y, 6 * PRECISION, &[], |o| o.stats.is_vulnerable);
         let mut units = Vec::new();
         for u in candidates {
-            let t = self.e(u).type_name.to_string();
-            if self.can_harm(&my_type, &t) {
+            if let Some(t) = self.e(u).type_id()
+                && self.can_harm(my_type, t)
+            {
                 units.push(u);
             }
         }
@@ -1610,11 +1614,8 @@ impl World {
     fn armor_versus_of(&self, target: &Entity, attacker: &Entity) -> i64 {
         if let Some(t) = target.type_id() {
             let d = &self.rules.ty(t).armor_vs;
-            if let Some((_, v)) = d.iter().find(|(k, _)| **k == *attacker.type_name) {
-                return *v;
-            }
-            for name in self.expanded_is_a(attacker) {
-                if let Some((_, v)) = d.iter().find(|(k, _)| *k == name) {
+            for class in self.classes_of(attacker) {
+                if let Some((_, v)) = d.iter().find(|(k, _)| *k == class) {
                     return *v;
                 }
             }
@@ -1625,11 +1626,8 @@ impl World {
     fn base_damage_versus_of(&self, attacker: &Entity, target: &Entity) -> i64 {
         if let Some(t) = attacker.type_id() {
             let d = &self.rules.ty(t).damage_vs;
-            if let Some((_, v)) = d.iter().find(|(k, _)| **k == *target.type_name) {
-                return *v;
-            }
-            for name in self.expanded_is_a(target) {
-                if let Some((_, v)) = d.iter().find(|(k, _)| *k == name) {
+            for class in self.classes_of(target) {
+                if let Some((_, v)) = d.iter().find(|(k, _)| *k == class) {
                     return *v;
                 }
             }

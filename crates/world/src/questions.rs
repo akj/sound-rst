@@ -18,7 +18,7 @@ use crate::orders::{
 };
 use crate::player::Upgrades;
 use crate::rules::{
-    Effect, EffectTarget, EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType,
+    ClassId, Effect, EffectTarget, EntityClass, MAX_NB_OF_RESOURCE_TYPES, Rules, TypeId, UnitType,
 };
 use crate::seat_view::Comrades;
 use crate::world::World;
@@ -38,7 +38,6 @@ pub(crate) trait EntityFacts {
     fn class(&self) -> EntityClass;
     fn owner(&self) -> Option<PlayerId>;
     fn place(&self) -> Option<Place>;
-    fn type_name(&self) -> &str;
     /// Its type in the rules. A building site has none.
     fn type_id(&self, rules: &Rules) -> Option<TypeId>;
     fn unit_type<'r>(&self, rules: &'r Rules) -> Option<&'r UnitType> {
@@ -150,10 +149,6 @@ impl EntityFacts for &Entity {
 
     fn place(&self) -> Option<Place> {
         self.place
-    }
-
-    fn type_name(&self) -> &str {
-        &self.type_name
     }
 
     fn type_id(&self, _: &Rules) -> Option<TypeId> {
@@ -325,10 +320,6 @@ impl EntityFacts for &KnownEntity {
         self.place
     }
 
-    fn type_name(&self) -> &str {
-        &self.type_name
-    }
-
     fn type_id(&self, rules: &Rules) -> Option<TypeId> {
         if self.is_building_site() {
             return None;
@@ -401,10 +392,6 @@ impl EntityFacts for Controlled<'_> {
 
     fn place(&self) -> Option<Place> {
         self.known.place
-    }
-
-    fn type_name(&self) -> &str {
-        &self.known.type_name
     }
 
     fn type_id(&self, rules: &Rules) -> Option<TypeId> {
@@ -509,7 +496,7 @@ fn unit_basic_abilities(u: &impl UnitFacts) -> &'static [&'static str] {
 }
 
 /// The type list of a unit type called `attr`: `can_train`...
-pub(crate) fn type_list<'t>(t: Option<&'t UnitType>, attr: &str) -> &'t [String] {
+pub(crate) fn type_list<'t>(t: Option<&'t UnitType>, attr: &str) -> &'t [TypeId] {
     let Some(t) = t else { return &[] };
     match attr {
         "can_build" => &t.can_build,
@@ -523,29 +510,21 @@ pub(crate) fn type_list<'t>(t: Option<&'t UnitType>, attr: &str) -> &'t [String]
 
 // requirements
 
-/// `has`: an upgrade, or a unit of the type or derived from it. A
-/// requirement is a class name of the rules, which may name no type.
-pub(crate) fn has<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, type_name: &str) -> bool {
-    if p.has_everything
-        || k.rules()
-            .type_id(type_name)
-            .is_some_and(|t| p.upgrades.has(t))
-    {
+/// `has`: an upgrade, or a unit of the class or derived from it. A
+/// requirement is a class of the rules, which may be no type.
+pub(crate) fn has<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, class: ClassId) -> bool {
+    let rules = k.rules();
+    if p.has_everything || rules.class_type(class).is_some_and(|t| p.upgrades.has(t)) {
         return true;
     }
     p.units.iter().filter_map(|&u| k.unit(u)).any(|e| {
-        e.type_name() == type_name
-            || e.unit_type(k.rules())
-                .is_some_and(|t| t.expanded_is_a.iter().any(|a| a == type_name))
+        e.type_id(rules)
+            .is_some_and(|t| rules.is_of_class(t, class))
     })
 }
 
-pub(crate) fn has_all<'a>(
-    k: impl Knowledge<'a>,
-    p: PlayerFacts<'a>,
-    type_names: &[String],
-) -> bool {
-    type_names.iter().all(|t| has(k, p, t))
+pub(crate) fn has_all<'a>(k: impl Knowledge<'a>, p: PlayerFacts<'a>, classes: &[ClassId]) -> bool {
+    classes.iter().all(|&c| has(k, p, c))
 }
 
 /// `future_count`: units of a type, building sites for it, and units
@@ -605,10 +584,7 @@ fn is_almost_allowed<'a, K: Knowledge<'a>>(k: K, unit: K::Unit, kw: Keyword, t: 
         return false;
     };
     let rules = k.rules();
-    if !type_list(unit.unit_type(rules), attr)
-        .iter()
-        .any(|n| *n == rules.ty(t).name)
-    {
+    if !type_list(unit.unit_type(rules), attr).contains(&t) {
         return false;
     }
     // Only a unit or a building can be made: a mod that lists a deposit,
@@ -704,7 +680,7 @@ pub(crate) fn order_menu<'a, K: Knowledge<'a>>(
     let rules = k.rules();
     type_list(unit.unit_type(rules), attr)
         .iter()
-        .filter_map(|n| rules.type_id(n))
+        .copied()
         .filter(|&t| {
             if strict {
                 complex_is_allowed(k, unit, kw, t)
@@ -865,9 +841,7 @@ pub(crate) fn default_keyword<'a, K: Knowledge<'a>>(
     if let Some(t) = te {
         let rules = k.rules();
         let can_build = type_list(unit.unit_type(rules), "can_build");
-        let site_ok = t
-            .site_type()
-            .is_some_and(|s| can_build.contains(&rules.ty(s).name));
+        let site_ok = t.site_type().is_some_and(|s| can_build.contains(&s));
         let repair_ok = t.is_repairable() && t.hp() < t.hp_max() && !can_build.is_empty();
         if (site_ok || repair_ok) && !is_an_enemy(k, unit, &target, te) {
             return Some(Keyword::Repair);
@@ -988,7 +962,7 @@ pub(crate) fn upgrades_applying(
 ) -> Vec<String> {
     t.map_or(&[][..], |t| &t.can_use)
         .iter()
-        .filter(|u| rules.type_id(u).is_some_and(|u| owner_upgrades.has(u)))
-        .cloned()
+        .filter(|&&u| owner_upgrades.has(u))
+        .map(|&u| rules.ty(u).name.clone())
         .collect()
 }

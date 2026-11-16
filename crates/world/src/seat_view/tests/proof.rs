@@ -219,7 +219,7 @@ impl<'a> Truth<'a> {
         self.w.order_info(unit, keyword, type_id)
     }
 
-    fn owner_has(&self, unit: EntityId, requirement: &str) -> Option<bool> {
+    fn owner_has(&self, unit: EntityId, requirement: ClassId) -> Option<bool> {
         let owner = self.w.entity(unit)?.player()?;
         self.controls(owner).then(|| self.w.has(owner, requirement))
     }
@@ -516,10 +516,10 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
             let mut types: Vec<Option<TypeId>> = vec![None];
             if let (Some(attr), Some(ty)) = (k.menu_attribute(), ty) {
                 let list = questions::type_list(Some(ty), attr);
-                types.extend(list.iter().map(|t| rules.type_id(t)));
-                for name in list {
-                    let requirements = rules.unit_type(name).map_or(&[][..], |t| &t.requirements);
-                    for r in requirements.iter().chain([name]) {
+                types.extend(list.iter().map(|&t| Some(t)));
+                for &made in list {
+                    let made = rules.ty(made);
+                    for &r in made.requirements.iter().chain([&made.class]) {
                         t.same(
                             "owner_has",
                             (u.id, r),
@@ -559,11 +559,12 @@ fn compare(t: &mut Tally, w: &World, v: &Truth, s: &SeatView, kept: &Kept, label
     // A requirement is not known for a unit of a player not controlled.
     for e in pl.perception.iter().filter_map(|&id| v.perceived(id)) {
         if e.player.is_some_and(|p| !v.controls(p)) {
+            let farm = rules.class_id("farm").expect("the farm");
             t.same(
                 "owner_has",
-                (e.id, "farm"),
-                v.owner_has(e.id, "farm"),
-                s.owner_has(e.id, "farm"),
+                (e.id, farm),
+                v.owner_has(e.id, farm),
+                s.owner_has(e.id, farm),
             );
         }
     }

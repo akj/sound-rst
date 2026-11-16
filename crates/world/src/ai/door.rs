@@ -38,7 +38,7 @@ use crate::orders::{Keyword, Likeness, MenuEntry, Order, OrderInfo, OrderKind, R
 use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, FactionId, Rules, TypeId};
+use crate::rules::{AirGround, ClassId, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{INF, TPlace, World};
 
 use super::Computer;
@@ -464,10 +464,10 @@ impl Door<'_> {
         self.world.faction_ai_type(self.me, ai_type)
     }
 
-    /// Whether the type named `unit_type` can harm `other`, by the rules.
-    pub(super) fn can_harm(&mut self, unit_type: &str, other: TypeId) -> bool {
-        let other = self.world.rules.ty(other).name.clone();
-        self.world.can_harm(unit_type, &other)
+    /// Whether units of `unit_type` can harm units of `other`, by the
+    /// rules.
+    pub(super) fn can_harm(&mut self, unit_type: TypeId, other: TypeId) -> bool {
+        self.world.can_harm(unit_type, other)
     }
 
     // its own state
@@ -511,9 +511,10 @@ impl Door<'_> {
         self.world.pl(self.me).available_food(limit)
     }
 
-    /// Whether it has an upgrade, or a unit of the type or derived from it.
-    pub(super) fn has(&self, type_name: &str) -> bool {
-        self.world.has(self.me, type_name)
+    /// Whether it has an upgrade, or a unit of the class or derived from
+    /// it.
+    pub(super) fn has(&self, class: ClassId) -> bool {
+        self.world.has(self.me, class)
     }
 
     /// Whether it has the upgrade.

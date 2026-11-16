@@ -12,7 +12,9 @@ use crate::entity::{
 use crate::events::{EntityEvent, Event, Reason};
 use crate::nofloat::{py_int, square_of_distance};
 use crate::questions;
-use crate::rules::{AirGround, Effect, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL};
+use crate::rules::{
+    AirGround, ClassId, Effect, EffectTarget, Rules, TypeId, VIRTUAL_TIME_INTERVAL,
+};
 use crate::world::{NotEnoughSpace, TPlace, World};
 
 /// The most orders a unit can queue.
@@ -1116,9 +1118,9 @@ pub struct OrderInfo {
 pub struct MenuEntry {
     pub keyword: Keyword,
     pub type_id: Option<TypeId>,
-    /// The requirements of the type, by the class names the rules give
-    /// them: a type, or a class that types derive from.
-    pub requirements: Vec<String>,
+    /// The requirements of the type: classes of the rules, each a type or
+    /// a class that types derive from.
+    pub requirements: Vec<ClassId>,
 }
 
 impl MenuEntry {
@@ -3052,13 +3054,13 @@ impl World {
                 }
             }
             Effect::Summon { decay, items } => {
-                self.lang_add_units(p, items, Some(&target), *decay, None, false);
+                self.add_summoned(p, items, Some(&target), *decay, None);
             }
             Effect::RaiseDead { decay, items } => {
                 let (tx, ty) = self.t_xy(&target);
                 let mut corpses = self.effect_targets(unit, effect, t, &target);
                 corpses.sort_by_key(|&c| square_of_distance(tx, ty, self.e(c).x, self.e(c).y));
-                self.lang_add_units(p, items, None, *decay, Some(corpses), false);
+                self.add_summoned(p, items, None, *decay, Some(corpses));
             }
             &Effect::Resurrection { count: n } => {
                 let (tx, ty) = self.t_xy(&target);

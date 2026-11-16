@@ -13,7 +13,7 @@ use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
 use crate::orders::{Order, OrderKind, TargetRef};
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
-use crate::rules::{AirGround, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
+use crate::rules::{AirGround, ClassId, EntityClass, MAX_NB_OF_RESOURCE_TYPES, TypeId};
 use crate::world::{INF, World};
 
 /// The side of the buckets used to find units near a point.
@@ -682,13 +682,9 @@ impl World {
 
     // lookups
 
-    /// `has`: an upgrade, or a unit of the type or derived from it.
-    pub fn has(&self, p: PlayerId, type_name: &str) -> bool {
-        questions::has(self, self.facts(p), type_name)
-    }
-
-    pub fn has_all(&self, p: PlayerId, type_names: &[String]) -> bool {
-        questions::has_all(self, self.facts(p), type_names)
+    /// `has`: an upgrade, or a unit of the class or derived from it.
+    pub fn has(&self, p: PlayerId, class: ClassId) -> bool {
+        questions::has(self, self.facts(p), class)
     }
 
     /// What a target means to a player now: a subsquare, a square, a

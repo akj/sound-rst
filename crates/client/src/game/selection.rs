@@ -1317,7 +1317,8 @@ mod tests {
             .queue_line(them, &format!("cmd add_units {name} keep"));
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
-        assert!(g.game.host().world().has(them, "keep"));
+        let world = g.game.host().world();
+        assert!(world.has(them, world.rules.class_id("keep").unwrap()));
         // Orders last listed for units the player now sees as the
         // computer's: one the player's peasant cannot give, one it can.
         for (u, mine) in [(townhall, unit(&g, me, "townhall")), (theirs, peasant)] {
