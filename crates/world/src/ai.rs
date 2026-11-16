@@ -30,7 +30,6 @@ use crate::world::TPlace;
 
 mod door;
 mod handicap;
-mod legacy;
 pub(crate) mod script;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
@@ -97,17 +96,6 @@ enum Task {
 }
 
 impl Task {
-    fn keyword(self) -> Keyword {
-        match self {
-            Task::Repair(_) => Keyword::Repair,
-            Task::Build(..) => Keyword::Build,
-            Task::Train(_) => Keyword::Train,
-            Task::Research(_) => Keyword::Research,
-            Task::UpgradeTo(_) => Keyword::UpgradeTo,
-            Task::Use(..) => Keyword::Use,
-        }
-    }
-
     /// The order, as a unit takes it.
     fn request(self, rules: &crate::Rules) -> Request {
         let name = |t: TypeId| rules.ty(t).name.clone();
@@ -149,7 +137,7 @@ impl Kind {
 type DepositPriority = (i64, i64, Option<EntityId>);
 
 /// The state of a scripted computer player (`Computer`).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash)]
 pub(crate) struct Computer {
     /// The script, once an AI type other than `timers` is set.
     plan: Option<Plan>,
@@ -177,18 +165,9 @@ pub(crate) struct Computer {
     safe_cnt: i64,
     /// The cost of the first purchase of its turn that lacked a resource.
     lacking: Option<Vec<i64>>,
-    /// The names of the types, which only the digest reads.
-    names: Vec<String>,
 }
 
 impl Computer {
-    fn with_names(names: Vec<String>) -> Computer {
-        Computer {
-            names,
-            ..Computer::default()
-        }
-    }
-
     /// Whether the units waiting on a square are strong enough.
     fn time_has_come(&self, s: SquareId) -> bool {
         let key = Some(Mark::square(s));

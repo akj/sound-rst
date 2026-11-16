@@ -28,11 +28,12 @@
 //! seed.
 
 use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::abort::{Abort, Res};
-use crate::entity::{Entity, EntityId, MemoryRef, Names, Place, PlayerId, SquareId, Target};
+use crate::entity::{
+    Entity, EntityId, MemoryRef, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
+};
 use crate::orders::{Keyword, Likeness, MenuEntry, Order, OrderInfo, OrderKind, Request};
 use crate::pathfinding::{Forests, PathResult};
 use crate::player::PlayerKind;
@@ -251,7 +252,7 @@ impl OwnOrder<'_> {
 
 /// An order the computer gave one of its units, followed until it is
 /// done: the order's uid, and what it needs of the order as last seen.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub(super) struct Followed {
     unit: EntityId,
     uid: u64,
@@ -259,16 +260,6 @@ pub(super) struct Followed {
     complete: bool,
     /// An order of the unit alike to it, as last seen, is taken for it.
     likeness: Option<Likeness>,
-    /// The order as last seen, which only the digest reads.
-    legacy: Order,
-}
-
-/// As the copy of the order it replaces.
-impl Hash for Followed {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.unit.hash(state);
-        self.legacy.hash(state);
-    }
 }
 
 impl Followed {
@@ -278,7 +269,6 @@ impl Followed {
             uid: o.uid,
             complete: o.is_complete(),
             likeness: o.likeness(),
-            legacy: o.clone(),
         }
     }
 }
@@ -289,10 +279,16 @@ impl Names for Mark {
     }
 }
 
+/// Its unit, and the thing its order aimed at as last seen, which an
+/// order alike to it aims at too.
 impl Names for Followed {
     fn names(&self, f: &mut impl FnMut(EntityId)) {
         f(self.unit);
-        self.legacy.names(f);
+        if let Some(Likeness::Go { target, .. } | Likeness::Build { target, .. }) = self.likeness
+            && let Some(TargetIdentity::Entity(e)) = target
+        {
+            f(e);
+        }
     }
 }
 
@@ -312,8 +308,7 @@ impl World {
 
     /// The state of a new scripted computer, with its AI type set.
     pub(crate) fn new_computer(&mut self, p: PlayerId) -> Res {
-        let names = self.rules.types().iter().map(|t| t.name.clone()).collect();
-        self.plm(p).ai = Some(Box::new(Computer::with_names(names)));
+        self.plm(p).ai = Some(Box::default());
         let t = self.pl(p).ai_type().unwrap_or("timers").to_owned();
         self.computer_set_ai(p, &t)
     }
@@ -914,7 +909,6 @@ impl Names for Computer {
             time_has_come,
             safe_cnt: _,
             lacking: _,
-            names: _,
         } = self;
         attacked_places.names(f);
         for followed in orders.values().flatten() {
