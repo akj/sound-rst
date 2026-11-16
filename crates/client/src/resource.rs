@@ -421,11 +421,17 @@ impl Resources {
     }
 
     /// The contents of every `<name>.txt` of every layer, the map's
-    /// included, joined by line ends.
+    /// included, joined by line ends. Each is under a comment line that
+    /// names its layer and file, so that the simulation, which takes only
+    /// this text, can say where a line it refuses is.
     fn game_text(&self, name: &str) -> String {
         self.layers
             .iter()
-            .flat_map(|p| self.texts(name, false, Some(p)))
+            .flat_map(|p| {
+                let file = format!("{}/{name}.txt", p.name);
+                let texts = self.texts(name, false, Some(p)).into_iter();
+                texts.map(move |t| soundrts_world::defs::with_file_name(&file, &t))
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }

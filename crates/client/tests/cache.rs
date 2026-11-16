@@ -58,8 +58,9 @@ fn text0(res: &Resources) -> Option<String> {
     res.sounds().text("nothing")
 }
 
-const BASE_RULES: &str = "def test\ncost 0 0\n\ndef peasant\ncost 0 0\n";
-const BASE_AI: &str = "def easy\nget 1 peasant\ngoto -1\n";
+// Each layer's text is under a line that names the layer and the file.
+const BASE_RULES: &str = "; file: default/rules.txt\ndef test\ncost 0 0\n\ndef peasant\ncost 0 0\n";
+const BASE_AI: &str = "; file: default/ai.txt\ndef easy\nget 1 peasant\ngoto -1\n";
 
 #[test]
 fn test_get_sound_with_default_config() {
@@ -146,12 +147,12 @@ fn test_folder_map() {
         assert_eq!(
             res.rules_text(),
             format!(
-                "{BASE_RULES}\ndef peasant\ncost 6 0\n\ndef faction1\nclass faction\n\ndef faction2\nclass faction\n\ndef parameters\n"
+                "{BASE_RULES}\n; file: map1/rules.txt\ndef peasant\ncost 6 0\n\ndef faction1\nclass faction\n\ndef faction2\nclass faction\n\ndef parameters\n"
             )
         );
         assert_eq!(
             res.ai_text(),
-            format!("{BASE_AI}\ndef easy\nget 6 peasant\ngoto -1\n")
+            format!("{BASE_AI}\n; file: map1/ai.txt\ndef easy\nget 6 peasant\ngoto -1\n")
         );
         assert_eq!(res.style().words("peasant", "test"), ["6"]);
         assert_eq!(text0(&res).as_deref(), Some("map1"));
@@ -211,11 +212,11 @@ fn test_campaign_map() {
         res.set_map(Some(map));
         assert_eq!(
             res.rules_text(),
-            format!("{BASE_RULES}\ndef peasant\ncost 5 0\n")
+            format!("{BASE_RULES}\n; file: campaign1/rules.txt\ndef peasant\ncost 5 0\n")
         );
         assert_eq!(
             res.ai_text(),
-            format!("{BASE_AI}\ndef easy\nget 5 peasant\ngoto -1\n")
+            format!("{BASE_AI}\n; file: campaign1/ai.txt\ndef easy\nget 5 peasant\ngoto -1\n")
         );
         assert_eq!(
             res.style().words("peasant", "test"),
