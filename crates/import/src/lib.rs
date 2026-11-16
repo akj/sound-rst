@@ -33,6 +33,9 @@
 )]
 
 pub mod names;
+mod zip_guard;
+
+pub use zip_guard::too_many_entries;
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
@@ -95,6 +98,10 @@ pub struct Report {
     pub warnings: Vec<String>,
     /// How many files were written.
     pub files: usize,
+    /// The bytes read from the zip files inside the package, and written
+    /// as zip files inside the result: together they stay within
+    /// [`MAX_TOTAL_BYTES`], however deep the zip files are in each other.
+    expanded: u64,
 }
 
 fn plain_part(part: &str) -> bool {
@@ -179,13 +186,24 @@ pub fn read_folder(dir: &Path) -> Result<Files, String> {
 
 /// The files of a zip file. An entry whose path is not plain is refused.
 pub fn read_zip(bytes: &[u8]) -> Result<Files, String> {
+    read_zip_within(bytes, &mut 0)
+}
+
+/// As [`read_zip`]. `expanded` counts the bytes read so far, of this zip
+/// file and of those read before it: together they stay within
+/// [`MAX_TOTAL_BYTES`].
+fn read_zip_within(bytes: &[u8], expanded: &mut u64) -> Result<Files, String> {
+    // Before the reader builds its index of the entries.
+    if too_many_entries(bytes, MAX_FILES) {
+        return Err(format!("more than {MAX_FILES} files"));
+    }
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|e| format!("not a zip file that can be read: {e}"))?;
     if archive.len() > MAX_FILES {
         return Err(format!("more than {MAX_FILES} files"));
     }
     let mut files = Files::new();
-    let mut total = 0;
+    let total = expanded;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
         let name = entry.name().map_err(|e| e.to_string())?.into_owned();
@@ -195,7 +213,7 @@ pub fn read_zip(bytes: &[u8]) -> Result<Files, String> {
         if !plain_path(&name) {
             return Err(format!("unsafe path: {name}"));
         }
-        let left = MAX_FILE_BYTES.min(MAX_TOTAL_BYTES.saturating_sub(total));
+        let left = MAX_FILE_BYTES.min(MAX_TOTAL_BYTES.saturating_sub(*total));
         let mut content = Vec::new();
         (&mut entry)
             .take(left.saturating_add(1))
@@ -204,7 +222,7 @@ pub fn read_zip(bytes: &[u8]) -> Result<Files, String> {
         if u64::try_from(content.len()).unwrap_or(u64::MAX) > left {
             return Err(format!("{name} holds too many bytes"));
         }
-        add(&mut files, &mut total, name, content)?;
+        add(&mut files, total, name, content)?;
     }
     Ok(files)
 }
@@ -412,12 +430,17 @@ const STYLE_SYNTAX: [&str; 5] = ["if_me", "else", "ambient", "loop", "repeat"];
 
 fn convert_style(text: &str, namer: &Namer, file: &str, report: &mut Report) -> String {
     let mut attribute = String::new();
+    // In a noise, the word after `loop` is a sound and the next one a
+    // volume. The word after `repeat` is an interval. A line can go on
+    // after a backslash, so this lasts as long as the attribute.
+    let mut skip = 0_u8;
+    let mut after_loop = false;
     each_line(text, |number, continues, code| {
         let mut first = !continues;
-        // In a noise, the word after `loop` is a sound and the next one a
-        // volume. The word after `repeat` is an interval.
-        let mut skip = 0_u8;
-        let mut after_loop = false;
+        if !continues {
+            skip = 0;
+            after_loop = false;
+        }
         rewrite(code, false, |word| {
             if std::mem::take(&mut first) {
                 attribute = word.to_owned();
@@ -666,10 +689,17 @@ fn import_package(
         let in_group = matches!(parts.as_slice(), [group, _] if GROUPS.contains(group));
         // A package in a zip file: of a group, or a chapter of a campaign.
         if let Some(stem) = stem.filter(|_| chapter || in_group) {
-            let files = read_zip(bytes).map_err(|e| format!("{from}: {e}"))?;
+            let files =
+                read_zip_within(bytes, &mut report.expanded).map_err(|e| format!("{from}: {e}"))?;
             let deeper = depth.saturating_add(1);
             let new = import_package(&files, &join(key, stem), &from, &namer, deeper, report)?;
-            put(&mut out, path.clone(), write_zip(&new)?, &from)?;
+            let zip = write_zip(&new)?;
+            let size = u64::try_from(zip.len()).unwrap_or(u64::MAX);
+            report.expanded = report.expanded.saturating_add(size);
+            if report.expanded > MAX_TOTAL_BYTES {
+                return Err(format!("{from}: more than {MAX_TOTAL_BYTES} bytes"));
+            }
+            put(&mut out, path.clone(), zip, &from)?;
             continue;
         }
         let text = || decode(bytes);
@@ -802,8 +832,9 @@ fn partial_of(to: &Path) -> PathBuf {
 }
 
 /// Writes `files` as the folder `to`: into `<to>.partial` first, so that
-/// `to` is complete or absent. A folder that is there is replaced only if
-/// `replace` says that the importer made it.
+/// `to` is complete or absent. A folder that is there, `to` or what an
+/// import that stopped left in `<to>.partial`, is replaced only if
+/// `replace` says that the importer made it, or if it is empty.
 fn write_whole_folder(
     to: &Path,
     files: &Files,
@@ -816,11 +847,14 @@ fn write_whole_folder(
         }
         _ => Ok(()),
     };
-    if to.exists() && !replace(to) {
-        return Err(format!(
-            "{} is there, and an import did not make it. Give a folder that does not exist.",
-            to.display()
-        ));
+    let is_empty = |dir: &Path| std::fs::read_dir(dir).is_ok_and(|mut d| d.next().is_none());
+    for dir in [to, partial.as_path()] {
+        if dir.exists() && !replace(dir) && !is_empty(dir) {
+            return Err(format!(
+                "{} is there, and an import did not make it. Give a folder that does not exist.",
+                dir.display()
+            ));
+        }
     }
     gone(&partial)?;
     if let Err(e) = write_folder(&partial, files) {
@@ -944,4 +978,46 @@ pub fn numbers_of_the_original(
         .collect();
     collect(&others, "", &mut all);
     Ok(all)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn zipped(path: &str, bytes: &[u8]) -> Vec<u8> {
+        let files: Files = [(path.to_owned(), bytes.to_vec())].into();
+        write_zip(&files).unwrap()
+    }
+
+    #[test]
+    fn the_zip_files_inside_a_package_share_one_limit() {
+        let chapter = zipped("map.txt", &[b' '; 1000]);
+        let package: Files = (0..4)
+            .map(|i| (format!("{i}.zip"), chapter.clone()))
+            .collect();
+        let mut report = Report::default();
+        assert_eq!(import_files(&package, &mut report).unwrap().len(), 4);
+        // Each chapter is read, then written: more than 8,000 bytes.
+        assert!(report.expanded > 8000, "{}", report.expanded);
+        // The same package, when what was read before leaves room for
+        // three chapters and not for four.
+        let mut report = Report {
+            expanded: MAX_TOTAL_BYTES - 7000,
+            ..Report::default()
+        };
+        let error = import_files(&package, &mut report).unwrap_err();
+        assert!(error.starts_with("3.zip: "), "{error}");
+    }
+
+    #[test]
+    fn a_noise_that_goes_on_after_a_backslash_keeps_its_volume_and_its_interval() {
+        let mut report = Report::default();
+        let text = "def a\nnoise loop 1000 \\\n 1\nnoise_if_damaged repeat \\\n 5 1000\ntitle 1\n";
+        assert_eq!(
+            convert_style(text, &NO_NAMES, "style.txt", &mut report),
+            "def a\nnoise loop ambience/path \\\n 1\nnoise_if_damaged repeat \\\n 5 ambience/path\n\
+             title you_are_capitalized\n"
+        );
+    }
 }

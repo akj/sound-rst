@@ -673,10 +673,10 @@ impl TypeStyle {
         mine(&self.title)
     }
 
-    /// The names of the title: without its counts and its `$1`.
+    /// The title without its `$1`: its names and its counts.
     pub fn title_names(&self) -> Msg {
         let mut title = self.title_msg();
-        title.retain(|part| matches!(part, MsgPart::Name(_)));
+        title.retain(|part| matches!(part, MsgPart::Name(_) | MsgPart::Count(_)));
         title
     }
 
@@ -985,7 +985,7 @@ mod tests {
             footman.title_msg(),
             [name("footman"), MsgPart::Count(2), MsgPart::literal("$1")]
         );
-        assert_eq!(footman.title_names(), [name("footman")]);
+        assert_eq!(footman.title_names(), [name("footman"), MsgPart::Count(2)]);
         assert_eq!(
             footman.alert,
             Some(Sided::if_me(words("alert/horn"), words("alert/bell")))

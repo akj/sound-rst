@@ -163,7 +163,10 @@ fn what_is_not_a_zip_file_or_holds_too_much_is_refused() {
     assert!(read_zip(b"").is_err());
     let names: Vec<String> = (0..=MAX_FILES).map(|i| format!("{i}.txt")).collect();
     let entries: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), &b""[..])).collect();
-    let error = read_zip(&zip_of(&entries)).unwrap_err();
+    let z = zip_of(&entries);
+    assert!(soundrts_import::too_many_entries(&z, MAX_FILES));
+    assert!(!soundrts_import::too_many_entries(&z, MAX_FILES + 1));
+    let error = read_zip(&z).unwrap_err();
     assert!(error.contains("more than"), "{error}");
     // A zip file inside a package is read with the same limits.
     let mut report = Report::default();
@@ -200,7 +203,19 @@ fn the_folder_to_write_is_never_one_that_the_import_did_not_make() {
     assert!(error.contains("is there already"), "{error}");
     assert_eq!(std::fs::read(mine.join("precious.txt")).unwrap(), b"keep");
 
+    // Nor is the folder that an import writes into first.
     let out = dir.path().join("out");
+    let staging = dir.path().join("out.partial");
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::write(staging.join("precious.txt"), "keep").unwrap();
+    let error = import(&package, &out).unwrap_err();
+    assert!(error.contains("out.partial is there"), "{error}");
+    assert_eq!(
+        std::fs::read(staging.join("precious.txt")).unwrap(),
+        b"keep"
+    );
+    std::fs::remove_dir_all(&staging).unwrap();
+
     let report = import(&package, &out).unwrap();
     assert_eq!(report.files, 1);
     assert_eq!(

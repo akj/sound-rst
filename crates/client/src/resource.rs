@@ -463,12 +463,19 @@ impl Resources {
     /// The contents of every `<name>.txt` of every layer, the map's
     /// included, joined by line ends. Each is under a comment line that
     /// names its layer and file, so that the simulation, which takes only
-    /// this text, can say where a line it refuses is.
+    /// this text, can say where a line it refuses is. Players can play
+    /// together only with the same text, so the map's layer is `map` and
+    /// not its name: a map kept from a server has another file name.
     fn game_text(&self, name: &str) -> String {
         self.layers
             .iter()
             .flat_map(|p| {
-                let file = format!("{}/{name}.txt", p.name);
+                let layer = if self.map.as_ref() == Some(p) {
+                    "map"
+                } else {
+                    p.name.as_str()
+                };
+                let file = format!("{layer}/{name}.txt");
                 let texts = self.texts(name, false, Some(p)).into_iter();
                 texts.map(move |t| soundrts_world::defs::with_file_name(&file, &t))
             })
@@ -861,8 +868,18 @@ mod tests {
         let map = Map::from_server(intrusive_map(), "intrusive.zip").unwrap();
         assert!(map.downloaded);
         r.set_map(Some(&map));
-        // The game gets the map's rules.
-        assert!(r.rules_text().ends_with("def golem\nclass soldier\n"));
+        // The game gets the map's rules, under the same line as the host
+        // of the game, whose file of the map has another name.
+        assert!(
+            r.rules_text()
+                .ends_with("\n; file: map/rules.txt\ndef golem\nclass soldier\n")
+        );
+        let mut host = game_stack();
+        host.set_map(Some(
+            &Map::from_bytes(intrusive_map(), "my map.zip").unwrap(),
+        ));
+        assert_eq!(host.rules_text(), r.rules_text());
+        assert_eq!(host.ai_text(), r.ai_text());
         // The interface gets what it lacked.
         assert_eq!(r.sounds().text("golem").as_deref(), Some("golem"));
         assert_eq!(r.style().get("golem").title_msg(), [name("golem")]);

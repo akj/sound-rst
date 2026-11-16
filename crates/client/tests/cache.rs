@@ -156,12 +156,12 @@ fn test_folder_map() {
         assert_eq!(
             res.rules_text(),
             format!(
-                "{BASE_RULES}\n; file: map1/rules.txt\ndef peasant\ncost 6 0\n\ndef faction1\nclass faction\n\ndef faction2\nclass faction\n\ndef parameters\n"
+                "{BASE_RULES}\n; file: map/rules.txt\ndef peasant\ncost 6 0\n\ndef faction1\nclass faction\n\ndef faction2\nclass faction\n\ndef parameters\n"
             )
         );
         assert_eq!(
             res.ai_text(),
-            format!("{BASE_AI}\n; file: map1/ai.txt\ndef easy\nget 6 peasant\ngoto -1\n")
+            format!("{BASE_AI}\n; file: map/ai.txt\ndef easy\nget 6 peasant\ngoto -1\n")
         );
         assert_eq!(test_attribute(&res), ["6"]);
         assert_eq!(text0(&res).as_deref(), Some("map1"));

@@ -154,6 +154,9 @@ pub fn install(
             // At most what an install that failed left, or the data of
             // another version of the importer.
             remove_dir(&target)?;
+            // What an import that stopped left. This folder is the game's
+            // own, and the lock is held.
+            remove_dir(&data.join(format!("{commit}.partial")))?;
             soundrts_import::import_game(&original, &target).map(|_| ())
         });
     let _ = fs::remove_dir_all(&original);
