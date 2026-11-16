@@ -2,7 +2,7 @@
 //! reads its arguments, on the real `res/ui/bindings.txt`.
 
 use soundrts::bindings::{Bindings, game_bindings_text};
-use soundrts::game::command::{COMMAND_NAMES, GameCommand};
+use soundrts::game::command::{GameCommand, is_command};
 use soundrts::log::Log;
 use soundrts::testkit::{Harness, Script, upstream_root};
 
@@ -28,7 +28,7 @@ fn every_command_of_bindings_txt_is_parsed_into_a_handled_command() {
     names.sort();
     assert_eq!(names.len(), 44, "{names:?}");
     for n in &names {
-        assert!(COMMAND_NAMES.contains(&n.as_str()), "{n} is not known");
+        assert!(is_command(n), "{n} is not known");
     }
     // Each binding, with its arguments, reads into a command that runs.
     let h = Harness::new("en", Script::new());
