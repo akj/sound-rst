@@ -2424,6 +2424,29 @@ fn a_member_hears_each_level_and_income_the_organizer_sets() {
 }
 
 #[test]
+fn a_member_who_enters_a_room_hears_the_incomes_set_before() {
+    let script = Script::new().at(100.0).tap(Key::LShift);
+    let (h, _) = on_fake_server(script, config("andrew"), |h, s| {
+        let map = map_info(h, "jl2");
+        let mut state = RoomState {
+            host: login("bob"),
+            ..room_state(
+                &map,
+                vec![slot(human("bob"), 1, true), slot(human("andrew"), 2, false)],
+            )
+        };
+        state.slots[0].income = Income::new(200).unwrap();
+        s.at(10.0, room(RoomChange::Entered, &state));
+    });
+    let said = said(&h);
+    assert!(
+        said.iter()
+            .any(|l| l.ends_with(". bob , 200 percent income")),
+        "{said:?}"
+    );
+}
+
+#[test]
 fn the_level_and_income_set_in_a_room_reach_the_game_the_server_builds() {
     let dir = tempfile::tempdir().unwrap();
     let records = dir.path().to_path_buf();
@@ -2446,6 +2469,12 @@ fn the_level_and_income_set_in_a_room_reach_the_game_the_server_builds() {
     let mut g = h.start_room_game("jl1");
     h.clock.follow_real_time();
     h.run_until_turn(&mut g, 3);
+    // The game's start silenced the room's news; its incomes are said again.
+    assert!(
+        said(&h).contains(&"andrew , 150 percent income".to_owned()),
+        "{:?}",
+        said(&h)
+    );
     // Everyone in the game hears the computer named at its level.
     assert_eq!(
         g.game.view().game_start().player_names[1],

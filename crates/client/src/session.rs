@@ -276,6 +276,16 @@ pub fn finish(cx: &mut Client, game: &mut GameInterface) -> bool {
 pub fn join_server_game(cx: &mut Client, seated: &Seated) -> Option<GameInterface> {
     match crate::game::server::join(cx, seated) {
         Ok(mut game) => {
+            // The game's start silenced the room's news: its incomes are said
+            // again.
+            let incomes = cx
+                .net
+                .as_ref()
+                .and_then(|n| n.room.as_ref())
+                .and_then(|r| r.incomes());
+            if let Some(incomes) = incomes {
+                cx.news(News::new(Category::System, incomes));
+            }
             prepare(cx, &mut game, Vec::new());
             Some(game)
         }

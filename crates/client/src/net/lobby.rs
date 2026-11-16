@@ -335,15 +335,33 @@ impl RoomModel {
         .concat()
     }
 
-    /// What is said on entering the room: the map, and whether it takes
-    /// watchers.
+    /// What is said on entering the room: the map, whether it takes
+    /// watchers, and the seats that do not have the full income.
     pub fn welcome(&self) -> Msg {
         let watchers = if self.state.takes_watchers {
             words::TAKES_WATCHERS
         } else {
             words::NO_WATCHERS_HERE
         };
-        [self.title(), msg(mp::COMMA), text(watchers)].concat()
+        let mut m = [self.title(), msg(mp::COMMA), text(watchers)].concat();
+        if let Some(incomes) = self.incomes() {
+            m.extend(msg(mp::PERIOD));
+            m.extend(incomes);
+        }
+        m
+    }
+
+    /// The seats that do not have the full income, named with it, or
+    /// none: an income is never a hidden advantage.
+    pub fn incomes(&self) -> Option<Msg> {
+        let seats: Vec<Msg> = self
+            .state
+            .slots
+            .iter()
+            .filter(|s| s.income != Income::FULL)
+            .map(seat_name)
+            .collect();
+        (!seats.is_empty()).then(|| names(seats))
     }
 
     pub fn map(&self) -> Option<Arc<Map>> {
