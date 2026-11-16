@@ -1,4 +1,4 @@
-# Keeps crates/client/src/original_names.txt, the table that gives a name
+# Keeps crates/import/src/original_names.txt, the table that gives a name
 # to each number of the original's files: a line of ui/tts.txt (a phrase)
 # or a recording under ui/ (a sound).
 #
@@ -24,7 +24,7 @@ Set-StrictMode -Version Latest
 
 $Repo = Split-Path -Parent $PSScriptRoot
 if (-not $Upstream) { $Upstream = Join-Path $Repo 'vendor/soundrts-upstream' }
-if (-not $Table) { $Table = Join-Path $Repo 'crates/client/src/original_names.txt' }
+if (-not $Table) { $Table = Join-Path $Repo 'crates/import/src/original_names.txt' }
 if (-not (Test-Path (Join-Path $Upstream 'res/ui/tts.txt'))) {
     throw "No original at $Upstream. Run scripts/fetch-upstream.ps1 first."
 }

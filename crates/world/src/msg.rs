@@ -9,6 +9,23 @@ pub use crate::phrases::{Cue, Pause, Phrase};
 /// knows it.
 const ORIGINAL_COUNT_SHIFT: u64 = 1_000_000;
 
+/// The longest name of the game's files, in bytes. The original's longest,
+/// once named, has 43.
+pub const MAX_NAME_BYTES: usize = 64;
+
+/// Whether `s` has the shape of a name of the game's files: words of lower
+/// case letters, digits and `_` that start with a letter, joined by `/`.
+/// A name without a slash is a phrase: a line of a language file. A name
+/// with one is a sound: its path under `sounds/`, without `.ogg`.
+pub fn is_name(s: &str) -> bool {
+    fn is_word(s: &str) -> bool {
+        let mut chars = s.chars();
+        chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+    s.len() <= MAX_NAME_BYTES && s.split('/').all(is_word)
+}
+
 /// One part of a spoken message.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

@@ -1,7 +1,8 @@
 # Fetches the original SoundRTS (Python) at a pinned commit into
-# vendor/soundrts-upstream. The Rust port reads the game data (rules, maps,
-# sounds, translations) from that checkout, and the Python source is the
-# reference for the port. Safe to rerun.
+# vendor/soundrts-upstream, then imports its game data (rules, maps, sounds,
+# translations) into vendor/game-data, which is what the game and the tests
+# read. The Python source is the reference for the port. Safe to rerun: run
+# it again after a change to crates/import/src/original_names.txt.
 #
 # The upstream source code is BSD 3-clause. The license of the game data is
 # not stated upstream, so the data stays out of this repository.
@@ -40,3 +41,11 @@ if (-not (Test-Path (Join-Path $Target 'res/rules.txt'))) {
 }
 
 Write-Output "SoundRTS upstream is ready at $Target ($Commit)."
+
+# The game reads only imported data: every number of the original becomes a
+# name, through crates/import/src/original_names.txt.
+$Data = Join-Path (Split-Path -Parent $PSScriptRoot) 'vendor/game-data'
+$Manifest = Join-Path (Split-Path -Parent $PSScriptRoot) 'Cargo.toml'
+cargo run --quiet --manifest-path $Manifest -p soundrts-import -- $Target $Data
+if ($LASTEXITCODE -ne 0) { throw "The import of $Target failed with exit code $LASTEXITCODE." }
+Write-Output "The imported game data is ready at $Data."

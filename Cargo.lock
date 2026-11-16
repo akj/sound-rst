@@ -2617,6 +2617,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "soundrts-import"
+version = "0.1.0"
+dependencies = [
+ "soundrts-world",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "soundrts-protocol"
 version = "0.1.0"
 dependencies = [

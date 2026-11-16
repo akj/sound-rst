@@ -1,0 +1,17 @@
+[package]
+name = "soundrts-import"
+description = "Converts the files of the original SoundRTS, which name every phrase and sound with a number, into the files the game reads, which name them with words."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+soundrts-world = { path = "../world" }
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"
