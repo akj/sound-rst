@@ -10,9 +10,10 @@
 //! a square without a path, or a unit converted in the middle of an order
 //! has an outcome of its own where it happens, such as an order marked
 //! impossible, and a mod's effect that cannot be applied is dropped when
-//! the rules load. What is left is a map's trigger that cannot be read, a
-//! broken invariant of the simulation, which is a defect to fix, and the
-//! computer player's stops, not yet given a kind.
+//! the rules load. The computer player skips a step it cannot take, and
+//! goes on with its turn. What is left is a map's trigger that cannot be
+//! read, and a broken invariant of the simulation, which is a defect to
+//! fix.
 //!
 //! `tests/stops.rs` counts the places that raise each kind.
 
@@ -27,16 +28,6 @@ pub enum Abort {
     Trigger(TriggerError),
     /// The simulation broke one of its own rules: a defect to fix.
     Invariant(Invariant),
-    /// A stop of the computer player, not yet given a kind of its own. The
-    /// text says what went wrong.
-    Unclassified(String),
-}
-
-impl Abort {
-    /// A stop of the computer player, not yet given a kind, with its text.
-    pub(crate) fn new(s: impl Into<String>) -> Abort {
-        Abort::Unclassified(s.into())
-    }
 }
 
 impl fmt::Display for Abort {
@@ -44,7 +35,6 @@ impl fmt::Display for Abort {
         match self {
             Abort::Trigger(t) => write!(f, "trigger: {t}"),
             Abort::Invariant(i) => write!(f, "broken invariant: {i}"),
-            Abort::Unclassified(s) => f.write_str(s),
         }
     }
 }

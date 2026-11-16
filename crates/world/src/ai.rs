@@ -13,10 +13,12 @@
 //! human in its seat could know and do: outside its tests, this module
 //! never names the world.
 //! It reads and acts in the original's order, so that it draws the same
-//! random numbers. Where the original raises an exception, the work stops
-//! with an [`Abort`], which ends the player's update as in the original.
-//! Where the original would use the id of an interior (`None`), the AI
-//! stops too.
+//! random numbers. Where the original raises an exception for what a mod,
+//! a map or the turn of a game can bring (a unit inside another, a deposit
+//! gone, rules without a farm, a purchase that asks for itself), it skips
+//! that one step and goes on with its turn. Its turn stops only for a
+//! broken invariant of the simulation, from an order it gives or a path it
+//! asks for.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -736,7 +738,7 @@ impl Door<'_> {
                 && o.keyword() == Keyword::Gather
                 && matches!(e.place(), Some(Place::Square(_)))
                 && let Some(t) = o.target()
-                && let Ok(rt) = self.deposit_resource_type(&t)
+                && let Some(rt) = self.deposit_resource_type(&t)
                 && let Some(g) = gatherers.get_mut(rt as usize)
             {
                 g.push((u, t));
@@ -1189,10 +1191,12 @@ impl Door<'_> {
         Ok(())
     }
 
-    fn deposit_resource_type(&self, d: &Mark) -> Res<i64> {
+    /// The resource of the deposit a mark names, by its type as the player
+    /// knows it: none for what is no deposit it knows, such as one gone
+    /// from the map.
+    fn deposit_resource_type(&self, d: &Mark) -> Option<i64> {
         self.target_type(d)
             .and_then(|t| self.rules().ty(t).resource_type)
-            .ok_or_else(|| Abort::new("object has no attribute 'resource_type'"))
     }
 
     /// Has the workers near a deposit repair a warehouse being built near
@@ -1219,17 +1223,14 @@ impl Door<'_> {
         if nearby.is_empty() {
             return Ok(());
         }
-        let rt = self.deposit_resource_type(deposit)?;
-        let Some(dp) = dplace else {
-            return Err(Abort::new(
-                "'NoneType' object has no attribute 'shortest_path_distance_to'",
-            ));
+        // A deposit it knows no more, or whose square it does not know,
+        // gets no warehouse.
+        let (Some(rt), Some(Place::Square(dp_square))) =
+            (self.deposit_resource_type(deposit), dplace)
+        else {
+            return Ok(());
         };
-        let Place::Square(dp_square) = dp else {
-            return Err(Abort::new(
-                "'Inside' object has no attribute 'shortest_path_distance_to'",
-            ));
-        };
+        let dp = Place::Square(dp_square);
         let wh = self.nearest_warehouse(dp_square, rt, true)?;
         let wh = wh.and_then(|w| self.known(w));
         if let Some(wh) = wh
@@ -1360,7 +1361,7 @@ impl Door<'_> {
                 .into_iter()
                 .filter(|o| self.target_place_of(o) == p0)
             {
-                keyed.push((self.deposit_priority(&Some(o.clone()))?, o));
+                keyed.push((self.deposit_priority(&Some(o.clone())), o));
             }
             keyed.sort_by_key(|k| std::cmp::Reverse(k.0));
             candidates = keyed.into_iter().map(|(_, o)| o).collect();
@@ -1412,9 +1413,14 @@ impl Door<'_> {
         c
     }
 
-    fn deposit_priority(&self, d: &Option<Mark>) -> Res<DepositPriority> {
-        let Some(t) = d else {
-            return Ok((-100, 0, None));
+    /// `_deposit_priority`. A deposit it knows no more counts as none, and
+    /// of a resource the game does not have, the player has none.
+    fn deposit_priority(&self, d: &Option<Mark>) -> DepositPriority {
+        let Some((t, rt)) = d
+            .as_ref()
+            .and_then(|t| Some((t, self.deposit_resource_type(t)?)))
+        else {
+            return (-100, 0, None);
         };
         let workers = self
             .state()
@@ -1422,13 +1428,12 @@ impl Door<'_> {
             .iter()
             .find(|(k, _)| same_opt(k, d))
             .map_or(0, |(_, n)| *n);
-        let rt = self.deposit_resource_type(t)?;
         let r = usize::try_from(rt)
             .ok()
             .and_then(|i| self.resources().get(i))
             .copied()
-            .ok_or_else(|| Abort::new("list index out of range"))?;
-        Ok((floordiv(-r, 10), -workers, t.entity_id()))
+            .unwrap_or(0);
+        (floordiv(-r, 10), -workers, t.entity_id())
     }
 
     // Computer: counting and getting units
@@ -1742,14 +1747,14 @@ impl Door<'_> {
         self.rules().ty(t).name.clone()
     }
 
-    fn worker_orders_priority(&self, u: EntityId) -> Res<(u8, Option<DepositPriority>)> {
-        Ok(match self.unit(u).and_then(Own::first_order) {
+    fn worker_orders_priority(&self, u: EntityId) -> (u8, Option<DepositPriority>) {
+        match self.unit(u).and_then(Own::first_order) {
             None => (0, None),
             Some(o) if o.keyword() == Keyword::Gather => {
-                (1, Some(self.deposit_priority(&o.target())?))
+                (1, Some(self.deposit_priority(&o.target())))
             }
             Some(_) => (2, None),
-        })
+        }
     }
 
     /// `order`: gives the order to units of a type until `nb` of them
@@ -1775,7 +1780,7 @@ impl Door<'_> {
             if requisition {
                 let mut keyed = Vec::new();
                 for u in units {
-                    keyed.push((self.worker_orders_priority(u)?, u));
+                    keyed.push((self.worker_orders_priority(u), u));
                 }
                 keyed.sort_by_key(|k| k.0);
                 units = keyed.into_iter().map(|(_, u)| u).collect();
@@ -1793,12 +1798,10 @@ impl Door<'_> {
                     if matches!(kw, Keyword::Build | Keyword::Repair) {
                         continue;
                     }
+                    // A worker whose deposit changed during the turn may
+                    // not be counted on it yet.
                     if requisition && *kw == Keyword::Gather {
-                        let gd = &mut self.state_mut().gathered_deposits;
-                        match gd.iter_mut().find(|(k, _)| same_opt(k, target)) {
-                            Some(e) => e.1 -= 1,
-                            None => return Err(Abort::new("KeyError: the deposit")),
-                        }
+                        add_count(&mut self.state_mut().gathered_deposits, target, -1);
                     }
                 }
                 self.give(u, order.clone(), true)?;
@@ -2152,6 +2155,91 @@ starting_squares a1
                     .is_ok_and(|o| o.as_ref().is_none_or(|o| o.target().is_none()))
             );
         }
+    }
+
+    /// The id of the first entity on the only square of `w` that `f`
+    /// accepts.
+    fn on_a1(w: &World, f: impl Fn(&crate::entity::Entity) -> bool) -> EntityId {
+        let a1 = w.square_by_name("a1").unwrap();
+        w.square(a1)
+            .objects
+            .iter()
+            .copied()
+            .find(|&o| f(w.e(o)))
+            .unwrap()
+    }
+
+    #[test]
+    fn what_is_no_deposit_it_knows_gets_no_warehouse() {
+        let (mut w, p) = scripted("def easy\n", "townhall 2 peasant");
+        w.update_effect_users_and_workers(p);
+        w.update_perception_and_memory(p).unwrap();
+        let meadow = on_a1(&w, |e| e.is_meadow());
+        let townhall = w.rules.type_id("townhall").unwrap();
+        let not_a_deposit = Mark::of(crate::entity::Target::Entity(meadow));
+        let r = w.door(p).build_a_warehouse_for(&not_a_deposit, townhall);
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn of_a_resource_the_game_lacks_the_player_has_none() {
+        let (mut w, p) = scripted("def easy\n", "townhall 2 peasant");
+        let gold = on_a1(&w, |e| e.is_deposit());
+        let goldmine = w.e(gold).type_name.to_string();
+        w.rules.unit_type_mut(&goldmine).unwrap().resource_type = Some(7);
+        let d = Some(Mark::of(crate::entity::Target::Entity(gold)));
+        let priority = format!("{:?}", w.door(p).deposit_priority(&d));
+        assert_eq!(priority, format!("(0, 0, Some({gold:?}))"));
+    }
+
+    #[test]
+    fn a_worker_not_counted_on_its_deposit_is_requisitioned() {
+        let (mut w, p) = scripted("def easy\n", "townhall 2 peasant");
+        let gold = on_a1(&w, |e| e.is_deposit());
+        let workers: Vec<EntityId> = w.pl(p).units[1..].to_vec();
+        for &u in &workers {
+            let gather = Request::gather(TargetRef::Entity(gold));
+            w.take_order(u, gather, true, false, None).unwrap();
+        }
+        w.update_effect_users_and_workers(p);
+        w.computer_state(p).gathered_deposits.clear();
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let farm = w.rules.type_id("farm").unwrap();
+        let site = w
+            .create_building_site(p, Place::Square(a1), x, y, farm)
+            .unwrap();
+        let r = w.door(p).order(1, Sel::Workers, Task::Repair(site), true);
+        assert!(r.is_ok());
+        let repairs = workers
+            .iter()
+            .filter(|&&u| {
+                w.e(u).orders().first().map(crate::orders::Order::keyword) == Some(Keyword::Repair)
+            })
+            .count();
+        assert_eq!(repairs, 1);
+    }
+
+    #[test]
+    fn a_warehouse_inside_a_unit_is_not_reached() {
+        let (mut w, p) = scripted("def easy\n", "2 peasant");
+        let footman = w.rules.type_id("footman").unwrap();
+        w.rules
+            .unit_type_mut("footman")
+            .unwrap()
+            .storable_resource_types = vec![0];
+        let a1 = w.square_by_name("a1").unwrap();
+        let (x, y) = (w.square(a1).x, w.square(a1).y);
+        let store = w
+            .create_creature(footman, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        let flyer = w.rules.type_id("new_flyingmachine").unwrap();
+        let transport = w
+            .create_creature(flyer, Some(p), Place::Square(a1), x, y)
+            .unwrap();
+        w.load(transport, store);
+        let r = w.door(p).nearest_warehouse(a1, 0, true);
+        assert_eq!(r.ok(), Some(None));
     }
 
     #[test]

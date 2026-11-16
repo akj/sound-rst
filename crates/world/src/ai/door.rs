@@ -30,7 +30,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::abort::{Abort, Res};
+use crate::abort::Res;
 use crate::entity::{
     Entity, EntityId, MemoryRef, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
 };
@@ -817,8 +817,9 @@ impl Door<'_> {
         }
         let mut warehouses: Vec<(i64, EntityId)> = Vec::new();
         for (u, p) in found {
+            // A warehouse inside a unit cannot be reached.
             let Some(Place::Square(s)) = p else {
-                return Err(Abort::new("the warehouse is not on a square"));
+                continue;
             };
             let d = self.distance(start, s, false)?;
             if d == 0 {
