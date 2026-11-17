@@ -22,10 +22,10 @@ use crate::defs::{MAX_NUMBER, bounded, check_size, preprocess_within_limits};
 use crate::entity::{Place, PlayerId, SquareId};
 use crate::msg::{Msg, MsgPart};
 use crate::nofloat::{PRECISION, floordiv, py_float, py_int, to_int};
-use crate::player::{Controller, ControllerKind, Player, PlayerKind, Trigger, Upgrades};
+use crate::player::{Controller, ControllerKind, Player, PlayerKind, Upgrades};
 use crate::rules::AirGround;
 use crate::square::Square;
-use crate::triggers::{Expr, list_to_tree};
+use crate::triggers::{Expr, Trigger, is_trigger_name, list_to_tree};
 use crate::world::World;
 
 /// The map cannot be loaded. The message says why, and where.
@@ -117,7 +117,7 @@ pub enum StartItem {
 pub struct Start {
     pub resources: Vec<i64>,
     pub items: Vec<StartItem>,
-    pub triggers: Vec<Trigger>,
+    pub(crate) triggers: Vec<Trigger>,
 }
 
 /// A map definition as parsed. Sizes are in squares here, except
@@ -203,26 +203,6 @@ impl Default for MapDef {
     }
 }
 
-/// The names of the trigger functions (`lang_*`), which a map may use.
-pub(crate) const LANG_NAMES: &[&str] = &[
-    "timer",
-    "order",
-    "has",
-    "has_entered",
-    "add_units",
-    "no_enemy_left",
-    "no_enemy_player_left",
-    "no_unit_left",
-    "no_building_left",
-    "victory",
-    "defeat",
-    "cut_scene",
-    "add_objective",
-    "objective_complete",
-    "ai",
-    "faction",
-];
-
 fn is_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
@@ -239,6 +219,10 @@ pub fn convert_and_split_first_numbers(words: &[String]) -> (Vec<i64>, Vec<Strin
     }
     (numbers, Vec::new())
 }
+
+/// The `trigger` lines of a map as trees, each with its words: owners,
+/// condition and action.
+type TriggerTrees = Vec<(Vec<Expr>, String)>;
 
 /// The number of words and lists in a trigger expression.
 fn expr_size(e: &Expr) -> usize {
@@ -331,8 +315,9 @@ impl World {
         })
     }
 
-    /// Copies a trigger to the starts of its owners. `copied` counts the
-    /// size of the copies made so far, against [`MAX_COPIED_TRIGGER_SIZE`].
+    /// Reads a trigger, and copies it to the starts of its owners. `copied`
+    /// counts the size of the copies made so far, against
+    /// [`MAX_COPIED_TRIGGER_SIZE`].
     fn add_trigger(
         &mut self,
         tree: Vec<Expr>,
@@ -354,9 +339,10 @@ impl World {
                 })
                 .collect(),
         };
-        let trigger = Trigger { condition, action };
-        let size = expr_size(&trigger.condition).saturating_add(expr_size(&trigger.action));
+        let size = expr_size(&condition).saturating_add(expr_size(&action));
         let context = format!("trigger {words_line}");
+        let trigger =
+            Trigger::read(self, &condition, &action).map_err(|e| map_error(&context, &e))?;
         let computers = self.map.computers_starts.len();
         let players = self.map.players_starts.len();
         for o in owners {
@@ -421,8 +407,10 @@ impl World {
         Ok(())
     }
 
-    /// Parses a map definition (`_parse_map`).
-    pub(crate) fn parse_map(&mut self, map_definition: &str) -> Result<(), MapError> {
+    /// Parses a map definition (`_parse_map`). The triggers are returned as
+    /// trees with their lines, for [`World::add_triggers`] to read once the
+    /// squares they name are built.
+    pub(crate) fn parse_map(&mut self, map_definition: &str) -> Result<TriggerTrees, MapError> {
         let nb_res = self.rules.nb_of_resource_types();
         let mut triggers: Vec<Vec<String>> = Vec::new();
         let mut starting_resources = vec![0; nb_res];
@@ -497,7 +485,7 @@ impl World {
                     for part in word.split(',') {
                         let part = part.strip_prefix('-').unwrap_or(part);
                         let known = p.valid_word.is_match(part)
-                            || LANG_NAMES.contains(&part)
+                            || is_trigger_name(part)
                             || classnames.contains(part)
                             || ai_names.contains(part)
                             || matches!(part, "(" | ")" | "all" | "players" | "computers")
@@ -743,7 +731,12 @@ impl World {
                                 words(&t.condition),
                                 words(&t.action),
                             ],
-                            t.owners.clone(),
+                            format!(
+                                "{} ( {} ) ( {} )",
+                                t.owners,
+                                t.condition.join(" "),
+                                t.action.join(" ")
+                            ),
                         )
                     })
                     .collect()
@@ -756,6 +749,12 @@ impl World {
                 }
                 out
             };
+        Ok(trees)
+    }
+
+    /// Reads the triggers of the map, and copies each to the starts of its
+    /// owners.
+    fn add_triggers(&mut self, trees: TriggerTrees) -> Result<(), MapError> {
         let mut copied = 0;
         for (tree, line) in trees {
             self.add_trigger(tree, &line, &mut copied)?;
@@ -786,7 +785,7 @@ impl World {
     pub fn load_and_build_map(&mut self, map_definition: &str) -> Result<(), MapError> {
         check_size(map_definition.len()).map_err(MapError)?;
         let text = map_definition.replace("\r\n", "\n").replace('\r', "\n");
-        self.parse_map(&text)?;
+        let triggers = self.parse_map(&text)?;
         let sw = self.map.square_width;
         if !(1..=MAX_SQUARE_WIDTH).contains(&sw) {
             return Err(MapError(format!(
@@ -794,7 +793,8 @@ impl World {
             )));
         }
         self.map.square_width = sw.saturating_mul(PRECISION);
-        self.build_map()
+        self.build_map()?;
+        self.add_triggers(triggers)
     }
 
     fn build_map(&mut self) -> Result<(), MapError> {

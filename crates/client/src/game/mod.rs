@@ -71,7 +71,7 @@ use crate::bindings::{Bindings, Chord, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, Mods};
 use crate::menu::{Exit, TextEntry};
-use crate::message::{Category, News, Subject};
+use crate::message::{Category, News};
 use crate::sound::Listener;
 
 use crate::voice::EntryId;
@@ -263,13 +263,8 @@ pub struct GameInterface {
     pub(crate) previous_menus: IndexMap<String, Vec<MenuEntry>>,
     /// When the player's units were last attacked at each place.
     pub(crate) attacks: HashMap<Place, f64>,
-    pub(crate) lost_units: Vec<(Msg, Option<Place>)>,
-    pub(crate) neutralized_units: Vec<(Msg, Option<Place>)>,
-    pub(crate) new_enemy_units: Vec<(Msg, Option<Place>)>,
     pub(crate) scout_info: IndexSet<Place>,
     pub(crate) known_resource_places: HashSet<Option<Place>>,
-    /// The units each piece of news about units counts.
-    pub(crate) told_units: HashMap<Subject, Vec<Msg>>,
     /// The first message of the log that is about this game.
     pub(crate) log_start: EntryId,
     /// The alert the cursor last jumped to, and its square.
@@ -355,12 +350,8 @@ impl GameInterface {
             previous_compass: None,
             previous_menus: IndexMap::new(),
             attacks: HashMap::new(),
-            lost_units: Vec::new(),
-            neutralized_units: Vec::new(),
-            new_enemy_units: Vec::new(),
             scout_info: IndexSet::new(),
             known_resource_places: HashSet::new(),
-            told_units: HashMap::new(),
             log_start: cx.voice.start_game(),
             alert_jump: None,
             objectives_seen: Vec::new(),
@@ -476,9 +467,9 @@ impl GameInterface {
 
     /// Reads the bindings of the game and the player's own.
     pub fn load_bindings(&mut self, cx: &Client) {
-        let text = game_bindings_text(&cx.res, &cx.paths.custom_bindings());
+        let files = game_bindings_text(&cx.res, &cx.paths.custom_bindings());
         let mut b = Bindings::new();
-        b.load(&text, &GameCommand::parse, &cx.log);
+        b.load(&files, &GameCommand::parse, &cx.log);
         self.bindings = b;
     }
 

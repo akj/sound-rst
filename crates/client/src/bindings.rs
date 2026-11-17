@@ -1,12 +1,14 @@
-//! Key bindings: `ui/bindings.txt` and the player's `bindings.txt`.
+//! Key bindings: `ui/bindings.txt` of the layers and the player's
+//! `bindings.txt`.
 //!
 //! A line is `#define NAME value`, or `[CTRL] [ALT] [SHIFT] key: command
 //! args`, with pygame key names. Bindings match the key's position, as
 //! upstream matched pygame scancodes.
 //!
-//! Definitions are applied to every later line, so a line can grow with
-//! each definition it uses. A line past one of the limits below is refused
-//! with a warning; past [`MAX_BINDINGS_BYTES`], the rest of the text is.
+//! Definitions are applied to every later line, of the same file or a
+//! later one, so a line can grow with each definition it uses. A line past
+//! one of the limits below is refused with a warning that names its file
+//! and its line; past [`MAX_BINDINGS_BYTES`], the rest of the files are.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -19,16 +21,16 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use soundrts_world::defs::preprocess;
+use soundrts_world::defs::{preprocess, source_lines};
 
 use crate::input::{Key, KeyDown, Mods};
 use crate::log::Log;
-use crate::package::{read_file, universal_newlines};
+use crate::package::TextFile;
 use crate::resource::Resources;
 
-/// The most bytes of lines the bindings read, every layer and the
-/// player's file together, counted once definitions are applied, and the
-/// largest player's file read. The original's bindings are 5.8 KB.
+/// The most bytes of lines the bindings read, every file together,
+/// counted once definitions are applied, and the largest player's file
+/// read. The original's bindings are 5.8 KB.
 pub const MAX_BINDINGS_BYTES: usize = 1024 * 1024;
 
 /// The longest line, before or after its definitions are applied, in
@@ -78,21 +80,10 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     CTRL SHIFT k: select_units idle soldier5\nCTRL SHIFT l: select_units idle soldier6\n\
     CTRL SHIFT SEMICOLON: select_units idle soldier7\n";
 
-/// The text of the game's bindings: every `ui/bindings.txt` of the
-/// resource layers (translations included) but a map that came from a
-/// server, this client's own additions,
-/// then the player's own `bindings.txt` if there is one, so the player's
-/// lines win.
-pub fn game_bindings_text(res: &Resources, custom: &Path) -> String {
-    let mut text = res.text_appended("ui/bindings", true);
-    text.push('\n');
-    text.push_str(CLIENT_BINDINGS);
-    let limit = u64::try_from(MAX_BINDINGS_BYTES).unwrap_or(u64::MAX);
-    if let Ok(bytes) = read_file(custom, limit) {
-        text.push('\n');
-        text.push_str(&universal_newlines(&String::from_utf8_lossy(&bytes)));
-    }
-    text
+/// The files of the game's bindings, in the order they are read, the
+/// player's own file at `custom` last (see [`crate::layers::Layers::bindings`]).
+pub fn game_bindings_text(res: &Resources, custom: &Path) -> Vec<TextFile> {
+    res.bindings_files(custom)
 }
 
 /// A key with the modifiers that must be held.
@@ -350,47 +341,57 @@ impl<C> Bindings<C> {
         Ok(())
     }
 
-    /// Adds the bindings of `text`, each command read by `parse`. A line
-    /// with an error is reported and ignored.
-    pub fn load(&mut self, text: &str, parse: CommandParser<C>, log: &Log) {
+    /// Adds the bindings of `files`, in order, each command read by
+    /// `parse`. A line with an error is reported with its file and its
+    /// line, and ignored.
+    pub fn load(&mut self, files: &[TextFile], parse: CommandParser<C>, log: &Log) {
         // Each line costs the most bytes it held, a refused line the most
         // it could, so the work of applying the definitions stays bounded.
         let mut left = MAX_BINDINGS_BYTES;
-        for raw in preprocess(text).split('\n') {
-            let expanded = self.apply_definitions(raw);
-            let cost = expanded
-                .as_ref()
-                .map_or(MAX_BINDING_LINE_BYTES, |(_, peak)| *peak)
-                .max(1);
-            let Some(l) = left.checked_sub(cost) else {
-                log.warning(format!(
-                    "bindings.txt: more than {MAX_BINDINGS_BYTES} bytes; the rest is ignored"
-                ));
-                return;
-            };
-            left = l;
-            let Some((line, _)) = expanded else {
-                let start: String = raw.chars().take(80).collect();
-                log.warning(format!(
-                    "error in bindings.txt (line ignored):\n{start}\n(longer than {MAX_BINDING_LINE_BYTES} bytes once its definitions are applied)"
-                ));
-                continue;
-            };
-            let result = if line.starts_with("#define ") {
-                self.add_definition(&line)
-            } else if line.contains(':') {
-                self.add_binding(&line, parse)
-            } else if !line.is_empty() {
-                Err(BindingError(
-                    "the line must be a binding or a definition".into(),
-                ))
-            } else {
-                Ok(())
-            };
-            if let Err(e) = result {
-                log.warning(format!(
-                    "error in bindings.txt (line ignored):\n{line}\n({e})"
-                ));
+        for file in files {
+            let numbers = source_lines(&file.text);
+            for (i, raw) in preprocess(&file.text).split('\n').enumerate() {
+                // What follows a file's last newline, or a file without a
+                // line, is blank and no line: the limit counts the same
+                // lines however many files hold them.
+                if raw.chars().all(|c| c == ' ' || c == '\t') {
+                    continue;
+                }
+                let line_number = numbers.get(i).copied().unwrap_or(0);
+                let at = format!("{} line {line_number}", file.path);
+                let expanded = self.apply_definitions(raw);
+                let cost = expanded
+                    .as_ref()
+                    .map_or(MAX_BINDING_LINE_BYTES, |(_, peak)| *peak)
+                    .max(1);
+                let Some(l) = left.checked_sub(cost) else {
+                    log.warning(format!(
+                        "{at}: the bindings hold more than {MAX_BINDINGS_BYTES} bytes; this line and the rest are ignored"
+                    ));
+                    return;
+                };
+                left = l;
+                let Some((line, _)) = expanded else {
+                    let start: String = raw.chars().take(80).collect();
+                    log.warning(format!(
+                        "{at} is ignored (longer than {MAX_BINDING_LINE_BYTES} bytes once its definitions are applied): {start}"
+                    ));
+                    continue;
+                };
+                let result = if line.starts_with("#define ") {
+                    self.add_definition(&line)
+                } else if line.contains(':') {
+                    self.add_binding(&line, parse)
+                } else if !line.is_empty() {
+                    Err(BindingError(
+                        "the line must be a binding or a definition".into(),
+                    ))
+                } else {
+                    Ok(())
+                };
+                if let Err(e) = result {
+                    log.warning(format!("{at} is ignored ({e}): {line}"));
+                }
             }
         }
     }
@@ -447,12 +448,20 @@ mod tests {
         Chord::parse(s).unwrap()
     }
 
+    /// One file of bindings.
+    fn file(text: &str) -> [TextFile; 1] {
+        [TextFile {
+            path: "bindings.txt".to_owned(),
+            text: text.to_owned(),
+        }]
+    }
+
     #[test]
     fn the_upstream_bindings_parse_completely() {
         let text = std::fs::read_to_string(game_root().join("res/ui/bindings.txt")).unwrap();
         let log = Log::silent();
         let mut b = Bindings::new();
-        b.load(&text, &any, &log);
+        b.load(&file(&text), &any, &log);
         // Every line with a colon is a binding; each distinct chord is bound.
         let keys: Vec<String> = preprocess(&text)
             .split('\n')
@@ -497,10 +506,10 @@ mod tests {
         let text = std::fs::read_to_string(game_root().join("res/ui/bindings.txt")).unwrap();
         let log = Log::silent();
         let mut upstream = Bindings::new();
-        upstream.load(&text, &any, &log);
+        upstream.load(&file(&text), &any, &log);
         let mut client = Bindings::new();
         client.load(
-            CLIENT_BINDINGS,
+            &file(CLIENT_BINDINGS),
             &crate::game::command::GameCommand::parse,
             &log,
         );
@@ -516,7 +525,7 @@ mod tests {
     fn a_key_press_finds_its_binding_by_position_and_modifiers() {
         let mut b = Bindings::new();
         b.load(
-            "SHIFT a: select_order -1\nLSHIFT: history_stop\n",
+            &file("SHIFT a: select_order -1\nLSHIFT: history_stop\n"),
             &any,
             &Log::silent(),
         );
@@ -543,7 +552,7 @@ mod tests {
     fn bad_lines_are_ignored_with_a_warning() {
         let mut b = Bindings::new();
         b.load(
-            "WIN a: x\nb: unknown\nnonsense\nc: known\n",
+            &file("WIN a: x\nb: unknown\nnonsense\nc: known\n"),
             &|name, args| match name {
                 "known" => any(name, args),
                 _ => Err(BindingError(format!("'{name}' is not a command"))),
@@ -570,7 +579,7 @@ mod tests {
         // not.
         let text = format!("{}a: one Z10\nb: two Z10 Z10\nc: three\n", doubling(10));
         let mut b = Bindings::new();
-        b.load(&text, &any, &Log::silent());
+        b.load(&file(&text), &any, &Log::silent());
         assert_eq!(b.get(&chord("a")).map(|c| c.1.len()), Some(1024));
         assert_eq!(b.get(&chord("b")), None);
         assert_eq!(b.get(&chord("c")), Some(&command("three", "")));
@@ -583,7 +592,7 @@ mod tests {
         // limits, Z40 would be 4 TB.
         let text = format!("{}a: one Z40\n", doubling(40));
         let mut b = Bindings::new();
-        b.load(&text, &any, &Log::silent());
+        b.load(&file(&text), &any, &Log::silent());
         assert_eq!(b.get(&chord("a")), Some(&command("one", "Z40")));
     }
 
@@ -594,7 +603,7 @@ mod tests {
             .collect();
         text.push_str("a: one N0 N31 N32\n");
         let mut b = Bindings::new();
-        b.load(&text, &any, &Log::silent());
+        b.load(&file(&text), &any, &Log::silent());
         assert_eq!(b.get(&chord("a")), Some(&command("one", "x0 x31 N32")));
     }
 
@@ -604,8 +613,33 @@ mod tests {
         let count = MAX_BINDINGS_BYTES / long.len() + 1;
         let text = format!("{}b: two\n", long.repeat(count));
         let mut b = Bindings::new();
-        b.load(&text, &any, &Log::silent());
+        b.load(&file(&text), &any, &Log::silent());
         assert!(b.get(&chord("a")).is_some());
         assert_eq!(b.get(&chord("b")), None);
+    }
+
+    #[test]
+    fn a_file_without_a_line_takes_nothing_of_the_limit() {
+        let line = |command: &str| {
+            let start = format!("a: {command} ");
+            let rest = "x".repeat(MAX_BINDING_LINE_BYTES - start.len());
+            format!("{start}{rest}\n")
+        };
+        // Lines that fill the limit to the byte, the last in a file of its
+        // own after an empty one and one that holds only a space.
+        let count = MAX_BINDINGS_BYTES / MAX_BINDING_LINE_BYTES;
+        let files = [
+            ("first.txt", line("one").repeat(count - 1)),
+            ("empty.txt", String::new()),
+            ("blank.txt", " ".to_owned()),
+            ("last.txt", line("two")),
+        ]
+        .map(|(path, text)| TextFile {
+            path: path.to_owned(),
+            text,
+        });
+        let mut b = Bindings::new();
+        b.load(&files, &any, &Log::silent());
+        assert_eq!(b.get(&chord("a")).map(|c| c.0.as_str()), Some("two"));
     }
 }

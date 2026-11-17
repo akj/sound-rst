@@ -335,10 +335,19 @@ mod test_worldplayerbase {
         assert!(w.counterattack_places(p).contains(&a1));
     }
 
+    /// A footman of `enemy` on the square, which `p` perceives, attacks
+    /// `unit`.
+    fn attacked_from(w: &mut World, p: PlayerId, enemy: PlayerId, unit: EntityId, square: &str) {
+        let s = sq(w, square);
+        let hostile = create(w, "footman", enemy, s);
+        w.plm(p).perception.insert(hostile);
+        w.on_unit_attacked(p, unit, hostile);
+    }
+
     #[test]
     fn test_update_counterattacks() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "a1")];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "a1");
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert_eq!(keywords(&w, unit), ["go", "go"]);
@@ -346,8 +355,9 @@ mod test_worldplayerbase {
 
     #[test]
     fn test_update_counterattacks_if_not_nearby() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "c4")];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "c4");
+        assert_eq!(w.counterattack_places(p), [sq(&w, "c4")]);
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert!(w.e(unit).orders().is_empty());
@@ -355,8 +365,13 @@ mod test_worldplayerbase {
 
     #[test]
     fn test_update_counterattacks_if_closer_attackers() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "a1"), place_of(&w, unit)];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "a1");
+        attacked_from(&mut w, p, enemy, unit, "b1");
+        assert_eq!(
+            w.counterattack_places(p),
+            [sq(&w, "a1"), place_of(&w, unit)]
+        );
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert!(w.e(unit).orders().is_empty());
@@ -469,7 +484,9 @@ starting_resources 10 10
     }
 
     fn add(w: &mut World, p: PlayerId, items: &str) {
-        w.lang_add_units(p, &words(items), None, 0, None, true);
+        let items: Vec<&str> = items.split_whitespace().collect();
+        let units = crate::triggers::units_to_add(w, &items, None).unwrap();
+        w.add_units(p, &units);
     }
 
     fn set_rule(w: &mut World, t: &str, f: impl FnOnce(&mut crate::rules::Stats)) {
@@ -571,6 +588,56 @@ starting_resources 10 10
         take(&mut w, p1, "build farm a1");
         run_until_idle(&mut w, &[p1, p2], 50);
         assert_eq!(nb(&w, cp, "farm"), 2);
+    }
+
+    /// A construction site has no type of its own: `buildingsite` chooses
+    /// the sites in a trigger, in `has` and in `order`, as the original's
+    /// class name does. The word is a name a map may use only when the
+    /// rules define it, as in the original.
+    #[test]
+    fn a_trigger_chooses_construction_sites_as_buildingsite() {
+        let map = format!(
+            "{TINY_MAP}trigger all (has 1 buildingsite) (add_objective 1 5)\n\
+             trigger all (has 1 buildingsite) (order (a1 buildingsite) ((cancel_building)))\n"
+        );
+        let ai = AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(Rules::load(&[read("res/rules.txt")]), ai.clone(), vec![], 0);
+        assert_eq!(
+            w.load_and_build_map(&map).map_err(|e| e.0),
+            Err(
+                "unknown: buildingsite (in \"trigger all  ( has 1 buildingsite )   \
+                 ( add_objective 1 5 )\")"
+                    .to_owned()
+            )
+        );
+        let rules = Rules::load(&[read("res/rules.txt"), "def buildingsite\n".to_owned()]);
+        let mut w = World::new(rules, ai, vec![], 0);
+        w.load_and_build_map(&map).unwrap();
+        let cp = w
+            .populate_map(&[Controller::computer("timers")], true, false)
+            .unwrap()[0];
+        set_rule(&mut w, "farm", |s| s.time_cost = 1000 * PRECISION);
+        let resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        w.plm(cp).resources = resources.clone();
+        for _ in 0..10 {
+            w.update();
+        }
+        assert!(w.pl(cp).objectives.is_empty());
+        let peasant = find(&w, cp, "peasant", 0).unwrap();
+        take(&mut w, peasant, "build farm a1");
+        for _ in 0..100 {
+            w.update();
+            if !w.pl(cp).objectives.is_empty() {
+                break;
+            }
+        }
+        // `has` counted the site, and `order` cancelled it: its cost came
+        // back, and no farm was built.
+        let objectives: Vec<&str> = w.pl(cp).objectives.iter().map(|o| &*o.number).collect();
+        assert_eq!(objectives, ["1"]);
+        assert_eq!(nb(&w, cp, "buildingsite"), 0);
+        assert_eq!(nb(&w, cp, "farm"), 1);
+        assert_eq!(w.pl(cp).resources, resources);
     }
 
     #[test]
@@ -1296,7 +1363,7 @@ starting_resources 10 10
         assert!(w.c(p2).unwrap().hp > 0);
         assert!(w.e(p).is_cloaked());
         assert!(w.e(p2).is_cloaked());
-        assert!(w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]
@@ -1318,7 +1385,7 @@ starting_resources 10 10
         w.update();
         assert!(w.e(p).is_cloaked());
         assert!(!w.e(p2).is_cloaked());
-        assert!(!w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(!w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]
@@ -1921,7 +1988,13 @@ starting_resources 100 100
 
     #[test]
     fn a_ranged_enemy_that_harms_makes_its_own_square_cataclysmic() {
-        let (mut w, a, b) = two_humans();
+        let mut w = world_text(TWO_SQUARES);
+        let seats = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+        ];
+        let ps = w.populate_map(&seats, false, false).unwrap();
+        let (a, b) = (ps[0], ps[1]);
         let (a1, b1) = (sq(&w, "a1"), sq(&w, "b1"));
         create(&mut w, "footman", a, b1);
         let archer = create(&mut w, "archer", b, b1);
@@ -1929,11 +2002,15 @@ starting_resources 100 100
         w.em(archer).stats.harm_level = 1;
         w.cm(archer).unwrap().time_limit = Some(1_000_000);
         assert!(is_perceiving(&mut w, a, archer));
-        w.update_enemy_menace_and_presence_and_corpses(a);
+        w.update_enemy_menace_and_tactical_knowledge(a);
         let pl = w.player(a);
-        assert_eq!(pl.cataclysmic_places, [b1].into());
+        let k = pl.tactical_knowledge.as_ref().unwrap();
+        assert!(k.is_cataclysmic(b1));
+        assert!(!k.is_cataclysmic(a1));
         let m = w.e(archer).menace();
         assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
+        // A human keeps no such knowledge.
+        assert!(w.player(b).tactical_knowledge.is_none());
     }
 
     #[test]

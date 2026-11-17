@@ -1129,8 +1129,10 @@ impl World {
         let sub = self.get_subsquare_id_from_xy(e.x, e.y);
         let Some(p) = e.player() else { return };
         for a in self.pl(p).allied.clone() {
-            if self.pl(p).allied.contains(&a) {
-                *self.plm(a).subsquare_threat.entry(sub).or_insert(0) += delta;
+            if self.pl(p).allied.contains(&a)
+                && let Some(k) = &mut self.plm(a).tactical_knowledge
+            {
+                k.note_damage(sub, delta);
             }
         }
     }

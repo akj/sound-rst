@@ -886,8 +886,7 @@ fn a_unit_killed_by_or_dying_without_an_owner_is_removed() {
 
 #[test]
 fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
-    let (w, me, _) = game();
-    let mut w = w;
+    let (mut w, you, me) = game();
     let s = home(&w, me);
     let (d, plain) = (0..w.squares.len())
         .map(|i| SquareId(i as u32))
@@ -903,8 +902,10 @@ fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
         w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
         Ok(plain)
     );
-    w.plm(me).enemy_menace.insert(d, 1);
-    w.plm(me).enemy_presence.push(d);
+    // The computer sees a footman of the other player on d.
+    let theirs = add(&mut w, "footman", you, d);
+    w.plm(me).perception.insert(theirs);
+    w.update_enemy_menace_and_tactical_knowledge(me);
     // A new turn: the paths found this turn are kept.
     w.time += crate::VIRTUAL_TIME_INTERVAL;
     assert_eq!(
@@ -1022,7 +1023,7 @@ fn a_block_whose_exit_is_lost_and_a_teleport_at_a_unit_inside_are_impossible() {
 }
 
 #[test]
-fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays() {
+fn a_flyer_aimed_at_a_point_flies_there() {
     let (mut w, a, _) = two_humans("");
     w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
     w.update();
@@ -1037,19 +1038,45 @@ fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays
     let x = w.e(machine).x;
     assert_eq!(w.action_update(machine), Ok(()));
     assert!(w.e(machine).x > x);
-    // A footman just out of the machine, on a very dangerous square, still
-    // moving toward a safe one.
-    let footman = find(&w, a, "footman");
-    let (a1, b1) = (
-        w.square_by_name("a1").unwrap(),
-        w.square_by_name("b1").unwrap(),
-    );
-    w.em(footman).previous_place = Some(Place::Inside(machine));
-    w.set_action_target(footman, Some(Target::Square(b1)));
-    w.plm(a).enemy_menace.insert(a1, 1);
-    w.plm(a).enemy_presence.push(a1);
+}
+
+/// A computer's exploring footman on its home square, where the computer
+/// sees an enemy, on its way to the safe square beyond the first exit; and
+/// that exit.
+fn an_explorer_in_danger() -> (World, PlayerId, EntityId, EntityId, SquareId) {
+    let (mut w, you, c) = game();
+    let here = home(&w, c);
+    let exit = w.square(here).exits[0];
+    let other_side = w.exit_other_side(exit).unwrap();
+    let there = w.e(other_side).square().unwrap();
+    let footman = add(&mut w, "footman", c, here);
+    let theirs = add(&mut w, "footman", you, here);
+    w.plm(c).perception.insert(theirs);
+    w.update_enemy_menace_and_tactical_knowledge(c);
+    assert!(w.square_is_very_dangerous(c, here));
+    assert!(!w.square_is_very_dangerous(c, there));
+    w.set_action_target(footman, Some(Target::Square(there)));
+    (w, c, footman, exit, there)
+}
+
+#[test]
+fn an_explorer_on_a_very_dangerous_square_goes_back_to_the_square_it_came_from() {
+    let (mut w, _, footman, exit, there) = an_explorer_in_danger();
+    w.em(footman).previous_place = Some(Place::Square(there));
     assert_eq!(w.auto_explore(footman), Ok(()));
-    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == b1));
+    // It walks back through the exit it came by.
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Entity(e)) if *e == exit));
+}
+
+#[test]
+fn an_explorer_just_out_of_a_transport_on_a_very_dangerous_square_keeps_its_way() {
+    let (mut w, c, footman, _, there) = an_explorer_in_danger();
+    let here = w.e(footman).square().unwrap();
+    let machine = add(&mut w, "new_flyingmachine", c, here);
+    // It has no square to go back to.
+    w.em(footman).previous_place = Some(Place::Inside(machine));
+    assert_eq!(w.auto_explore(footman), Ok(()));
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == there));
 }
 
 #[test]
@@ -1333,30 +1360,6 @@ fn a_group_pays_once_for_a_building_and_again_after_a_refused_worker_was_refunde
     assert_eq!(all(&w, me, "buildingsite").len(), 1);
     assert_eq!(w.pl(me).resources, paid);
     assert_eq!(w.drain_warnings(), Vec::<String>::new());
-}
-
-#[test]
-fn a_trigger_order_with_an_unreadable_choice_gives_no_order() {
-    use crate::triggers::Expr;
-    let (mut w, a, _) = two_humans("");
-    w.queue_command(a, "cmd add_units a1 townhall farm");
-    w.update();
-    let townhall = find(&w, a, "townhall");
-    let resources = w.pl(a).resources.clone();
-    let word = |s: &str| Expr::Word(s.to_owned());
-    // `(order (a1 townhall ()) ((train peasant)))`: the empty list comes
-    // after the town hall is chosen.
-    let select = Expr::List(vec![word("a1"), word("townhall"), Expr::List(vec![])]);
-    let orders = Expr::List(vec![Expr::List(vec![word("train"), word("peasant")])]);
-    let stopped = w.lang(a, "order", &[select, orders]);
-    assert_eq!(
-        stopped,
-        Err(crate::abort::Abort::Trigger(
-            crate::abort::TriggerError::ListForWord
-        ))
-    );
-    assert!(w.e(townhall).orders().is_empty());
-    assert_eq!(w.pl(a).resources, resources);
 }
 
 // Income

@@ -80,7 +80,8 @@ impl World {
                 candidates.push((x + dx, y + dy));
             }
         }
-        let threat = |k: &(i64, i64)| self.pl(p).subsquare_threat.get(k).copied().unwrap_or(0);
+        let knowledge = self.pl(p).tactical_knowledge.as_ref();
+        let threat = |k: &(i64, i64)| knowledge.map_or(0, |t| t.threat_on(*k));
         candidates.sort_by_key(threat);
         let sub = candidates[0];
         (
@@ -92,7 +93,7 @@ impl World {
     /// `known_enemies`: the perceived, vulnerable enemy units on a square,
     /// computed once per world time. In id order.
     pub fn known_enemies(&mut self, p: PlayerId, place: SquareId) -> Vec<EntityId> {
-        let cached = self.pl(p).known_enemies.get(&place).cloned();
+        let cached = self.pl(p).known_enemies_cache.get(&place).cloned();
         let list: Vec<EntityId> = match cached {
             Some((t, list)) if t == self.time => list
                 .into_iter()
@@ -124,7 +125,7 @@ impl World {
         };
         let time = self.time;
         self.plm(p)
-            .known_enemies
+            .known_enemies_cache
             .insert(place, (time, list.clone()));
         list
     }
@@ -143,8 +144,18 @@ impl World {
         self.pl(p).enemy_menace.contains_key(&s)
     }
 
+    /// Whether the player knows of an enemy on a dangerous square. Only a
+    /// computer player keeps where it knows of enemies: for any other
+    /// player, no square is very dangerous.
     pub fn square_is_very_dangerous(&self, p: PlayerId, s: SquareId) -> bool {
-        self.square_is_dangerous(p, s) && self.pl(p).enemy_presence.contains(&s)
+        self.square_is_dangerous(p, s) && self.knows_enemies_on(p, s)
+    }
+
+    fn knows_enemies_on(&self, p: PlayerId, s: SquareId) -> bool {
+        self.pl(p)
+            .tactical_knowledge
+            .as_ref()
+            .is_some_and(|k| k.knows_enemies_on(s))
     }
 
     pub fn exit_is_very_dangerous(&self, p: PlayerId, e: EntityId) -> bool {
@@ -154,7 +165,7 @@ impl World {
         let Some(Place::Square(s)) = self.e(os).place else {
             return false;
         };
-        self.pl(p).enemy_menace.contains_key(&s) && self.pl(p).enemy_presence.contains(&s)
+        self.square_is_very_dangerous(p, s)
     }
 
     /// `is_very_dangerous` of a square or an exit. Any other target, such
@@ -254,7 +265,7 @@ impl World {
         self.update_allied_upgrades(p)?;
         self.update_perception_and_memory(p)?;
         self.update_menace(p);
-        self.update_enemy_menace_and_presence_and_corpses(p);
+        self.update_enemy_menace_and_tactical_knowledge(p);
         self.ai_play(p)?;
         self.update_drowning(p)?;
         self.update_counterattacks(p)
@@ -557,7 +568,10 @@ impl World {
         self.plm(p).menace = m;
     }
 
-    pub(crate) fn update_enemy_menace_and_presence_and_corpses(&mut self, p: PlayerId) {
+    /// Finds again, from what the player perceives and remembers, the
+    /// enemy menace by square, and for a computer player the places of its
+    /// tactical knowledge.
+    pub(crate) fn update_enemy_menace_and_tactical_knowledge(&mut self, p: PlayerId) {
         let mut menace: BTreeMap<SquareId, i64> = BTreeMap::new();
         let mut presence: Vec<SquareId> = Vec::new();
         let mut corpses = BTreeSet::new();
@@ -604,10 +618,9 @@ impl World {
         }
         let pl = self.plm(p);
         pl.enemy_menace = menace;
-        pl.enemy_presence = presence;
-        pl.places_with_corpses = corpses;
-        pl.places_with_friends = friends;
-        pl.cataclysmic_places = cataclysmic;
+        if let Some(k) = &mut pl.tactical_knowledge {
+            k.set_places(presence, corpses, friends, cataclysmic);
+        }
     }
 
     fn update_drowning(&mut self, p: PlayerId) -> Res {
@@ -675,7 +688,12 @@ impl World {
         let Some(Target::Square(s)) = target else {
             return false;
         };
-        if self.pl(p).cataclysmic_places.contains(s) {
+        if self
+            .pl(p)
+            .tactical_knowledge
+            .as_ref()
+            .is_some_and(|k| k.is_cataclysmic(*s))
+        {
             return false;
         }
         self.computer_time_has_come(p, *s)
@@ -986,22 +1004,5 @@ impl World {
     /// Whether `o` is an enemy of the player.
     pub fn is_enemy_entity(&self, p: PlayerId, o: EntityId) -> bool {
         self.player_is_an_enemy_of_entity(p, self.e(o))
-    }
-
-    /// The enemy squares the player knows, in discovery order.
-    pub fn enemy_presence(&self, p: PlayerId) -> &[SquareId] {
-        &self.pl(p).enemy_presence
-    }
-
-    pub fn places_with_corpses(&self, p: PlayerId) -> &BTreeSet<SquareId> {
-        &self.pl(p).places_with_corpses
-    }
-
-    pub fn places_with_friends(&self, p: PlayerId) -> &BTreeSet<SquareId> {
-        &self.pl(p).places_with_friends
-    }
-
-    pub fn cataclysmic_places(&self, p: PlayerId) -> &BTreeSet<SquareId> {
-        &self.pl(p).cataclysmic_places
     }
 }
