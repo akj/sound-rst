@@ -80,10 +80,10 @@ const MAX_HOLD: Duration = Duration::from_secs(3600);
 const MAX_OBJECTIVES_SEEN: usize = 4 * soundrts_world::MAX_OBJECTIVES;
 
 /// The most events waiting to be told, with their ends of turn and the
-/// units replaced that the interface keeps until those ends are handled. The interface
-/// tells one event at each pass of its loop, about a thousand a second,
-/// and a busy turn has a few dozen: a server that sends more is not
-/// playing a game.
+/// units replaced that the interface keeps until those ends are handled.
+/// The interface tells one event at each pass of its loop, about a
+/// thousand a second, and a busy turn has a few dozen: a server that
+/// sends more is not playing a game.
 const MAX_WAITING_EVENTS: usize = 65_536;
 
 /// How a turn the server sent enters the interface
@@ -811,23 +811,23 @@ impl GameInterface {
 
     /// Takes a turn the server sent: the only way one enters the
     /// interface. It is refused, before anything of it is taken, when its
-    /// events and its end, with the events waiting and the units replaced
-    /// that the interface keeps, would be more than [`MAX_WAITING_EVENTS`]:
-    /// so the interface never keeps more than that.
+    /// events and its end, if it has one, with the events waiting and the
+    /// units replaced that the interface keeps, would be more than
+    /// [`MAX_WAITING_EVENTS`]: so the interface never keeps more than that.
     pub(super) fn take_server_turn(
         &mut self,
         cx: &mut Client,
         m: Arc<TurnMessage>,
         how: ServerTurn,
     ) -> Result<(), String> {
-        let kept = match how {
+        // What waits already, and the end of the turn, if it has one.
+        let (kept, end) = match how {
             // The watcher starts again from the message.
-            ServerTurn::Follow(_) => 0,
-            ServerTurn::End | ServerTurn::Change => {
-                self.srv_queue.len() + self.known.replacements()
-            }
+            ServerTurn::Follow(_) => (0, 1),
+            ServerTurn::End => (self.srv_queue.len() + self.known.replacements(), 1),
+            ServerTurn::Change => (self.srv_queue.len() + self.known.replacements(), 0),
         };
-        if kept.saturating_add(m.events.len()) >= MAX_WAITING_EVENTS {
+        if kept.saturating_add(m.events.len()).saturating_add(end) > MAX_WAITING_EVENTS {
             return Err("more events than the game can tell".into());
         }
         match how {

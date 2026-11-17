@@ -6,7 +6,8 @@
 //! when a unit takes the place of another (an upgrade).
 //!
 //! A unit replaced in a turn that also tells the player of the new unit
-//! is followed as soon as the turn is taken
+//! (of the last one, when the turn replaced the new one in turn) is
+//! followed as soon as the turn is taken
 //! ([`GameInterface::follow_replaced`]): everything the interface names a
 //! unit by (the group, the selected object, the orders picked, the
 //! commands not yet sent, the selection of a game loaded) names the new
@@ -159,32 +160,14 @@ impl Knowledge {
 
     /// The id the game gives now to each entity shown that a replacement
     /// moved, by the id it was shown with, in one pass over the
-    /// replacements: each moves every entity whose id it names to the new
-    /// one, in order.
+    /// replacements.
     fn ids_now(&self) -> HashMap<EntityId, EntityId> {
-        // The entities shown at each id they have reached, and those that
-        // have left the id they were shown with.
-        let mut at: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
-        let mut moved = HashSet::new();
-        for r in &self.replaced {
+        let steps = self.replaced.iter().map(|r| {
             self.read_a_step();
-            let mut moving = at.remove(&r.old).unwrap_or_default();
-            if self.shown.contains_key(&r.old) && moved.insert(r.old) {
-                moving.push(r.old);
-            }
-            if moving.is_empty() {
-                continue;
-            }
-            let there = at.entry(r.new).or_default();
-            if there.len() < moving.len() {
-                std::mem::swap(there, &mut moving);
-            }
-            there.extend(moving);
-        }
-        let shown_at = at
-            .into_iter()
-            .flat_map(|(now, shown)| shown.into_iter().map(move |s| (s, now)));
-        shown_at.collect()
+            (r.old, r.new)
+        });
+        let starts = |id| self.shown.contains_key(&id);
+        chain_ends(steps, starts).into_iter().collect()
     }
 
     /// The entities shown, in arrival order, each with the id the game
@@ -276,6 +259,43 @@ impl Knowledge {
     }
 }
 
+/// Where the chains of `steps` end, in one pass: each step moves every id
+/// that has reached its old id to its new one, in order, as the world
+/// replaces units; an id that `starts` joins the first time it is a
+/// step's old id. Each id that moved, with the last id it reached, in the
+/// order of the steps that moved them last.
+fn chain_ends(
+    steps: impl Iterator<Item = (EntityId, EntityId)>,
+    starts: impl Fn(EntityId) -> bool,
+) -> Vec<(EntityId, EntityId)> {
+    // The ids that have reached each id, with the step that moved them
+    // there; and the ids that have joined.
+    let mut at: HashMap<EntityId, (usize, Vec<EntityId>)> = HashMap::new();
+    let mut joined = HashSet::new();
+    for (i, (old, new)) in steps.enumerate() {
+        let mut moving = at.remove(&old).map(|(_, ids)| ids).unwrap_or_default();
+        if starts(old) && joined.insert(old) {
+            moving.push(old);
+        }
+        if moving.is_empty() {
+            continue;
+        }
+        let there = at.entry(new).or_insert((i, Vec::new()));
+        there.0 = i;
+        if there.1.len() < moving.len() {
+            std::mem::swap(&mut there.1, &mut moving);
+        }
+        there.1.extend(moving);
+    }
+    let mut ends: Vec<(usize, EntityId, EntityId)> = at
+        .into_iter()
+        .flat_map(|(end, (i, ids))| ids.into_iter().map(move |id| (i, id, end)))
+        .filter(|&(_, id, end)| id != end)
+        .collect();
+    ends.sort_unstable();
+    ends.into_iter().map(|(_, id, end)| (id, end)).collect()
+}
+
 /// Whether `list`, by id, has the entity `id`.
 fn lists(list: &[KnownEntity], id: EntityId) -> bool {
     list.binary_search_by_key(&id, |e| e.id).is_ok()
@@ -283,17 +303,39 @@ fn lists(list: &[KnownEntity], id: EntityId) -> bool {
 
 impl GameInterface {
     /// Takes the end of the turn `end` as it comes, before it waits in the
-    /// queue, and follows each unit it replaced by one it tells the player
-    /// of: everything the interface names the old unit by names the new
-    /// one, as the game does from now on.
+    /// queue, and follows each unit it replaced to the last unit of its
+    /// chain, when the turn tells the player of that one and the copy does
+    /// not show it already: everything the interface names the old unit by
+    /// names the last one, as the game does from now on. A turn that
+    /// catches up others may replace a unit by one that another replaced
+    /// in turn: the units between, which the player is not told of, are
+    /// never named.
     pub(super) fn follow_replaced(&mut self, end: &TurnMessage) {
         self.known.ends_taken += 1;
         let at = self.known.ends_taken;
-        for e in &end.events {
-            let &Event::Replaced { old, new } = e else {
-                continue;
-            };
-            if !lists(&end.perceived, new) && !lists(&end.remembered, new) {
+        let steps: Vec<(EntityId, EntityId)> = end
+            .events
+            .iter()
+            .filter_map(|e| match *e {
+                Event::Replaced { old, new } => Some((old, new)),
+                _ => None,
+            })
+            .collect();
+        // A unit a turn put in place of another starts no chain of its own
+        // in that turn: it is in the middle of one.
+        let mut first_new: HashMap<EntityId, usize> = HashMap::new();
+        let mut first_old: HashMap<EntityId, usize> = HashMap::new();
+        for (i, &(old, new)) in steps.iter().enumerate() {
+            first_old.entry(old).or_insert(i);
+            first_new.entry(new).or_insert(i);
+        }
+        let starts = |id| match (first_new.get(&id), first_old.get(&id)) {
+            (Some(n), Some(o)) => n > o,
+            _ => true,
+        };
+        for (old, new) in chain_ends(steps.iter().copied(), starts) {
+            let told = lists(&end.perceived, new) || lists(&end.remembered, new);
+            if !told || self.known.shown.contains_key(&new) {
                 continue;
             }
             self.known.replaced.push(Replaced { end: at, old, new });
