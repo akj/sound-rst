@@ -809,7 +809,7 @@ impl GameInterface {
         attacker_id: EntityId,
         timing: Timing,
     ) {
-        let attacker = self.dobjets.get(&attacker_id).map(|a| a.model.clone());
+        let attacker = self.known.unit(attacker_id).map(|a| a.model.clone());
         let attacker_player = attacker.as_ref().and_then(|a| a.player);
         if v.player() == Some(self.me) {
             let t = self.short_title(cx, v);
@@ -842,17 +842,17 @@ impl GameInterface {
     /// Plays the noise, footsteps and health of an object near the
     /// listener.
     pub(crate) fn animate(&mut self, cx: &mut Client, id: EntityId) {
-        let Some(v) = self.dobjets.get_mut(&id) else {
+        let Some(v) = self.known.unit_mut(id) else {
             return;
         };
         let mut anim = std::mem::take(&mut v.anim);
-        let v = &self.dobjets[&id];
+        let v = &self.known[id];
         if self.is_local(cx, v) {
             self.footstep(cx, v, &mut anim);
             self.update_noise(cx, v, &mut anim);
             self.render_hp(cx, v, &mut anim);
         }
-        if let Some(v) = self.dobjets.get_mut(&id) {
+        if let Some(v) = self.known.unit_mut(id) {
             v.anim = anim;
         }
     }
@@ -894,8 +894,9 @@ impl GameInterface {
             return result;
         };
         let objects: Vec<&EntityView> = self
-            .dobjets
-            .values()
+            .known
+            .entities()
+            .map(|(_, v)| v)
             .filter(|o| o.place() == Some(Place::Square(s)))
             .collect();
         if objects.len() >= 30 {
@@ -1081,7 +1082,7 @@ mod tests {
         let (h, mut g) = training();
         let me = g.game.me;
         let peasant = unit(&g, me, "peasant");
-        let v = &g.game.dobjets[&peasant];
+        let v = &g.game.known[peasant];
         // On its meadows the peasant steps on the grass of the nearest
         // building or meadow.
         assert_eq!(
@@ -1092,16 +1093,20 @@ mod tests {
         // the steps are on leaves.
         let wood = g
             .game
-            .dobjets
-            .values()
+            .known
+            .entities()
+            .map(|(_, v)| v)
             .find(|o| o.type_name() == "wood")
             .unwrap();
         let mut model = wood.model.clone();
         (model.id, model.place, model.x, model.y, model.last_seen) =
             (EntityId(999_999), v.place(), v.model.x, v.model.y, Some(0));
         let remembered = EntityView::new(model);
-        g.game.dobjets.insert(EntityId(999_999), remembered);
-        let v = &g.game.dobjets[&peasant];
+        g.game
+            .known
+            .copy_mut()
+            .insert(EntityId(999_999), remembered);
+        let v = &g.game.known[peasant];
         assert_eq!(
             g.game.footstep_noise(&h.client, v),
             ["footstep/leaves_1", "footstep/leaves_2"]
@@ -1120,7 +1125,7 @@ mod tests {
         // which it has never seen.
         let me = g.game.me;
         let peasant = unit(&g, me, "peasant");
-        let mut model = g.game.dobjets[&peasant].model.clone();
+        let mut model = g.game.known[peasant].model.clone();
         (model.id, model.player, model.own) = (EntityId(999_999), Some(them), None);
         (model.place, model.last_seen) = (Some(Place::Inside(townhall)), Some(0));
         let v = EntityView::new(model);
@@ -1128,7 +1133,7 @@ mod tests {
         assert!(!g.game.is_in(&v, None));
         assert_eq!(g.game.outer_square(v.place()), None);
         assert_eq!(g.game.place_title(&h.client, Place::Inside(townhall)), []);
-        g.game.dobjets.insert(v.id(), v);
+        g.game.known.copy_mut().insert(v.id(), v);
         let m = g.game.place_summary(&h.client, there, true, None, false);
         assert_eq!(m, []);
     }
@@ -1151,7 +1156,12 @@ mod tests {
         let (mut h, mut g) = training();
         let me = g.game.me;
         let peasant = unit(&g, me, "peasant");
-        let meadow = g.game.dobjets.values().find(|o| o.type_name() == "meadow");
+        let meadow = g
+            .game
+            .known
+            .entities()
+            .map(|(_, v)| v)
+            .find(|o| o.type_name() == "meadow");
         let meadow = meadow.unwrap().id();
         g.game
             .host_mut()
@@ -1250,31 +1260,33 @@ mod tests {
         );
         let footman = {
             run_until(&mut h, &mut g, |g| {
-                g.dobjets.values().any(|v| v.type_name() == "footman")
+                g.known()
+                    .entities()
+                    .any(|(_, v)| v.type_name() == "footman")
             });
             unit(&g, them, "footman")
         };
         let upgrades = |h: &mut crate::testkit::Harness, g: &crate::testkit::TestGame| {
-            let m = g.game.upgrades_status(&h.client, &g.game.dobjets[&footman]);
+            let m = g.game.upgrades_status(&h.client, &g.game.known[footman]);
             said(h, &m)
         };
-        assert!(!g.game.dobjets[&footman].is_memory());
+        assert!(!g.game.known[footman].is_memory());
         assert_eq!(upgrades(&mut h, &g), "swords");
 
         // Out of sight, its owner gains a second upgrade.
         go(&mut g, them, footman, theirs);
-        run_until(&mut h, &mut g, |g| g.dobjets[&footman].is_memory());
+        run_until(&mut h, &mut g, |g| g.known()[footman].is_memory());
         cheat(&mut g, them, "add_units melee_armor");
         let turn = g.game.view().turn() + 2;
         h.run_until_turn(&mut g, turn);
-        assert!(g.game.dobjets[&footman].is_memory());
+        assert!(g.game.known[footman].is_memory());
         let w = g.game.host().world();
         assert_eq!(w.unit_upgrades(footman), ["melee_weapon", "melee_armor"]);
         assert_eq!(upgrades(&mut h, &g), "swords");
 
         // Seen again.
         go(&mut g, them, footman, mine);
-        run_until(&mut h, &mut g, |g| !g.dobjets[&footman].is_memory());
+        run_until(&mut h, &mut g, |g| !g.known()[footman].is_memory());
         assert_eq!(upgrades(&mut h, &g), "swords footmen armors");
     }
 }

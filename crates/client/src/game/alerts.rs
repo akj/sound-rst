@@ -111,7 +111,7 @@ impl GameInterface {
 
     /// Tells economy news once the game has started.
     fn economy_news(&self, cx: &mut Client, news: News) {
-        if self.last_virtual_time != 0.0 {
+        if self.known.time() != 0.0 {
             cx.news(news);
         }
     }
@@ -181,7 +181,7 @@ impl GameInterface {
     /// Says when a kind of unit can do more than before.
     pub(crate) fn send_menu_alerts_if_needed(&mut self, cx: &mut Client) {
         let mut done: Vec<String> = Vec::new();
-        for e in self.seat.own_units() {
+        for e in self.known.seat().own_units() {
             let u = e.id;
             let type_name = e.type_name.to_string();
             if done.contains(&type_name) {
@@ -220,8 +220,9 @@ impl GameInterface {
     fn tell_enemies_in_square(&self, cx: &mut Client, place: Place) {
         let square = self.outer_square(Some(place));
         let enemies: Vec<Msg> = self
-            .dobjets
-            .values()
+            .known
+            .entities()
+            .map(|(_, v)| v)
             .filter(|v| self.is_in(v, square) && self.is_an_enemy(&v.model))
             .map(|v| self.short_title(cx, v))
             .collect();
@@ -376,7 +377,7 @@ impl GameInterface {
     }
 
     pub(crate) fn delete_object(&mut self, cx: &Client, id: EntityId) {
-        if let Some(v) = self.dobjets.shift_remove(&id) {
+        if let Some(v) = self.known.copy_mut().shift_remove(&id) {
             v.stop(&cx.audio);
         }
         self.group.retain(|&g| g != id);
@@ -395,15 +396,20 @@ impl GameInterface {
         let known: std::collections::HashSet<EntityId> =
             memory.iter().chain(&perception).map(|m| m.id).collect();
         for m in memory {
-            if self.dobjets.get(&m.id).is_some_and(|v| !v.is_memory()) {
+            if self
+                .known
+                .copy_mut()
+                .get(&m.id)
+                .is_some_and(|v| !v.is_memory())
+            {
                 self.delete_object(cx, m.id);
             }
-            match self.dobjets.get_mut(&m.id) {
+            match self.known.copy_mut().get_mut(&m.id) {
                 Some(v) => v.model = m,
                 None => {
                     let is_resource = self.resource_type(&m).is_some();
                     let place = m.place;
-                    self.dobjets.insert(m.id, EntityView::new(m));
+                    self.known.copy_mut().insert(m.id, EntityView::new(m));
                     if self.must_report_resource(place, is_resource)
                         && let Some(place) = place
                     {
@@ -413,7 +419,7 @@ impl GameInterface {
             }
         }
         for m in perception {
-            if !self.dobjets.contains_key(&m.id) {
+            if !self.known.copy_mut().contains_key(&m.id) {
                 if self.is_an_enemy(&m) {
                     let v = EntityView::new(m.clone());
                     let t = self.short_title(cx, &v);
@@ -425,18 +431,19 @@ impl GameInterface {
                 {
                     self.scout_info.insert(place);
                 }
-            } else if self.dobjets[&m.id].is_memory() {
+            } else if self.known.copy_mut()[&m.id].is_memory() {
                 self.delete_object(cx, m.id);
             }
-            match self.dobjets.get_mut(&m.id) {
+            match self.known.copy_mut().get_mut(&m.id) {
                 Some(v) => v.model = m,
                 None => {
-                    self.dobjets.insert(m.id, EntityView::new(m));
+                    self.known.copy_mut().insert(m.id, EntityView::new(m));
                 }
             }
         }
         let gone: Vec<EntityId> = self
-            .dobjets
+            .known
+            .copy_mut()
             .keys()
             .copied()
             .filter(|i| !known.contains(i))
@@ -833,7 +840,7 @@ mod tests {
     fn unheard_food_news_follows_the_food() {
         let (mut h, mut g) = training();
         h.run_until_voice_idle(&mut g);
-        g.game.last_virtual_time = 1.0;
+        g.game.known.set_time(1.0);
         cx_news(&mut h, "a long message of news");
         // Food news waits to be said...
         let old = News::new(Category::Economy, msg(Phrase::Nothing)).about(Subject::Food);
@@ -848,7 +855,7 @@ mod tests {
     fn food_news_waiting_follows_usage_that_goes_down_then_up() {
         let (mut h, mut g) = training();
         h.run_until_voice_idle(&mut g);
-        g.game.last_virtual_time = 1.0;
+        g.game.known.set_time(1.0);
         cx_news(&mut h, "a long message of news");
         let old = News::new(Category::Economy, msg(Phrase::Nothing)).about(Subject::Food);
         h.client.news(old);

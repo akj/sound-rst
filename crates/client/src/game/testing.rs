@@ -72,7 +72,7 @@ pub(crate) fn cheat(g: &mut TestGame, p: PlayerId, line: &str) {
 pub(crate) fn step(g: &mut TestGame) {
     let me = g.game.me;
     let report = g.game.host_mut().step(me);
-    g.game.seat.install(report.message);
+    g.game.known.seat_mut().install(report.message);
 }
 
 /// Orders `unit` of `p` to go to the center of `square`.

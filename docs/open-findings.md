@@ -564,7 +564,7 @@ First two checked today; the rest from the review. Nothing measured. Size: small
 
 ### C5. Two very large structures
 
-**Open**, with one part done. A thing on the map had 44 fields shared by every kind; since pull request 72 it has 10 and one enum of its kinds, each with its own state (`Kind` and `CreatureKind` in `crates/world/src/entity.rs`). The world still exposes its main fields, though only the simulation and its tests can reach them (C2). The interface structure, `GameInterface` in `crates/client/src/game/mod.rs`, is still one large structure. The long functions were not measured again.
+**Open**, with one part done. A thing on the map had 44 fields shared by every kind; since pull request 72 it has 10 and one enum of its kinds, each with its own state (`Kind` and `CreatureKind` in `crates/world/src/entity.rs`). The world still exposes its main fields, though only the simulation and its tests can reach them (C2). The interface structure, `GameInterface` in `crates/client/src/game/mod.rs`, is still one large structure, less what the player knows of the game: the seat's view, the interface's copies of the entities and squares, and the step from an upgraded unit to the new one are one structure of their own (`Knowledge` in `crates/client/src/game/knowledge.rs`, issue 110). The long functions were not measured again.
 
 From the review. Size: medium each. Low priority.
 
@@ -669,7 +669,7 @@ From the review of pull request 51. **Fixed** in pull request 62, in the recorde
 
 **Now.** When a unit is upgraded, the interface moves its group and its selected object to the new unit. An order already picked from the menu and waiting for a target is not moved. It still names the unit it was listed for, which no longer exists.
 
-**Where.** `crates/client/src/game/selection.rs`, `follow_replaced_units`. The order's `unit` field is on `OrderTypeView` in `crates/client/src/game/order.rs`.
+**Where.** `crates/client/src/game/knowledge.rs`, `follow_replaced`. The order's `unit` field is on `OrderTypeView` in `crates/client/src/game/order.rs`.
 
 ### N6. A converted unit can keep more hit points than its new maximum
 

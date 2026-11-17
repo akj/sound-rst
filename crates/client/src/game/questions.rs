@@ -59,7 +59,7 @@ impl GameInterface {
         let style = cx.res.style();
         let mut productions: Vec<((bool, i64), Msg)> = Vec::new();
         for id in self.units(cx, true, false) {
-            let v = &self.dobjets[&id];
+            let v = &self.known[id];
             let Some((o, left)) = v.orders().first().and_then(|o| Some((o, o.time_left?))) else {
                 continue;
             };
@@ -97,7 +97,7 @@ impl GameInterface {
         let workers: Vec<_> = self
             .units(cx, true, false)
             .into_iter()
-            .map(|id| &self.dobjets[&id])
+            .map(|id| &self.known[id])
             .filter(|v| types.iter().any(|t| t == v.type_name()))
             .collect();
         if workers.is_empty() {
@@ -218,7 +218,7 @@ impl GameInterface {
         let view = self.view();
         let (mut ours, mut theirs) = (Vec::new(), Vec::new());
         let (mut our_threat, mut their_threat) = (0i64, 0i64);
-        for v in self.dobjets.values() {
+        for (_, v) in self.known.entities() {
             if v.is_memory() || !self.is_in(v, self.place) {
                 continue;
             }

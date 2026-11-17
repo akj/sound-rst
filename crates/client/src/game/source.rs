@@ -217,7 +217,7 @@ impl GameInterface {
             Source::Replay(r) => r.game_end(self.me),
         };
         if let Some(end) = end {
-            self.seat.install_end(end);
+            self.known.seat_mut().install_end(end);
         }
     }
 
@@ -481,10 +481,10 @@ impl GameInterface {
             return;
         };
         if told.seat == self.me {
-            self.seat.install(told);
+            self.known.seat_mut().install(told);
         } else {
             self.me = told.seat;
-            self.seat = SeatView::new(l.host.game_start(), told);
+            *self.known.seat_mut() = SeatView::new(l.host.game_start(), told);
             self.objectives_seen.clear();
             self.objective_at = None;
         }

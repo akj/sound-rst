@@ -97,13 +97,8 @@ impl GameInterface {
         let GameInterface {
             source,
             me,
-            seat,
+            known,
             speed: _,
-            dobjets,
-            scouted_squares,
-            scouted_before_squares,
-            last_virtual_time: _,
-            turns_handled: _,
             place,
             target,
             zoom,
@@ -145,10 +140,7 @@ impl GameInterface {
             orders_list: _,
         } = self;
         *me = m.seat;
-        *seat = SeatView::new(start, Arc::clone(&m));
-        dobjets.clear();
-        scouted_squares.clear();
-        scouted_before_squares.clear();
+        known.restart(SeatView::new(start, Arc::clone(&m)));
         *place = None;
         *target = None;
         *zoom = None;

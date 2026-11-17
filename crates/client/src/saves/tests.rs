@@ -380,9 +380,13 @@ fn upgraded_while_selected(loaded: bool) {
         }
         g.game.run_turn(&mut h.client);
     }
-    let selected: &[EntityId] = if loaded { &[] } else { &[archer] };
-    assert_eq!(g.game.group, selected, "the turn is not taken yet");
     let dark = unit(&g, me, "darkarcher");
+    let shown = g.game.known().unit(dark).map(|v| v.type_name().to_owned());
+    assert_eq!(
+        shown.as_deref(),
+        Some("archer"),
+        "the end of the turn waits"
+    );
     let path = g.game.save_game(&mut h.client, Slot::New).unwrap();
     assert_eq!(read_save(&path).unwrap().header.selection, [dark]);
 }
