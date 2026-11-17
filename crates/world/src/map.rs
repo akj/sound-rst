@@ -731,7 +731,12 @@ impl World {
                                 words(&t.condition),
                                 words(&t.action),
                             ],
-                            t.owners.clone(),
+                            format!(
+                                "{} ( {} ) ( {} )",
+                                t.owners,
+                                t.condition.join(" "),
+                                t.action.join(" ")
+                            ),
                         )
                     })
                     .collect()

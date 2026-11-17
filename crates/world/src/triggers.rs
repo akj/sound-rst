@@ -4,7 +4,7 @@
 
 use crate::abort::Res;
 use crate::command::{Cheat, Command, Order, Queue};
-use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
+use crate::entity::{Entity, EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event};
 use crate::map::MAX_START_UNITS;
 use crate::msg::{Cue, Msg, MsgPart, cue, msg};
@@ -133,9 +133,9 @@ pub(crate) enum Condition {
     /// map gives are multiplied by its timer coefficient.
     Timer { from_second: i64 },
     /// `has [<count>] <type>...`: the player has at least the count of
-    /// units of each type, 1 if none is given. A count of 0 asks for no
-    /// unit of the type.
-    Has(Vec<(i64, TypeId)>),
+    /// units of each type, or of construction sites, 1 if none is given. A
+    /// count of 0 asks for none.
+    Has(Vec<(i64, Chosen)>),
     /// `has_entered <square>...`: a present unit of the first player is on
     /// one of the squares.
     HasEntered(Vec<SquareId>),
@@ -156,11 +156,11 @@ pub(crate) enum Action {
     /// `order (<units>) ((<order>)...)`: each unit of the player that the
     /// first list chooses takes the orders in turn.
     Order {
-        units: Vec<Units>,
+        units: Vec<Units<Chosen>>,
         orders: Vec<Request>,
     },
     /// `add_units <units>`: adds the units, or gives an upgrade.
-    AddUnits(Vec<Units>),
+    AddUnits(Vec<Units<TypeId>>),
     /// `victory`
     Victory,
     /// `defeat`
@@ -178,12 +178,43 @@ pub(crate) enum Action {
 }
 
 /// Units of a type on a square, as `add_units` and `order` name them:
-/// `a1 2 footman` is 2 footmen on `a1`.
+/// `a1 2 footman` is 2 footmen on `a1`. `add_units` names a [`TypeId`],
+/// `order` a [`Chosen`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Units {
+pub(crate) struct Units<T> {
     square: SquareId,
     count: i64,
-    ty: TypeId,
+    ty: T,
+}
+
+/// The units that `has` and `order` choose: those of a type, or the
+/// construction sites, which have no type of their own. The word
+/// `buildingsite` names the sites, as the original's class name does, and
+/// also the units of a type of that name if the rules define one: the
+/// original compares the name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Chosen {
+    Type(TypeId),
+    BuildingSite { or_type: Option<TypeId> },
+}
+
+impl Chosen {
+    fn read(w: &World, x: &str) -> Result<Chosen, String> {
+        if x == "buildingsite" {
+            let or_type = w.rules.type_id(x);
+            return Ok(Chosen::BuildingSite { or_type });
+        }
+        type_named(w, x).map(Chosen::Type)
+    }
+
+    fn matches(self, e: &Entity) -> bool {
+        match self {
+            Chosen::Type(t) => e.type_id() == Some(t),
+            Chosen::BuildingSite { or_type } => {
+                e.is_building_site() || or_type.is_some_and(|t| e.type_id() == Some(t))
+            }
+        }
+    }
 }
 
 impl Trigger {
@@ -264,12 +295,13 @@ fn named(words: &[&str]) -> Result<Msg, String> {
 /// the next types are, a count how many of the next type there are, 1 if
 /// none is given. Before any square, the units are on `square`, or on
 /// `a1`.
-fn read_units(
+fn read_units<T>(
     w: &World,
     words: &[&str],
     square: Option<SquareId>,
     count: impl Fn(&str) -> Result<i64, String>,
-) -> Result<Vec<Units>, String> {
+    ty: impl Fn(&World, &str) -> Result<T, String>,
+) -> Result<Vec<Units<T>>, String> {
     let mut square = square.or_else(|| w.square_by_name("a1"));
     let mut n = 1;
     let mut units = Vec::new();
@@ -280,7 +312,7 @@ fn read_units(
         } else if is_digits(x) {
             n = count(x)?;
         } else {
-            let ty = type_named(w, x)?;
+            let ty = ty(w, x)?;
             let square = square.ok_or("no square a1")?;
             units.push(Units {
                 square,
@@ -300,10 +332,9 @@ pub(crate) fn units_to_add(
     w: &World,
     words: &[&str],
     square: Option<SquareId>,
-) -> Result<Vec<Units>, String> {
-    read_units(w, words, square, |x| {
-        Ok(py_int(x).unwrap_or(1).min(MAX_START_UNITS))
-    })
+) -> Result<Vec<Units<TypeId>>, String> {
+    let count = |x: &str| Ok(py_int(x).unwrap_or(1).min(MAX_START_UNITS));
+    read_units(w, words, square, count, type_named)
 }
 
 /// Reads an order that a trigger gives (`go b1`, `train footman`). It
@@ -351,7 +382,7 @@ impl Condition {
                     if is_digits(x) {
                         count = number(x)?;
                     } else {
-                        needed.push((count, type_named(w, x)?));
+                        needed.push((count, Chosen::read(w, x)?));
                         count = 1;
                     }
                 }
@@ -380,7 +411,7 @@ impl Action {
             let [Expr::List(choice), Expr::List(orders)] = args else {
                 return Err("order takes the units, then the orders, each a list".to_owned());
             };
-            let units = read_units(w, &words(choice)?, None, number)?;
+            let units = read_units(w, &words(choice)?, None, number, Chosen::read)?;
             let orders = orders
                 .iter()
                 .map(|o| match o {
@@ -446,10 +477,10 @@ impl World {
     pub(crate) fn holds(&self, p: PlayerId, condition: &Condition) -> bool {
         match condition {
             &Condition::Timer { from_second } => self.time / 1000 >= from_second,
-            Condition::Has(needed) => needed.iter().all(|&(count, ty)| {
+            Condition::Has(needed) => needed.iter().all(|&(count, chosen)| {
                 let mut left = count;
                 for &u in &self.pl(p).units {
-                    if self.e(u).type_id() == Some(ty) {
+                    if chosen.matches(self.e(u)) {
                         left -= 1;
                         if left == 0 {
                             break;
@@ -545,14 +576,14 @@ impl World {
     }
 
     /// Gives the orders to the units of the player that `units` choose.
-    fn give_orders(&mut self, p: PlayerId, units: &[Units], orders: &[Request]) -> Res {
+    fn give_orders(&mut self, p: PlayerId, units: &[Units<Chosen>], orders: &[Request]) -> Res {
         for u in units {
             let mut n = u.count;
             // The list may change while orders are given, as in the
             // original, which walks it by index.
             let mut i = 0;
             while let Some(&o) = self.square(u.square).objects.get(i) {
-                if self.e(o).type_id() == Some(u.ty) && self.e(o).player() == Some(p) {
+                if u.ty.matches(self.e(o)) && self.e(o).player() == Some(p) {
                     for order in orders {
                         self.take_order(o, order.clone(), false, false, None)?;
                     }
@@ -569,7 +600,7 @@ impl World {
 
     /// `lang_add_units`: adds units, or gives upgrades, each unit with an
     /// event that it is added.
-    pub(crate) fn add_units(&mut self, p: PlayerId, units: &[Units]) {
+    pub(crate) fn add_units(&mut self, p: PlayerId, units: &[Units<TypeId>]) {
         for u in units {
             let add = Added {
                 square: u.square,

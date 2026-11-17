@@ -575,6 +575,56 @@ starting_resources 10 10
         assert_eq!(nb(&w, cp, "farm"), 2);
     }
 
+    /// A construction site has no type of its own: `buildingsite` chooses
+    /// the sites in a trigger, in `has` and in `order`, as the original's
+    /// class name does. The word is a name a map may use only when the
+    /// rules define it, as in the original.
+    #[test]
+    fn a_trigger_chooses_construction_sites_as_buildingsite() {
+        let map = format!(
+            "{TINY_MAP}trigger all (has 1 buildingsite) (add_objective 1 5)\n\
+             trigger all (has 1 buildingsite) (order (a1 buildingsite) ((cancel_building)))\n"
+        );
+        let ai = AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(Rules::load(&[read("res/rules.txt")]), ai.clone(), vec![], 0);
+        assert_eq!(
+            w.load_and_build_map(&map).map_err(|e| e.0),
+            Err(
+                "unknown: buildingsite (in \"trigger all  ( has 1 buildingsite )   \
+                 ( add_objective 1 5 )\")"
+                    .to_owned()
+            )
+        );
+        let rules = Rules::load(&[read("res/rules.txt"), "def buildingsite\n".to_owned()]);
+        let mut w = World::new(rules, ai, vec![], 0);
+        w.load_and_build_map(&map).unwrap();
+        let cp = w
+            .populate_map(&[Controller::computer("timers")], true, false)
+            .unwrap()[0];
+        set_rule(&mut w, "farm", |s| s.time_cost = 1000 * PRECISION);
+        let resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        w.plm(cp).resources = resources.clone();
+        for _ in 0..10 {
+            w.update();
+        }
+        assert!(w.pl(cp).objectives.is_empty());
+        let peasant = find(&w, cp, "peasant", 0).unwrap();
+        take(&mut w, peasant, "build farm a1");
+        for _ in 0..100 {
+            w.update();
+            if !w.pl(cp).objectives.is_empty() {
+                break;
+            }
+        }
+        // `has` counted the site, and `order` cancelled it: its cost came
+        // back, and no farm was built.
+        let objectives: Vec<&str> = w.pl(cp).objectives.iter().map(|o| &*o.number).collect();
+        assert_eq!(objectives, ["1"]);
+        assert_eq!(nb(&w, cp, "buildingsite"), 0);
+        assert_eq!(nb(&w, cp, "farm"), 1);
+        assert_eq!(w.pl(cp).resources, resources);
+    }
+
     #[test]
     fn test_count_limit_build_queued() {
         let (mut w, cp) = tiny_set_up();

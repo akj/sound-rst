@@ -512,6 +512,26 @@ fn a_trigger_naming_what_does_not_exist_refuses_the_map_with_its_line() {
             "trigger all (timer 0) (faction footman)",
             "no faction footman (in \"trigger all ( timer 0 ) ( faction footman )\")",
         ),
+        // A type inside an order.
+        (
+            "trigger players (timer 0) (order (a1 footman) ((train easy)))",
+            "no type easy (in \"trigger players ( timer 0 ) ( order ( a1 footman ) ( ( train easy ) ) )\")",
+        ),
+        // An action where the condition goes.
+        (
+            "trigger player1 (add_units a1 footman) (victory)",
+            "add_units is not a condition (in \"trigger player1 ( add_units a1 footman ) ( victory )\")",
+        ),
+        // A condition without its parentheses.
+        (
+            "trigger player1 timer (victory)",
+            "timer is not in parentheses (in \"trigger player1 timer ( victory )\")",
+        ),
+        // A number too large to be finite.
+        (
+            "trigger player1 (timer 1e999) (victory)",
+            "1e999 is not a number (in \"trigger player1 ( timer 1e999 ) ( victory )\")",
+        ),
     ] {
         let mut w = World::new(common::rules(), common::ai(), Vec::new(), 0);
         let refused = w.load_and_build_map(&format!("{map}\n{trigger}\n"));

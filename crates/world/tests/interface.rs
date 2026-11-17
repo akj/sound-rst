@@ -6,7 +6,7 @@ mod common;
 use soundrts_world::events::{EntityEvent, Event};
 use soundrts_world::msg::{Cue, cue};
 use soundrts_world::orders::Keyword;
-use soundrts_world::{Controller, PlayerId, World, multiplayer_default_triggers};
+use soundrts_world::{Cheat, Command, Controller, PlayerId, World, multiplayer_default_triggers};
 
 fn game() -> (World, PlayerId, PlayerId) {
     let mut w = World::new(
@@ -97,29 +97,39 @@ fn add_units_adds_at_most_as_many_units_as_the_starts_of_a_map() {
     assert_eq!(added + refused, 10_000);
 }
 
-/// A cheat typed in the console is read as a map's action is. One that
-/// names nothing, or a type that does not exist, changes nothing: the
-/// player hears one beep.
+/// A cheat typed in the console is read as a map's action is: `a footman
+/// fotman` adds units on the square the player is on, and `fly` is an
+/// action. One that names nothing, or a type that does not exist, changes
+/// nothing: all the seat is told is one beep.
 #[test]
 fn a_cheat_that_names_nothing_beeps_once_and_adds_nothing() {
     let (mut w, me, _) = game();
     w.allow_cheatmode = true;
+    let a1 = w.square_by_name("a1").unwrap();
     let footmen = |w: &World| w.entities().filter(|e| &*e.type_name == "footman").count();
-    for cheat in ["cmd add_units a1 footman fotman", "cmd fly"] {
-        w.drain_events(me);
-        w.queue_command(me, cheat);
+    for cheat in [
+        Cheat::AddUnits {
+            square: Some(a1),
+            units: "footman fotman".to_owned(),
+        },
+        Cheat::Trigger("add_units a1 footman fotman".to_owned()),
+        Cheat::Trigger("fly".to_owned()),
+    ] {
         w.update();
-        let beeps = w
-            .drain_events(me)
-            .into_iter()
-            .filter(|e| *e == Event::VoiceImportant(cue(Cue::Beep)))
-            .count();
-        assert_eq!(beeps, 1, "{cheat}");
-        assert_eq!(footmen(&w), 0, "{cheat}");
+        w.drain_events(me);
+        w.queue(me, Command::Cheat(cheat.clone()));
+        w.update();
+        assert_eq!(
+            w.drain_events(me),
+            [Event::VoiceImportant(cue(Cue::Beep))],
+            "{cheat:?}"
+        );
+        assert_eq!(footmen(&w), 0, "{cheat:?}");
     }
     assert_eq!(
         w.drain_warnings(),
         [
+            "cheat refused: no type fotman",
             "cheat refused: no type fotman",
             "cheat refused: fly is not an action"
         ]

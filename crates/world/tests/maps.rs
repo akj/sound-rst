@@ -409,3 +409,63 @@ fn removed_meadows_take_the_first_meadow_left_on_their_square() {
     };
     assert_eq!((meadows("a1"), meadows("b1")), (2, 0));
 }
+
+/// A timer's number is read when the map loads and multiplied by the map's
+/// timer coefficient: the trigger first runs at the first check of the
+/// triggers on or after that second. `0.1 * 30` is 3 seconds, `0.25 * 30`
+/// is 7.5, and a time of 0 or less runs at the first check.
+#[test]
+fn a_timer_runs_at_the_second_its_number_gives() {
+    let text = "square_width 12\nnb_columns 3\nnb_lines 3\nstarting_squares a1\n\
+                starting_units townhall farm peasant\ntimer_coefficient 30\n\
+                trigger all (timer 0.1) (add_objective 1 1)\n\
+                trigger all (timer 0) (add_objective 2 2)\n\
+                trigger all (timer -1) (add_objective 3 3)\n\
+                trigger all (timer 0.25) (add_objective 4 4)\n";
+    let mut w = build(
+        &joined(&["res/rules.txt"]),
+        &joined(&["res/ai.txt"]),
+        text,
+        0,
+    )
+    .unwrap();
+    let me = w
+        .populate_map(&[Controller::human("me", true)], true, true)
+        .unwrap()[0];
+    let mut first_run: Vec<(String, i64)> = Vec::new();
+    for _ in 0..40 {
+        w.update();
+        for o in &w.player(me).objectives {
+            if !first_run.iter().any(|(n, _)| *n == o.number) {
+                first_run.push((o.number.clone(), w.time));
+            }
+        }
+    }
+    // The milliseconds of the first run, the same as when the number was
+    // read at each check.
+    let expected = [("2", 1500), ("3", 1500), ("1", 3300), ("4", 8400)];
+    let first_run: Vec<(&str, i64)> = first_run.iter().map(|(n, t)| (&**n, *t)).collect();
+    assert_eq!(first_run, expected);
+}
+
+/// A default trigger of the game type that names nothing refuses the map,
+/// and the refusal quotes the whole trigger.
+#[test]
+fn a_default_trigger_naming_nothing_is_refused_with_its_words() {
+    let mut w = World::new(
+        Rules::load(&[joined(&["res/rules.txt"])]),
+        AiScripts::load(&[joined(&["res/ai.txt"])]),
+        vec![soundrts_world::DefaultTrigger {
+            owners: "players".to_owned(),
+            condition: vec!["has".to_owned(), "easy".to_owned()],
+            action: vec!["victory".to_owned()],
+        }],
+        0,
+    );
+    let text = "square_width 12\nnb_columns 3\nnb_lines 3\nstarting_squares a1\n\
+                starting_units townhall farm peasant\n";
+    assert_eq!(
+        w.load_and_build_map(text).map_err(|e| e.0),
+        Err("no type easy (in \"trigger players ( has easy ) ( victory )\")".to_owned())
+    );
+}
