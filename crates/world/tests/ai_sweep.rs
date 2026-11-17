@@ -10,8 +10,11 @@
 //! ```
 //!
 //! The ladder plays each skill level against the level above it, one
-//! against one, and checks that the higher level wins 70 to 85 percent of
-//! the games:
+//! against one. Up to Normal, it checks that the higher level wins 70 to
+//! 85 percent of the games. Above Normal, it checks that the higher level
+//! wins at least 65 percent of all games and at least 55 percent of the
+//! games on each map. A draw counts as a game the higher level did not
+//! win:
 //!
 //! ```text
 //! cargo test --release -p soundrts-world --test ai_sweep ladder -- --ignored --nocapture
@@ -34,7 +37,7 @@
 //! - `LADDER_TURNS`: the turn limit of a game of the ladder (12,000 by
 //!   default, 60 minutes of game time). A game at the limit is a draw.
 //! - `LADDER_PAIRS`: the pairs of levels the ladder plays, the lower level
-//!   first (`1-2,2-3` by default). The ladder checks its band for each
+//!   first (`1-2,2-3,3-4` by default). The ladder checks its band for each
 //!   pair it plays.
 //! - `LADDER_DETAILS`: `1` to print the sweep's measures of each game of
 //!   the ladder too. The ladder runs slower with them.
@@ -625,13 +628,16 @@ fn pair(text: &str) -> (Skill, Skill) {
         .and_then(|(a, b)| Some((level(a)?, level(b)?)));
     match pair {
         Some((lower, higher)) if lower < higher => (lower, higher),
-        _ => panic!("LADDER_PAIRS: {text} is not two levels from 1 to 3, the lower first"),
+        _ => panic!("LADDER_PAIRS: {text} is not two levels from 1 to 4, the lower first"),
     }
 }
 
-/// The lines of the ladder's report for one pair of levels, with whether
-/// the higher level won 70 to 85 percent of the games.
-fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, bool) {
+/// The lines of the ladder's report for one pair of levels, with how the
+/// pair missed its bar, if it did. Up to Normal, the higher level must win
+/// 70 to 85 percent of the games. Above Normal, it must win at least 65
+/// percent of all games and at least 55 percent on each map. A draw is a
+/// game it did not win.
+fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, Vec<String>) {
     let (lower, higher) = (games[0].0.lower.number(), games[0].0.higher.number());
     let head = format!("level {lower} against level {higher}");
     let count = |games: &[&(&Rung, &Climbed)], w: Winner| {
@@ -646,10 +652,19 @@ fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, boo
             count(games, Winner::Draw),
         )
     };
+    let above_normal = games[0].0.higher > Skill::NORMAL;
     let mut out = Vec::new();
+    let mut missed = Vec::new();
     for map in maps {
         let on: Vec<_> = games.iter().filter(|(r, _)| r.map == map).collect();
         out.push(format!("{head} on {map}: {}", tally(&on)));
+        let won = count(&on, Winner::Higher);
+        if above_normal && won * 100 < 55 * on.len() {
+            missed.push(format!(
+                "on {map}, level {higher} won {won} of {} games against level {lower}, less than 55 percent",
+                on.len()
+            ));
+        }
     }
     let all: Vec<_> = games.iter().collect();
     let n = all.len();
@@ -682,7 +697,18 @@ fn pair_lines(maps: &[String], games: &[(&Rung, &Climbed)]) -> (Vec<String>, boo
         costs[n - 1],
         total * 1000 / u128::try_from(turns.max(1)).unwrap()
     ));
-    (out, (70 * n..=85 * n).contains(&(wins * 100)))
+    if above_normal {
+        if wins * 100 < 65 * n {
+            missed.push(format!(
+                "level {higher} won {wins} of {n} games against level {lower}, less than 65 percent"
+            ));
+        }
+    } else if !(70 * n..=85 * n).contains(&(wins * 100)) {
+        missed.push(format!(
+            "level {higher} won {wins} of {n} games against level {lower}, outside 70 to 85 percent"
+        ));
+    }
+    (out, missed)
 }
 
 #[test]
@@ -696,7 +722,7 @@ fn ladder_each_level_beats_the_level_below() {
     let ai = env_or("SWEEP_AI", "aggressive");
     assert!(!ai.contains(','), "SWEEP_AI: the ladder takes one type");
     let turns: usize = env_or("LADDER_TURNS", "12000").parse().unwrap();
-    let pairs: Vec<(Skill, Skill)> = env_or("LADDER_PAIRS", "1-2,2-3")
+    let pairs: Vec<(Skill, Skill)> = env_or("LADDER_PAIRS", "1-2,2-3,3-4")
         .split(',')
         .map(pair)
         .collect();
@@ -760,18 +786,16 @@ fn ladder_each_level_beats_the_level_below() {
             .zip(&climbed)
             .filter(|(r, _)| (r.lower, r.higher) == (lower, higher))
             .collect();
-        let (lines, in_band) = pair_lines(&maps, &games);
+        let (lines, pair_missed) = pair_lines(&maps, &games);
         for line in lines {
             eprintln!("{line}");
         }
-        if !in_band {
-            missed.push(format!("{} against {}", lower.number(), higher.number()));
-        }
+        missed.extend(pair_missed);
     }
     assert!(
         missed.is_empty(),
-        "the higher level won less than 70 or more than 85 percent of the games: {}",
-        missed.join(", ")
+        "a pair of levels missed its bar: {}",
+        missed.join("; ")
     );
 }
 

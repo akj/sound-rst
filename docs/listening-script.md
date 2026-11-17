@@ -1,10 +1,10 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, and part 14, a cheat that the console cannot read, added with issue #107.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, part 14, a cheat that the console cannot read, added with issue #107, and part 15, a computer at level 4, added with issue #86.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
-The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 and parts 11, 13 and 14 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
+The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 and parts 11, 13, 14 and 15 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
 
 ## How to report
 
@@ -363,3 +363,23 @@ A cheat is now read whole before any of it is done. A cheat with a mistake in it
 14.2. Open the console again, type `fly`, and press Enter. Expected: a beep.
 
 14.3. Open the console again, type `a footman`, and press Enter. Expected: the sound of a unit added, and "footman 1 at b 1". It is footman 1, so step 14.1 added none.
+
+## Part 15. A computer at level 4
+
+A computer can now play at level 4, which won most measured one-on-one games between aggressive computers against level 3, with the same resources. Wherever you choose a computer's level, the menu now offers level 4 after level 3. This part needs only you. It changes the level of the campaign's computers: step 15.8 puts it back. For a step that fails, report what you heard: "15.3 fail: no level 4".
+
+15.1. Start the game. Press Down, then Enter. Expected: "single player". Press Down three times. Expected: "start a game on". Press Enter, then press J until you hear "jl1 1", and press Enter. Expected: "please make a selection".
+
+15.2. Press Down, then Enter. Expected: "invite quiet computer, level 3", then "please make a selection".
+
+15.3. Press Down eight times. Expected, on the last two: "set quiet computer, level 3, to level 2", then "set quiet computer, level 3, to level 4".
+
+15.4. Press Enter. Expected: "set quiet computer, level 3, to level 4", then "please make a selection".
+
+15.5. Press Down. Expected: "start". Press Enter, and when the game has started, press F11. Expected: "player, quiet computer, level 4".
+
+15.6. Press F10, Down, then Enter, to cancel the game. Expected: "cancel game", the statistics, which end with "press F5 to listen again", then "please make a selection": the single player menu.
+
+15.7. Press C, then Enter. Expected: "campaign". Press Down past the chapters until you hear "set the computers, level 3, to level 2". Press Down once more. Expected: "set the computers, level 3, to level 4". Press Enter. Expected: "set the computers, level 3, to level 4", then "campaign".
+
+15.8. Press Down past the chapters until you hear "set the computers, level 4, to level 1". Press Down twice more. Expected: "set the computers, level 4, to level 2", then "set the computers, level 4, to level 3". Press Enter, to put the level back. Expected: "set the computers, level 4, to level 3".

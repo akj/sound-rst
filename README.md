@@ -9,7 +9,7 @@ The port imports the original game's data: rules, maps, sounds, translations, an
 Single-player and multiplayer games work.
 
 - The main menu, the options menu (login, sound and speech, mods, soundpacks), and the single-player menus.
-- Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`), each quiet or aggressive computer at a level from 1 to 3, and an income for each player. See [Levels and income](#levels-and-income). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
+- Games against the computer on every multiplayer map, with the quiet computer (`easy`), the aggressive computer, and the random computer (`ai2`), each quiet or aggressive computer at a level from 1 to 4, and an income for each player. See [Levels and income](#levels-and-income). The random computer gives random orders, has its resources set to 1000 of each every time it plays, and ignores requirements; the game names it "random computer with unlimited resources and no requirements" wherever you choose or hear it.
 - The campaigns, with cut scenes, objectives, the chapter bookmark, and the level of their computers.
 - Saving and loading a single-player game. See [Saved games](#saved-games).
 - Listening to a recorded game, yours or someone else's. See [Listen to a game](#listen-to-a-game).
@@ -88,7 +88,7 @@ The map lists remember the map you chose last and open on it: press Down to hear
 
 ### Levels and income
 
-In the players menu of a training game, the invite items add a quiet computer, an aggressive computer or the random computer. The game names a quiet or an aggressive computer with its level, for example "quiet computer, level 3", in the menus and in the game. A computer starts at level 3, which plays as the original's computers do. Levels 1 and 2 are weaker. The menu has a choice for each other level, for example "set quiet computer, level 3, to level 2". The random computer has no level.
+In the players menu of a training game, the invite items add a quiet computer, an aggressive computer or the random computer. The game names a quiet or an aggressive computer with its level, for example "quiet computer, level 3", in the menus and in the game. A computer starts at level 3, which plays as the original's computers do. Levels 1 and 2 are weaker. Against level 3 in one-on-one tests between aggressive computers, level 4 won about three games in four over four maps, and about half on jl1. It has the same resources and knowledge as level 3, but it trains more workers when it has resources to spare, builds more barracks, researches upgrades as soon as it can pay for them, and trains soldiers when it knows of more enemy soldiers than it has. The menu has a choice for each other level, for example "set quiet computer, level 3, to level 2". The random computer has no level.
 
 Every player but the random computer also has an income: the share of what the player's workers gather that the player receives. It is 100 percent unless you change it to 50, 75, 150 or 200 percent, for example with "set player to 150 percent income". The menu then names the player with the income: "player, 150 percent income". An income evens out a game between players of different strength. The random computer has no income to set, because its resources are set to 1000 of each anyway.
 
