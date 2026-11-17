@@ -352,9 +352,9 @@ impl<C> Bindings<C> {
             let numbers = source_lines(&file.text);
             for (i, raw) in preprocess(&file.text).split('\n').enumerate() {
                 // What follows a file's last newline, or a file without a
-                // line, is no line: the limit counts the same lines however
-                // many files hold them.
-                if raw.is_empty() {
+                // line, is blank and no line: the limit counts the same
+                // lines however many files hold them.
+                if raw.chars().all(|c| c == ' ' || c == '\t') {
                     continue;
                 }
                 let line_number = numbers.get(i).copied().unwrap_or(0);
@@ -626,11 +626,12 @@ mod tests {
             format!("{start}{rest}\n")
         };
         // Lines that fill the limit to the byte, the last in a file of its
-        // own after an empty one.
+        // own after an empty one and one that holds only a space.
         let count = MAX_BINDINGS_BYTES / MAX_BINDING_LINE_BYTES;
         let files = [
             ("first.txt", line("one").repeat(count - 1)),
             ("empty.txt", String::new()),
+            ("blank.txt", " ".to_owned()),
             ("last.txt", line("two")),
         ]
         .map(|(path, text)| TextFile {
