@@ -3,7 +3,7 @@
 
 use soundrts_world::msg::{Msg, Phrase, comma, msg};
 use soundrts_world::rules::AirGround;
-use soundrts_world::{INF, Place, SquareId};
+use soundrts_world::{EntityId, INF, Place, SquareId};
 
 use crate::audio::{angle, distance};
 use crate::client::Client;
@@ -259,7 +259,8 @@ impl GameInterface {
             return false;
         }
         if self.immersion {
-            if self.group.contains(&v.id()) {
+            let controlled = |&u: &EntityId| self.known.unit(u).is_some_and(|c| c.id() == v.id());
+            if self.group.iter().any(controlled) {
                 return false;
             }
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);

@@ -1214,6 +1214,30 @@ mod tests {
     }
 
     #[test]
+    fn a_command_naming_a_unit_as_it_is_shown_names_the_unit_it_became() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let mut s = OnAServer::new();
+        s.upgrade_the_town_hall();
+        let (frames, old, new) = s.play_until_replaced();
+        // Once the turn is taken, before its end: the town hall is still
+        // shown, by its old id, and a command names it so.
+        let shown = Rc::new(Cell::new(None));
+        let seen = Rc::clone(&shown);
+        s.h.client.game.hook = Some(Rc::new(move |g, cx| {
+            if seen.get().is_none() && g.view().known(new).is_some() {
+                seen.set(g.known().unit(new).map(EntityView::id));
+                g.send_command(cx, Command::Control(vec![old]));
+            }
+        }));
+        s.deliver(frames);
+        s.h.step(&mut s.g);
+        s.h.client.game.hook = None;
+        assert_eq!(shown.get(), Some(old));
+        assert_eq!(s.g.game.pending_commands(), [Command::Control(vec![new])]);
+    }
+
+    #[test]
     fn do_again_reads_nothing_of_a_player_the_player_does_not_control() {
         let (mut h, mut g) = training();
         let (me, them) = (g.game.me, enemy(&g));
