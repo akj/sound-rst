@@ -1230,14 +1230,14 @@ fn a_project_whose_paying_order_lost_its_land_is_refunded_though_another_waits()
     assert_eq!(w.e(a).orders()[0].progress(), Progress::Impossible);
     assert_eq!(w.pl(me).resources, [90_000, 90_000]);
     // A leaves its queue, and the next slow update gives the payment back,
-    // though B, still patrolling, has the same build order queued.
+    // though B, still blocking the exit, has the same build order queued.
     for _ in 0..10 {
         w.update();
     }
     assert!(w.e(a).orders().is_empty());
     assert_eq!(w.e(b).orders()[1].keyword(), Keyword::Build);
     assert_eq!(w.pl(me).resources, [95_000, 95_000]);
-    // B stops patrolling and goes on to the meadow that is gone.
+    // B stops blocking the exit and goes on to the meadow that is gone.
     w.cm(b).unwrap().orders.remove(0);
     assert_eq!(w.order_execute(b, uid(&w, b)), Ok(()));
     let build = &w.e(b).orders()[0];

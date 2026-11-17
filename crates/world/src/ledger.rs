@@ -101,13 +101,13 @@ impl Ledger {
     /// orders that made them both lost their land, are held together and
     /// given back together.
     pub(crate) fn follow(&mut self, payer: u64, from: Project, to: Project) {
-        let from = Purpose::Building(from);
-        if !matches!(self.held.get(&from), Some(held) if held.payer == payer) {
-            return;
-        }
-        let Some(moved) = self.held.remove(&from) else {
+        let Entry::Occupied(paid) = self.held.entry(Purpose::Building(from)) else {
             return;
         };
+        if paid.get().payer != payer {
+            return;
+        }
+        let moved = paid.remove();
         match self.held.entry(Purpose::Building(to)) {
             Entry::Vacant(slot) => {
                 slot.insert(moved);

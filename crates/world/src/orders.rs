@@ -2760,8 +2760,9 @@ impl World {
     }
 
     /// Puts down the site of a `build` order whose unit stands at its
-    /// target, and spends the payment of its project. False when it is
-    /// refused: the order is then impossible.
+    /// target, and spends the payment of its project. False when the unit
+    /// has no player, and when the site is refused, which makes the order
+    /// impossible.
     fn put_building_site(
         &mut self,
         unit: EntityId,
