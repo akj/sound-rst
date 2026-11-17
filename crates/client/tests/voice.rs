@@ -4,12 +4,12 @@
 
 use soundrts::clock::Clock;
 use soundrts::input::{Key, Mods};
-use soundrts::message::{Category, News, Policy, Subject};
+use soundrts::message::{Category, Count, News, Policy, Subject};
 use soundrts::testkit::{Harness, Script, SpeechEvent};
 use soundrts::tts::{Progress, SpeechEnd};
 use soundrts::voice::{Heard, LOG_LIMIT, Voice};
-use soundrts_world::SquareId;
 use soundrts_world::msg::{Msg, MsgPart};
+use soundrts_world::{Place, SquareId};
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::literal(s)]
@@ -75,6 +75,104 @@ fn news_about_a_subject_being_said_does_not_replace_it() {
     h.client.voice.news(gold("20 gold"), Policy::Speak);
     run(&mut h, 3.0);
     assert_eq!(h.spoken(), ["10 gold", "20 gold"]);
+}
+
+/// News that `items` (one word each) were lost at square 2.
+fn lost(items: &[&str]) -> News {
+    let place = Place::Square(SquareId(2));
+    let count = Count::new(items.iter().map(|s| t(s)).collect(), true, t("lost at b 2"));
+    News::counting(Category::Alert, Subject::Lost(place), count)
+}
+
+#[test]
+fn newer_news_counts_what_the_unheard_news_about_its_subject_counted() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    info(v, "aaaaaaaaaa");
+    v.news(lost(&["footman"]), Policy::Speak);
+    let gold = News::new(Category::Economy, t("10 gold")).about(Subject::Resource(0));
+    v.news(gold, Policy::Speak);
+    v.news(lost(&["archer", "footman"]), Policy::Speak);
+    run(&mut h, 6.0);
+    // The count keeps its turn, before the gold.
+    assert_eq!(
+        h.spoken(),
+        [
+            "aaaaaaaaaa",
+            "2 footman and 1 archer lost at b 2",
+            "10 gold"
+        ]
+    );
+    // Heard, it is not counted again.
+    h.client.voice.news(lost(&["archer"]), Policy::Speak);
+    run(&mut h, 3.0);
+    assert_eq!(h.spoken()[3..], ["1 archer lost at b 2"]);
+}
+
+#[test]
+fn a_count_of_more_than_two_kinds_is_said_as_one_number_when_brief() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    info(v, "aaaaaaaaaa");
+    v.news(lost(&["footman", "archer"]), Policy::Speak);
+    v.news(lost(&["peasant"]), Policy::Speak);
+    run(&mut h, 6.0);
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "3 lost at b 2"]);
+}
+
+#[test]
+fn a_count_kept_unheard_goes_on_counting() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    v.news(lost(&["footman"]), Policy::Log);
+    v.news(lost(&["footman"]), Policy::Log);
+    assert_eq!(log(&h), [("2 footman lost at b 2".to_owned(), Heard::No)]);
+}
+
+#[test]
+fn a_count_cut_off_is_said_again_with_what_it_counted_since() {
+    let mut h = Harness::new("en", Script::new());
+    h.client.voice.news(lost(&["footman"]), Policy::Speak);
+    run(&mut h, 0.5);
+    h.client.voice.item(&t("x"));
+    h.client.voice.news(lost(&["footman"]), Policy::Speak);
+    run(&mut h, 6.0);
+    assert_eq!(
+        h.spoken(),
+        ["1 footman lost at b 2", "x", "2 footman lost at b 2"]
+    );
+}
+
+#[test]
+fn an_update_replaces_the_unheard_news_about_its_subject_and_is_not_news_alone() {
+    let mut h = Harness::new("en", Script::new());
+    let economy = |s: &str| News::new(Category::Economy, t(s));
+    let v = &mut h.client.voice;
+    info(v, "aaaaaaaaaa");
+    v.news(
+        economy("10 gold").about(Subject::Resource(0)),
+        Policy::Speak,
+    );
+    v.news(
+        economy("11 gold").updating(Subject::Resource(0)),
+        Policy::Speak,
+    );
+    // Nothing about the wood waits: its update is dropped.
+    v.news(
+        economy("11 wood").updating(Subject::Resource(1)),
+        Policy::Speak,
+    );
+    run(&mut h, 6.0);
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "11 gold"]);
+    // Heard, the gold is not news again until a count worth saying.
+    h.client.voice.news(
+        economy("12 gold").updating(Subject::Resource(0)),
+        Policy::Speak,
+    );
+    run(&mut h, 3.0);
+    assert_eq!(h.spoken(), ["aaaaaaaaaa", "11 gold"]);
+    let texts: Vec<String> = log(&h).into_iter().map(|(s, _)| s).collect();
+    assert_eq!(texts, ["aaaaaaaaaa", "11 gold"]);
 }
 
 #[test]

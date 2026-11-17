@@ -10,6 +10,7 @@ use soundrts_world::{Command, EntityId, Event, Order, OrderTarget, TurnMessage};
 
 use crate::audio::stereo;
 use crate::client::Client;
+use crate::message::summary;
 use crate::sound::StereoVolume;
 
 use super::GameInterface;
@@ -17,7 +18,7 @@ use super::command::{OrderFlags, OrderMenu, UnitFilter};
 use super::entity::EntityView;
 use super::focus::Zoom;
 use super::order::{OrderTypeView, PRECISION};
-use super::squares::{remove_duplicates, summary};
+use super::squares::remove_duplicates;
 
 /// What an order with a target aims at: the selected object, else the
 /// point of the zoom on its square, else the selected square.

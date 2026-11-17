@@ -184,7 +184,7 @@ length 9999 208980
 @330147 step 34 wait_turns 300
 @330148 step 35 key SPACE
 @330148 voice item "b 1 , you are not controlling any unit"
-@388047 voice info "1 footman enemy at a 1"
+@387747 voice info "1 footman enemy at a 1"
 @391948 voice info "alert at b 1"
 @393348 voice info "1 footman neutralized at b 1"
 @420147 sounds 221 9b14cb93ecc363b8

@@ -152,7 +152,7 @@ length 9999 208980
 @133551 voice info "9 gold"
 @148851 voice info "10 gold"
 @150351 voice info "farm 2 complete"
-@165051 voice info "1 peasant enemy at j 7"
+@164751 voice info "1 peasant enemy at j 7"
 @192951 sounds 828 c75d1f7a5f3d0be9
 @192951 step 26 wait_turns 250
 @192953 sounds 1 b4636b7ed701cb63
@@ -178,12 +178,12 @@ length 9999 208980
 @355552 step 34 key CTRL PAGEDOWN
 @355552 voice item "nothing!"
 @384651 voice info "40 gold"
-@401451 voice info "1 archer enemy at j 7"
+@401151 voice info "1 archer enemy at j 7"
 @404152 voice info "alert at j 8"
-@410160 voice info "1 peasant lost at j 8"
-@414657 voice info "1 peasant lost at j 8"
-@419451 voice info "1 archer enemy at j 7"
-@423656 voice info "1 peasant lost at j 8"
+@410156 voice info "1 peasant lost at j 8"
+@414655 voice info "1 peasant lost at j 8"
+@419153 voice info "1 archer enemy at j 7"
+@423654 voice info "1 peasant lost at j 8"
 @430551 sounds 950 08219516ce1d68fd
 @430551 step 35 wait_turns 250
 @430552 step 36 key F3
@@ -194,12 +194,12 @@ length 9999 208980
 @435853 voice item "j 7 , meadows , plateau , in the fog of war , 2 archer enemy"
 @442253 voice info "1 archer enemy at j 7"
 @444753 voice info "1 peasant lost at j 8"
-@455455 voice info "1 archer enemy at j 7"
+@455153 voice info "1 archer enemy at j 7"
 @459957 voice info "70 wood"
-@473457 voice info "1 archer enemy at j 7"
-@476458 voice info "1 farm lost at j 8"
-@478658 voice info "1 peasant lost at j 8"
-@492053 voice info "1 archer enemy at j 7"
+@473153 voice info "1 archer enemy at j 7"
+@476455 voice info "1 farm lost at j 8"
+@478655 voice info "1 peasant lost at j 8"
+@491755 voice info "1 archer enemy at j 7"
 @510651 sounds 1080 348da52217708436
 @510651 step 38 wait_turns 250
 @510654 sounds 2 0195dfee687036d9

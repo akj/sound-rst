@@ -38,7 +38,7 @@ use soundrts_world::{
 };
 
 use super::watching::Orders;
-use super::{GameInterface, Source, TURN};
+use super::{GameInterface, Source, SrvEvent, TURN};
 use crate::client::Client;
 use crate::message::{Category, News};
 use crate::saves::{InterfaceState, SaveInfo, Slot};
@@ -466,12 +466,15 @@ impl GameInterface {
         self.previous_used_food = self.used_food();
         self.previous_nb_minutes = minutes;
         while let Some(e) = self.srv_queue.pop_front() {
-            self.process_srv_event(cx, e);
+            match e {
+                // The enemies seen at the turn caught up to are not news.
+                SrvEvent::EndOfTurn(m) => {
+                    let _ = self.srv_end_of_turn(cx, &m);
+                }
+                e => self.process_srv_event(cx, e),
+            }
         }
         self.scout_info.clear();
-        self.new_enemy_units.clear();
-        self.lost_units.clear();
-        self.neutralized_units.clear();
         if self.place.is_none() {
             let square = self
                 .view()

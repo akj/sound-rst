@@ -34,8 +34,10 @@ fn save_game_in_the_game_menu_writes_a_save_and_the_game_goes_on() {
     h.press(Key::Return, Mods::NONE);
     h.step(&mut g);
     h.run_until_voice_idle(&mut g);
+    // The game goes on after "saved": the news of what the cheat shows
+    // follows it.
     assert_eq!(
-        h.said_since(from),
+        h.said_since(from)[..5],
         [
             "Menu",
             "continue game ,",

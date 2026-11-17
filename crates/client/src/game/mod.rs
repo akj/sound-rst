@@ -71,11 +71,12 @@ use crate::bindings::{Bindings, Chord, game_bindings_text};
 use crate::client::Client;
 use crate::input::{Event as InputEvent, GameProgress, InputPoint, Key, KeyDown, Mods};
 use crate::menu::{Exit, TextEntry};
-use crate::message::{Category, News, Subject};
+use crate::message::{Category, News};
 use crate::sound::Listener;
 
 use crate::voice::EntryId;
 
+use self::alerts::UnitsNews;
 use self::animation::NoiseSource;
 use self::command::GameCommand;
 use self::entity::EntityView;
@@ -263,13 +264,8 @@ pub struct GameInterface {
     pub(crate) previous_menus: IndexMap<String, Vec<MenuEntry>>,
     /// When the player's units were last attacked at each place.
     pub(crate) attacks: HashMap<Place, f64>,
-    pub(crate) lost_units: Vec<(Msg, Option<Place>)>,
-    pub(crate) neutralized_units: Vec<(Msg, Option<Place>)>,
-    pub(crate) new_enemy_units: Vec<(Msg, Option<Place>)>,
     pub(crate) scout_info: IndexSet<Place>,
     pub(crate) known_resource_places: HashSet<Option<Place>>,
-    /// The units each piece of news about units counts.
-    pub(crate) told_units: HashMap<Subject, Vec<Msg>>,
     /// The first message of the log that is about this game.
     pub(crate) log_start: EntryId,
     /// The alert the cursor last jumped to, and its square.
@@ -355,12 +351,8 @@ impl GameInterface {
             previous_compass: None,
             previous_menus: IndexMap::new(),
             attacks: HashMap::new(),
-            lost_units: Vec::new(),
-            neutralized_units: Vec::new(),
-            new_enemy_units: Vec::new(),
             scout_info: IndexSet::new(),
             known_resource_places: HashSet::new(),
-            told_units: HashMap::new(),
             log_start: cx.voice.start_game(),
             alert_jump: None,
             objectives_seen: Vec::new(),
@@ -817,7 +809,10 @@ impl GameInterface {
                 }
             }
             SrvEvent::Quit => self.quit_heard(cx),
-            SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m),
+            SrvEvent::EndOfTurn(m) => {
+                let sighted = self.srv_end_of_turn(cx, &m);
+                self.units_news(cx, sighted, UnitsNews::Sighted);
+            }
         }
     }
 
@@ -841,7 +836,9 @@ impl GameInterface {
 
     /// The end of a turn: the interface's copies of the squares and the
     /// entities take the turn's, and the seat takes note of what it sees.
-    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) {
+    /// Returns the enemies seen for the first time, with their places.
+    #[must_use]
+    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) -> Vec<(Msg, Option<Place>)> {
         self.turns_handled += 1;
         self.last_virtual_time = m.time as f64 / 1000.0;
         match &mut self.source {
@@ -862,10 +859,9 @@ impl GameInterface {
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);
         }
-        self.units_alert_if_needed(cx, None);
         self.scout_info_if_needed(cx);
         self.follow_replaced_units(m);
-        self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
+        let sighted = self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
         self.update_group();
         if self.bell_enabled && !self.muted() {
             self.eventually_play_bell(cx);
@@ -874,6 +870,7 @@ impl GameInterface {
             self.play_tick(cx);
         }
         self.record_update_time(cx);
+        sighted
     }
 
     // animation

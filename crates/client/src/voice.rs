@@ -6,8 +6,8 @@
 //! said or a key is pressed; inside the game loop nothing waits. News the
 //! game volunteers waits in the queue, as the policy of its category says,
 //! and is never lost: a message cut off goes back in the queue, newer news
-//! about a subject replaces the unheard news about it, and every message
-//! but answers is kept in a log. The player can walk back through the log,
+//! about a subject joins the unheard news about it (a count adds what it
+//! counts to it), and every message but answers is kept in a log. The player can walk back through the log,
 //! one category at a time, or through what they have not heard.
 
 use std::cell::RefCell;
@@ -345,7 +345,7 @@ impl Entry {
     fn subject(&self) -> Option<&Subject> {
         match &self.content {
             Content::Now(_) => None,
-            Content::News(n) => n.subject.as_ref(),
+            Content::News(n) => n.subject(),
         }
     }
 
@@ -535,12 +535,6 @@ impl Voice {
         (replaceable && !being_said).then_some(i)
     }
 
-    /// Whether the newest news about `subject` waits unheard, so that newer
-    /// news about it would replace it.
-    pub fn is_unheard(&self, subject: &Subject) -> bool {
-        self.unheard_about(subject).is_some()
-    }
-
     /// Says the previous message of the log.
     pub fn previous(&mut self) {
         self.missed = Missed::Count;
@@ -628,13 +622,19 @@ impl Voice {
     }
 
     /// Takes news as `policy` says: queued to be said (or for its recorded
-    /// sounds only), kept unheard, or dropped. It replaces the unheard
-    /// news about the same subject, in its turn. The place of the news in
-    /// the log, unless it was dropped.
+    /// sounds only), kept unheard, or dropped. It joins the unheard news
+    /// about the same subject, as it says, in that news's turn. The place
+    /// of the news in the log, unless it was dropped.
     pub fn news(&mut self, news: News, policy: Policy) -> Option<EntryId> {
         if news.parts.is_empty() {
             return None;
         }
+        let older = news.subject().and_then(|s| self.unheard_about(s));
+        let older_news = older.and_then(|i| match &self.log[i].content {
+            Content::News(n) => Some(n),
+            Content::Now(_) => None,
+        });
+        let news = news.join(older_news)?;
         let heard = match policy {
             Policy::Drop => return None,
             Policy::Speak => Heard::Waiting { sounds_only: false },
@@ -643,7 +643,7 @@ impl Voice {
             }
             Policy::Sound | Policy::Log => Heard::No,
         };
-        let id = match news.subject.as_ref().and_then(|s| self.unheard_about(s)) {
+        let id = match older {
             Some(i) => {
                 let e = &mut self.log[i];
                 e.content = Content::News(news);

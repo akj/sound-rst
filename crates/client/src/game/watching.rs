@@ -169,12 +169,8 @@ impl GameInterface {
             previous_compass,
             previous_menus,
             attacks,
-            lost_units,
-            neutralized_units,
-            new_enemy_units,
             scout_info,
             known_resource_places,
-            told_units,
             log_start: _,
             alert_jump,
             objectives_seen,
@@ -216,12 +212,8 @@ impl GameInterface {
         *previous_compass = None;
         previous_menus.clear();
         attacks.clear();
-        lost_units.clear();
-        neutralized_units.clear();
-        new_enemy_units.clear();
         scout_info.clear();
         known_resource_places.clear();
-        told_units.clear();
         *alert_jump = None;
         objectives_seen.clear();
         *objective_at = None;

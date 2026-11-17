@@ -285,6 +285,40 @@ fn a_jump_lands_on_its_turn_and_says_nothing_of_the_stretch_skipped() {
     h.run_until_turn(&mut g, 3);
 }
 
+/// The record of a training game on jl1 against a quiet computer, whose
+/// two farms stand on the player's square from turn 2, of 300 turns.
+fn record_with_enemies_in_sight() -> Record {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = h.start_training("jl1", &["quiet"], 1);
+    h.run_until_turn(&mut g, 2);
+    let (me, them) = (g.game.me, crate::game::testing::enemy(&g));
+    let hall = crate::game::testing::unit(&g, me, "townhall");
+    let square = g.game.host().world().entity(hall).unwrap().square();
+    let home = g.game.view().square(square.unwrap()).name().to_owned();
+    crate::game::testing::cheat(&mut g, them, &format!("add_units {home} 2 farm"));
+    for _ in 2..300 {
+        crate::game::testing::step(&mut g);
+    }
+    g.game.host().record().clone()
+}
+
+#[test]
+fn a_jump_says_nothing_of_the_enemies_in_sight_where_it_lands() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening(&mut h, record_with_enemies_in_sight());
+    h.run_until_turn(&mut g, 5);
+    assert_eq!(answer(&mut h, &mut g, Key::Space, Mods::SHIFT), "paused");
+    h.run_until_voice_idle(&mut g);
+    assert!(said(&h).iter().any(|s| s.contains("2 farm enemy at b 1")));
+    let log_before = h.client.voice.log().count();
+    jump(&mut h, &mut g, Key::RightBracket, Mods::NONE);
+    assert_eq!(
+        h.client.voice.log().count(),
+        log_before,
+        "the enemies in sight where the jump lands are not news"
+    );
+}
+
 #[test]
 fn at_the_fastest_pace_only_how_far_it_has_got_is_said() {
     let record = record_of(400);
