@@ -7,9 +7,10 @@ use std::sync::Arc;
 use crate::abort::{Invariant, Res};
 use crate::entity::{Entity, EntityId, MemoryRef, Place, PlayerId, SquareId, Target, ZoomTarget};
 use crate::events::Event;
+use crate::ledger::{Project, Purpose};
 use crate::msg::{Msg, msg};
 use crate::nofloat::{PRECISION, floordiv, square_of_distance, to_int};
-use crate::orders::{Order, OrderKind, TargetRef};
+use crate::orders::TargetRef;
 use crate::phrases::Phrase;
 use crate::player::{PlayerKind, Remembrance, StatEvent, StatTarget};
 use crate::questions;
@@ -271,7 +272,7 @@ impl World {
     }
 
     pub(crate) fn player_slow_update(&mut self, p: PlayerId) -> Res {
-        self.free_project_resources_if_no_worker_on_project(p)?;
+        self.refund_projects_without_workers(p);
         self.run_triggers(p)
     }
 
@@ -793,37 +794,35 @@ impl World {
             .add(StatEvent::Gathered, StatTarget::Resource(r), qty);
     }
 
-    pub(crate) fn free_resources(&mut self, p: PlayerId, project: &Order) -> Res {
-        let i = self
-            .pl(p)
-            .budget
-            .iter()
-            .position(|b| b.uid == project.uid || self.order_eq(b, project));
-        if let Some(i) = i {
-            let OrderKind::Build { building, .. } = project.kind else {
-                return Err(Invariant::ProjectIsNotABuild.into());
-            };
-            let cost = self.rules.ty(building).cost.clone();
-            self.unpay(p, &cost);
-            self.plm(p).budget.remove(i);
-        }
-        Ok(())
+    /// Pays `cost` for `purpose`, by the order `payer`, unless the player
+    /// has already paid for it.
+    pub(crate) fn reserve(&mut self, p: PlayerId, purpose: Purpose, payer: u64, cost: Vec<i64>) {
+        let pl = self.plm(p);
+        pl.ledger.reserve(&mut pl.resources, purpose, payer, cost);
     }
 
-    fn free_project_resources_if_no_worker_on_project(&mut self, p: PlayerId) -> Res {
-        // Freeing a project removes it from the budget, so walk a copy.
-        for project in self.pl(p).budget.clone() {
+    /// Gives back what the player paid for `purpose`, if it still holds it.
+    pub(crate) fn refund(&mut self, p: PlayerId, purpose: &Purpose) {
+        let pl = self.plm(p);
+        pl.ledger.refund(&mut pl.resources, purpose);
+    }
+
+    /// Refunds each building project that no queued `build` order of the
+    /// player holds any more. The payment follows the target of the order
+    /// that made it (see [`crate::ledger::Ledger::follow`]).
+    fn refund_projects_without_workers(&mut self, p: PlayerId) {
+        let projects: Vec<Project> = self.pl(p).ledger.projects().collect();
+        for project in projects {
             let worker = self.pl(p).units.iter().any(|&u| {
                 self.e(u)
                     .orders()
                     .iter()
-                    .any(|o| self.order_eq(o, &project))
+                    .any(|o| o.project() == Some(project))
             });
             if !worker {
-                self.free_resources(p, &project)?;
+                self.refund(p, &Purpose::Building(project));
             }
         }
-        Ok(())
     }
 
     /// `future_count`: units of a type, building sites for it, and units
