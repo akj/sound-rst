@@ -267,6 +267,55 @@ fn a_paused_record_runs_no_turn_and_the_keys_still_answer() {
 }
 
 #[test]
+fn a_jump_drops_the_replacements_of_the_turns_waiting() {
+    use crate::game::testing::{cheat, step, unit};
+    let record = {
+        let mut h = Harness::new("en", Script::new().keep_open());
+        let mut g = h.start_training("jl1", &["timers"], 1);
+        h.run_until_turn(&mut g, 2);
+        let me = g.game.me;
+        let w = g.game.host().world();
+        let home = w
+            .entity(unit(&g, me, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let home = g.game.view().square(home).name().to_owned();
+        cheat(
+            &mut g,
+            me,
+            &format!("add_units {home} lumbermill magestower archer"),
+        );
+        step(&mut g);
+        let archer = unit(&g, me, "archer");
+        let host = g.game.host_mut();
+        host.queue_line(me, &format!("control {archer}"));
+        host.queue_line(me, "order 0 0 upgrade_to darkarcher");
+        while g.game.host().world().entity(archer).is_some() {
+            step(&mut g);
+        }
+        for _ in 0..10 {
+            step(&mut g);
+        }
+        g.game.host().record().clone()
+    };
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening(&mut h, record);
+    // The turn of the upgrade is taken: its replacement is kept.
+    for _ in 0..100_000 {
+        if g.game.known().replacements() > 0 {
+            break;
+        }
+        h.step(&mut g);
+    }
+    assert_eq!(g.game.known().replacements(), 1);
+    h.press(Key::LeftBracket, Mods::NONE);
+    h.step(&mut g);
+    assert!(g.game.muted(), "jumping");
+    assert_eq!(g.game.known().replacements(), 0);
+}
+
+#[test]
 fn a_jump_lands_on_its_turn_and_says_nothing_of_the_stretch_skipped() {
     let record = record_of(700);
     let mut h = Harness::new("en", Script::new().keep_open());

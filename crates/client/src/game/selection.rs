@@ -79,7 +79,7 @@ impl GameInterface {
     fn object_choices(&self, cx: &Client, inc: i64, types: &[String]) -> Vec<EntityId> {
         let mut choices = Vec::new();
         for (id, v) in self.known.entities() {
-            if self.is_visible(cx, v)
+            if self.is_visible(cx, id, v)
                 && (types.is_empty()
                     || types.iter().any(|t| t == v.type_name())
                     || types.iter().any(|t| t == "useful") && self.is_a_useful_target(cx, v))
@@ -164,7 +164,10 @@ impl GameInterface {
         let mut result: Vec<EntityView> = Vec::new();
         for e in view.controlled_units() {
             let u = e.id;
-            let Some(v) = self.known.current(u).filter(|v| !v.model.is_inside()) else {
+            if e.is_inside() {
+                continue;
+            }
+            let Some(v) = self.known.current(u) else {
                 continue;
             };
             let has_menu = even_if_no_menu || {
@@ -1103,8 +1106,12 @@ mod tests {
         let said = s.keys_when_the_turn_comes(frames, &[(Key::Return, Mods::NONE)]);
         assert_eq!(said.first().map(String::as_str), Some("recruit peasant"));
         assert_eq!(s.sent(), [train_peasant()]);
+        // Kept until the end of the turn after the upgrade's is handled.
+        assert_eq!(s.g.game.known().replacements(), 1);
         s.serve(Vec::new());
         assert_eq!(s.orders(new), [["train", "peasant"]]);
+        s.take();
+        assert_eq!(s.g.game.known().replacements(), 0);
     }
 
     #[test]

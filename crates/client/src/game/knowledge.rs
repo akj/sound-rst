@@ -27,7 +27,7 @@
 //!
 //! Nothing here reads the world: the seat's messages are all it knows.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use indexmap::IndexMap;
 use soundrts_world::{
@@ -68,7 +68,8 @@ pub struct Knowledge {
     /// The units replaced in the ends of turn taken, from the last one
     /// handled on, in order.
     replaced: Vec<Replaced>,
-    /// The steps the last search of [`Knowledge::shown_id`] read.
+    /// The replacements read so far, to find units by the ids they have
+    /// now and to give each entity shown its id now.
     #[cfg(any(test, feature = "testkit"))]
     steps_read: std::cell::Cell<usize>,
 }
@@ -135,14 +136,11 @@ impl Knowledge {
     /// The id under which the copy shows the unit the game names `id` now:
     /// back through the replacements, newest first, in one pass.
     fn shown_id(&self, mut id: EntityId) -> Option<EntityId> {
-        #[cfg(any(test, feature = "testkit"))]
-        self.steps_read.set(0);
         if self.shown.contains_key(&id) {
             return Some(id);
         }
         for r in self.replaced.iter().rev() {
-            #[cfg(any(test, feature = "testkit"))]
-            self.steps_read.set(self.steps_read.get() + 1);
+            self.read_a_step();
             if r.new == id {
                 id = r.old;
                 if self.shown.contains_key(&id) {
@@ -153,20 +151,49 @@ impl Knowledge {
         None
     }
 
-    /// The id the game gives now to the unit `id` named when it was shown.
-    fn now(&self, mut id: EntityId) -> EntityId {
+    /// Counts a replacement read.
+    fn read_a_step(&self) {
+        #[cfg(any(test, feature = "testkit"))]
+        self.steps_read.set(self.steps_read.get() + 1);
+    }
+
+    /// The id the game gives now to each entity shown that a replacement
+    /// moved, by the id it was shown with, in one pass over the
+    /// replacements: each moves every entity whose id it names to the new
+    /// one, in order.
+    fn ids_now(&self) -> HashMap<EntityId, EntityId> {
+        // The entities shown at each id they have reached, and those that
+        // have left the id they were shown with.
+        let mut at: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+        let mut moved = HashSet::new();
         for r in &self.replaced {
-            if id == r.old {
-                id = r.new;
+            self.read_a_step();
+            let mut moving = at.remove(&r.old).unwrap_or_default();
+            if self.shown.contains_key(&r.old) && moved.insert(r.old) {
+                moving.push(r.old);
             }
+            if moving.is_empty() {
+                continue;
+            }
+            let there = at.entry(r.new).or_default();
+            if there.len() < moving.len() {
+                std::mem::swap(there, &mut moving);
+            }
+            there.extend(moving);
         }
-        id
+        let shown_at = at
+            .into_iter()
+            .flat_map(|(now, shown)| shown.into_iter().map(move |s| (s, now)));
+        shown_at.collect()
     }
 
     /// The entities shown, in arrival order, each with the id the game
     /// gives it now: what the player may pick as the target.
     pub fn entities(&self) -> impl Iterator<Item = (EntityId, &EntityView)> {
-        self.shown.iter().map(|(&id, v)| (self.now(id), v))
+        let now = self.ids_now();
+        self.shown
+            .iter()
+            .map(move |(&id, v)| (now.get(&id).copied().unwrap_or(id), v))
     }
 
     /// The entities shown, in arrival order.
@@ -220,8 +247,8 @@ impl Knowledge {
         self.replaced.len()
     }
 
-    /// The steps the last search for a unit by the id the game gives it
-    /// now read among the replacements.
+    /// The replacements read so far, to find units by the ids they have
+    /// now and to give each entity shown its id now.
     #[cfg(any(test, feature = "testkit"))]
     pub fn steps_read(&self) -> usize {
         self.steps_read.get()

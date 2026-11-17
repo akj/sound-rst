@@ -246,10 +246,11 @@ impl GameInterface {
             .is_some_and(|o| o.nb_args != 0 && o.target_shouldnt_collide(self.view()))
     }
 
-    /// Whether the player may see the object now: in the zoom, on the
-    /// square, with a title; in first person mode, in front; an exit not
-    /// blocked.
-    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> bool {
+    /// Whether the player may see the object now, `v` as the interface
+    /// shows it and `id` as the game names it now: in the zoom, on the
+    /// square, with a title; in first person mode, in front and not one of
+    /// the units controlled; an exit not blocked.
+    pub fn is_visible(&self, cx: &Client, id: EntityId, v: &EntityView) -> bool {
         if let Some(z) = &self.zoom
             && !z.contains(v.model.x, v.model.y)
         {
@@ -259,8 +260,7 @@ impl GameInterface {
             return false;
         }
         if self.immersion {
-            let controlled = |&u: &EntityId| self.known.unit(u).is_some_and(|c| c.id() == v.id());
-            if self.group.iter().any(controlled) {
+            if self.group.contains(&id) {
                 return false;
             }
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
@@ -294,9 +294,9 @@ impl GameInterface {
         let (xc, yc) = self.coords_in_map(Some(place));
         let sw = self.square_width();
         let (x, y) = ((xc as f64 + 0.5) * sw, (yc as f64 + 0.5) * sw);
-        for v in self.known.views() {
+        for (id, v) in self.known.entities() {
             if !(self.is_in(v, Some(place))
-                && self.is_visible(cx, v)
+                && self.is_visible(cx, id, v)
                 && self.is_an_exit(cx, v)
                 && !self.view().exit_is_blocked(v.id(), true))
             {

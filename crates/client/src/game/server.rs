@@ -50,7 +50,7 @@ use soundrts_protocol::{
     SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::msg::{Cue, Phrase, cue, msg};
-use soundrts_world::{Command, GameEnd, SeatView, TurnMessage};
+use soundrts_world::{Command, GameEnd, GameStart, SeatView, TurnMessage};
 
 use super::GameInterface;
 use super::watching::Orders;
@@ -79,12 +79,25 @@ const MAX_HOLD: Duration = Duration::from_secs(3600);
 /// whole game: the interface remembers each.
 const MAX_OBJECTIVES_SEEN: usize = 4 * soundrts_world::MAX_OBJECTIVES;
 
-/// The most events waiting to be told, with the units replaced that the
-/// interface keeps until their ends of turn are handled. The interface
+/// The most events waiting to be told, with their ends of turn and the
+/// units replaced that the interface keeps until those ends are handled. The interface
 /// tells one event at each pass of its loop, about a thousand a second,
 /// and a busy turn has a few dozen: a server that sends more is not
 /// playing a game.
 const MAX_WAITING_EVENTS: usize = 65_536;
+
+/// How a turn the server sent enters the interface
+/// ([`GameInterface::take_server_turn`]).
+pub(super) enum ServerTurn {
+    /// The end of a turn, or a whole message of the seat taken as one: its
+    /// events are told, then its end.
+    End,
+    /// A change that ends no turn: only its events are told.
+    Change,
+    /// A watcher follows the player of a whole message, in the game of
+    /// this start.
+    Follow(Arc<GameStart>),
+}
 
 /// What a seat of a game on a server keeps of the server's stream, beside
 /// what its view holds.
@@ -368,7 +381,8 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
             // A watcher may join a game that is paused: the entities and
             // squares of the first message are taken at once, as at a
             // return.
-            game.take_turn(Arc::clone(&m), Some(m), Vec::new());
+            game.take_server_turn(cx, m, ServerTurn::End)
+                .map_err(|why| Some(format!("the first message: {why}")))?;
             game.now_following(cx);
         }
         return Ok(game);
@@ -785,20 +799,45 @@ impl GameInterface {
         cx.news(News::new(Category::System, msg(Phrase::BackInTheGame)));
         let m = Arc::new(message);
         // A watcher moved on to another player meanwhile follows that one.
-        if m.seat != self.me {
-            return self.follow(cx, start, m);
-        }
-        self.take_turn(Arc::clone(&m), Some(m), Vec::new());
-        if let Err(why) = self.check_waiting() {
+        let how = if m.seat == self.me {
+            ServerTurn::End
+        } else {
+            ServerTurn::Follow(start)
+        };
+        if let Err(why) = self.take_server_turn(cx, m, how) {
             self.cannot_be_right(cx, &format!("on return: {why}"));
         }
     }
 
-    /// Fails when more events and units replaced wait than a game tells
-    /// ([`MAX_WAITING_EVENTS`]).
-    fn check_waiting(&self) -> Result<(), String> {
-        if self.srv_queue.len() + self.known.replacements() > MAX_WAITING_EVENTS {
+    /// Takes a turn the server sent: the only way one enters the
+    /// interface. It is refused, before anything of it is taken, when its
+    /// events and its end, with the events waiting and the units replaced
+    /// that the interface keeps, would be more than [`MAX_WAITING_EVENTS`]:
+    /// so the interface never keeps more than that.
+    pub(super) fn take_server_turn(
+        &mut self,
+        cx: &mut Client,
+        m: Arc<TurnMessage>,
+        how: ServerTurn,
+    ) -> Result<(), String> {
+        let kept = match how {
+            // The watcher starts again from the message.
+            ServerTurn::Follow(_) => 0,
+            ServerTurn::End | ServerTurn::Change => {
+                self.srv_queue.len() + self.known.replacements()
+            }
+        };
+        if kept.saturating_add(m.events.len()) >= MAX_WAITING_EVENTS {
             return Err("more events than the game can tell".into());
+        }
+        match how {
+            ServerTurn::End => self.take_turn(Arc::clone(&m), Some(m), Vec::new()),
+            ServerTurn::Change => {
+                let mut m = Arc::unwrap_or_clone(m);
+                let then = std::mem::take(&mut m.events);
+                self.take_turn(Arc::new(m), None, then);
+            }
+            ServerTurn::Follow(start) => self.follow(cx, start, m),
         }
         Ok(())
     }
@@ -888,10 +927,7 @@ impl GameInterface {
         let start = Arc::clone(server.stream.start());
         match server.stream.take(*frame).map_err(|e| e.0)? {
             Checked::Turn(m) => self.take_change(cx, m),
-            Checked::Follow(m) => {
-                self.follow(cx, start, m);
-                self.check_waiting()
-            }
+            Checked::Follow(m) => self.take_server_turn(cx, m, ServerTurn::Follow(start)),
             Checked::End(end) => {
                 let mut quit = false;
                 if let Some(server) = self.server() {
@@ -991,13 +1027,10 @@ impl GameInterface {
                 }
                 server.next_turn = server.after_a_turn(now);
             }
-            self.take_turn(Arc::clone(&m), Some(m), Vec::new());
+            self.take_server_turn(cx, m, ServerTurn::End)
         } else {
-            let mut m = Arc::unwrap_or_clone(m);
-            let then = std::mem::take(&mut m.events);
-            self.take_turn(Arc::new(m), None, then);
+            self.take_server_turn(cx, m, ServerTurn::Change)
         }
-        self.check_waiting()
     }
 
     /// Asks the server to follow the next player still in the game, or
