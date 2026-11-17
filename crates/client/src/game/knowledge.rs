@@ -34,6 +34,15 @@ use soundrts_world::{
 use super::GameInterface;
 use super::entity::EntityView;
 
+/// A unit that took the place of another in a turn taken.
+#[derive(Clone, Copy)]
+struct Replaced {
+    /// The game time of the turn, in milliseconds.
+    turn: i64,
+    old: EntityId,
+    new: EntityId,
+}
+
 /// What the player knows of the game.
 pub struct Knowledge {
     /// What the seat was told in the last turn taken: everything the
@@ -50,9 +59,9 @@ pub struct Knowledge {
     time: f64,
     /// The number of turns whose ends have been handled.
     turns_handled: u64,
-    /// The units replaced, old and new, in order, whose new unit the copy
-    /// does not show yet.
-    replaced: Vec<(EntityId, EntityId)>,
+    /// The units replaced in the turns taken whose ends are not all
+    /// handled, in order.
+    replaced: Vec<Replaced>,
 }
 
 impl Knowledge {
@@ -125,16 +134,16 @@ impl Knowledge {
             if self.shown.contains_key(&id) {
                 return Some(id);
             }
-            id = self.replaced.iter().rev().find(|(_, new)| *new == id)?.0;
+            id = self.replaced.iter().rev().find(|r| r.new == id)?.old;
         }
         None
     }
 
     /// The id the game gives now to the unit `id` named when it was shown.
     fn now(&self, mut id: EntityId) -> EntityId {
-        for &(old, new) in &self.replaced {
-            if id == old {
-                id = new;
+        for r in &self.replaced {
+            if id == r.old {
+                id = r.new;
             }
         }
         id
@@ -193,25 +202,21 @@ impl Knowledge {
     }
 
     /// The end of the turn `m` is handled: its time and squares are the
-    /// copy's. Its entities follow ([`GameInterface::update_fog_of_war`]).
+    /// copy's. Its entities follow ([`GameInterface::update_fog_of_war`]),
+    /// which shows the units that turn put in place of others: the
+    /// replacements of the turns before it are no longer needed.
     pub(super) fn end_turn(&mut self, m: &TurnMessage) {
         self.turns_handled += 1;
         self.time = m.time as f64 / 1000.0;
         self.observed = m.squares.observed.clone();
         self.observed_before = m.squares.observed_before.clone();
-        let still_old: Vec<bool> = self
-            .replaced
-            .iter()
-            .map(|&(old, new)| !self.shown.contains_key(&new) && self.unit(old).is_some())
-            .collect();
-        let mut still_old = still_old.into_iter();
-        self.replaced.retain(|_| still_old.next() == Some(true));
+        self.replaced.retain(|r| r.turn >= m.time);
     }
 
     /// Makes `c` name each unit as the game names it now.
     pub(super) fn name_now(&self, c: &mut Command) {
-        for &(old, new) in &self.replaced {
-            replace_in_command(c, old, new);
+        for r in &self.replaced {
+            replace_in_command(c, r.old, r.new);
         }
     }
 }
@@ -236,7 +241,11 @@ impl GameInterface {
             let &Event::Replaced { old, new } = e else {
                 continue;
             };
-            self.known.replaced.push((old, new));
+            self.known.replaced.push(Replaced {
+                turn: end.time,
+                old,
+                new,
+            });
             let follow = |u: &mut EntityId| {
                 if *u == old {
                     *u = new;

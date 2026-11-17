@@ -607,6 +607,24 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
             s[3] = encoded(SeatFrame::Change(c));
             s
         }),
+        ("units replaced by units that do not exist", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Whole(m) = frame(frames, 2) else {
+                panic!("a whole message");
+            };
+            let mine = m.perceived.iter().find(|e| e.player == Some(m.seat));
+            let old = mine.expect("a unit of the player").id;
+            for (i, f) in s.iter_mut().enumerate().skip(3) {
+                let SeatFrame::Change(mut c) = frame(frames, i) else {
+                    continue;
+                };
+                let new =
+                    (0..1000).map(|k| soundrts_world::EntityId(1_000_000 + 1000 * i as u32 + k));
+                c.events.extend(new.map(|new| Event::Replaced { old, new }));
+                *f = encoded(SeatFrame::Change(c));
+            }
+            s
+        }),
     ];
     cases.push((
         "a clock change",
@@ -622,10 +640,12 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
 }
 
 /// The streams of [`out_of_order`] that may play on: a turn missed may
-/// look like a seat catching up, the game is over at the first end, and
-/// clock news names its player by login, who need not be in the room.
-const MAY_PLAY_ON: [&str; 4] = [
+/// look like a seat catching up, the game is over at the first end, clock
+/// news names its player by login, who need not be in the room, and a
+/// unit replaced is followed whatever the unit it became.
+const MAY_PLAY_ON: [&str; 5] = [
     "a turn missed",
+    "units replaced by units that do not exist",
     "the end twice",
     "a turn after the end",
     "a clock change",
