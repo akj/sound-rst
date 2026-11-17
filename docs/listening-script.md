@@ -1,10 +1,10 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, and part 13, a translation in the settings folder, added with issue #93.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, and part 14, a cheat that the console cannot read, added with issue #107.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
-The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6, part 11 and part 13 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
+The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6 and parts 11, 13 and 14 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
 
 ## How to report
 
@@ -353,3 +353,13 @@ with_unlimited_resources_and_no_requirements = avec des ressources illimitées e
 13.8. Run the command of 13.1 again. Expected: the first line says that the game refuses your `fr.txt` whole, and ends with "line 4: not 'name = words'."
 
 13.9. Delete the `text` folder you made, and put back the `language` line of `settings.toml` as you noted it in 13.4.
+
+## Part 14. A cheat that the console cannot read
+
+A cheat is now read whole before any of it is done. A cheat with a mistake in it beeps and does nothing. Before, `a footman fotman` added the footman and then beeped, and a word that is no cheat was silent. This part needs only you, in a single-player game. For a step that fails, report what you heard: "14.1 fail: footman 1 at b 1".
+
+14.1. Start a single-player game on jl1. Open the console with the backquote key, type `a footman fotman`, and press Enter. Expected: a beep, and no unit is added: you do not hear "footman 1 at b 1".
+
+14.2. Open the console again, type `fly`, and press Enter. Expected: a beep.
+
+14.3. Open the console again, type `a footman`, and press Enter. Expected: the sound of a unit added, and "footman 1 at b 1". It is footman 1, so step 14.1 added none.

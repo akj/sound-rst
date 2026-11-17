@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use crate::ai::{Computer, Handicap, Skill, handicapped_name};
+use crate::ai::{Computer, Handicap, Skill, TacticalKnowledge, handicapped_name};
 use crate::entity::{Entity, EntityId, Names, SquareId, StatType};
 use crate::events::Event;
 use crate::message::TurnMessage;
@@ -386,13 +386,15 @@ pub struct Player {
     pub observed_objects: BTreeMap<EntityId, i64>,
     pub detected_units: BTreeSet<EntityId>,
     pub allied_control: Vec<super::entity::PlayerId>,
-    pub(crate) known_enemies: BTreeMap<SquareId, (i64, Vec<EntityId>)>,
+    /// A cache of `World::known_enemies` by square, with the time it was
+    /// made: the enemies its units choose from.
+    pub(crate) known_enemies_cache: BTreeMap<SquareId, (i64, Vec<EntityId>)>,
+    /// The menace of the enemies it perceives or remembers, by square, and
+    /// around the square for ranged ones: its units flee by it in
+    /// defensive mode, and a scripted computer's units in any mode.
     pub(crate) enemy_menace: BTreeMap<SquareId, i64>,
-    pub(crate) enemy_presence: Vec<SquareId>,
-    pub(crate) places_with_corpses: BTreeSet<SquareId>,
-    pub(crate) places_with_friends: BTreeSet<SquareId>,
-    pub(crate) cataclysmic_places: BTreeSet<SquareId>,
-    pub(crate) subsquare_threat: BTreeMap<(i64, i64), i64>,
+    /// The squares where the units of a human or of a random computer
+    /// counterattack at the next update.
     pub(crate) counterattack_places: Vec<SquareId>,
     /// Resources with [`PRECISION`].
     pub resources: Vec<i64>,
@@ -425,6 +427,9 @@ pub struct Player {
     pub(crate) end_of_turn: Option<EndOfTurn>,
     /// The state of a scripted computer player.
     pub(crate) ai: Option<Box<Computer>>,
+    /// What a computer player knows of the battlefield, while it is in the
+    /// game. A human has none.
+    pub(crate) tactical_knowledge: Option<TacticalKnowledge>,
 }
 
 /// Every field but the events and the end of the turn, which only a
@@ -453,13 +458,8 @@ impl Hash for Player {
             observed_objects,
             detected_units,
             allied_control,
-            known_enemies,
+            known_enemies_cache,
             enemy_menace,
-            enemy_presence,
-            places_with_corpses,
-            places_with_friends,
-            cataclysmic_places,
-            subsquare_threat,
             counterattack_places,
             resources,
             storage_bonus,
@@ -482,6 +482,7 @@ impl Hash for Player {
             events: _,
             end_of_turn: _,
             ai,
+            tactical_knowledge,
         } = self;
         obj_id.hash(state);
         kind.hash(state);
@@ -503,13 +504,8 @@ impl Hash for Player {
         observed_objects.hash(state);
         detected_units.hash(state);
         allied_control.hash(state);
-        known_enemies.hash(state);
+        known_enemies_cache.hash(state);
         enemy_menace.hash(state);
-        enemy_presence.hash(state);
-        places_with_corpses.hash(state);
-        places_with_friends.hash(state);
-        cataclysmic_places.hash(state);
-        subsquare_threat.hash(state);
         counterattack_places.hash(state);
         resources.hash(state);
         storage_bonus.hash(state);
@@ -528,6 +524,7 @@ impl Hash for Player {
         places_to_explore.hash(state);
         cheat_has_all.hash(state);
         ai.hash(state);
+        tactical_knowledge.hash(state);
     }
 }
 
@@ -552,6 +549,7 @@ impl Player {
             ControllerKind::Computer { ai_type, .. } => Handicap::of(ai_type),
             ControllerKind::Human { .. } | ControllerKind::Neutral => Handicap::NONE,
         };
+        let tactical_knowledge = (kind != PlayerKind::Human).then(TacticalKnowledge::default);
         Player {
             obj_id,
             neutral: controller.is_neutral(),
@@ -575,13 +573,8 @@ impl Player {
             observed_objects: BTreeMap::new(),
             detected_units: BTreeSet::new(),
             allied_control: Vec::new(),
-            known_enemies: BTreeMap::new(),
+            known_enemies_cache: BTreeMap::new(),
             enemy_menace: BTreeMap::new(),
-            enemy_presence: Vec::new(),
-            places_with_corpses: BTreeSet::new(),
-            places_with_friends: BTreeSet::new(),
-            cataclysmic_places: BTreeSet::new(),
-            subsquare_threat: BTreeMap::new(),
             counterattack_places: Vec::new(),
             resources: Vec::new(),
             storage_bonus: Vec::new(),
@@ -602,6 +595,7 @@ impl Player {
             events: Vec::new(),
             end_of_turn: None,
             ai: None,
+            tactical_knowledge,
         }
     }
 
@@ -636,13 +630,8 @@ impl Player {
             observed_objects,
             detected_units: _,
             allied_control: _,
-            known_enemies,
+            known_enemies_cache,
             enemy_menace: _,
-            enemy_presence: _,
-            places_with_corpses: _,
-            places_with_friends: _,
-            cataclysmic_places: _,
-            subsquare_threat: _,
             counterattack_places: _,
             resources: _,
             storage_bonus: _,
@@ -664,6 +653,7 @@ impl Player {
             events: _,
             end_of_turn: _,
             ai,
+            tactical_knowledge: _,
         } = self;
         perception.iter().for_each(|&o| f(o));
         memory.keys().for_each(|&o| f(o));
@@ -674,7 +664,7 @@ impl Player {
                 f(o);
             }
         }
-        for (t, list) in known_enemies.values() {
+        for (t, list) in known_enemies_cache.values() {
             if *t == now {
                 list.names(f);
             }
@@ -690,18 +680,20 @@ impl Player {
 
     /// Forgets, once out of the game, what nothing reads any more: what
     /// it perceived and remembered, its budget, which units were detected,
-    /// the enemies it found, its selection and its computer's
-    /// bookkeeping. Its statistics, resources, alliances, upgrades and
-    /// squares stay, for the score and its allies; so do its buckets and
-    /// what its units revealed, which its allies still look through.
+    /// the enemies it found, its selection, and its computer's
+    /// bookkeeping and tactical knowledge. Its statistics, resources,
+    /// alliances, upgrades and squares stay, for the score and its allies;
+    /// so do its buckets and what its units revealed, which its allies
+    /// still look through.
     pub(crate) fn forget_after_leaving(&mut self) {
         self.perception.clear();
         self.memory.clear();
         self.budget.clear();
         self.detected_units.clear();
-        self.known_enemies.clear();
+        self.known_enemies_cache.clear();
         self.group = None;
         self.ai = None;
+        self.tactical_knowledge = None;
     }
 
     pub fn is_human(&self) -> bool {
