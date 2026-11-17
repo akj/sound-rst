@@ -122,8 +122,8 @@ pub enum SrvEvent {
 }
 
 impl SrvEvent {
-    /// The event to handle in its turn. A unit replaced is followed at the
-    /// end of its turn instead, when the interface knows the new unit.
+    /// The event to handle in its turn. A unit replaced is followed when
+    /// its turn is taken instead ([`GameInterface::follow_replaced`]).
     fn of(e: Event) -> Option<SrvEvent> {
         Some(match e {
             Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
@@ -371,8 +371,6 @@ impl GameInterface {
             cx.log
                 .info(format!("not connected: didn't send {command:?}"));
         } else {
-            let mut command = command;
-            self.known.name_now(&mut command);
             self.pending_commands.push(command);
         }
     }
@@ -682,7 +680,7 @@ impl GameInterface {
             return;
         }
         self.set_obs_pos(cx);
-        let ids: Vec<EntityId> = self.known.entities().map(|(id, _)| id).collect();
+        let ids: Vec<EntityId> = self.known.views().map(EntityView::id).collect();
         for id in ids {
             self.animate(cx, id);
         }
@@ -771,7 +769,7 @@ impl GameInterface {
     /// Stops every noise of the game and forgets it: the next animation
     /// starts each again where its object then is.
     pub(crate) fn silence_noises(&mut self, cx: &Client) {
-        for v in self.known.entities_mut() {
+        for v in self.known.views_mut() {
             if let Some(n) = v.anim.noise.take() {
                 n.stop(&cx.audio);
             }
@@ -783,7 +781,7 @@ impl GameInterface {
 
     /// Stops every noise of the game.
     pub fn stop_noises(&mut self, cx: &Client) {
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             v.stop(&cx.audio);
         }
         for (_, n) in &self.terrain_noises {

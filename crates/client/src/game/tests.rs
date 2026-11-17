@@ -430,8 +430,7 @@ fn the_last_turn_ends_before_the_players_leave_and_is_answered_after() {
     let mine = |g: &TestGame| {
         g.game
             .known
-            .entities()
-            .map(|(_, v)| v)
+            .views()
             .filter(|v| v.player() == Some(me) && v.place().is_some())
             .count()
     };

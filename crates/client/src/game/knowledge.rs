@@ -5,22 +5,25 @@
 //! original's order; and the step from a unit's old id to its new one,
 //! when a unit takes the place of another (an upgrade).
 //!
-//! Everything the interface names a unit by (the group, the selected
-//! object, the orders picked, the commands not yet sent, the selection of
-//! a game loaded) names it as the game names it now: a unit replaced is
-//! followed as soon as the turn that replaced it is taken
-//! ([`GameInterface::follow_replaced`]), and every command is followed
-//! again when it is given ([`Knowledge::name_now`]). The copy still shows
-//! the old unit until the end of that turn is handled: meanwhile
-//! [`Knowledge::unit`] finds it by the new id, and [`Knowledge::entities`]
-//! gives each entity shown with the id the game gives it now. Only the end
-//! of a turn ([`GameInterface::update_fog_of_war`]) changes the copy.
+//! A unit replaced in a turn that also tells the player of the new unit
+//! is followed as soon as the turn is taken
+//! ([`GameInterface::follow_replaced`]): everything the interface names a
+//! unit by (the group, the selected object, the orders picked, the
+//! commands not yet sent, the selection of a game loaded) names the new
+//! unit from then on, as the game does. A unit replaced by one the player
+//! does not know is lost like any unit that goes out of the player's
+//! knowledge. The copy still shows the old unit until the end of the turn
+//! is handled: meanwhile [`Knowledge::unit`] finds it by the new id, and
+//! [`Knowledge::entities`] gives each entity shown with the id the game
+//! gives it now. Only the end of a turn
+//! ([`GameInterface::update_fog_of_war`]) changes the copy.
 //!
-//! The questions and the selection read what the seat knows now
-//! ([`Knowledge::seat`], [`Knowledge::current`]). The news, the sounds and
+//! The production, workers and time questions and the selection of units
+//! read what the seat knows now ([`Knowledge::seat`],
+//! [`Knowledge::current`]). The news, the sounds, the fight question, and
 //! what is said of the targets and squares read the copy
-//! ([`Knowledge::unit`], [`Knowledge::entities`]), so that they keep the
-//! original's order.
+//! ([`Knowledge::unit`], [`Knowledge::views`]), so that they keep the
+//! original's order and each sentence describes one moment.
 //!
 //! Nothing here reads the world: the seat's messages are all it knows.
 
@@ -28,7 +31,7 @@ use std::collections::BTreeSet;
 
 use indexmap::IndexMap;
 use soundrts_world::{
-    Command, EntityId, Event, Order, OrderTarget, SeatView, SquareId, TurnMessage,
+    Command, EntityId, Event, KnownEntity, Order, OrderTarget, SeatView, SquareId, TurnMessage,
 };
 
 use super::GameInterface;
@@ -37,8 +40,8 @@ use super::entity::EntityView;
 /// A unit that took the place of another in a turn taken.
 #[derive(Clone, Copy)]
 struct Replaced {
-    /// The game time of the turn, in milliseconds.
-    turn: i64,
+    /// The end of turn that told it, counted as the ends are taken.
+    end: u64,
     old: EntityId,
     new: EntityId,
 }
@@ -59,9 +62,15 @@ pub struct Knowledge {
     time: f64,
     /// The number of turns whose ends have been handled.
     turns_handled: u64,
-    /// The units replaced in the turns taken whose ends are not all
-    /// handled, in order.
+    /// The number of ends of turn taken: those not handled wait in the
+    /// interface's queue.
+    ends_taken: u64,
+    /// The units replaced in the ends of turn taken, from the last one
+    /// handled on, in order.
     replaced: Vec<Replaced>,
+    /// The steps the last search of [`Knowledge::shown_id`] read.
+    #[cfg(any(test, feature = "testkit"))]
+    steps_read: std::cell::Cell<usize>,
 }
 
 impl Knowledge {
@@ -74,18 +83,23 @@ impl Knowledge {
             observed_before: BTreeSet::new(),
             time: 0.0,
             turns_handled: 0,
+            ends_taken: 0,
             replaced: Vec::new(),
+            #[cfg(any(test, feature = "testkit"))]
+            steps_read: std::cell::Cell::new(0),
         }
     }
 
     /// Starts again from `seat`, a player's view the interface follows
-    /// from now on: nothing is shown until its first end of turn. The game
-    /// time and the count of turns handled go on.
+    /// from now on: nothing is shown until its first end of turn, and no
+    /// end of turn waits. The game time and the count of turns handled go
+    /// on.
     pub(super) fn restart(&mut self, seat: SeatView) {
         let (time, turns_handled) = (self.time, self.turns_handled);
         *self = Knowledge {
             time,
             turns_handled,
+            ends_taken: turns_handled,
             ..Knowledge::new(seat)
         };
     }
@@ -100,26 +114,16 @@ impl Knowledge {
         &mut self.seat
     }
 
-    /// The unit the game names `id` now, as the copy shows it: while the
-    /// end of the turn that replaced it waits, the unit it replaced.
-    pub fn unit(&self, id: EntityId) -> Option<&EntityView> {
-        self.shown.get(&self.shown_id(id)?)
-    }
-
     /// The entity `id` as the player knows it now, from the last turn
-    /// taken.
+    /// taken: `None` if the player neither perceives nor remembers it.
     pub fn current(&self, id: EntityId) -> Option<EntityView> {
         self.seat.known(id).map(EntityView::new)
     }
 
-    /// The entities the player perceives now, from the last turn taken.
-    pub fn perceived_now(&self) -> impl Iterator<Item = EntityView> {
-        self.seat
-            .message()
-            .perceived
-            .iter()
-            .cloned()
-            .map(EntityView::new)
+    /// The unit the game names `id` now, as the copy shows it: while the
+    /// end of the turn that replaced it waits, the unit it replaced.
+    pub fn unit(&self, id: EntityId) -> Option<&EntityView> {
+        self.shown.get(&self.shown_id(id)?)
     }
 
     /// As [`Knowledge::unit`], to change how it is presented.
@@ -128,13 +132,23 @@ impl Knowledge {
         self.shown.get_mut(&id)
     }
 
-    /// The id under which the copy shows the unit the game names `id` now.
+    /// The id under which the copy shows the unit the game names `id` now:
+    /// back through the replacements, newest first, in one pass.
     fn shown_id(&self, mut id: EntityId) -> Option<EntityId> {
-        for _ in 0..=self.replaced.len() {
-            if self.shown.contains_key(&id) {
-                return Some(id);
+        #[cfg(any(test, feature = "testkit"))]
+        self.steps_read.set(0);
+        if self.shown.contains_key(&id) {
+            return Some(id);
+        }
+        for r in self.replaced.iter().rev() {
+            #[cfg(any(test, feature = "testkit"))]
+            self.steps_read.set(self.steps_read.get() + 1);
+            if r.new == id {
+                id = r.old;
+                if self.shown.contains_key(&id) {
+                    return Some(id);
+                }
             }
-            id = self.replaced.iter().rev().find(|r| r.new == id)?.old;
         }
         None
     }
@@ -150,30 +164,30 @@ impl Knowledge {
     }
 
     /// The entities shown, in arrival order, each with the id the game
-    /// gives it now.
+    /// gives it now: what the player may pick as the target.
     pub fn entities(&self) -> impl Iterator<Item = (EntityId, &EntityView)> {
         self.shown.iter().map(|(&id, v)| (self.now(id), v))
     }
 
+    /// The entities shown, in arrival order.
+    pub fn views(&self) -> impl Iterator<Item = &EntityView> {
+        self.shown.values()
+    }
+
     /// The entities shown, to change how they are presented.
-    pub(super) fn entities_mut(&mut self) -> impl Iterator<Item = &mut EntityView> {
+    pub(super) fn views_mut(&mut self) -> impl Iterator<Item = &mut EntityView> {
         self.shown.values_mut()
     }
 
-    /// The copy itself, by the id each entity had when it was shown, for
-    /// the end of a turn that brings it up to date.
-    pub(super) fn copy_mut(&mut self) -> &mut IndexMap<EntityId, EntityView> {
+    /// The copy, by the id each entity was shown with: only the end of a
+    /// turn, which brings it up to date, reads it so.
+    pub(super) fn end_of_turn_copy(&self) -> &IndexMap<EntityId, EntityView> {
+        &self.shown
+    }
+
+    /// As [`Knowledge::end_of_turn_copy`], for the end of a turn to change it.
+    pub(super) fn end_of_turn_copy_mut(&mut self) -> &mut IndexMap<EntityId, EntityView> {
         &mut self.shown
-    }
-
-    /// The squares observed now, in the last turn taken.
-    pub fn observed_now(&self) -> &BTreeSet<SquareId> {
-        &self.seat.message().squares.observed
-    }
-
-    /// The squares observed before the last turn taken.
-    pub fn observed_before_now(&self) -> &BTreeSet<SquareId> {
-        &self.seat.message().squares.observed_before
     }
 
     /// The squares observed at the last end of turn handled.
@@ -201,51 +215,61 @@ impl Knowledge {
         self.turns_handled
     }
 
+    /// The number of replacements kept.
+    pub fn replacements(&self) -> usize {
+        self.replaced.len()
+    }
+
+    /// The steps the last search for a unit by the id the game gives it
+    /// now read among the replacements.
+    #[cfg(any(test, feature = "testkit"))]
+    pub fn steps_read(&self) -> usize {
+        self.steps_read.get()
+    }
+
     /// The end of the turn `m` is handled: its time and squares are the
     /// copy's. Its entities follow ([`GameInterface::update_fog_of_war`]),
     /// which shows the units that turn put in place of others: the
-    /// replacements of the turns before it are no longer needed.
+    /// replacements of the ends handled before it are no longer needed.
     pub(super) fn end_turn(&mut self, m: &TurnMessage) {
         self.turns_handled += 1;
+        self.ends_taken = self.ends_taken.max(self.turns_handled);
         self.time = m.time as f64 / 1000.0;
         self.observed = m.squares.observed.clone();
         self.observed_before = m.squares.observed_before.clone();
-        self.replaced.retain(|r| r.turn >= m.time);
+        let handled = self.turns_handled;
+        self.replaced.retain(|r| r.end >= handled);
     }
 
-    /// Makes `c` name each unit as the game names it now.
-    pub(super) fn name_now(&self, c: &mut Command) {
-        for r in &self.replaced {
-            replace_in_command(c, r.old, r.new);
-        }
+    /// The ends of turn waiting are dropped, untold: so are their
+    /// replacements.
+    pub(super) fn forget_turns_waiting(&mut self) {
+        self.replaced.clear();
+        self.ends_taken = self.turns_handled;
     }
 }
 
-/// [`Knowledge::unit`], for a unit the interface is known to show.
-impl std::ops::Index<EntityId> for Knowledge {
-    type Output = EntityView;
-
-    fn index(&self, id: EntityId) -> &EntityView {
-        self.unit(id).expect("a unit the interface shows")
-    }
+/// Whether `list`, by id, has the entity `id`.
+fn lists(list: &[KnownEntity], id: EntityId) -> bool {
+    list.binary_search_by_key(&id, |e| e.id).is_ok()
 }
 
 impl GameInterface {
-    /// Follows each unit replaced in the turn `end` as soon as the turn is
-    /// taken: everything the interface names it by names the unit that
-    /// took its place, as the game does from now on. The selected object
-    /// follows only if the player knows the new unit; otherwise it goes
-    /// with the old one at the end of the turn.
+    /// Takes the end of the turn `end` as it comes, before it waits in the
+    /// queue, and follows each unit it replaced by one it tells the player
+    /// of: everything the interface names the old unit by names the new
+    /// one, as the game does from now on.
     pub(super) fn follow_replaced(&mut self, end: &TurnMessage) {
+        self.known.ends_taken += 1;
+        let at = self.known.ends_taken;
         for e in &end.events {
             let &Event::Replaced { old, new } = e else {
                 continue;
             };
-            self.known.replaced.push(Replaced {
-                turn: end.time,
-                old,
-                new,
-            });
+            if !lists(&end.perceived, new) && !lists(&end.remembered, new) {
+                continue;
+            }
+            self.known.replaced.push(Replaced { end: at, old, new });
             let follow = |u: &mut EntityId| {
                 if *u == old {
                     *u = new;
@@ -259,18 +283,17 @@ impl GameInterface {
             if let Some(l) = self.source.local_mut() {
                 l.selection_to_restore.iter_mut().for_each(follow);
             }
-            let known = end
-                .perceived
-                .iter()
-                .chain(&end.remembered)
-                .any(|e| e.id == new);
-            if self.target == Some(old) && known {
-                self.target = Some(new);
-            }
+            self.target.iter_mut().for_each(follow);
             for c in &mut self.pending_commands {
                 replace_in_command(c, old, new);
             }
         }
+    }
+
+    /// Drops what waits of the turns taken, untold.
+    pub(super) fn drop_turns_waiting(&mut self) {
+        self.srv_queue.clear();
+        self.known.forget_turns_waiting();
     }
 }
 

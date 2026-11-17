@@ -85,7 +85,7 @@ impl GameInterface {
     }
 
     fn silence_square(&self, cx: &Client) {
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             if !self.is_in(v, self.place) {
                 v.stop(&cx.audio);
             }
@@ -116,9 +116,9 @@ impl GameInterface {
     /// The terrain, and whether the square is in the fog or unknown.
     pub fn square_postfix(&self, cx: &Client, place: SquareId) -> Msg {
         let mut postfix = Vec::new();
-        if self.known.observed_now().contains(&place) {
+        if self.known.observed().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
-        } else if self.known.observed_before_now().contains(&place) {
+        } else if self.known.observed_before().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
             postfix.extend(comma());
             postfix.extend(msg(Phrase::InTheFog));
@@ -144,7 +144,7 @@ impl GameInterface {
         let mut units = Vec::new();
         let mut resources = Vec::new();
         let view = self.view();
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             if !self.is_in(v, place) {
                 continue;
             }
@@ -294,7 +294,7 @@ impl GameInterface {
         let (xc, yc) = self.coords_in_map(Some(place));
         let sw = self.square_width();
         let (x, y) = ((xc as f64 + 0.5) * sw, (yc as f64 + 0.5) * sw);
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             if !(self.is_in(v, Some(place))
                 && self.is_visible(cx, v)
                 && self.is_an_exit(cx, v)
@@ -444,13 +444,13 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) {
-        let squares = self.known.observed_now().iter().copied().collect();
+        let squares = self.known.observed().iter().copied().collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
     pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             let enemy = v.player().is_some_and(|p| !self.view().allied(p, self.me));
             if enemy && !squares.contains(&v.place()) {
                 squares.push(v.place());
@@ -463,14 +463,14 @@ impl GameInterface {
     pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
-            .filter(|s| !self.known.observed_before_now().contains(s))
+            .filter(|s| !self.known.observed_before().contains(s))
             .collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
     pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
-        for (_, v) in self.known.entities() {
+        for v in self.known.views() {
             if self.resource_type(&v.model).is_some() && !squares.contains(&v.place()) {
                 squares.push(v.place());
             }
@@ -513,8 +513,9 @@ impl GameInterface {
         if !(self.follow_mode && !self.an_order_requiring_a_target_is_selected()) {
             return;
         }
-        // The group keeps only units the interface knows: one that is not
-        // empty has a head.
+        // The group keeps only units the player knows; one the copy does
+        // not show yet, until the end of the turn that brought it, leaves
+        // the group without a head.
         let Some(head) = self.group_head() else {
             return;
         };
@@ -560,7 +561,7 @@ impl GameInterface {
     pub(crate) fn set_obs_pos(&mut self, cx: &mut Client) {
         if self.place.is_none() {
             let units = self.units(cx, true, true);
-            if let Some(first) = units.iter().find_map(|&u| self.known.unit(u))
+            if let Some(first) = units.iter().find_map(|v| self.known.unit(v.id()))
                 && let Some(s) = self.outer_square(first.place())
             {
                 self.select_and_say_square(cx, s, &Vec::new());
@@ -679,32 +680,6 @@ mod tests {
         assert_eq!(game.view().terrain(b3), "");
         let m = game.square_postfix(&h.client, b3);
         assert_eq!(said(&mut h, &m), ", unknown");
-    }
-
-    #[test]
-    fn the_squares_observed_in_the_turn_taken_are_known_before_its_end_is_handled() {
-        use crate::input::{Key, Mods};
-        use soundrts_world::{Cheat, Command};
-        let (mut h, mut g) = training();
-        h.run_until_voice_idle(&mut g);
-        let me = g.game.me;
-        // Cheat mode: every square is observed from the next turn on.
-        let _ = g
-            .game
-            .host_mut()
-            .queue(me, Command::Cheat(Cheat::ToggleMode));
-        g.game.run_turn(&mut h.client);
-        let from = h.utterances().len();
-        h.press(Key::PageDown, Mods::ALT);
-        h.press(Key::PageDown, Mods::NONE);
-        h.step(&mut g);
-        assert!(g.game.has_pending_server_events());
-        h.run_until_voice_idle(&mut g);
-        // No square is unknown now; the next square observed is a 1.
-        assert_eq!(
-            h.said_since(from)[..2],
-            ["nothing!", "a 1 , meadows , 1 gold mine"]
-        );
     }
 
     #[test]

@@ -2198,7 +2198,7 @@ fn a_watcher_starts_on_the_first_unit_of_the_player_it_follows_and_leaves_at_onc
     h.step(&mut g);
     h.step(&mut g);
     assert!(
-        !g.game.known().entities().next().is_none(),
+        g.game.known().views().next().is_some(),
         "the units are known"
     );
     assert!(g.game.place.is_some(), "the cursor is on a square");

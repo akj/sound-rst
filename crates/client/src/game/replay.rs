@@ -450,7 +450,7 @@ impl GameInterface {
             // What the player knew when it left: its result and score.
             // What waited of its turns is not heard.
             self.known.seat_mut().install(m);
-            self.srv_queue.clear();
+            self.drop_turns_waiting();
             return self.followed_left(cx);
         }
         let minutes = m.time.div_euclid(60_000);
@@ -655,7 +655,7 @@ impl GameInterface {
         r.progress_said_at = now;
         r.waiting_for_world_update = false;
         cx.voice.silent_flush();
-        self.srv_queue.clear();
+        self.drop_turns_waiting();
         self.silence_noises(cx);
     }
 

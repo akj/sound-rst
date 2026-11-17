@@ -100,9 +100,10 @@ impl GameInterface {
         ids
     }
 
-    /// The unit `id` as the player knows it now.
-    fn current(&self, id: EntityId) -> EntityView {
-        self.known.current(id).expect("a unit the player knows")
+    /// The units of the group the player knows now, in the group's order.
+    fn group_views(&self) -> Vec<EntityView> {
+        let known = self.group.iter().filter_map(|&u| self.known.current(u));
+        known.collect()
     }
 
     /// The selected object.
@@ -155,16 +156,17 @@ impl GameInterface {
 
     // units
 
-    /// The units the player controls, on the map (not inside), perceived.
-    /// Without `even_if_no_menu`, only those that can be given an order.
-    pub fn units(&self, cx: &Client, even_if_no_menu: bool, sort: bool) -> Vec<EntityId> {
+    /// The units the player controls and knows now, on the map (not
+    /// inside), as the player knows them. Without `even_if_no_menu`, only
+    /// those that can be given an order.
+    pub fn units(&self, cx: &Client, even_if_no_menu: bool, sort: bool) -> Vec<EntityView> {
         let view = self.view();
-        let mut result: Vec<EntityId> = Vec::new();
+        let mut result: Vec<EntityView> = Vec::new();
         for e in view.controlled_units() {
             let u = e.id;
-            if e.is_inside() {
+            let Some(v) = self.known.current(u).filter(|v| !v.model.is_inside()) else {
                 continue;
-            }
+            };
             let has_menu = even_if_no_menu || {
                 let t = view.unit_type(&e.type_name);
                 let own = e.own.as_ref();
@@ -173,12 +175,11 @@ impl GameInterface {
                     || !self.view_menu(u, false).is_empty()
             };
             if has_menu {
-                result.push(u);
+                result.push(v);
             }
         }
         if sort {
-            let key = |id: &EntityId| {
-                let v = &self.current(*id);
+            let key = |v: &EntityView| {
                 let t: Vec<usize> = self
                     .short_title(cx, v)
                     .iter()
@@ -231,8 +232,9 @@ impl GameInterface {
 
     fn regroup(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) {
         self.update_group();
-        if let Some(&first) = self.group.first() {
-            let initial = &self.current(first);
+        let group_views = self.group_views();
+        if let Some(initial) = group_views.first() {
+            let first = initial.id();
             let initial_type = initial.type_name().to_owned();
             let local_place = if self.is_in(initial, self.place) {
                 self.place
@@ -242,10 +244,9 @@ impl GameInterface {
             let types = match self.arrange(cx, filter) {
                 TypeFilter::These(t) => t,
                 TypeFilter::Any => remove_duplicates(
-                    &self
-                        .group
+                    &group_views
                         .iter()
-                        .map(|&id| self.current(id).type_name().to_owned())
+                        .map(|v| v.type_name().to_owned())
                         .collect::<Vec<_>>(),
                 ),
             };
@@ -254,9 +255,7 @@ impl GameInterface {
             for t in &types {
                 let m: Vec<EntityId> = units
                     .iter()
-                    .copied()
-                    .filter(|&x| {
-                        let v = &self.current(x);
+                    .filter(|v| {
                         v.type_name() == t
                             && (!filter.local
                                 || match &self.zoom {
@@ -265,6 +264,7 @@ impl GameInterface {
                                 })
                             && (!filter.idle || v.orders().is_empty())
                     })
+                    .map(EntityView::id)
                     .collect();
                 group.extend_from_slice(&m[..m.len() / portion.get() as usize]);
             }
@@ -288,9 +288,8 @@ impl GameInterface {
         self.say_group(cx, &Vec::new())
     }
 
-    fn command_unit(&mut self, cx: &mut Client, unit: EntityId, silent: bool) {
+    fn command_unit(&mut self, cx: &mut Client, v: &EntityView, silent: bool) {
         if !silent {
-            let v = &self.current(unit);
             let m = [
                 self.ext_title(cx, v),
                 self.orders_txt(cx, v),
@@ -299,24 +298,26 @@ impl GameInterface {
             .concat();
             cx.voice.item(&m);
         }
-        self.group = vec![unit];
+        self.group = vec![v.id()];
     }
 
     pub(crate) fn cmd_command_unit(&mut self, cx: &mut Client) {
-        if let Some(t) = self.target
-            && self.units(cx, true, false).contains(&t)
+        let Some(t) = self.target else { return };
+        if let Some(v) = self
+            .units(cx, true, false)
+            .into_iter()
+            .find(|v| v.id() == t)
         {
-            self.command_unit(cx, t, false);
+            self.command_unit(cx, &v, false);
         }
     }
 
     fn select_unit(&mut self, cx: &mut Client, inc: i64, filter: &UnitFilter, silent: bool) {
         let types = self.arrange(cx, filter);
-        let units: Vec<EntityId> = self
+        let units: Vec<EntityView> = self
             .units(cx, filter.even_if_no_menu, true)
             .into_iter()
-            .filter(|&x| {
-                let v = &self.current(x);
+            .filter(|v| {
                 types.accepts(v.type_name())
                     && (!filter.local
                         || match &self.zoom {
@@ -333,7 +334,7 @@ impl GameInterface {
         let len = units.len() as i64;
         let mut sel = units
             .iter()
-            .position(|u| self.group.contains(u))
+            .position(|v| self.group.contains(&v.id()))
             .map_or(-1, |i| i as i64);
         sel += inc;
         if sel < 0 {
@@ -342,7 +343,7 @@ impl GameInterface {
         if sel >= len {
             sel = 0;
         }
-        self.command_unit(cx, units[sel as usize], silent);
+        self.command_unit(cx, &units[sel as usize], silent);
         self.order = None;
     }
 
@@ -358,8 +359,8 @@ impl GameInterface {
     /// Says the units controlled and their orders, after `prefix`.
     pub(crate) fn say_group(&mut self, cx: &mut Client, prefix: &Msg) {
         self.update_group();
-        if self.group.len() == 1 {
-            let v = &self.current(self.group[0]);
+        let views = self.group_views();
+        if let [v] = views.as_slice() {
             let m = [
                 prefix.clone(),
                 msg(Phrase::YouControl),
@@ -368,14 +369,12 @@ impl GameInterface {
             ]
             .concat();
             cx.voice.item(&m);
-        } else if self.group.len() > 1 {
+        } else if views.len() > 1 {
             let mut orders = Vec::new();
             let mut titles = Vec::new();
-            for x in &self.group {
-                if let Some(v) = &self.known.current(*x) {
-                    orders.push(self.orders_txt(cx, v));
-                    titles.push(self.short_title(cx, v));
-                }
+            for v in &views {
+                orders.push(self.orders_txt(cx, v));
+                titles.push(self.short_title(cx, v));
             }
             let mut m = [
                 prefix.clone(),
@@ -428,12 +427,7 @@ impl GameInterface {
         } else if self.group.len() > 1 {
             let (mut hp, mut hp_max, mut hurt) = (0, 0, 0);
             let mut titles = Vec::new();
-            for v in &self
-                .group
-                .iter()
-                .filter_map(|&u| self.known.current(u))
-                .collect::<Vec<_>>()
-            {
+            for v in &self.group_views() {
                 hp += v.model.hp;
                 hp_max += v.model.hp_max;
                 if v.model.hp * 2 < v.model.hp_max {
@@ -847,7 +841,7 @@ mod tests {
             .queue_line(me, "order 0 0 upgrade_to darkarcher");
         run_until(&mut h, &mut g, |game| {
             let dark = |v: &EntityView| &*v.model.type_name == "darkarcher";
-            game.known().entities().filter(|(_, v)| dark(v)).count() == 2
+            game.known().views().filter(|v| dark(v)).count() == 2
         });
         let dark = of_type(&g, "darkarcher");
         // The second archer is upgraded first.
@@ -904,8 +898,8 @@ mod tests {
         g.game.order = Some(o);
         run_until(&mut h, &mut g, |game| {
             game.known()
-                .entities()
-                .any(|(_, v)| &*v.model.type_name == "guardtower")
+                .views()
+                .any(|v| &*v.model.type_name == "guardtower")
         });
         let guardtower = unit(&g, me, "guardtower");
         assert_eq!(g.game.order.as_ref().map(|o| o.unit), Some(guardtower));
@@ -1161,6 +1155,59 @@ mod tests {
     }
 
     #[test]
+    fn an_order_picked_for_a_unit_before_its_upgrade_is_done_again_as_the_new_units() {
+        let mut s = OnAServer::new();
+        s.upgrade_the_town_hall();
+        // The upgrade picked again for the same town hall waits to be
+        // confirmed when the turn of the upgrade comes.
+        s.key_until(Key::A, Mods::NONE, "upgrade to keep");
+        let (frames, old, _) = s.play_until_replaced();
+        assert_eq!(s.g.game.order.as_ref().map(|o| o.unit), Some(old));
+        s.keys_when_the_turn_comes(frames, &[(Key::Return, Mods::NONE)]);
+        // Done again on the other town hall: the keep it was picked for
+        // has the barracks the upgrade requires.
+        let other = s.units_of_type("townhall");
+        for _ in 0..10 {
+            if s.g.game.group == other {
+                break;
+            }
+            s.h.key(&mut s.g, Key::W, Mods::NONE);
+        }
+        assert_eq!(s.g.game.group, other);
+        assert_eq!(
+            s.h.key(&mut s.g, Key::R, Mods::ALT),
+            ["upgrade to keep , requires 10 gold and 15 wood , press enter to confirm"]
+        );
+    }
+
+    #[test]
+    fn in_first_person_the_unit_controlled_is_no_target_when_its_upgrade_comes() {
+        let mut s = OnAServer::new();
+        s.upgrade_the_town_hall();
+        let on = s.h.key(&mut s.g, Key::Space, Mods::CTRL);
+        assert_eq!(
+            on,
+            ["b 1 You control town hall 1 at b 1 ,", "first person mode"]
+        );
+        let (frames, old, _) = s.play_until_replaced();
+        assert_eq!(s.g.game.group, [old]);
+        let tabs = [(Key::Tab, Mods::NONE); 6];
+        let said = s.keys_when_the_turn_comes(frames, &tabs);
+        // The town hall, which the player controls, is never picked.
+        assert_eq!(
+            said[..6],
+            [
+                "<ui/positional_beep> a meadow at 7 meters to the northwest",
+                "<ui/positional_beep> a path at 7 meters to the east",
+                "<ui/positional_beep> a path at 7 meters to the west",
+                "<ui/positional_beep> peasant 1 at 4 meters at the center , 4 hit points on 4 , ,",
+                "<ui/positional_beep> farm 1 at 7 meters to the northeast , 133 hit points on 133 , ,",
+                "<ui/positional_beep> a meadow at 7 meters to the northwest",
+            ]
+        );
+    }
+
+    #[test]
     fn a_default_order_at_a_unit_upgraded_when_its_turn_comes_names_the_new_unit() {
         let mut s = OnAServer::new();
         s.upgrade_the_town_hall();
@@ -1224,30 +1271,6 @@ mod tests {
     }
 
     #[test]
-    fn a_command_naming_a_unit_as_it_is_shown_names_the_unit_it_became() {
-        use std::cell::Cell;
-        use std::rc::Rc;
-        let mut s = OnAServer::new();
-        s.upgrade_the_town_hall();
-        let (frames, old, new) = s.play_until_replaced();
-        // Once the turn is taken, before its end: the town hall is still
-        // shown, by its old id, and a command names it so.
-        let shown = Rc::new(Cell::new(None));
-        let seen = Rc::clone(&shown);
-        s.h.client.game.hook = Some(Rc::new(move |g, cx| {
-            if seen.get().is_none() && g.view().known(new).is_some() {
-                seen.set(g.known().unit(new).map(EntityView::id));
-                g.send_command(cx, Command::Control(vec![old]));
-            }
-        }));
-        s.deliver(frames);
-        s.h.step(&mut s.g);
-        s.h.client.game.hook = None;
-        assert_eq!(shown.get(), Some(old));
-        assert_eq!(s.g.game.pending_commands(), [Command::Control(vec![new])]);
-    }
-
-    #[test]
     fn a_unit_the_turn_taken_brings_is_selected_before_the_end_of_the_turn() {
         let (mut h, mut g) = training();
         h.run_until_voice_idle(&mut g);
@@ -1276,6 +1299,62 @@ mod tests {
     }
 
     #[test]
+    fn a_unit_replaced_by_one_the_player_is_not_told_of_is_lost_with_its_target() {
+        use soundrts_world::TurnChange;
+        let mut s = OnAServer::new();
+        s.upgrade_the_town_hall();
+        s.h.key(&mut s.g, Key::Escape, Mods::NONE);
+        assert_eq!(s.g.game.target, None);
+        s.key_until(Key::E, Mods::NONE, "peasant");
+        let peasant = s.g.game.group[0];
+        // The turn that replaces the town hall does not tell the player of
+        // the keep.
+        let (before, old, new) = loop {
+            let before = s.stream.message().clone();
+            let frames = s.play(Vec::new());
+            let events = &s.stream.message().events;
+            let replaced = events.iter().find_map(|e| match *e {
+                Event::Replaced { old, new } => Some((old, new)),
+                _ => None,
+            });
+            if let Some((old, new)) = replaced {
+                break (before, old, new);
+            }
+            s.deliver(frames);
+            s.take();
+        };
+        let mut upgraded = s.stream.message().clone();
+        upgraded.perceived.retain(|e| e.id != new);
+        upgraded.remembered.retain(|e| e.id != new);
+        let change = TurnChange::between(&before, &upgraded);
+        // Before the end of the turn, the town hall is picked as the
+        // target, by the id the player knows, and the peasant sent to it:
+        // the player knows of no order there. After the end, the cursor's
+        // square is examined.
+        let mut keys = vec![(Key::Tab, Mods::NONE); 4];
+        keys.push((Key::Backspace, Mods::NONE));
+        let said = s.keys_when_the_turn_comes(vec![SeatFrame::Change(change)], &keys);
+        assert_eq!(
+            said[3..5],
+            [
+                "<ui/positional_beep> town hall 1 to the south , 400 hit points on 400 , ,",
+                "<ui/beep>"
+            ]
+        );
+        let go = Command::Order {
+            order: Order::Default(OrderTarget::Entity(old)),
+            queue: soundrts_world::Queue::Replace,
+            imperative: false,
+        };
+        assert_eq!(s.sent(), [Command::Control(vec![peasant]), go]);
+        assert!(!s.g.game.has_pending_server_events());
+        assert_eq!(s.g.game.target, None);
+        let examined = s.h.key(&mut s.g, Key::LCtrl, Mods::NONE);
+        assert_eq!(examined, ["b 1 , meadows , 1 farm and 1 peasant"]);
+        assert!(s.g.game.known().unit(old).is_none());
+    }
+
+    #[test]
     fn do_again_reads_nothing_of_a_player_the_player_does_not_control() {
         let (mut h, mut g) = training();
         let (me, them) = (g.game.me, enemy(&g));
@@ -1299,7 +1378,10 @@ mod tests {
         for (u, mine) in [(townhall, unit(&g, me, "townhall")), (theirs, peasant)] {
             let mut e = g.game.view().perceived(mine).unwrap();
             (e.id, e.player, e.own) = (u, Some(them), None);
-            g.game.known.copy_mut().insert(u, EntityView::new(e));
+            g.game
+                .known
+                .end_of_turn_copy_mut()
+                .insert(u, EntityView::new(e));
         }
         let style = h.client.res.style();
         let listed = |order: &str, unit: EntityId| {

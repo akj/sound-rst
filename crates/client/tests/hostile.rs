@@ -16,24 +16,27 @@
 //! cases run on a stack of 1 MiB, the size of a Windows program's main
 //! thread.
 
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use soundrts::bindings::{BindingError, Bindings, Chord};
 use soundrts::clock::Clock;
+use soundrts::input::{Key, Mods};
 use soundrts::log::Log;
 use soundrts::package::TextFile;
 use soundrts::parameters::Parameters;
 use soundrts::sound_cache::{SoundCache, read_language_file};
 use soundrts::style::Style;
-use soundrts::testkit::{FakeStream, Harness, Script, TestGame, game_root, slot};
+use soundrts::testkit::{FakeServer, FakeStream, Harness, Script, TestGame, game_root, slot};
 use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
-use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, Speed};
+use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, SlotPlayer, Speed};
 use soundrts_world::msg::MsgPart;
 use soundrts_world::player::{Objective, StatEvent, StatTarget};
-use soundrts_world::{Event, Place};
+use soundrts_world::{EntityId, Event, KnownEntity, Place, TurnChange, TurnMessage};
 
 /// The longest one case may take: reading the changed text as an installed
 /// layer and as a downloaded one, then looking up what the game looks up.
@@ -1048,4 +1051,154 @@ fn hostile_frames_of_a_watched_game_are_taken_without_a_panic() {
         .unwrap();
     let failures = worker.join().unwrap();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Andrew's game against a quiet computer on jl1 at a fake server, its
+/// first turns taken and told: the server, the stream, the game, and the
+/// last message the client was sent.
+fn doctored_game(h: &mut Harness) -> (FakeServer, FakeStream, TestGame, TurnMessage) {
+    let server = h.join_fake_server("andrew", &[]);
+    let slots = [
+        slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
+        slot(SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)), 2),
+    ];
+    let mut stream = FakeStream::new(h, "jl1", &slots, 0, 1);
+    let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+    for turn in 1..=3 {
+        for frame in stream.turn(Vec::new()) {
+            server.frame_at(h.clock.now(), frame);
+        }
+        h.run_until_turn(&mut g, turn);
+    }
+    h.run_until_voice_idle(&mut g);
+    let last = stream.message().clone();
+    (server, stream, g, last)
+}
+
+/// The server plays a turn and sends the change from `last` to its
+/// message as `doctor` changes it, now; `last` becomes that message. The
+/// turn the client then has.
+fn send_doctored(
+    h: &Harness,
+    server: &FakeServer,
+    stream: &mut FakeStream,
+    last: &mut TurnMessage,
+    doctor: impl FnOnce(&mut TurnMessage),
+) -> i64 {
+    let _ = stream.turn(Vec::new());
+    let mut next = stream.message().clone();
+    doctor(&mut next);
+    let change = TurnChange::between(last, &next);
+    server.frame_at(h.clock.now(), SeatFrame::Change(change));
+    *last = next;
+    last.time / 300
+}
+
+/// The first of the player's peasants in `m`.
+fn peasant(m: &TurnMessage) -> KnownEntity {
+    let mine = |e: &&KnownEntity| e.player == Some(m.seat) && &*e.type_name == "peasant";
+    m.perceived.iter().find(mine).unwrap().clone()
+}
+
+/// `n` entities like `e`, each with an id of its own from `first` on.
+fn clones(e: &KnownEntity, first: u32, n: u32) -> Vec<KnownEntity> {
+    (first..first + n)
+        .map(|id| KnownEntity {
+            id: EntityId(id),
+            ..e.clone()
+        })
+        .collect()
+}
+
+#[test]
+fn a_unit_the_player_controls_and_does_not_perceive_is_not_selected() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let hidden = peasant(&last).id;
+    // The server lists the peasant, on its square, among the units the
+    // player controls and does not perceive.
+    let turn = send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        let i = m.perceived.iter().position(|e| e.id == hidden).unwrap();
+        let e = m.perceived.remove(i);
+        assert!(!e.is_inside());
+        m.unperceived_units.push(e);
+        m.unperceived_units.sort_by_key(|e| e.id);
+    });
+    h.run_until_turn(&mut g, turn);
+    assert_eq!(
+        h.key(&mut g, Key::Q, Mods::CTRL),
+        ["town hall 1 at b 1 , awaiting your orders"]
+    );
+    assert_eq!(h.key(&mut g, Key::E, Mods::NONE), Vec::<String>::new());
+    assert!(!g.game.end_loop, "the game plays on");
+}
+
+#[test]
+fn a_chain_of_replacements_is_read_once_to_find_a_unit() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    // In one turn the peasant becomes 1001, which becomes 1002, and so on
+    // to 2000, each told to the player.
+    let chain = clones(&a, 1001, 1000);
+    let z = chain.last().unwrap().id;
+    send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        let mut old = a.id;
+        for e in &chain {
+            m.events.push(Event::Replaced { old, new: e.id });
+            old = e.id;
+        }
+        m.perceived.extend(chain.iter().cloned());
+        m.perceived.sort_by_key(|e| e.id);
+    });
+    // Once the turn is taken, before its end: the last unit of the chain
+    // is the peasant shown.
+    let found = Rc::new(Cell::new(None));
+    let seen = Rc::clone(&found);
+    h.client.game.hook = Some(Rc::new(move |g, _| {
+        if seen.get().is_none() && g.view().known(z).is_some() {
+            let shown = g.known().unit(z).map(|v| v.id());
+            seen.set(Some((shown, g.known().steps_read())));
+        }
+    }));
+    h.step(&mut g);
+    h.client.game.hook = None;
+    assert_eq!(found.get(), Some((Some(a.id), 1000)));
+}
+
+#[test]
+fn units_replaced_count_against_the_events_a_game_tells() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    let from = h.utterances().len();
+    // Seventy turns at once, each replacing the peasant by a thousand
+    // units the player is told of: more than a game tells.
+    for turn in 0..70 {
+        let first = 1_000_000 + 1000 * turn;
+        let new = clones(&a, first, 1000);
+        send_doctored(&h, &server, &mut stream, &mut last, |m| {
+            let replaced = new.iter().map(|e| Event::Replaced {
+                old: a.id,
+                new: e.id,
+            });
+            m.events.extend(replaced);
+            m.perceived.extend(new.iter().cloned());
+            m.perceived.sort_by_key(|e| e.id);
+        });
+    }
+    for _ in 0..100 {
+        h.step(&mut g);
+        assert!(g.game.known().replacements() <= 65_536);
+        if g.game.end_loop {
+            break;
+        }
+    }
+    assert!(g.game.end_loop, "the game ended");
+    h.run_voice_for(5.0);
+    let said = h.said_since(from);
+    assert!(
+        said.contains(&"game ended: the server sent what cannot be right".to_owned()),
+        "{said:#?}"
+    );
 }

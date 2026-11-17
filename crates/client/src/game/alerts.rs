@@ -221,8 +221,7 @@ impl GameInterface {
         let square = self.outer_square(Some(place));
         let enemies: Vec<Msg> = self
             .known
-            .entities()
-            .map(|(_, v)| v)
+            .views()
             .filter(|v| self.is_in(v, square) && self.is_an_enemy(&v.model))
             .map(|v| self.short_title(cx, v))
             .collect();
@@ -377,7 +376,7 @@ impl GameInterface {
     }
 
     pub(crate) fn delete_object(&mut self, cx: &Client, id: EntityId) {
-        if let Some(v) = self.known.copy_mut().shift_remove(&id) {
+        if let Some(v) = self.known.end_of_turn_copy_mut().shift_remove(&id) {
             v.stop(&cx.audio);
         }
         self.group.retain(|&g| g != id);
@@ -398,18 +397,20 @@ impl GameInterface {
         for m in memory {
             if self
                 .known
-                .copy_mut()
+                .end_of_turn_copy()
                 .get(&m.id)
                 .is_some_and(|v| !v.is_memory())
             {
                 self.delete_object(cx, m.id);
             }
-            match self.known.copy_mut().get_mut(&m.id) {
+            match self.known.end_of_turn_copy_mut().get_mut(&m.id) {
                 Some(v) => v.model = m,
                 None => {
                     let is_resource = self.resource_type(&m).is_some();
                     let place = m.place;
-                    self.known.copy_mut().insert(m.id, EntityView::new(m));
+                    self.known
+                        .end_of_turn_copy_mut()
+                        .insert(m.id, EntityView::new(m));
                     if self.must_report_resource(place, is_resource)
                         && let Some(place) = place
                     {
@@ -419,7 +420,7 @@ impl GameInterface {
             }
         }
         for m in perception {
-            if !self.known.copy_mut().contains_key(&m.id) {
+            if !self.known.end_of_turn_copy().contains_key(&m.id) {
                 if self.is_an_enemy(&m) {
                     let v = EntityView::new(m.clone());
                     let t = self.short_title(cx, &v);
@@ -431,28 +432,36 @@ impl GameInterface {
                 {
                     self.scout_info.insert(place);
                 }
-            } else if self.known.copy_mut()[&m.id].is_memory() {
+            } else if self
+                .known
+                .end_of_turn_copy()
+                .get(&m.id)
+                .is_some_and(EntityView::is_memory)
+            {
                 self.delete_object(cx, m.id);
             }
-            match self.known.copy_mut().get_mut(&m.id) {
+            match self.known.end_of_turn_copy_mut().get_mut(&m.id) {
                 Some(v) => v.model = m,
                 None => {
-                    self.known.copy_mut().insert(m.id, EntityView::new(m));
+                    self.known
+                        .end_of_turn_copy_mut()
+                        .insert(m.id, EntityView::new(m));
                 }
             }
         }
         let gone: Vec<EntityId> = self
             .known
-            .copy_mut()
+            .end_of_turn_copy()
             .keys()
             .copied()
             .filter(|i| !known.contains(i))
             .collect();
         for i in gone {
             self.delete_object(cx, i);
-            if self.target == Some(i) {
-                self.target = None;
-            }
+        }
+        // The target stays only on an entity the interface shows.
+        if self.target.is_some_and(|t| self.known.unit(t).is_none()) {
+            self.target = None;
         }
         self.units_news(cx, sighted, UnitsNews::Sighted);
     }

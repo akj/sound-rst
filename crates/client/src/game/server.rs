@@ -79,9 +79,11 @@ const MAX_HOLD: Duration = Duration::from_secs(3600);
 /// whole game: the interface remembers each.
 const MAX_OBJECTIVES_SEEN: usize = 4 * soundrts_world::MAX_OBJECTIVES;
 
-/// The most events waiting to be told. The interface tells one at each
-/// pass of its loop, about a thousand a second, and a busy turn has a few
-/// dozen: a server that sends more is not playing a game.
+/// The most events waiting to be told, with the units replaced that the
+/// interface keeps until their ends of turn are handled. The interface
+/// tells one event at each pass of its loop, about a thousand a second,
+/// and a busy turn has a few dozen: a server that sends more is not
+/// playing a game.
 const MAX_WAITING_EVENTS: usize = 65_536;
 
 /// What a seat of a game on a server keeps of the server's stream, beside
@@ -787,9 +789,18 @@ impl GameInterface {
             return self.follow(cx, start, m);
         }
         self.take_turn(Arc::clone(&m), Some(m), Vec::new());
-        if self.srv_queue.len() > MAX_WAITING_EVENTS {
-            self.cannot_be_right(cx, "on return: more events than the game can tell");
+        if let Err(why) = self.check_waiting() {
+            self.cannot_be_right(cx, &format!("on return: {why}"));
         }
+    }
+
+    /// Fails when more events and units replaced wait than a game tells
+    /// ([`MAX_WAITING_EVENTS`]).
+    fn check_waiting(&self) -> Result<(), String> {
+        if self.srv_queue.len() + self.known.replacements() > MAX_WAITING_EVENTS {
+            return Err("more events than the game can tell".into());
+        }
+        Ok(())
     }
 
     /// The server stopped the game: says why, and leaves it.
@@ -879,7 +890,7 @@ impl GameInterface {
             Checked::Turn(m) => self.take_change(cx, m),
             Checked::Follow(m) => {
                 self.follow(cx, start, m);
-                Ok(())
+                self.check_waiting()
             }
             Checked::End(end) => {
                 let mut quit = false;
@@ -986,10 +997,7 @@ impl GameInterface {
             let then = std::mem::take(&mut m.events);
             self.take_turn(Arc::new(m), None, then);
         }
-        if self.srv_queue.len() > MAX_WAITING_EVENTS {
-            return Err("more events than the game can tell".into());
-        }
-        Ok(())
+        self.check_waiting()
     }
 
     /// Asks the server to follow the next player still in the game, or
