@@ -546,4 +546,77 @@ mod tests {
             assert_eq!(map.name, "campaign1/1");
         }
     }
+
+    /// The importer rewrites a number to a name in the `title` and
+    /// `sequence` lines of a cut scene, and the campaign reads names from
+    /// them. Where the importer misses a word, a phrase stays a number and
+    /// is said as a count; where it takes a word too many, a count becomes
+    /// a name. Either way the two lists below differ.
+    #[test]
+    fn the_importer_and_the_campaign_agree_on_the_words_each_cut_scene_says() {
+        let mut cut_scenes = 0;
+        for entry in std::fs::read_dir(crate::testkit::game_root().join("single")).unwrap() {
+            let dir = entry.unwrap().path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+            let c = Campaign::new(Package::from_path(&dir).unwrap(), &name);
+            for chapter in &c.chapters {
+                let Chapter::CutScene {
+                    number,
+                    title,
+                    sequence,
+                } = chapter
+                else {
+                    continue;
+                };
+                let text = std::fs::read_to_string(dir.join(format!("{number}.txt"))).unwrap();
+                let lines: Vec<&str> = text.split('\n').collect();
+                // Each word with its line and the first word of that line;
+                // the title first, as the campaign keeps it. A said line
+                // continued with a backslash gets the wrong kind here: the
+                // test then fails falsely, and never passes falsely.
+                let mut importer: Vec<(usize, &str, MsgPart)> =
+                    soundrts_import::words_a_map_says(&text)
+                        .into_iter()
+                        .map(|(line, word)| {
+                            let first = lines[line - 1].split_whitespace().next().unwrap_or("");
+                            let part = MsgPart::named(&word).unwrap_or(MsgPart::Literal(word));
+                            (line, first, part)
+                        })
+                        .collect();
+                importer.sort_by_key(|(_, kind, _)| *kind != "title");
+                let campaign: Vec<(&str, MsgPart)> = title
+                    .iter()
+                    .map(|p| ("title", p.clone()))
+                    .chain(sequence.iter().map(|p| ("sequence", p.clone())))
+                    .collect();
+                // Where the two lists first differ, in one sentence.
+                let at = (0..importer.len().max(campaign.len())).find(|&i| {
+                    importer.get(i).map(|(_, kind, part)| (*kind, part))
+                        != campaign.get(i).map(|(kind, part)| (*kind, part))
+                });
+                if let Some(at) = at {
+                    let importer_has = importer
+                        .get(at)
+                        .map_or("nothing more".to_owned(), |(line, kind, part)| {
+                            format!("{part:?} in a {kind} line on line {line}")
+                        });
+                    let campaign_has = campaign
+                        .get(at)
+                        .map_or("nothing more".to_owned(), |(kind, part)| {
+                            format!("{part:?} in a {kind} line")
+                        });
+                    panic!(
+                        "{name}/{number}.txt: at said word {}, the importer has {importer_has}, and the campaign has {campaign_has}",
+                        at + 1
+                    );
+                }
+                cut_scenes += 1;
+            }
+        }
+        // Chapter 0 of the campaign.
+        assert_eq!(cut_scenes, 1, "cut scenes compared");
+    }
 }

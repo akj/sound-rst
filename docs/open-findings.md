@@ -877,3 +877,10 @@ From the pull request for issues 84, 85, 87 and 88, as its agents reported them.
 - **The ladder leaves out maps where ground armies cannot meet** (jl6, jl7, js8, cw1, pra7, mb5 to mb8), where some starts have no ground path to the others. On jl7 every game of the ladder ended at the turn limit. See N1. It plays the aggressive computer only.
 - **Incomes are said in the room and once when the game starts,** not in a game's list of players. A campaign mission's level is never said in the game: its computers have no spoken name.
 - **Games between computers order the levels, but say nothing of how hard each feels to a person.** Issue 85's two points, that level 1 loses to a new player who has done the tutorial and that level 3 feels like the original, need playtesting.
+
+### N25. Loose ends of the words a map says
+
+From the work on issue 113, as its agent reported it. Open.
+
+- **The client reads a map's title in its own way.** `find_a_line_with` in `crates/client/src/mapfile.rs`, and its copy `header_line` in `crates/client/src/campaign.rs`, take the first `title` line that holds only names, counts and spaces. The loader in `crates/world/src/map.rs` keeps the last. The two can disagree on a title line with a comment, leading spaces, a tab, a backslash continuation, or one inside `#random_choice`; no map of the game has such a line. The player hears the client's title.
+- **The client checks a map's said words with the importer's function,** `words_a_map_says`, in `check_map` in `crates/client/src/resource.rs`. It has no loaded map at that point: in single-player the map is checked before the game is built, and on a server the server builds the game. A test compares the importer's words with the loader's on every map: `the_importer_and_the_loader_agree_on_the_words_each_map_says` in `crates/world/src/map.rs`.
