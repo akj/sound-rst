@@ -58,8 +58,7 @@ impl GameInterface {
     pub(crate) fn cmd_production_status(&self, cx: &mut Client) {
         let style = cx.res.style();
         let mut productions: Vec<((bool, i64), Msg)> = Vec::new();
-        for id in self.units(cx, true, false) {
-            let v = &self.dobjets[&id];
+        for v in &self.units(cx, true, false) {
             let Some((o, left)) = v.orders().first().and_then(|o| Some((o, o.time_left?))) else {
                 continue;
             };
@@ -97,7 +96,6 @@ impl GameInterface {
         let workers: Vec<_> = self
             .units(cx, true, false)
             .into_iter()
-            .map(|id| &self.dobjets[&id])
             .filter(|v| types.iter().any(|t| t == v.type_name()))
             .collect();
         if workers.is_empty() {
@@ -107,7 +105,7 @@ impl GameInterface {
         let mut idle = 0;
         let mut building = 0;
         let mut gathering = vec![0; view.resources().len()];
-        for v in workers {
+        for v in &workers {
             let Some(o) = v.orders().first() else {
                 idle += 1;
                 continue;
@@ -218,7 +216,7 @@ impl GameInterface {
         let view = self.view();
         let (mut ours, mut theirs) = (Vec::new(), Vec::new());
         let (mut our_threat, mut their_threat) = (0i64, 0i64);
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             if v.is_memory() || !self.is_in(v, self.place) {
                 continue;
             }
@@ -371,7 +369,8 @@ fn join(messages: impl Iterator<Item = Msg>) -> Msg {
 mod tests {
     use soundrts_world::{Cheat, Command, EntityId, PlayerId, SquareId};
 
-    use super::super::testing::{cheat, enemy, run_until, training, training_allied, unit};
+    use super::super::entity::EntityView;
+    use super::super::testing::{cheat, enemy, go, run_until, training, training_allied, unit};
     use super::Balance;
     use crate::clock::Clock;
     use crate::input::{Key, Mods};
@@ -433,6 +432,44 @@ mod tests {
         assert_eq!(
             ask(&mut h, &mut g, Key::B, Mods::NONE),
             "recruit footman 9 seconds at barracks 1 , recruit peasant 10 seconds at town hall 1"
+        );
+    }
+
+    #[test]
+    fn the_questions_answer_for_the_turn_taken_before_its_end_is_handled() {
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        // The turn to take ends a second of the game.
+        while g.game.view().time() % 1000 != 900 {
+            run_turns(&mut h, &mut g, 1);
+        }
+        let me = g.game.me;
+        let townhall = unit(&g, me, "townhall");
+        order(&mut g, me, townhall, "train peasant");
+        let w = g.game.host().world();
+        let gold = w
+            .entities()
+            .find(|e| &*e.type_name == "goldmine")
+            .unwrap()
+            .id;
+        let peasant = units(&g, me, "peasant")[0];
+        order(&mut g, me, peasant, &format!("gather {}", gold.0));
+        // The next turn is taken; its end, which brings the interface's
+        // copies up to date, waits while the keys are handled.
+        g.game.run_turn(&mut h.client);
+        let from = h.utterances().len();
+        for key in [Key::B, Key::N, Key::F3] {
+            h.press(key, Mods::NONE);
+        }
+        h.step(&mut g);
+        h.run_until_voice_idle(&mut g);
+        assert_eq!(
+            h.said_since(from)[..3],
+            [
+                "recruit peasant 10 seconds at town hall 1",
+                "0 idle , 1 on gold",
+                "0 minutes 16 seconds , speed 1.0"
+            ]
         );
     }
 
@@ -557,6 +594,35 @@ mod tests {
         assert!(g.game.view().perceived(unit(&g, them, "footman")).is_none());
         g.game.place = Some(theirs);
         assert_eq!(ask(&mut h, &mut g, Key::M, Mods::NONE), "nothing!");
+    }
+
+    #[test]
+    fn the_fight_here_names_the_kinds_in_the_order_they_were_seen() {
+        // A computer that gives no orders of its own.
+        let mut h = Harness::new("en", Script::new().keep_open());
+        let mut g = h.start_training("jl1", &["timers"], 1);
+        h.run_until_turn(&mut g, 3);
+        let (me, them) = (g.game.me, enemy(&g));
+        let (square, name) = home(&g, me);
+        let (_, their_name) = home(&g, them);
+        // The computer's archer, at its home, has the lower id; its
+        // footman comes to the player's home, and is seen first.
+        cheat(&mut g, them, &format!("add_units {their_name} 1 archer"));
+        run_turns(&mut h, &mut g, 1);
+        cheat(&mut g, them, &format!("add_units {name} 1 footman"));
+        run_turns(&mut h, &mut g, 1);
+        let (archer, footman) = (unit(&g, them, "archer"), unit(&g, them, "footman"));
+        assert!(archer < footman);
+        go(&mut g, them, archer, square);
+        run_until(&mut h, &mut g, |game| {
+            let here = |v: &EntityView| v.id() == archer && game.is_in(v, Some(square));
+            game.known().views().any(here)
+        });
+        assert_eq!(g.game.place, Some(square));
+        assert_eq!(
+            ask(&mut h, &mut g, Key::M, Mods::NONE),
+            "weaker , nothing! against 1 footman and 1 archer"
+        );
     }
 
     #[test]

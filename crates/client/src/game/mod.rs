@@ -20,7 +20,8 @@
 //! squares up to date. One server event is handled per pass of the loop,
 //! after the key presses, as in the original, so the questions answer for
 //! the end of the turn from the moment it is taken, while those copies
-//! catch up a few passes later.
+//! catch up a few passes later. What the player knows, now and as those
+//! copies show it, is in one place: [`knowledge`].
 //!
 //! Nothing said stops the loop. What the keys do depends on one [`Mode`].
 //! In single-player the world waits, on purpose, while a story is told
@@ -42,6 +43,7 @@ pub mod animation;
 pub mod command;
 pub mod entity;
 pub mod focus;
+pub mod knowledge;
 pub mod misc;
 pub mod news;
 pub mod order;
@@ -59,7 +61,7 @@ pub(crate) mod testing;
 mod tests;
 mod watching;
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use indexmap::{IndexMap, IndexSet};
@@ -120,8 +122,8 @@ pub enum SrvEvent {
 }
 
 impl SrvEvent {
-    /// The event to handle in its turn. A unit replaced is followed at the
-    /// end of its turn instead, when the interface knows the new unit.
+    /// The event to handle in its turn. A unit replaced is followed when
+    /// its turn is taken instead ([`GameInterface::follow_replaced`]).
     fn of(e: Event) -> Option<SrvEvent> {
         Some(match e {
             Event::Entity { entity, event } => SrvEvent::Entity { entity, event },
@@ -206,23 +208,12 @@ pub struct GameInterface {
     pub me: PlayerId,
     /// What the player knows of the game: everything the interface reads
     /// of it.
-    pub(crate) seat: SeatView,
+    pub(crate) known: knowledge::Knowledge,
     /// The game speed: 1 is normal.
     pub speed: f64,
-    /// What the player perceives or remembers, by id, in arrival order, as
-    /// of the last end of turn handled.
-    pub dobjets: IndexMap<EntityId, EntityView>,
-    /// The squares observed at the last end of turn handled.
-    pub scouted_squares: BTreeSet<SquareId>,
-    /// The squares observed before then (all of them in cheat mode).
-    pub scouted_before_squares: BTreeSet<SquareId>,
-    /// The game time of the last end of turn handled, in seconds.
-    pub last_virtual_time: f64,
-    /// The number of turns whose results have been handled.
-    pub(crate) turns_handled: u64,
     /// The selected square.
     pub place: Option<SquareId>,
-    /// The selected object: always one of `dobjets`.
+    /// The selected object: one the interface shows.
     pub target: Option<EntityId>,
     /// The zoom, when zoom mode is on.
     pub zoom: Option<Zoom>,
@@ -284,13 +275,8 @@ impl GameInterface {
         GameInterface {
             source,
             me: seat.player(),
-            seat,
+            known: knowledge::Knowledge::new(seat),
             speed,
-            dobjets: IndexMap::new(),
-            scouted_squares: BTreeSet::new(),
-            scouted_before_squares: BTreeSet::new(),
-            last_virtual_time: 0.0,
-            turns_handled: 0,
             place: None,
             target: None,
             zoom: None,
@@ -335,7 +321,13 @@ impl GameInterface {
 
     /// What the player knows of the game.
     pub fn view(&self) -> &SeatView {
-        &self.seat
+        self.known.seat()
+    }
+
+    /// What the player knows of the game, now and as the interface last
+    /// showed it.
+    pub fn known(&self) -> &knowledge::Knowledge {
+        &self.known
     }
 
     /// The square width in meters.
@@ -474,9 +466,9 @@ impl GameInterface {
         end_of_turn: Option<Arc<TurnMessage>>,
         then: Vec<Event>,
     ) {
-        self.seat.install(message);
+        self.known.seat_mut().install(message);
         if let Some(end) = end_of_turn {
-            self.follow_replaced_in_commands(&end);
+            self.follow_replaced(&end);
             let events = end.events.iter().cloned().filter_map(SrvEvent::of);
             self.srv_queue.extend(events);
             self.srv_queue.push_back(SrvEvent::EndOfTurn(end));
@@ -490,7 +482,7 @@ impl GameInterface {
         GameProgress {
             turn: self.view().turn(),
             events_waiting: !self.srv_queue.is_empty(),
-            turns_handled: self.turns_handled,
+            turns_handled: self.known.turns_handled(),
         }
     }
 
@@ -659,12 +651,9 @@ impl GameInterface {
     /// The end of a turn: the interface's copies of the squares and the
     /// entities take the turn's, and the seat takes note of what it sees.
     fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) {
-        self.turns_handled += 1;
-        self.last_virtual_time = m.time as f64 / 1000.0;
+        self.known.end_turn(m);
         self.turn_handled();
-        self.scouted_squares = m.squares.observed.clone();
-        self.scouted_before_squares = m.squares.observed_before.clone();
-        self.seat.remember();
+        self.known.seat_mut().remember();
         self.note_objectives(&m.state.objectives);
         self.send_resource_alerts_if_needed(cx);
         if self.previous_menus.is_empty() {
@@ -672,7 +661,6 @@ impl GameInterface {
         }
         self.units_alert_if_needed(cx, None);
         self.scout_info_if_needed(cx);
-        self.follow_replaced_units(m);
         self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
         self.update_group();
         if self.bell_enabled && !self.muted() {
@@ -692,7 +680,7 @@ impl GameInterface {
             return;
         }
         self.set_obs_pos(cx);
-        let ids: Vec<EntityId> = self.dobjets.keys().copied().collect();
+        let ids: Vec<EntityId> = self.known.views().map(EntityView::id).collect();
         for id in ids {
             self.animate(cx, id);
         }
@@ -781,7 +769,7 @@ impl GameInterface {
     /// Stops every noise of the game and forgets it: the next animation
     /// starts each again where its object then is.
     pub(crate) fn silence_noises(&mut self, cx: &Client) {
-        for v in self.dobjets.values_mut() {
+        for v in self.known.views_mut() {
             if let Some(n) = v.anim.noise.take() {
                 n.stop(&cx.audio);
             }
@@ -793,7 +781,7 @@ impl GameInterface {
 
     /// Stops every noise of the game.
     pub fn stop_noises(&mut self, cx: &Client) {
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             v.stop(&cx.audio);
         }
         for (_, n) in &self.terrain_noises {

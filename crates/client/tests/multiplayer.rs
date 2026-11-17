@@ -2197,7 +2197,10 @@ fn a_watcher_starts_on_the_first_unit_of_the_player_it_follows_and_leaves_at_onc
     // once, with no turn played.
     h.step(&mut g);
     h.step(&mut g);
-    assert!(!g.game.dobjets.is_empty(), "the units are known");
+    assert!(
+        g.game.known().views().next().is_some(),
+        "the units are known"
+    );
     assert!(g.game.place.is_some(), "the cursor is on a square");
     h.run_until_voice_idle(&mut g);
     assert!(

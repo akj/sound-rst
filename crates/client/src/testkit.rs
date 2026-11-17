@@ -1018,6 +1018,18 @@ impl FakeStream {
         FakeStream::with_rules(h, map, slots, you, seed, |rules| rules)
     }
 
+    /// As [`FakeStream::new`], for a game that takes cheats, so that a
+    /// test can set it up with the seat's commands.
+    pub fn taking_cheats(
+        h: &mut Harness,
+        map: &str,
+        slots: &[Slot],
+        you: usize,
+        seed: i64,
+    ) -> FakeStream {
+        FakeStream::build(h, map, slots, you, seed, |rules| rules, true)
+    }
+
     /// As [`FakeStream::new`], for a game built from the client's rules
     /// text as `edit` changes it.
     pub fn with_rules(
@@ -1028,16 +1040,29 @@ impl FakeStream {
         seed: i64,
         edit: impl FnOnce(String) -> String,
     ) -> FakeStream {
+        FakeStream::build(h, map, slots, you, seed, edit, false)
+    }
+
+    fn build(
+        h: &mut Harness,
+        map: &str,
+        slots: &[Slot],
+        you: usize,
+        seed: i64,
+        edit: impl FnOnce(String) -> String,
+        cheats: bool,
+    ) -> FakeStream {
         let m = h.multiplayer_map(map);
         let texts = crate::multiplayer::game_texts(&mut h.client, &m).expect("the texts");
         let rules = edit(texts.rules.into_string());
-        let setup = GameSetup::multiplayer(
+        let mut setup = GameSetup::multiplayer(
             rules.clone(),
             texts.ai.into_string(),
             texts.map.into_string(),
             seed,
             slots.iter().map(Slot::controller).collect(),
         );
+        setup.allow_cheatmode = cheats;
         let host = Host::new(&setup).expect("a game");
         let seat = host.seats()[you];
         let last = host.message(seat);

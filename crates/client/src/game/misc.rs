@@ -657,7 +657,7 @@ impl GameInterface {
         self.bell_enabled = !self.bell_enabled;
         if self.bell_enabled {
             cx.voice.item(&[bell(), msg(Phrase::IsNowOn)].concat());
-            self.previous_nb_minutes = (self.last_virtual_time / 60.0) as i64;
+            self.previous_nb_minutes = (self.known.time() / 60.0) as i64;
         } else {
             cx.voice.item(&[bell(), msg(Phrase::IsNowOff)].concat());
         }
@@ -665,7 +665,7 @@ impl GameInterface {
 
     /// Rings every game minute.
     pub(crate) fn eventually_play_bell(&mut self, cx: &Client) {
-        let nb_minutes = (self.last_virtual_time / 60.0) as i64;
+        let nb_minutes = (self.known.time() / 60.0) as i64;
         if self.previous_nb_minutes != nb_minutes {
             cx.audio.play_stereo(
                 cx.sounds.cue(Cue::PositionalBeep),
@@ -713,7 +713,7 @@ impl GameInterface {
     }
 
     fn cmd_say_time(&self, cx: &mut Client) {
-        let t = self.last_virtual_time as i64;
+        let t = self.view().time() / 1000;
         let (m, s) = (t.div_euclid(60), t.rem_euclid(60));
         let m = [
             nb2msg(m),
@@ -772,7 +772,7 @@ impl GameInterface {
 
     /// Turns the first unit controlled, and the listener with it.
     fn rotate(&mut self, cx: &mut Client, degrees: f64) {
-        let Some(v) = self.group.first().and_then(|g| self.dobjets.get_mut(g)) else {
+        let Some(v) = self.group.first().and_then(|&g| self.known.unit_mut(g)) else {
             return;
         };
         v.o_override = Some(v.o() + degrees);

@@ -16,24 +16,27 @@
 //! cases run on a stack of 1 MiB, the size of a Windows program's main
 //! thread.
 
+use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use soundrts::bindings::{BindingError, Bindings, Chord};
 use soundrts::clock::Clock;
+use soundrts::input::{Key, Mods};
 use soundrts::log::Log;
 use soundrts::package::TextFile;
 use soundrts::parameters::Parameters;
 use soundrts::sound_cache::{SoundCache, read_language_file};
 use soundrts::style::Style;
-use soundrts::testkit::{FakeStream, Harness, Script, TestGame, game_root, slot};
+use soundrts::testkit::{FakeServer, FakeStream, Harness, Script, TestGame, game_root, slot};
 use soundrts_protocol::game::{RulesHash, SeatFrame, encode_frame};
-use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, Speed};
+use soundrts_protocol::{ClockChange, Computer, Login, SeatChange, Skill, SlotPlayer, Speed};
 use soundrts_world::msg::MsgPart;
 use soundrts_world::player::{Objective, StatEvent, StatTarget};
-use soundrts_world::{Event, Place};
+use soundrts_world::{EntityId, Event, KnownEntity, Place, TurnChange, TurnMessage};
 
 /// The longest one case may take: reading the changed text as an installed
 /// layer and as a downloaded one, then looking up what the game looks up.
@@ -607,6 +610,24 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
             s[3] = encoded(SeatFrame::Change(c));
             s
         }),
+        ("units replaced by units that do not exist", {
+            let mut s = frames.to_vec();
+            let SeatFrame::Whole(m) = frame(frames, 2) else {
+                panic!("a whole message");
+            };
+            let mine = m.perceived.iter().find(|e| e.player == Some(m.seat));
+            let old = mine.expect("a unit of the player").id;
+            for (i, f) in s.iter_mut().enumerate().skip(3) {
+                let SeatFrame::Change(mut c) = frame(frames, i) else {
+                    continue;
+                };
+                let new =
+                    (0..1000).map(|k| soundrts_world::EntityId(1_000_000 + 1000 * i as u32 + k));
+                c.events.extend(new.map(|new| Event::Replaced { old, new }));
+                *f = encoded(SeatFrame::Change(c));
+            }
+            s
+        }),
     ];
     cases.push((
         "a clock change",
@@ -622,10 +643,12 @@ fn out_of_order(frames: &[Vec<u8>]) -> Vec<(&'static str, Vec<Vec<u8>>)> {
 }
 
 /// The streams of [`out_of_order`] that may play on: a turn missed may
-/// look like a seat catching up, the game is over at the first end, and
-/// clock news names its player by login, who need not be in the room.
-const MAY_PLAY_ON: [&str; 4] = [
+/// look like a seat catching up, the game is over at the first end, clock
+/// news names its player by login, who need not be in the room, and a
+/// unit replaced by one the player is not told of is only lost.
+const MAY_PLAY_ON: [&str; 5] = [
     "a turn missed",
+    "units replaced by units that do not exist",
     "the end twice",
     "a turn after the end",
     "a clock change",
@@ -1028,4 +1051,375 @@ fn hostile_frames_of_a_watched_game_are_taken_without_a_panic() {
         .unwrap();
     let failures = worker.join().unwrap();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Andrew's game against a quiet computer on jl1 at a fake server, its
+/// first turns taken and told: the server, the stream, the game, and the
+/// last message the client was sent.
+fn doctored_game(h: &mut Harness) -> (FakeServer, FakeStream, TestGame, TurnMessage) {
+    let server = h.join_fake_server("andrew", &[]);
+    let slots = [
+        slot(SlotPlayer::Human(Login::new("andrew").unwrap()), 1),
+        slot(SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL)), 2),
+    ];
+    let mut stream = FakeStream::new(h, "jl1", &slots, 0, 1);
+    let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+    for turn in 1..=3 {
+        for frame in stream.turn(Vec::new()) {
+            server.frame_at(h.clock.now(), frame);
+        }
+        h.run_until_turn(&mut g, turn);
+    }
+    h.run_until_voice_idle(&mut g);
+    let last = stream.message().clone();
+    (server, stream, g, last)
+}
+
+/// The server plays a turn and sends the change from `last` to its
+/// message as `doctor` changes it, now; `last` becomes that message. The
+/// turn the client then has.
+fn send_doctored(
+    h: &Harness,
+    server: &FakeServer,
+    stream: &mut FakeStream,
+    last: &mut TurnMessage,
+    doctor: impl FnOnce(&mut TurnMessage),
+) -> i64 {
+    let _ = stream.turn(Vec::new());
+    let mut next = stream.message().clone();
+    doctor(&mut next);
+    let change = TurnChange::between(last, &next);
+    server.frame_at(h.clock.now(), SeatFrame::Change(change));
+    *last = next;
+    last.time / 300
+}
+
+/// The first of the player's peasants in `m`.
+fn peasant(m: &TurnMessage) -> KnownEntity {
+    let mine = |e: &&KnownEntity| e.player == Some(m.seat) && &*e.type_name == "peasant";
+    m.perceived.iter().find(mine).unwrap().clone()
+}
+
+/// `n` entities like `e`, each with an id of its own from `first` on.
+fn clones(e: &KnownEntity, first: u32, n: u32) -> Vec<KnownEntity> {
+    (first..first + n)
+        .map(|id| KnownEntity {
+            id: EntityId(id),
+            ..e.clone()
+        })
+        .collect()
+}
+
+#[test]
+fn a_unit_the_player_controls_and_does_not_perceive_is_not_selected() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let hidden = peasant(&last).id;
+    // The server lists the peasant, on its square, among the units the
+    // player controls and does not perceive.
+    let turn = send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        let i = m.perceived.iter().position(|e| e.id == hidden).unwrap();
+        let e = m.perceived.remove(i);
+        assert!(!e.is_inside());
+        m.unperceived_units.push(e);
+        m.unperceived_units.sort_by_key(|e| e.id);
+    });
+    h.run_until_turn(&mut g, turn);
+    assert_eq!(
+        h.key(&mut g, Key::Q, Mods::CTRL),
+        ["town hall 1 at b 1 , awaiting your orders"]
+    );
+    assert_eq!(h.key(&mut g, Key::E, Mods::NONE), Vec::<String>::new());
+    assert!(!g.game.end_loop, "the game plays on");
+}
+
+/// Makes `m` replace `n` units, from the id `first_old` on, which the
+/// player does not know, by units like `like`, which it tells of, from the
+/// id `first_new` on.
+fn replace_others(m: &mut TurnMessage, like: &KnownEntity, first_old: u32, first_new: u32, n: u32) {
+    let new = clones(like, first_new, n);
+    let replaced = new.iter().zip(first_old..).map(|(e, old)| Event::Replaced {
+        old: EntityId(old),
+        new: e.id,
+    });
+    m.events.extend(replaced);
+    m.perceived.extend(new);
+    m.perceived.sort_by_key(|e| e.id);
+}
+
+#[test]
+fn a_chain_of_replacements_is_read_once_to_find_a_unit() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    // Two hundred turns sent at once: in each the peasant's last unit is
+    // replaced by the next, from 1001 to 1200, which the turn tells of.
+    let chain = clones(&a, 1001, 200);
+    let z = chain.last().unwrap().id;
+    let mut old = a.id;
+    for e in &chain {
+        send_doctored(&h, &server, &mut stream, &mut last, |m| {
+            m.events.push(Event::Replaced { old, new: e.id });
+            m.perceived.push(e.clone());
+            m.perceived.sort_by_key(|e| e.id);
+        });
+        old = e.id;
+    }
+    // Once the last turn is taken, before the ends waiting are handled:
+    // the replacements kept, and those read to find the last unit.
+    let found = Rc::new(Cell::new(None));
+    let seen = Rc::clone(&found);
+    h.client.game.hook = Some(Rc::new(move |g, _| {
+        if seen.get().is_none() && g.view().known(z).is_some() {
+            let before = g.known().steps_read();
+            let shown = g.known().unit(z).map(|v| v.type_name() == "peasant");
+            let read = g.known().steps_read() - before;
+            seen.set(Some((g.known().replacements(), read, shown)));
+        }
+    }));
+    for _ in 0..10 {
+        h.step(&mut g);
+    }
+    h.client.game.hook = None;
+    assert_eq!(found.get(), Some((198, 197, Some(true))));
+}
+
+#[test]
+fn units_replaced_count_against_the_events_a_game_tells() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    let from = h.utterances().len();
+    // Seventy turns at once, each replacing a thousand units by a
+    // thousand the player is told of: more than a game tells.
+    for turn in 0..70 {
+        let first = 1000 * turn;
+        send_doctored(&h, &server, &mut stream, &mut last, |m| {
+            replace_others(m, &a, 500_000 + first, 1_000_000 + first, 1000);
+        });
+    }
+    // The most kept, read once the frames of each pass are taken and
+    // before an end of turn is handled.
+    let most = Rc::new(Cell::new(0));
+    let seen = Rc::clone(&most);
+    h.client.game.hook = Some(Rc::new(move |g, _| {
+        seen.set(seen.get().max(g.known().replacements()));
+    }));
+    for _ in 0..100 {
+        h.step(&mut g);
+        if g.game.end_loop {
+            break;
+        }
+    }
+    h.client.game.hook = None;
+    assert!(most.get() <= 65_536, "{} kept", most.get());
+    assert!(g.game.end_loop, "the game ended");
+    h.run_voice_for(5.0);
+    let said = h.said_since(from);
+    assert!(
+        said.contains(&"game ended: the server sent what cannot be right".to_owned()),
+        "{said:#?}"
+    );
+}
+
+/// Makes `m` replace one of its player's units, `n` times, by units it
+/// tells of.
+fn flood(m: &mut TurnMessage, n: u32) {
+    let seat = m.seat;
+    let mine = m.perceived.iter().find(|e| e.player == Some(seat));
+    let old = mine.expect("a unit of the player").clone();
+    let new = clones(&old, 2_000_000, n);
+    let replaced = new.iter().map(|e| Event::Replaced {
+        old: old.id,
+        new: e.id,
+    });
+    m.events.extend(replaced);
+    m.perceived.extend(new);
+    m.perceived.sort_by_key(|e| e.id);
+}
+
+/// More replacements than a game tells, in the first message of a
+/// watcher: the game is not played.
+#[test]
+fn a_watcher_first_told_more_replacements_than_a_game_tells_does_not_play() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let stream = FakeStream::new(&mut h, "jl1", &slots(), 0, 1).watching();
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut frames = stream.opening(map, Speed::Normal);
+    let SeatFrame::Whole(m) = &mut frames[2] else {
+        panic!("a whole message");
+    };
+    flood(m, 66_000);
+    frames.push(stream.end());
+    let frames: Vec<Vec<u8>> = frames.into_iter().map(encoded).collect();
+    assert!(play_stream(&mut h, &frames), "not refused");
+}
+
+/// Carol watches Andrew's game. While her connection is lost, the server
+/// moves her on to the computer, whose whole message on her return has
+/// more replacements than a game tells: she hears that the server sent
+/// what cannot be right.
+#[test]
+fn a_watcher_returned_to_another_player_with_more_replacements_than_a_game_tells_is_not_back() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut stream = FakeStream::new(&mut h, "jl1", &slots(), 0, 1).watching();
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut before = stream.opening(map.clone(), Speed::Normal);
+    for _ in 0..5 {
+        before.extend(stream.turn(Vec::new()));
+    }
+    for _ in 0..3 {
+        stream.turn(Vec::new());
+    }
+    let SeatFrame::Whole(mut other) = stream.follow(1) else {
+        panic!("a whole message");
+    };
+    flood(&mut other, 66_000);
+    let mut back = stream.opening(map, Speed::Normal);
+    back[2] = SeatFrame::Whole(other);
+    let encode = |frames: Vec<SeatFrame>| frames.into_iter().map(encoded).collect::<Vec<_>>();
+    let said = play_return_as(&mut h, "carol", &encode(before), &encode(back));
+    assert!(refused(&said), "{said:#?}");
+}
+
+#[test]
+fn a_tab_reads_each_replacement_once() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    // In one turn the peasant is replaced by 1001, and 999 units the
+    // player does not know by units it is told of: a thousand kept.
+    let first = EntityId(1001);
+    send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        replace_others(m, &a, a.id.0, first.0, 1);
+        replace_others(m, &a, 500_000, 1002, 999);
+    });
+    // Tab, once the turn is taken and before its end: the steps read.
+    let shown = g.game.known().views().count();
+    let before = g.game.known().steps_read();
+    let read = Rc::new(Cell::new(None));
+    let seen = Rc::clone(&read);
+    h.client.game.hook = Some(Rc::new(move |g, _| {
+        if seen.get().is_none() && g.view().known(first).is_some() {
+            let read = g.known().steps_read() - before;
+            let now = g.known().entities().find(|(_, v)| v.id() == a.id);
+            seen.set(Some((read, now.map(|(id, _)| id))));
+        }
+    }));
+    let from = h.utterances().len();
+    h.press(Key::Tab, Mods::NONE);
+    h.step(&mut g);
+    h.client.game.hook = None;
+    assert_eq!(
+        h.said_since(from).first().map(String::as_str),
+        Some("<ui/positional_beep> a meadow to the northwest")
+    );
+    // The peasant is the first unit that took its place.
+    assert_eq!((shown, read.get()), (27, Some((1000, Some(first)))));
+}
+
+#[test]
+fn a_unit_inside_that_the_player_remembers_outside_is_not_selected() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let hidden = peasant(&last).id;
+    // The server puts the peasant inside the town hall, among the units
+    // the player controls and does not perceive; the player remembers it
+    // on its square.
+    let turn = send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        let hall = m.perceived.iter().find(|e| &*e.type_name == "townhall");
+        let hall = hall.unwrap().id;
+        let i = m.perceived.iter().position(|e| e.id == hidden).unwrap();
+        let outside = m.perceived.remove(i);
+        let inside = KnownEntity {
+            place: Some(Place::Inside(hall)),
+            ..outside.clone()
+        };
+        m.unperceived_units.push(inside);
+        m.unperceived_units.sort_by_key(|e| e.id);
+        let remembered = KnownEntity {
+            last_seen: Some(m.time),
+            own: None,
+            ..outside
+        };
+        m.remembered.push(remembered);
+        m.remembered.sort_by_key(|e| e.id);
+    });
+    h.run_until_turn(&mut g, turn);
+    assert_eq!(h.key(&mut g, Key::E, Mods::NONE), Vec::<String>::new());
+    assert!(!g.game.end_loop, "the game plays on");
+}
+
+/// A turn that catches up others replaces the selected peasant by a unit
+/// it does not tell of, which it replaces in turn by one it tells of: the
+/// player still controls the last.
+#[test]
+fn a_unit_replaced_twice_in_a_turn_that_catches_up_stays_selected() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    assert_eq!(
+        h.key(&mut g, Key::E, Mods::NONE),
+        ["peasant 1 at b 1 , awaiting your orders"]
+    );
+    let (b, c) = (EntityId(1001), clones(&a, 1002, 1).remove(0));
+    let turn = send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        m.perceived.retain(|e| e.id != a.id);
+        m.events.push(Event::Replaced { old: a.id, new: b });
+        m.events.push(Event::Replaced { old: b, new: c.id });
+        m.perceived.push(c.clone());
+        m.perceived.sort_by_key(|e| e.id);
+    });
+    h.run_until_turn(&mut g, turn);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(g.game.group, [c.id]);
+    assert_eq!(
+        h.key(&mut g, Key::Space, Mods::NONE),
+        ["b 1 You control peasant 1 at b 1 ,"]
+    );
+}
+
+/// A server replaces the selected peasant by the farm, which the player
+/// already sees: no game does so, and the peasant stays selected.
+#[test]
+fn a_unit_replaced_by_one_already_shown_is_not_followed() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, mut stream, mut g, mut last) = doctored_game(&mut h);
+    let a = peasant(&last);
+    let farm = last.perceived.iter().find(|e| &*e.type_name == "farm");
+    let farm = farm.unwrap().id;
+    h.key(&mut g, Key::E, Mods::NONE);
+    let turn = send_doctored(&h, &server, &mut stream, &mut last, |m| {
+        m.events.push(Event::Replaced {
+            old: a.id,
+            new: farm,
+        });
+    });
+    h.run_until_turn(&mut g, turn);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(g.game.group, [a.id]);
+    assert_eq!(
+        h.key(&mut g, Key::Space, Mods::NONE),
+        ["b 1 You control peasant 1 at b 1 ,"]
+    );
+}
+
+/// A change that ends no turn, sent when nothing waits, with `events`
+/// events: whether the game ended on it.
+fn ended_on_events(events: usize) -> bool {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let (server, _stream, mut g, last) = doctored_game(&mut h);
+    assert!(!g.game.has_pending_server_events());
+    let mut next = last.clone();
+    next.events = vec![Event::Speed(1.0); events];
+    let change = TurnChange::between(&last, &next);
+    server.frame_at(h.clock.now(), SeatFrame::Change(change));
+    h.step(&mut g);
+    g.game.end_loop
+}
+
+#[test]
+fn a_change_that_ends_no_turn_may_bring_as_many_events_as_may_wait() {
+    assert!(!ended_on_events(65_536));
+    assert!(ended_on_events(65_537));
 }

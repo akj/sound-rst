@@ -204,6 +204,29 @@ fn listening_from_the_start_says_and_plays_what_the_player_heard_live() {
 }
 
 #[test]
+fn where_the_replay_is_is_the_turn_taken_before_its_end_is_handled() {
+    let record = record_of(100);
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening(&mut h, record);
+    h.run_until_turn(&mut g, 9);
+    assert_eq!(g.game.view().time(), 2700);
+    // The next turn is taken, then the key handled, before the turn's end.
+    g.game.set_turn_due(h.clock.now());
+    let from = h.utterances().len();
+    h.press(Key::F3, Mods::NONE);
+    h.step(&mut g);
+    assert_eq!(g.game.view().time(), 3000);
+    assert!(g.game.has_pending_server_events());
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    let time = said.iter().find(|s| s.contains(" of 0 minutes 30 seconds"));
+    assert_eq!(
+        time.map(String::as_str),
+        Some("0 minutes 3 seconds of 0 minutes 30 seconds , speed normal")
+    );
+}
+
+#[test]
 fn a_paused_record_runs_no_turn_and_the_keys_still_answer() {
     let record = record_of(100);
     let mut h = Harness::new("en", Script::new().keep_open());
@@ -241,6 +264,55 @@ fn a_paused_record_runs_no_turn_and_the_keys_still_answer() {
     );
     assert_eq!(answer(&mut h, &mut g, Key::Minus, Mods::NONE), "speed slow");
     assert_eq!(answer(&mut h, &mut g, Key::Minus, Mods::NONE), "speed slow");
+}
+
+#[test]
+fn a_jump_drops_the_replacements_of_the_turns_waiting() {
+    use crate::game::testing::{cheat, step, unit};
+    let record = {
+        let mut h = Harness::new("en", Script::new().keep_open());
+        let mut g = h.start_training("jl1", &["timers"], 1);
+        h.run_until_turn(&mut g, 2);
+        let me = g.game.me;
+        let w = g.game.host().world();
+        let home = w
+            .entity(unit(&g, me, "townhall"))
+            .unwrap()
+            .square()
+            .unwrap();
+        let home = g.game.view().square(home).name().to_owned();
+        cheat(
+            &mut g,
+            me,
+            &format!("add_units {home} lumbermill magestower archer"),
+        );
+        step(&mut g);
+        let archer = unit(&g, me, "archer");
+        let host = g.game.host_mut();
+        host.queue_line(me, &format!("control {archer}"));
+        host.queue_line(me, "order 0 0 upgrade_to darkarcher");
+        while g.game.host().world().entity(archer).is_some() {
+            step(&mut g);
+        }
+        for _ in 0..10 {
+            step(&mut g);
+        }
+        g.game.host().record().clone()
+    };
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening(&mut h, record);
+    // The turn of the upgrade is taken: its replacement is kept.
+    for _ in 0..100_000 {
+        if g.game.known().replacements() > 0 {
+            break;
+        }
+        h.step(&mut g);
+    }
+    assert_eq!(g.game.known().replacements(), 1);
+    h.press(Key::LeftBracket, Mods::NONE);
+    h.step(&mut g);
+    assert!(g.game.muted(), "jumping");
+    assert_eq!(g.game.known().replacements(), 0);
 }
 
 #[test]

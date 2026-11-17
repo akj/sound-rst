@@ -449,8 +449,8 @@ impl GameInterface {
         if !m.state.players.contains(&me) {
             // What the player knew when it left: its result and score.
             // What waited of its turns is not heard.
-            self.seat.install(m);
-            self.srv_queue.clear();
+            self.known.seat_mut().install(m);
+            self.drop_turns_waiting();
             return self.followed_left(cx);
         }
         let minutes = m.time.div_euclid(60_000);
@@ -545,7 +545,7 @@ impl GameInterface {
     /// "3 minutes 20 seconds of 12 minutes 0 seconds": where the replay
     /// is, of the whole record.
     fn where_the_replay_is(&mut self) -> Msg {
-        let now = self.last_virtual_time as i64;
+        let now = self.view().time() / 1000;
         let total = self.replay().map_or(0, |r| r.total_seconds());
         [time_msg(now), msg(Phrase::OutOf), time_msg(total)].concat()
     }
@@ -655,7 +655,7 @@ impl GameInterface {
         r.progress_said_at = now;
         r.waiting_for_world_update = false;
         cx.voice.silent_flush();
-        self.srv_queue.clear();
+        self.drop_turns_waiting();
         self.silence_noises(cx);
     }
 

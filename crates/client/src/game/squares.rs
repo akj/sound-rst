@@ -3,7 +3,7 @@
 
 use soundrts_world::msg::{Msg, Phrase, comma, msg};
 use soundrts_world::rules::AirGround;
-use soundrts_world::{INF, Place, SquareId};
+use soundrts_world::{EntityId, INF, Place, SquareId};
 
 use crate::audio::{angle, distance};
 use crate::client::Client;
@@ -85,7 +85,7 @@ impl GameInterface {
     }
 
     fn silence_square(&self, cx: &Client) {
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             if !self.is_in(v, self.place) {
                 v.stop(&cx.audio);
             }
@@ -116,9 +116,9 @@ impl GameInterface {
     /// The terrain, and whether the square is in the fog or unknown.
     pub fn square_postfix(&self, cx: &Client, place: SquareId) -> Msg {
         let mut postfix = Vec::new();
-        if self.scouted_squares.contains(&place) {
+        if self.known.observed().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
-        } else if self.scouted_before_squares.contains(&place) {
+        } else if self.known.observed_before().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
             postfix.extend(comma());
             postfix.extend(msg(Phrase::InTheFog));
@@ -144,7 +144,7 @@ impl GameInterface {
         let mut units = Vec::new();
         let mut resources = Vec::new();
         let view = self.view();
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             if !self.is_in(v, place) {
                 continue;
             }
@@ -237,8 +237,8 @@ impl GameInterface {
     /// crossed freely.
     fn shouldnt_collide(&self) -> bool {
         self.group.iter().any(|x| {
-            self.dobjets
-                .get(x)
+            self.known
+                .unit(*x)
                 .is_some_and(|v| v.model.airground == AirGround::Air)
         }) || self
             .order
@@ -246,10 +246,11 @@ impl GameInterface {
             .is_some_and(|o| o.nb_args != 0 && o.target_shouldnt_collide(self.view()))
     }
 
-    /// Whether the player may see the object now: in the zoom, on the
-    /// square, with a title; in first person mode, in front; an exit not
-    /// blocked.
-    pub fn is_visible(&self, cx: &Client, v: &EntityView) -> bool {
+    /// Whether the player may see the object now, `v` as the interface
+    /// shows it and `id` as the game names it now: in the zoom, on the
+    /// square, with a title; in first person mode, in front and not one of
+    /// the units controlled; an exit not blocked.
+    pub fn is_visible(&self, cx: &Client, id: EntityId, v: &EntityView) -> bool {
         if let Some(z) = &self.zoom
             && !z.contains(v.model.x, v.model.y)
         {
@@ -259,7 +260,7 @@ impl GameInterface {
             return false;
         }
         if self.immersion {
-            if self.group.contains(&v.id()) {
+            if self.group.contains(&id) {
                 return false;
             }
             let a = angle(self.x, self.y, v.x(), v.y(), self.o);
@@ -284,7 +285,7 @@ impl GameInterface {
             return (no_path, true);
         };
         let (p, n) = (self.view().square(place), self.view().square(new_square));
-        if !self.scouted_before_squares.contains(&place)
+        if !self.known.observed_before().contains(&place)
             || (p.is_water() || n.is_water()) && p.high_ground() == n.high_ground()
             || self.shouldnt_collide()
         {
@@ -293,9 +294,9 @@ impl GameInterface {
         let (xc, yc) = self.coords_in_map(Some(place));
         let sw = self.square_width();
         let (x, y) = ((xc as f64 + 0.5) * sw, (yc as f64 + 0.5) * sw);
-        for v in self.dobjets.values() {
+        for (id, v) in self.known.entities() {
             if !(self.is_in(v, Some(place))
-                && self.is_visible(cx, v)
+                && self.is_visible(cx, id, v)
                 && self.is_an_exit(cx, v)
                 && !self.view().exit_is_blocked(v.id(), true))
             {
@@ -443,13 +444,13 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) {
-        let squares = self.scouted_squares.iter().copied().collect();
+        let squares = self.known.observed().iter().copied().collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
     pub(crate) fn cmd_select_conflict_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             let enemy = v.player().is_some_and(|p| !self.view().allied(p, self.me));
             if enemy && !squares.contains(&v.place()) {
                 squares.push(v.place());
@@ -462,14 +463,14 @@ impl GameInterface {
     pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
-            .filter(|s| !self.scouted_before_squares.contains(s))
+            .filter(|s| !self.known.observed_before().contains(s))
             .collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
     pub(crate) fn cmd_select_resource_square(&mut self, cx: &mut Client, increment: i64) {
         let mut squares: Vec<Option<Place>> = Vec::new();
-        for v in self.dobjets.values() {
+        for v in self.known.views() {
             if self.resource_type(&v.model).is_some() && !squares.contains(&v.place()) {
                 squares.push(v.place());
             }
@@ -496,7 +497,7 @@ impl GameInterface {
     fn group_head(&self) -> Option<&EntityView> {
         let mut best: Option<&EntityView> = None;
         for id in &self.group {
-            let v = self.dobjets.get(id)?;
+            let v = self.known.unit(*id)?;
             let distance =
                 |v: &EntityView| v.model.own.as_ref().map_or(INF, |o| o.distance_to_goal);
             if best.is_none_or(|b| distance(v) < distance(b)) {
@@ -512,8 +513,9 @@ impl GameInterface {
         if !(self.follow_mode && !self.an_order_requiring_a_target_is_selected()) {
             return;
         }
-        // The group keeps only units the interface knows: one that is not
-        // empty has a head.
+        // The group keeps only units the player knows; one the copy does
+        // not show yet, until the end of the turn that brought it, leaves
+        // the group without a head.
         let Some(head) = self.group_head() else {
             return;
         };
@@ -559,14 +561,14 @@ impl GameInterface {
     pub(crate) fn set_obs_pos(&mut self, cx: &mut Client) {
         if self.place.is_none() {
             let units = self.units(cx, true, true);
-            if let Some(&first) = units.first()
-                && let Some(s) = self.outer_square(self.dobjets[&first].place())
+            if let Some(first) = units.iter().find_map(|v| self.known.unit(v.id()))
+                && let Some(s) = self.outer_square(first.place())
             {
                 self.select_and_say_square(cx, s, &Vec::new());
             }
         }
         self.follow_if_needed(cx);
-        let head = self.group.first().and_then(|g| self.dobjets.get(g));
+        let head = self.group.first().and_then(|&g| self.known.unit(g));
         if self.immersion
             && let Some(v) = head
         {
@@ -603,7 +605,7 @@ impl GameInterface {
             squares.extend(self.view().square(p).neighbors().iter().copied());
         }
         squares.retain(|s| {
-            self.scouted_squares.contains(s) || self.scouted_before_squares.contains(s)
+            self.known.observed().contains(s) || self.known.observed_before().contains(s)
         });
         let player = NoisePlayer {
             audio: &cx.audio,
@@ -623,7 +625,7 @@ impl GameInterface {
                     NoiseSite {
                         x: x as f64 / 1000.0,
                         y: y as f64 / 1000.0,
-                        fow: !self.scouted_squares.contains(&s),
+                        fow: !self.known.observed().contains(&s),
                     },
                 );
                 kept.push((s, n));
@@ -662,13 +664,13 @@ mod tests {
         let home = game.host().world().entity(townhall).unwrap().square();
         let home = home.unwrap();
         // Observed: the terrain noted at the end of each turn.
-        assert!(game.scouted_squares.contains(&home));
+        assert!(game.known.observed().contains(&home));
         assert_eq!(game.view().terrain(home), "_meadows");
         let m = game.square_postfix(&h.client, home);
         assert_eq!(said(&mut h, &m), ", meadows");
         // Glimpsed from the next square: its terrain too, in the fog.
         let a1 = game.view().square_at(0, 0).unwrap();
-        assert!(!game.scouted_squares.contains(&a1));
+        assert!(!game.known.observed().contains(&a1));
         assert!(game.view().partly_observed_squares().contains(&a1));
         let m = game.square_postfix(&h.client, a1);
         assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
@@ -685,7 +687,7 @@ mod tests {
         let (mut h, g) = training_on("jl5");
         // On jl5, the sea of b 1 is glimpsed from the start square.
         let b1 = g.game.view().square_at(1, 0).unwrap();
-        assert!(!g.game.scouted_squares.contains(&b1));
+        assert!(!g.game.known.observed().contains(&b1));
         assert!(g.game.view().partly_observed_squares().contains(&b1));
         let m = g.game.square_postfix(&h.client, b1);
         assert_eq!(said(&mut h, &m), ", sea , in the fog of war");
@@ -706,7 +708,7 @@ mod tests {
             (home, v.square_at(0, 2).unwrap(), v.square_at(0, 3).unwrap())
         };
         let glimpsed = |g: &GameInterface, s| {
-            g.scouted_squares.contains(&s) || g.view().partly_observed_squares().contains(&s)
+            g.known().observed().contains(&s) || g.view().partly_observed_squares().contains(&s)
         };
         // The player's peasant glimpses the forest of a 4 from a 3, then
         // goes home, out of sight of it.

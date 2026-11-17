@@ -413,24 +413,24 @@ fn the_last_turn_ends_before_the_players_leave_and_is_answered_after() {
     let me = g.game.me;
     g.game
         .send_command(&h.client, Command::Cheat(Cheat::Victory));
-    let handled = g.game.turns_handled;
+    let handled = g.game.known.turns_handled();
     while !g.game.view().players().is_empty() {
         h.step(&mut g);
     }
     // Taken: every player has left, and the turn's end waits, then the
     // player's leaving.
-    assert_eq!(g.game.turns_handled, handled);
+    assert_eq!(g.game.known.turns_handled(), handled);
     assert!(g.game.view().has_victory());
     assert!(g.game.view().own_units().all(|u| u.place.is_none()));
     assert!(matches!(g.game.srv_queue.back(), Some(SrvEvent::Quit)));
-    while g.game.turns_handled == handled {
+    while g.game.known.turns_handled() == handled {
         h.step(&mut g);
     }
     // The end of the turn handled: the player's units are still there.
     let mine = |g: &TestGame| {
         g.game
-            .dobjets
-            .values()
+            .known
+            .views()
             .filter(|v| v.player() == Some(me) && v.place().is_some())
             .count()
     };
