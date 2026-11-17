@@ -113,7 +113,7 @@ impl World {
         self.armor_versus_of(target, attacker)
     }
 
-    /// Creates a building site for `building_type`, and pays it.
+    /// Creates a building site for `building_type`. The caller pays for it.
     pub(crate) fn create_building_site(
         &mut self,
         player: PlayerId,
@@ -133,7 +133,6 @@ impl World {
         let creature = Creature::new(CreatureKind::BuildingSite(site));
         let e = Entity::new("buildingsite", Kind::Creature(creature));
         let id = self.create_creature_from(e, Some(player), place, x, y)?;
-        self.pay(player, &bt.cost);
         let e = self.em(id);
         e.stats.hp_max = bt.stats.hp_max;
         e.stats.is_buildable_anywhere = bt.stats.is_buildable_anywhere;

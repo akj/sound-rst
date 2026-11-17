@@ -1179,6 +1179,47 @@ fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
 }
 
 #[test]
+fn a_group_pays_once_for_a_building_and_again_after_a_refused_worker_was_refunded() {
+    let (mut w, me, _) = game();
+    w.plm(me).resources = vec![1000 * crate::nofloat::PRECISION; 2];
+    w.update();
+    let s = home(&w, me);
+    let first = find(&w, me, "peasant");
+    let second = add(&mut w, "peasant", me, s);
+    let meadow = w
+        .square(s)
+        .objects
+        .iter()
+        .copied()
+        .find(|&o| w.e(o).is_a_building_land())
+        .unwrap();
+    let before = w.pl(me).resources.clone();
+    let paid = vec![995 * crate::nofloat::PRECISION; 2];
+    // One command to both: a farm costs 5 gold and 5 wood, paid once.
+    for peasant in [first, second] {
+        let build = Request::build("farm", TargetRef::Entity(meadow));
+        w.take_order(peasant, build, true, false, Some(5)).unwrap();
+    }
+    assert_eq!(w.pl(me).resources, paid);
+    let uid = |w: &World, u: EntityId| w.e(u).orders()[0].uid;
+    // The first to arrive finds the limit reached, and the payment is
+    // given back.
+    let farm = w.rules.unit_type_mut("farm").unwrap();
+    farm.stats.count_limit = 1;
+    entity_events(&mut w, me);
+    assert_eq!(w.order_execute(first, uid(&w, first)), Ok(()));
+    let refused = EntityEvent::OrderImpossible(Some(Reason::CountLimitReached));
+    assert!(entity_events(&mut w, me).contains(&refused));
+    assert_eq!(w.pl(me).resources, before);
+    // The second arrives once the limit allows it, and pays for the site.
+    w.rules.unit_type_mut("farm").unwrap().stats.count_limit = 2;
+    assert_eq!(w.order_execute(second, uid(&w, second)), Ok(()));
+    assert_eq!(all(&w, me, "buildingsite").len(), 1);
+    assert_eq!(w.pl(me).resources, paid);
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
 fn a_trigger_order_with_an_unreadable_choice_gives_no_order() {
     use crate::triggers::Expr;
     let (mut w, a, _) = two_humans("");

@@ -97,9 +97,6 @@ pub enum Invariant {
     /// action has: an order aims at a square, a point of a square or an
     /// entity.
     OrderAimsAtCoordinates,
-    /// A project in a player's budget is not a `build` order. Only a
-    /// `build` order reserves its building's cost there.
-    ProjectIsNotABuild,
     /// An entity without a place, or inside one without a place, was asked
     /// its height or its chance to be hit.
     Unplaced,
@@ -156,9 +153,6 @@ impl fmt::Display for Invariant {
             }
             Invariant::OrderAimsAtCoordinates => {
                 "an order aims at coordinates, which only an action does (updated_target)"
-            }
-            Invariant::ProjectIsNotABuild => {
-                "a project in the budget is not a build order (free_resources)"
             }
             Invariant::Unplaced => "an entity without a place was asked its height (height_of)",
             Invariant::ActingInside => "a unit inside another acts on its own",

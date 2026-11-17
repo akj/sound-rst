@@ -1909,13 +1909,13 @@ starting_resources 100 100
         for (&peasant, &meadow) in peasants.iter().zip(&meadows) {
             take(&mut w, peasant, &format!("build farm {meadow}"));
         }
-        assert_eq!(w.player(p).budget.len(), 2);
+        assert_eq!(w.player(p).ledger.projects().count(), 2);
         assert_ne!(w.player(p).resources, start);
         for peasant in peasants {
             w.cm(peasant).unwrap().orders.clear();
         }
         w.player_slow_update(p).unwrap();
-        assert!(w.player(p).budget.is_empty());
+        assert_eq!(w.player(p).ledger.projects().count(), 0);
         assert_eq!(w.player(p).resources, start);
     }
 

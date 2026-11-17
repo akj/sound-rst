@@ -10,6 +10,7 @@ use crate::entity::{
     AiMode, Creature, EntityId, Names, Place, PlayerId, SquareId, Target, TargetIdentity,
 };
 use crate::events::{EntityEvent, Event, Reason};
+use crate::ledger::{Project, Purpose};
 use crate::nofloat::{py_int, square_of_distance};
 use crate::questions;
 use crate::rules::{
@@ -1078,6 +1079,24 @@ impl Order {
         }
     }
 
+    /// The building project of a `build` order: what its payment is
+    /// held under.
+    pub(crate) fn project(&self) -> Option<Project> {
+        match self.kind {
+            OrderKind::Build { building, .. } => Some(self.project_of(building)),
+            _ => None,
+        }
+    }
+
+    /// The project of this `build` order of `building`, as it aims now.
+    fn project_of(&self, building: TypeId) -> Project {
+        Project {
+            building,
+            target: self.target().and_then(Target::identity),
+            command: self.id,
+        }
+    }
+
     /// The order in words, as given: `["build", "farm", "25"]`.
     pub fn words(&self, w: &World) -> Vec<String> {
         let mut words = vec![self.keyword().as_str().to_owned()];
@@ -1182,11 +1201,6 @@ impl World {
     /// the same type, target and command; other orders are never equal.
     pub(crate) fn order_eq(&self, a: &Order, b: &Order) -> bool {
         a.likeness().is_some_and(|l| b.likeness() == Some(l))
-    }
-
-    /// `x in list`: the same order or an equal one.
-    fn order_in(&self, list: &[Order], o: &Order) -> bool {
-        list.iter().any(|x| x.uid == o.uid || self.order_eq(x, o))
     }
 
     // costs
@@ -1357,16 +1371,11 @@ impl World {
         let Some(p) = self.e(unit).player() else {
             return;
         };
-        // An impossible order was never paid for, or was refunded when it
-        // failed; a complete one has delivered what it paid for. Either
-        // waits in the queue until the unit's next update.
-        if o.progress.is_final() {
-            self.notify(unit, EntityEvent::OrderOk, false);
-            return;
-        }
+        let paid = Purpose::Production(o.uid);
         if unpay {
-            let cost = self.order_cost(unit, o);
-            self.unpay(p, &cost);
+            self.refund(p, &paid);
+        } else {
+            self.plm(p).ledger.commit(&paid);
         }
         if o.progress == Progress::Started {
             let food = self.order_food_cost(unit, o);
@@ -1536,17 +1545,7 @@ impl World {
 
     fn set_target(&mut self, unit: EntityId, uid: u64, t: Option<Target>) {
         if let Some(aim) = self.kind_mut(unit, uid).and_then(OrderKind::aim_mut) {
-            aim.target = t.clone();
-        }
-        // A reserved project is the same object as the order.
-        if let Some(p) = self.e(unit).player() {
-            for b in &mut self.plm(p).budget {
-                if b.uid == uid
-                    && let Some(aim) = b.kind.aim_mut()
-                {
-                    aim.target = t.clone();
-                }
-            }
+            aim.target = t;
         }
     }
 
@@ -1591,7 +1590,7 @@ impl World {
                     return Ok(());
                 }
                 if let Some(p) = self.e(unit).player() {
-                    self.pay(p, &cost);
+                    self.reserve(p, Purpose::Production(uid), uid, cost);
                 }
                 let tc = self.production_time_cost(unit, production);
                 if let Some(OrderKind::Production(p)) = self.kind_mut(unit, uid) {
@@ -1859,9 +1858,10 @@ impl World {
         }
         self.set_target(unit, uid, t.clone());
         let o = self.ord(unit, uid).cloned().expect("queued");
-        let reserved = self.order_in(&self.pl(p).budget, &o);
-        if !reserved {
-            let cost = self.order_cost(unit, &o);
+        // An order of a project already paid for shares its payment.
+        let project = Purpose::Building(o.project_of(building));
+        let cost = self.order_cost(unit, &o);
+        if !self.pl(p).ledger.is_reserved(&project) {
             let food = self.order_food_cost(unit, &o);
             if let Some(r) = self.check_if_enough_resources(unit, &cost, food) {
                 self.mark_as_impossible(unit, uid, Some(r));
@@ -1877,12 +1877,7 @@ impl World {
             return Ok(());
         }
         self.notify(unit, EntityEvent::OrderOk, false);
-        let o = self.ord(unit, uid).cloned().expect("queued");
-        if !self.order_in(&self.pl(p).budget, &o) {
-            let cost = self.order_cost(unit, &o);
-            self.pay(p, &cost);
-            self.plm(p).budget.push(o);
-        }
+        self.reserve(p, project, uid, cost);
         Ok(())
     }
 
@@ -2336,10 +2331,11 @@ impl World {
                         p.time_left -= VIRTUAL_TIME_INTERVAL;
                     }
                     self.notify_completeness(unit, uid);
-                } else if self.production_complete(unit, o, production.product)?
-                    && let Some(o) = self.ordm(unit, uid)
-                {
-                    o.complete();
+                } else if self.production_complete(unit, o, production.product)? {
+                    self.plm(p).ledger.commit(&Purpose::Production(uid));
+                    if let Some(o) = self.ordm(unit, uid) {
+                        o.complete();
+                    }
                 }
             }
             // A final order leaves the queue before it would run again.
@@ -2726,7 +2722,7 @@ impl World {
             _ => self.t_place_of(&t).is_some() && self.t_place_of(&t) == here,
         };
         if at_target {
-            self.free_resources(p, &o)?;
+            let project = Purpose::Building(o.project_of(building));
             let bt = self.rules.ty(building);
             let airground = bt.airground_type;
             let (tx, ty) = self.t_xy(&t);
@@ -2734,12 +2730,14 @@ impl World {
                 return Err(Invariant::ActingInside.into());
             };
             if self.find_free_space(s, airground, tx, ty).is_none() {
+                self.refund(p, &project);
                 self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
                 return Ok(());
             }
             if self.check_count_limit(p, building) {
-                self.put_building_site(unit, uid, building, t)?;
+                self.put_building_site(unit, uid, building, t, &project)?;
             } else {
+                self.refund(p, &project);
                 self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
             }
         } else if self.e(unit).is_idle() {
@@ -2754,6 +2752,7 @@ impl World {
         uid: u64,
         type_id: TypeId,
         target: Target,
+        project: &Purpose,
     ) -> Res {
         let Some(p) = self.e(unit).player() else {
             return Ok(());
@@ -2771,6 +2770,7 @@ impl World {
             _ => match self.t_place_of(&target) {
                 Some(place) => place,
                 None => {
+                    self.refund(p, project);
                     self.mark_as_impossible(unit, uid, Some(Reason::CannotBuildHere));
                     return Ok(());
                 }
@@ -2790,6 +2790,12 @@ impl World {
         let site = self
             .create_building_site(p, place, x, y, type_id)
             .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
+        match self.plm(p).ledger.take(project) {
+            Some(payment) => payment.commit(),
+            // An order of the project that came first failed here, and gave
+            // the payment back: the site is paid now.
+            None => self.pay(p, &bt.cost),
+        }
         // `site` was just created as a creature.
         if remember_land && let Some(c) = self.cm(site) {
             c.building_land = target.entity_id();
