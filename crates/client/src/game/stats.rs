@@ -11,15 +11,10 @@ use super::order::PRECISION;
 
 /// The messages of the score: the outcome and the duration, units and
 /// buildings, each resource, then the score. None before the game is over
-/// for the player: the statistics come with its end.
-pub fn score_msgs(view: &SeatView, style: &Style) -> Vec<Msg> {
-    score_msgs_of(view, style, false)
-}
-
-/// As [`score_msgs`]; with `still_on`, the outcome is that the game was
-/// not over for the player: a recording that ends while the player is
-/// still in the game.
-pub fn score_msgs_of(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg> {
+/// for the player: the statistics come with its end. With `still_on`, the
+/// outcome is that the game was not over for the player: a recording that
+/// ends while the player is still in the game.
+pub fn score_msgs(view: &SeatView, style: &Style, still_on: bool) -> Vec<Msg> {
     let Some(stats) = view.stats() else {
         return Vec::new();
     };

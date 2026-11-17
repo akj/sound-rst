@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use soundrts_protocol::ClientMsg;
 use soundrts_world::msg::{Cue, Msg, MsgPart, Phrase, cue, msg, nb2msg};
 use soundrts_world::{
     Controller, DefaultTrigger, GameSetup, Host, PlayerId, Skill, multiplayer_default_triggers,
@@ -14,7 +13,6 @@ use soundrts_world::{
 use crate::campaign::Campaign;
 use crate::client::Client;
 use crate::game::GameInterface;
-use crate::game::stats::score_msgs;
 use crate::mapfile::Map;
 use crate::menu::Exit;
 use crate::message::{Category, News};
@@ -165,16 +163,8 @@ impl Session {
         let Some(mut game) = self.start(cx) else {
             return Ok(());
         };
-        if let Err(exit) = game.run_loop(cx) {
-            // The window was closed: what the game was is kept.
-            if !game.already_asked_to_quit {
-                game.save_on_leaving(cx);
-            }
-            return Err(exit);
-        }
-        game.keep_finished(cx);
-        self.has_victory = finish(cx, &mut game);
-        cx.input.set_game(None);
+        let ran = game.run_loop(cx);
+        self.has_victory = game.end(cx, ran)?;
         Ok(())
     }
 
@@ -186,10 +176,10 @@ impl Session {
     pub fn start(&mut self, cx: &mut Client) -> Option<GameInterface> {
         cx.res.set_map(Some(&self.map));
         if let Some(loaded) = self.loaded.take() {
-            let mut game = GameInterface::local(cx, loaded.host, loaded.me);
-            game.set_save_info(self.save.clone());
+            let mut game =
+                GameInterface::local(cx, loaded.host, loaded.me, Some(self.save.clone()));
             let told = game.resume(loaded.ui);
-            prepare(cx, &mut game, vec![told]);
+            game.begin(cx, vec![told]);
             return Some(game);
         }
         let setup = GameSetup {
@@ -218,10 +208,9 @@ impl Session {
             cx.log.warning(format!("world: {w}"));
         }
         let me = host.seats()[0];
-        let mut game = GameInterface::local(cx, host, me);
-        game.set_save_info(self.save.clone());
+        let mut game = GameInterface::local(cx, host, me, Some(self.save.clone()));
         let intro = self.intro(&game);
-        prepare(cx, &mut game, intro);
+        game.begin(cx, intro);
         Some(game)
     }
 
@@ -230,42 +219,8 @@ impl Session {
         if self.kind != SessionKind::Mission {
             return Vec::new();
         }
-        game.view()
-            .map_intro()
-            .iter()
-            .map(|part| vec![part.clone()])
-            .collect()
+        game.mission_intro()
     }
-
-    /// Says what the end of the game left to say, then the score, and
-    /// waits until it is said (a key skips ahead).
-    pub fn finish(&mut self, cx: &mut Client, game: &mut GameInterface) {
-        self.has_victory = finish(cx, game);
-    }
-}
-
-/// Readies a new game's interface: the order menus, the keys, and the
-/// story told before the first turn, `intro` then the objective. In a game
-/// run here the first turn waits until the story is told.
-pub(crate) fn prepare(cx: &mut Client, game: &mut GameInterface, intro: Vec<Msg>) {
-    cx.input.set_game(Some(game.progress()));
-    game.update_orders_list(cx);
-    let story = intro.into_iter().chain(game.objective()).collect();
-    game.tell_story(cx, story);
-    game.load_bindings(cx);
-}
-
-/// Says what the end of the game left to say, then the score, and waits
-/// until it is said (a key skips ahead). Whether the player won.
-pub fn finish(cx: &mut Client, game: &mut GameInterface) -> bool {
-    cx.voice.flush(true);
-    game.end_game();
-    for m in score_msgs(game.view(), cx.res.style()) {
-        cx.news(News::new(Category::System, m));
-    }
-    cx.voice.flush(true);
-    game.stop_noises(cx);
-    game.view().has_victory()
 }
 
 /// Joins the game a server runs for the player, on the room's `map`.
@@ -274,17 +229,7 @@ pub fn finish(cx: &mut Client, game: &mut GameInterface) -> bool {
 pub fn join_server_game(cx: &mut Client, seated: &Seated) -> Option<GameInterface> {
     match crate::game::server::join(cx, seated) {
         Ok(mut game) => {
-            // The game's start silenced the room's news: its incomes are said
-            // again.
-            let incomes = cx
-                .net
-                .as_ref()
-                .and_then(|n| n.room.as_ref())
-                .and_then(|r| r.incomes());
-            if let Some(incomes) = incomes {
-                cx.news(News::new(Category::System, incomes));
-            }
-            prepare(cx, &mut game, Vec::new());
+            game.begin(cx, Vec::new());
             Some(game)
         }
         Err(why) => {
@@ -295,7 +240,7 @@ pub fn join_server_game(cx: &mut Client, seated: &Seated) -> Option<GameInterfac
                     msg(Phrase::ServerSentWhatCannotBeRight),
                 ));
             }
-            leave_server_game(cx);
+            crate::net::leave_game(cx);
             None
         }
     }
@@ -315,24 +260,6 @@ fn play_server_game(cx: &mut Client, seated: &Seated) -> Result<(), Exit> {
     let Some(mut game) = join_server_game(cx, seated) else {
         return Ok(());
     };
-    let result = game.run_loop(cx);
-    // Before the score, so that the server knows at once.
-    leave_server_game(cx);
-    result?;
-    finish(cx, &mut game);
-    cx.input.set_game(None);
-    if let Some(n) = &mut cx.net {
-        n.game = None;
-    }
-    cx.voice
-        .menu(&[msg(Phrase::Menu), msg(Phrase::MakeASelection)].concat());
-    Ok(())
-}
-
-/// Tells the server the player has left its game, unless it ended the
-/// game for the player.
-pub fn leave_server_game(cx: &mut Client) {
-    if !crate::net::game_link(cx).is_some_and(|g| g.ended) {
-        crate::net::send(cx, ClientMsg::LeaveGame);
-    }
+    let ran = game.run_loop(cx);
+    game.end(cx, ran).map(drop)
 }
