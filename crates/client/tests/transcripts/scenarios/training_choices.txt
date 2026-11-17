@@ -32,7 +32,8 @@ key DOWN
 key DOWN
 key DOWN
 key RETURN
-# set quiet computer, level 2, to 150 percent income: after its 2 levels, its incomes 50, 75 and 150
+# set quiet computer, level 2, to 150 percent income: after its 3 levels, its incomes 50, 75 and 150
+key DOWN
 key DOWN
 key DOWN
 key DOWN
@@ -52,6 +53,7 @@ key DOWN
 key DOWN
 key RETURN
 # the seats as they are now: the player's incomes, then the computer's
+key DOWN
 key DOWN
 key DOWN
 key DOWN

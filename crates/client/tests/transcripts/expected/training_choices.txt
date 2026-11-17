@@ -110,109 +110,115 @@ length 9999 208980
 @89150 voice item "set quiet computer , level 2 , to level 3 ,"
 @93850 sounds 1 52ec6bd6f9d4b549
 @93850 step 30 key DOWN
-@93850 voice item "set quiet computer , level 2 , to 50 percent income ,"
-@99750 sounds 1 8e5d69b333b89743
-@99750 step 31 key DOWN
-@99750 voice item "set quiet computer , level 2 , to 75 percent income ,"
-@105650 sounds 1 d3cbbea5bb7f2f14
-@105650 step 32 key DOWN
-@105650 voice item "set quiet computer , level 2 , to 150 percent income ,"
-@111850 sounds 1 6d3e6b41e6a9a9ff
-@111850 step 33 key RETURN
-@111850 voice confirmation "set quiet computer , level 2 , to 150 percent income"
-@117860 voice menu "please make a selection"
-@120160 sounds 1 a7fa74bca19dede7
-@120160 step 34 key DOWN
-@120160 voice item "start ,"
-@120860 sounds 1 8ca4ebb6074de162
-@120860 step 35 key DOWN
-@120860 voice item "set player to 50 percent income ,"
-@124560 sounds 1 c66d9fce70e12e15
-@124560 step 36 key DOWN
-@124560 voice item "set player to 75 percent income ,"
-@128260 sounds 1 282789928886cf0a
-@128260 step 37 key DOWN
-@128260 voice item "set player to 150 percent income ,"
-@132260 sounds 1 87b2e54a9a97058f
-@132260 step 38 key DOWN
-@132260 voice item "set player to 200 percent income ,"
-@136260 sounds 1 ab301242f337e402
-@136260 step 39 key RETURN
-@136260 voice confirmation "set player to 200 percent income"
-@140070 voice menu "please make a selection"
-@142370 sounds 1 3520079303b247a3
-@142370 step 40 key DOWN
-@142370 voice item "start ,"
-@143070 sounds 1 05a56dba004c37f5
-@143070 step 41 key DOWN
-@143070 voice item "set player , 200 percent income , to 50 percent income ,"
-@149670 sounds 1 4fb5518f10237485
-@149670 step 42 key DOWN
-@149670 voice item "set player , 200 percent income , to 75 percent income ,"
-@156270 sounds 1 e5bc2395707b4be9
-@156270 step 43 key DOWN
-@156270 voice item "set player , 200 percent income , to 100 percent income ,"
-@163170 sounds 1 e8de7a780cba0bbd
-@163170 step 44 key DOWN
-@163170 voice item "set player , 200 percent income , to 150 percent income ,"
-@170070 sounds 1 2d8c2a24803b6718
-@170070 step 45 key DOWN
-@170070 voice item "set quiet computer , level 2 , 150 percent income , to level 1 ,"
-@177470 sounds 1 ac5cf3ed69920d77
-@177470 step 46 key DOWN
-@177470 voice item "set quiet computer , level 2 , 150 percent income , to level 3 ,"
-@184870 sounds 1 206008c8831efd48
-@184870 step 47 key DOWN
-@184870 voice item "set quiet computer , level 2 , 150 percent income , to 50 percent income ,"
-@193470 sounds 1 4b54b982fe000cc2
-@193470 step 48 key DOWN
-@193470 voice item "set quiet computer , level 2 , 150 percent income , to 75 percent income ,"
-@202070 sounds 1 5bd7a7041871d30e
-@202070 step 49 key DOWN
-@202070 voice item "set quiet computer , level 2 , 150 percent income , to 100 percent income ,"
-@210970 sounds 1 6d7d65ca167fe4d7
-@210970 step 50 key DOWN
-@210970 voice item "set quiet computer , level 2 , 150 percent income , to 200 percent income ,"
-@219870 sounds 1 ccb42660bdd0e119
-@219870 step 51 key DOWN
-@219870 voice item "cancel , cancel this game"
-@222370 sounds 1 3a51553fdd83a10b
-@222370 step 52 key DOWN
-@222370 voice item "start ,"
-@223070 sounds 1 01ee25fbecc3c108
-@223070 step 53 key RETURN
-@223070 voice confirmation "start"
-@223580 voice info "objective: neutralized enemy"
-@226482 voice item "b 4 , meadows , 1 town hall , 1 farm and 1 peasant"
-@226981 sounds 9 98a9d27de1665053
-@226981 step 54 wait_turns 3
-@232282 voice info ", 1 gold mine and 2 wood at a 3"
-@235982 voice info ", 1 wood at a 4"
-@237882 voice info ", 1 gold mine at c 4"
-@240283 sounds 93 b3e58014f857359f
-@240283 step 55 key F11
-@240283 voice item "player , quiet computer , level 2 ,"
-@243983 sounds 29 d63e4e7c1901864c
-@243983 step 56 key F10
-@243983 voice menu "Menu"
-@244383 step 57 key DOWN
-@244383 voice item "cancel game ,"
-@245683 sounds 1 cdd3cb1fdc5f19aa
-@245683 step 58 key RETURN
-@245683 voice confirmation "cancel game"
-@246785 voice info "Defeat at 0 minutes 17 seconds"
-@250385 voice info "1 units produced , 0 lost , 0 neutralized"
-@255085 voice info "2 building produced , 0 lost , 0 neutralized"
-@260085 voice info "10 gold gathered , 0 consumed"
-@263585 voice info "10 wood gathered , 0 consumed"
-@267085 voice info "score 23 press F5 to listen again"
-@270985 voice menu "please make a selection"
-@273285 sounds 17 66d386e5ed80dbeb
-@273285 step 59 key ESCAPE
-@273285 voice confirmation "go back to the previous menu"
-@276095 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@281195 sounds 1 f7dc240f6f6c7f10
-@281195 step 60 key ESCAPE
-@281195 voice confirmation "quit,"
-@281705 sounds 1 079a8386c59cd7f7
-@281705 end
+@93850 voice item "set quiet computer , level 2 , to level 4 ,"
+@98550 sounds 1 8e5d69b333b89743
+@98550 step 31 key DOWN
+@98550 voice item "set quiet computer , level 2 , to 50 percent income ,"
+@104450 sounds 1 fef67cd51e38de83
+@104450 step 32 key DOWN
+@104450 voice item "set quiet computer , level 2 , to 75 percent income ,"
+@110350 sounds 1 840a6d62c733d708
+@110350 step 33 key DOWN
+@110350 voice item "set quiet computer , level 2 , to 150 percent income ,"
+@116550 sounds 1 62624a4d0467528a
+@116550 step 34 key RETURN
+@116550 voice confirmation "set quiet computer , level 2 , to 150 percent income"
+@122560 voice menu "please make a selection"
+@124860 sounds 1 2295f36614d5135f
+@124860 step 35 key DOWN
+@124860 voice item "start ,"
+@125560 sounds 1 0839778e7c5582e1
+@125560 step 36 key DOWN
+@125560 voice item "set player to 50 percent income ,"
+@129260 sounds 1 58767ee9634ca57f
+@129260 step 37 key DOWN
+@129260 voice item "set player to 75 percent income ,"
+@132960 sounds 1 4a7cccd5350ed93a
+@132960 step 38 key DOWN
+@132960 voice item "set player to 150 percent income ,"
+@136960 sounds 1 d8123ef95cdf039f
+@136960 step 39 key DOWN
+@136960 voice item "set player to 200 percent income ,"
+@140960 sounds 1 284a67aac32f65eb
+@140960 step 40 key RETURN
+@140960 voice confirmation "set player to 200 percent income"
+@144770 voice menu "please make a selection"
+@147070 sounds 1 0d6112b21adc9469
+@147070 step 41 key DOWN
+@147070 voice item "start ,"
+@147770 sounds 1 fa3955306dc1f601
+@147770 step 42 key DOWN
+@147770 voice item "set player , 200 percent income , to 50 percent income ,"
+@154370 sounds 1 c0c241aa94e16204
+@154370 step 43 key DOWN
+@154370 voice item "set player , 200 percent income , to 75 percent income ,"
+@160970 sounds 1 b21d301bb960946c
+@160970 step 44 key DOWN
+@160970 voice item "set player , 200 percent income , to 100 percent income ,"
+@167870 sounds 1 edebbaefd42a9a87
+@167870 step 45 key DOWN
+@167870 voice item "set player , 200 percent income , to 150 percent income ,"
+@174770 sounds 1 a2e1c7fae3ba1323
+@174770 step 46 key DOWN
+@174770 voice item "set quiet computer , level 2 , 150 percent income , to level 1 ,"
+@182170 sounds 1 e953afa62b6b7ce2
+@182170 step 47 key DOWN
+@182170 voice item "set quiet computer , level 2 , 150 percent income , to level 3 ,"
+@189570 sounds 1 cabd0c4cf15bc5cf
+@189570 step 48 key DOWN
+@189570 voice item "set quiet computer , level 2 , 150 percent income , to level 4 ,"
+@196970 sounds 1 f953f4d35083e2cc
+@196970 step 49 key DOWN
+@196970 voice item "set quiet computer , level 2 , 150 percent income , to 50 percent income ,"
+@205570 sounds 1 28976b3c3387e418
+@205570 step 50 key DOWN
+@205570 voice item "set quiet computer , level 2 , 150 percent income , to 75 percent income ,"
+@214170 sounds 1 7d0209d36aa1e5f7
+@214170 step 51 key DOWN
+@214170 voice item "set quiet computer , level 2 , 150 percent income , to 100 percent income ,"
+@223070 sounds 1 d16a6f8afb75d9ad
+@223070 step 52 key DOWN
+@223070 voice item "set quiet computer , level 2 , 150 percent income , to 200 percent income ,"
+@231970 sounds 1 6e509990360db8b8
+@231970 step 53 key DOWN
+@231970 voice item "cancel , cancel this game"
+@234470 sounds 1 c0875b50f244bba2
+@234470 step 54 key DOWN
+@234470 voice item "start ,"
+@235170 sounds 1 434869e7b780d100
+@235170 step 55 key RETURN
+@235170 voice confirmation "start"
+@235680 voice info "objective: neutralized enemy"
+@238581 voice item "b 4 , meadows , 1 town hall , 1 farm and 1 peasant"
+@239081 sounds 9 32da20e61ed91fb7
+@239081 step 56 wait_turns 3
+@244381 voice info ", 1 gold mine and 2 wood at a 3"
+@248081 voice info ", 1 wood at a 4"
+@249981 voice info ", 1 gold mine at c 4"
+@252382 sounds 93 c9ae401aaa0bd873
+@252382 step 57 key F11
+@252382 voice item "player , quiet computer , level 2 ,"
+@256082 sounds 29 9e203e48a6538ec5
+@256082 step 58 key F10
+@256082 voice menu "Menu"
+@256482 step 59 key DOWN
+@256482 voice item "cancel game ,"
+@257782 sounds 1 119093e51c493aa9
+@257782 step 60 key RETURN
+@257782 voice confirmation "cancel game"
+@258884 voice info "Defeat at 0 minutes 17 seconds"
+@262484 voice info "1 units produced , 0 lost , 0 neutralized"
+@267184 voice info "2 building produced , 0 lost , 0 neutralized"
+@272184 voice info "10 gold gathered , 0 consumed"
+@275684 voice info "10 wood gathered , 0 consumed"
+@279184 voice info "score 23 press F5 to listen again"
+@283084 voice menu "please make a selection"
+@285384 sounds 17 c954a4ca85af41f6
+@285384 step 61 key ESCAPE
+@285384 voice confirmation "go back to the previous menu"
+@288194 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@293294 sounds 1 ef5f0a11547c4bdf
+@293294 step 62 key ESCAPE
+@293294 voice confirmation "quit,"
+@293804 sounds 1 12811d2505129afc
+@293804 end

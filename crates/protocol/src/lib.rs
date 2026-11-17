@@ -22,7 +22,7 @@ pub use soundrts_world::{Income, Skill};
 pub mod game;
 
 /// Changes whenever a message changes shape. Client and server must agree.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// The TCP port of the game, and the UDP port of the discovery on the
 /// local network. Not the original's 2500, so that an original client
@@ -1187,6 +1187,26 @@ mod tests {
         assert!(ChatText::clean(" \n\t").is_none());
         let long = ChatText::clean(&"é".repeat(500)).unwrap();
         assert_eq!(long.as_str().chars().count(), MAX_CHAT_CHARS);
+    }
+
+    #[test]
+    fn a_level_that_does_not_exist_on_the_wire_is_refused() {
+        let set = |skill| ClientMsg::SetSkill { slot: 1, skill }.to_json();
+        let json = set(Skill::Level4);
+        assert!(json.contains(r#""Level4""#), "{json}");
+        assert_eq!(ClientMsg::from_json(&json).unwrap().to_json(), json);
+        for bad in [r#""Level0""#, r#""Level5""#, r#""level4""#, "4"] {
+            let changed = json.replace(r#""Level4""#, bad);
+            assert!(ClientMsg::from_json(&changed).is_err(), "{changed}");
+        }
+        // A room whose computer has a level that does not exist.
+        let room = r#"{"type":"quiet","skill":"Level5"}"#;
+        assert!(serde_json::from_str::<Computer>(room).is_err());
+        let room = r#"{"type":"quiet","skill":"Level4"}"#;
+        assert_eq!(
+            serde_json::from_str::<Computer>(room).unwrap(),
+            Computer::Quiet(Skill::Level4)
+        );
     }
 
     #[test]

@@ -57,72 +57,75 @@ length 9999 208980
 @36030 voice item "set the computers , level 2 , to level 3 ,"
 @40630 sounds 1 ff655feb8cf5c586
 @40630 step 12 key DOWN
-@40630 voice item "go back to the previous menu ,"
-@43630 sounds 1 9f0afce10762013b
-@43630 step 13 key ESCAPE
-@43630 voice confirmation "go back to the previous menu"
-@46440 voice menu "please make a selection"
-@48740 sounds 1 bd75b23af15c1f79
-@48740 step 14 key c
-@48740 voice item "campaign"
-@49540 sounds 1 314b45db4252123f
-@49540 step 15 key RETURN
-@49540 voice confirmation "campaign"
-@50350 voice menu "campaign"
-@51150 sounds 1 7dc799a8115bd9f9
-@51150 step 16 key DOWN
-@51150 voice item "prologue ,"
-@52150 sounds 1 6b14f9849846cfb6
-@52150 step 17 key DOWN
-@52150 voice item "set the computers , level 2 , to level 1 ,"
-@56750 sounds 1 41b18ef2209b0f79
-@56750 step 18 key UP
-@56750 voice item "prologue ,"
-@57750 sounds 1 e16d831d3f53f2f7
-@57750 step 19 key RETURN
-@57750 voice confirmation "prologue"
-@58560 voice important "prologue"
-@59360 voice important "A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done..."
-@69160 voice important "chapter 1"
-@70260 voice info "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
-@82761 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
-@83261 sounds 5 fa30709572fa1e14
-@83261 step 20 wait_turns 3
-@90261 voice info "new objective build 1 farm"
-@93061 voice info "new objective build 1 barracks"
-@96261 voice info ", 1 gold mine and 1 wood at a 1"
-@99961 voice info ", 1 wood at c 1"
-@101862 sounds 42 a97c9c9052a36c5c
-@101862 step 21 key F10
-@101862 voice menu "Menu"
-@102262 step 22 key DOWN
-@102262 voice item "cancel game ,"
-@103562 sounds 1 7f08f99022105619
-@103562 step 23 key RETURN
-@103562 voice confirmation "cancel game"
-@104664 voice info "Defeat at 0 minutes 19 seconds"
-@108264 voice info "2 units produced , 0 lost , 0 neutralized"
-@112964 voice info "2 building produced , 0 lost , 0 neutralized"
-@117964 voice info "5 gold gathered , 0 consumed"
-@121164 voice info "10 wood gathered , 0 consumed"
-@124664 voice info "score 19 press F5 to listen again"
-@128564 voice menu "please make a selection"
-@130864 sounds 4 7ffde6db5c65ccfb
-@130864 step 24 key DOWN
-@130864 voice item "restart ,"
-@131764 sounds 1 7cc0c9d6460448d6
-@131764 step 25 key DOWN
-@131764 voice item "Quit ,"
-@132364 sounds 1 1a44471e4d5ce416
-@132364 step 26 key RETURN
-@132364 voice confirmation "Quit"
-@132774 voice menu "please make a selection"
-@135074 sounds 1 8a7ca9430e1cbb90
-@135074 step 27 key ESCAPE
-@135074 voice confirmation "go back to the previous menu"
-@137884 voice menu "SoundRTS 1.3.8.1  , please make a selection"
-@142984 sounds 1 d1efbecff4619faf
-@142984 step 28 key ESCAPE
-@142984 voice confirmation "quit,"
-@143494 sounds 1 6aa0df4b2695c53d
-@143494 end
+@40630 voice item "set the computers , level 2 , to level 4 ,"
+@45230 sounds 1 9f0afce10762013b
+@45230 step 13 key DOWN
+@45230 voice item "go back to the previous menu ,"
+@48230 sounds 1 4abb847c181fd65e
+@48230 step 14 key ESCAPE
+@48230 voice confirmation "go back to the previous menu"
+@51040 voice menu "please make a selection"
+@53340 sounds 1 6b4653944e66b512
+@53340 step 15 key c
+@53340 voice item "campaign"
+@54140 sounds 1 62333d2f85389827
+@54140 step 16 key RETURN
+@54140 voice confirmation "campaign"
+@54950 voice menu "campaign"
+@55750 sounds 1 645e1e3d4f7b5ee3
+@55750 step 17 key DOWN
+@55750 voice item "prologue ,"
+@56750 sounds 1 17203c944727b354
+@56750 step 18 key DOWN
+@56750 voice item "set the computers , level 2 , to level 1 ,"
+@61350 sounds 1 e16d831d3f53f2f7
+@61350 step 19 key UP
+@61350 voice item "prologue ,"
+@62350 sounds 1 019d7777a37ffc41
+@62350 step 20 key RETURN
+@62350 voice confirmation "prologue"
+@63160 voice important "prologue"
+@63960 voice important "A horde of enemies has arrived from nowhere and destroys everything! Something needs to be done..."
+@73760 voice important "chapter 1"
+@74860 voice info "Your lord have sent you to build a base near the frontier. Don't wander too far, for a few enemies have been spotted nearby."
+@87362 voice item "a 1 , forest , 1 town hall and 1 peasant , 1 gold mine and 1 wood"
+@87861 sounds 5 3ee3f81e6ff9915d
+@87861 step 21 wait_turns 3
+@94862 voice info "new objective build 1 farm"
+@97662 voice info "new objective build 1 barracks"
+@100862 voice info ", 1 gold mine and 1 wood at a 1"
+@104562 voice info ", 1 wood at c 1"
+@106463 sounds 42 ff107da5827a445a
+@106463 step 22 key F10
+@106463 voice menu "Menu"
+@106863 step 23 key DOWN
+@106863 voice item "cancel game ,"
+@108163 sounds 1 f5f4cadce75ced58
+@108163 step 24 key RETURN
+@108163 voice confirmation "cancel game"
+@109265 voice info "Defeat at 0 minutes 19 seconds"
+@112865 voice info "2 units produced , 0 lost , 0 neutralized"
+@117565 voice info "2 building produced , 0 lost , 0 neutralized"
+@122565 voice info "5 gold gathered , 0 consumed"
+@125765 voice info "10 wood gathered , 0 consumed"
+@129265 voice info "score 19 press F5 to listen again"
+@133165 voice menu "please make a selection"
+@135465 sounds 4 443953e89647c729
+@135465 step 25 key DOWN
+@135465 voice item "restart ,"
+@136365 sounds 1 15a67a247880a2a8
+@136365 step 26 key DOWN
+@136365 voice item "Quit ,"
+@136965 sounds 1 fe9675a5cccd37be
+@136965 step 27 key RETURN
+@136965 voice confirmation "Quit"
+@137375 voice menu "please make a selection"
+@139675 sounds 1 e7b9de0c88319351
+@139675 step 28 key ESCAPE
+@139675 voice confirmation "go back to the previous menu"
+@142485 voice menu "SoundRTS 1.3.8.1  , please make a selection"
+@147585 sounds 1 deafdb077026b37a
+@147585 step 29 key ESCAPE
+@147585 voice confirmation "quit,"
+@148095 sounds 1 81d0d9c233deefaf
+@148095 end
