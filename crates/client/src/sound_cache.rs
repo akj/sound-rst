@@ -184,10 +184,10 @@ impl SoundCache {
         phrases
     }
 
-    /// Adds the phrases and sounds of a map that came from a server, as
-    /// [`SoundCache::new`] reads them, but only under names this cache
-    /// lacks: the game's own phrases and sounds stay. Returns how many
-    /// were ignored.
+    /// Adds the phrases and sounds of a layer that only adds names (see
+    /// [`crate::layers::Layer::power`]), as [`SoundCache::new`] reads
+    /// them, but only under names this cache lacks: the phrases and
+    /// sounds below stay. Returns how many were ignored.
     pub fn add_downloaded(
         &mut self,
         texts: &[TextFile],

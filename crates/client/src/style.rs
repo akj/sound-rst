@@ -711,11 +711,15 @@ impl Style {
         self.apply_inheritance();
     }
 
-    /// Adds the style of a map that came from a server: the attributes
-    /// this style lacks, its own, inherited or by level, and nothing else,
-    /// even through inheritance. Returns how many attributes were ignored
-    /// because the style has them.
+    /// Adds the style of a layer that only adds names (see
+    /// [`crate::layers::Layer::power`]): the attributes this style lacks,
+    /// its own, inherited or by level, and nothing else, even through
+    /// inheritance. Returns how many attributes were ignored because the
+    /// style has them.
     pub fn add_downloaded(&mut self, files: &[TextFile], exists: &dyn Fn(&str) -> bool) -> usize {
+        if files.is_empty() {
+            return 0;
+        }
         let before = self.dict.clone();
         let mut ignored: usize = 0;
         for (name, attributes) in self.parse(files, exists) {
