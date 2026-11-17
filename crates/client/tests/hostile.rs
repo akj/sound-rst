@@ -282,8 +282,12 @@ fn read(kind: Kind, base: &str, text: &str) {
             look_up(&style);
         }
         Kind::Bindings => {
+            let file = |text: &str| TextFile {
+                path: "ui/bindings.txt".to_owned(),
+                text: text.to_owned(),
+            };
             let mut b = Bindings::new();
-            b.load(&format!("{base}\n{text}"), &any, &log);
+            b.load(&[file(base), file(text)], &any, &log);
             for chord in ["a", "SHIFT z", "CTRL SHIFT F2", "ALT F4"] {
                 if let Ok(c) = Chord::parse(chord) {
                     let _ = b.get(&c);
