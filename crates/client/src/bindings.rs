@@ -350,11 +350,13 @@ impl<C> Bindings<C> {
         let mut left = MAX_BINDINGS_BYTES;
         for file in files {
             let numbers = source_lines(&file.text);
-            // A file's last newline ends its last line and starts none, so
-            // the limit counts the same lines however many files hold them.
-            let lines = preprocess(&file.text);
-            let lines = lines.strip_suffix('\n').unwrap_or(&lines);
-            for (i, raw) in lines.split('\n').enumerate() {
+            for (i, raw) in preprocess(&file.text).split('\n').enumerate() {
+                // What follows a file's last newline, or a file without a
+                // line, is no line: the limit counts the same lines however
+                // many files hold them.
+                if raw.is_empty() {
+                    continue;
+                }
                 let line_number = numbers.get(i).copied().unwrap_or(0);
                 let at = format!("{} line {line_number}", file.path);
                 let expanded = self.apply_definitions(raw);
@@ -614,5 +616,29 @@ mod tests {
         b.load(&file(&text), &any, &Log::silent());
         assert!(b.get(&chord("a")).is_some());
         assert_eq!(b.get(&chord("b")), None);
+    }
+
+    #[test]
+    fn a_file_without_a_line_takes_nothing_of_the_limit() {
+        let line = |command: &str| {
+            let start = format!("a: {command} ");
+            let rest = "x".repeat(MAX_BINDING_LINE_BYTES - start.len());
+            format!("{start}{rest}\n")
+        };
+        // Lines that fill the limit to the byte, the last in a file of its
+        // own after an empty one.
+        let count = MAX_BINDINGS_BYTES / MAX_BINDING_LINE_BYTES;
+        let files = [
+            ("first.txt", line("one").repeat(count - 1)),
+            ("empty.txt", String::new()),
+            ("last.txt", line("two")),
+        ]
+        .map(|(path, text)| TextFile {
+            path: path.to_owned(),
+            text,
+        });
+        let mut b = Bindings::new();
+        b.load(&files, &any, &Log::silent());
+        assert_eq!(b.get(&chord("a")).map(|c| c.0.as_str()), Some("two"));
     }
 }
