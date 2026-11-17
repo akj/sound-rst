@@ -7,8 +7,9 @@
 //! game volunteers waits in the queue, as the policy of its category says,
 //! and is never lost: a message cut off goes back in the queue, newer news
 //! about a subject joins the unheard news about it (a count adds what it
-//! counts to it), and every message but answers is kept in a log. The player can walk back through the log,
-//! one category at a time, or through what they have not heard.
+//! counts to it), and every message but answers is kept in a log. The
+//! player can walk back through the log, one category at a time, or through
+//! what they have not heard.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
