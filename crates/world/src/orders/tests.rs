@@ -905,8 +905,7 @@ fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
     // The computer sees a footman of the other player on d.
     let theirs = add(&mut w, "footman", you, d);
     w.plm(me).perception.insert(theirs);
-    w.update_enemy_menace(me);
-    w.update_tactical_knowledge(me);
+    w.update_enemy_menace_and_tactical_knowledge(me);
     // A new turn: the paths found this turn are kept.
     w.time += crate::VIRTUAL_TIME_INTERVAL;
     assert_eq!(
@@ -1053,8 +1052,7 @@ fn an_explorer_in_danger() -> (World, PlayerId, EntityId, EntityId, SquareId) {
     let footman = add(&mut w, "footman", c, here);
     let theirs = add(&mut w, "footman", you, here);
     w.plm(c).perception.insert(theirs);
-    w.update_enemy_menace(c);
-    w.update_tactical_knowledge(c);
+    w.update_enemy_menace_and_tactical_knowledge(c);
     assert!(w.square_is_very_dangerous(c, here));
     assert!(!w.square_is_very_dangerous(c, there));
     w.set_action_target(footman, Some(Target::Square(there)));

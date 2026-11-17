@@ -13,9 +13,9 @@
 //!   and their orders ([`Own`]), and the state of its plan.
 //! - **What it perceives now, or remembers** as its memory holds it, with
 //!   only what a player who perceives a thing is told of it ([`Seen`]),
-//!   and what is derived from these alone: the enemy menace by square,
-//!   which the world finds for every player, and the computer's
-//!   [`TacticalKnowledge`].
+//!   and what the world derives from these: the enemy menace by square,
+//!   and the computer's [`TacticalKnowledge`]. Both read a thing as it
+//!   is, where a player is told less: see G1 in `docs/open-findings.md`.
 //!
 //! A target, of an order or of the computer's plan, is a [`Mark`]: it names
 //! a square or a thing, and the computer reads the thing through the door,
@@ -96,15 +96,6 @@ impl<'a> Seen<'a> {
     /// For a deposit, its type.
     pub(super) fn deposit_type(self) -> Option<TypeId> {
         self.e.deposit().map(|d| d.type_id)
-    }
-
-    pub(super) fn is_corpse(self) -> bool {
-        self.e.is_corpse()
-    }
-
-    /// Whether it can be hurt, by its type.
-    pub(super) fn is_vulnerable(self) -> bool {
-        self.e.is_vulnerable()
     }
 }
 
@@ -342,13 +333,6 @@ impl World {
         attacker: EntityId,
     ) {
         self.door(p).on_unit_attacked(unit, attacker);
-    }
-
-    /// Finds again what a computer player knows of the battlefield, from
-    /// what it perceives and remembers. Any other player has nothing to
-    /// find.
-    pub(crate) fn update_tactical_knowledge(&mut self, p: PlayerId) {
-        self.door(p).update_tactical_knowledge();
     }
 
     /// `Computer.time_has_come` without the cataclysm check: whether the
@@ -718,10 +702,6 @@ impl Door<'_> {
     /// What it knows of the battlefield: only a computer has it.
     pub(super) fn tactical(&self) -> Option<&TacticalKnowledge> {
         self.world.pl(self.me).tactical_knowledge.as_ref()
-    }
-
-    pub(super) fn tactical_mut(&mut self) -> Option<&mut TacticalKnowledge> {
-        self.world.plm(self.me).tactical_knowledge.as_mut()
     }
 
     /// The squares where it knows of an enemy, in the order found.

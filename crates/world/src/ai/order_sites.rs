@@ -86,8 +86,7 @@ fn seen_enemies(w: &mut World, you: PlayerId, c: PlayerId, s: SquareId, n: usize
 
 /// What `c` knows of the battlefield, found again as at its update.
 fn update_knowledge(w: &mut World, c: PlayerId) {
-    w.update_enemy_menace(c);
-    w.update_tactical_knowledge(c);
+    w.update_enemy_menace_and_tactical_knowledge(c);
 }
 
 #[test]

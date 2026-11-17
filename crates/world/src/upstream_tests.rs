@@ -1950,7 +1950,7 @@ starting_resources 100 100
         w.em(archer).stats.harm_level = 1;
         w.cm(archer).unwrap().time_limit = Some(1_000_000);
         assert!(is_perceiving(&mut w, a, archer));
-        w.update_enemy_menace(a);
+        w.update_enemy_menace_and_tactical_knowledge(a);
         let pl = w.player(a);
         let k = pl.tactical_knowledge.as_ref().unwrap();
         assert!(k.is_cataclysmic(b1));

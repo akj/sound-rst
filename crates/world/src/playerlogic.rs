@@ -264,8 +264,7 @@ impl World {
         self.update_allied_upgrades(p)?;
         self.update_perception_and_memory(p)?;
         self.update_menace(p);
-        self.update_enemy_menace(p);
-        self.update_tactical_knowledge(p);
+        self.update_enemy_menace_and_tactical_knowledge(p);
         self.ai_play(p)?;
         self.update_drowning(p)?;
         self.update_counterattacks(p)
@@ -568,13 +567,16 @@ impl World {
         self.plm(p).menace = m;
     }
 
-    /// Finds again the enemy menace by square, from what the player
-    /// perceives and remembers, and for a computer player where it knows
-    /// of enemies and the squares of a harmful thing that will end.
-    pub(crate) fn update_enemy_menace(&mut self, p: PlayerId) {
+    /// Finds again, from what the player perceives and remembers, the
+    /// enemy menace by square, and for a computer player the places of its
+    /// tactical knowledge.
+    pub(crate) fn update_enemy_menace_and_tactical_knowledge(&mut self, p: PlayerId) {
         let mut menace: BTreeMap<SquareId, i64> = BTreeMap::new();
         let mut presence: Vec<SquareId> = Vec::new();
+        let mut corpses = BTreeSet::new();
+        let mut friends = BTreeSet::new();
         let mut cataclysmic = BTreeSet::new();
+        let allied = self.pl(p).allied.clone();
         // Both in id order.
         let perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
         let remembered: Vec<Arc<Entity>> = self
@@ -604,9 +606,11 @@ impl World {
                         *menace.entry(n).or_insert(0) += floordiv(m, 10);
                     }
                 }
+            } else if o.is_corpse() {
+                corpses.insert(place);
+            } else if o.player().is_some_and(|op| allied.contains(&op)) && o.stats.is_vulnerable {
+                friends.insert(place);
             }
-            // No player is told when a thing will end, so the computer's
-            // door cannot find these.
             if o.time_limit().is_some_and(|t| t != 0) && o.stats.harm_level != 0 {
                 cataclysmic.insert(place);
             }
@@ -614,7 +618,7 @@ impl World {
         let pl = self.plm(p);
         pl.enemy_menace = menace;
         if let Some(k) = &mut pl.tactical_knowledge {
-            k.set_from_the_world(presence, cataclysmic);
+            k.set_places(presence, corpses, friends, cataclysmic);
         }
     }
 

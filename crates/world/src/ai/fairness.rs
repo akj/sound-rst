@@ -184,7 +184,7 @@ fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
         .create_creature(footman, Some(enemy), Place::Square(c1), cx, cy)
         .unwrap();
     w.plm(p).perception.insert(theirs);
-    w.update_enemy_menace(p);
+    w.update_enemy_menace_and_tactical_knowledge(p);
     // Too weak, it is stopped: its orders are gone, and it stands still.
     w.door(p).update_time_has_come().unwrap();
     assert!(orders(&w, f).is_empty());
@@ -287,7 +287,8 @@ fn a_computer_plans_its_paths_through_the_forests_it_has_seen() {
     assert_eq!(w.door(p).distance(a1, c1, false).unwrap(), crate::INF);
 }
 
-/// Every answer the door gives of a thing it perceives or remembers.
+/// Every answer the door gives of a thing it perceives or remembers: one
+/// field for each method of [`Seen`].
 #[derive(Debug, PartialEq)]
 struct Told {
     id: EntityId,
@@ -299,8 +300,6 @@ struct Told {
     is_deposit: bool,
     is_exit: bool,
     deposit_type: Option<TypeId>,
-    is_corpse: bool,
-    is_vulnerable: bool,
 }
 
 fn told_by_the_door(s: Seen) -> Told {
@@ -314,8 +313,6 @@ fn told_by_the_door(s: Seen) -> Told {
         is_deposit: s.is_deposit(),
         is_exit: s.is_exit(),
         deposit_type: s.deposit_type(),
-        is_corpse: s.is_corpse(),
-        is_vulnerable: s.is_vulnerable(),
     }
 }
 
@@ -324,7 +321,6 @@ fn told_by_the_door(s: Seen) -> Told {
 /// owner's upgrades, which no player is told.
 fn told_to_a_player(k: &KnownEntity, rules: &Rules) -> Told {
     let type_id = (&k).type_id(rules);
-    let stats = type_id.map(|t| &rules.ty(t).stats);
     Told {
         id: k.id,
         class: k.class,
@@ -335,16 +331,17 @@ fn told_to_a_player(k: &KnownEntity, rules: &Rules) -> Told {
         is_deposit: k.is_deposit(),
         is_exit: k.is_exit(),
         deposit_type: type_id.filter(|_| k.is_deposit()),
-        is_corpse: k.class == EntityClass::Corpse,
-        is_vulnerable: stats.is_some_and(|s| s.is_vulnerable),
     }
 }
 
 #[test]
 fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
-    // A mod whose footman reaches farther with an upgrade.
+    // A mod whose footman reaches farther with one upgrade, and cannot be
+    // hurt with another.
     let (mut w, p) = three_squares_with_rules(
-        "def u_reach\nclass upgrade\neffect bonus range 1\ndef footman\ncan_use u_reach\n",
+        "def u_reach\nclass upgrade\neffect bonus range 1\n\
+         def u_shield\nclass upgrade\neffect bonus is_vulnerable -1\n\
+         def footman\ncan_use u_reach u_shield\n",
     );
     let [a1, b1, c1] = ["a1", "b1", "c1"].map(|n| w.square_by_name(n).unwrap());
     let enemy = w.new_player(&Controller::human("enemy", false)).unwrap();
@@ -365,6 +362,10 @@ fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
     }
     assert!(w.rules.ty(ty(&w, "footman")).stats.range < 2 * PRECISION);
     assert!(!w.e(footman).is_melee());
+    // At level 1, the other upgrade makes it invulnerable.
+    w.upgrade_player(ty(&w, "u_shield"), enemy).unwrap();
+    assert!(w.rules.ty(ty(&w, "footman")).stats.is_vulnerable);
+    assert!(!w.e(footman).is_vulnerable());
     let archer = add(&mut w, "archer", Some(enemy), b1);
     let dead = add(&mut w, "footman", Some(enemy), c1);
     w.die(dead, None).unwrap();
@@ -392,7 +393,6 @@ fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
             snapshot: Arc::new(copy),
         },
     );
-    let mut checked = Vec::new();
     for id in perceived.into_iter().chain([gone]) {
         let k = match w.pl(p).memory.get(&id) {
             Some(r) => KnownEntity::of(&w, p, &r.snapshot, Some(r.time_stamp)),
@@ -402,10 +402,5 @@ fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
         let door = w.door(p);
         let told = told_by_the_door(door.known(id).unwrap());
         assert_eq!(told, expected, "{}", k.type_name);
-        checked.push((told.is_corpse, told.is_vulnerable));
     }
-    // The things differ in every answer the door's tactical knowledge
-    // reads: a corpse, and a vulnerable unit.
-    assert!(checked.contains(&(true, false)));
-    assert!(checked.contains(&(false, true)));
 }
