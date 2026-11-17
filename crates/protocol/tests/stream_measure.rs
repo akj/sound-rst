@@ -234,23 +234,17 @@ fn measure(case: &Case) -> (Vec<Figures>, usize) {
                 } else {
                     wire
                 };
-                let applied = match enc {
-                    // The protocol's own function, which also checks what
-                    // it applied.
-                    Encoding::Postcard | Encoding::PostcardDeflate => {
-                        game::apply_change(&plain, &last[s], &start).unwrap()
-                    }
-                    Encoding::Json | Encoding::JsonDeflate => {
-                        let back: TurnChange = enc.decode(&plain);
-                        let applied = back.apply(&last[s]).unwrap();
-                        start.check(&applied).unwrap();
-                        applied
-                    }
-                };
+                // As a seat's stream takes a change: applied, then checked.
+                let back: TurnChange = enc.decode(&plain);
+                let applied = back.apply(&last[s]).unwrap();
+                start.check(&applied).unwrap();
                 f.decode_and_apply_ns.add(t.elapsed().as_nanos() as u64);
                 assert_eq!(&applied, m);
                 if enc == Encoding::Postcard {
-                    assert_eq!(bytes, game::encode_change(&change).unwrap());
+                    // The protocol's frame: the variant's index, then the
+                    // change.
+                    let frame = game::encode_frame(&game::SeatFrame::Change(change.clone()));
+                    assert_eq!(frame.unwrap().get(1..), Some(&bytes[..]));
                 }
                 let events = enc.encode(&change.events);
                 f.events
