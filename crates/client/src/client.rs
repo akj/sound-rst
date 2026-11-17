@@ -11,7 +11,7 @@ use crate::audio::AudioOutput;
 use crate::clock::ClockRef;
 use crate::config::Config;
 use crate::input::{Input, InputSource};
-use crate::layers::{FileKind, GAME_HELP, MENU_HELP};
+use crate::layers::InterfaceFile;
 use crate::log::Log;
 use crate::message::{Category, News, Policy};
 use crate::parameters::Parameters;
@@ -79,8 +79,8 @@ struct Help {
 
 /// The lines of a help file: each word names a phrase or a sound, or is a
 /// count. A word that names nothing is refused, with its file and its line.
-fn read_help_table(res: &Resources, kind: FileKind, log: &Log) -> Vec<Msg> {
-    let Some(file) = res.interface_files(kind).pop() else {
+fn read_help_table(res: &Resources, help: InterfaceFile, log: &Log) -> Vec<Msg> {
+    let Some(file) = res.interface_files(help).pop() else {
         return Vec::new();
     };
     let sounds = res.sounds();
@@ -204,8 +204,8 @@ impl Client {
             title_desktop.set_title(&app_title(mods, soundpacks));
         }));
         let help = Help {
-            game: read_help_table(&res, GAME_HELP, &log),
-            menu: read_help_table(&res, MENU_HELP, &log),
+            game: read_help_table(&res, InterfaceFile::GAME_HELP, &log),
+            menu: read_help_table(&res, InterfaceFile::MENU_HELP, &log),
             context: String::new(),
             index: -1,
         };

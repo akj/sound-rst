@@ -24,13 +24,13 @@ use std::path::Path;
 use soundrts_world::defs::{preprocess, source_lines};
 
 use crate::input::{Key, KeyDown, Mods};
-use crate::layers::BINDINGS;
 use crate::log::Log;
-use crate::package::{TextFile, read_file, universal_newlines};
+use crate::package::TextFile;
 use crate::resource::Resources;
 
-/// The most bytes of lines the bindings read, every file together, counted once definitions are applied, and the
-/// largest player's file read. The original's bindings are 5.8 KB.
+/// The most bytes of lines the bindings read, every file together,
+/// counted once definitions are applied, and the largest player's file
+/// read. The original's bindings are 5.8 KB.
 pub const MAX_BINDINGS_BYTES: usize = 1024 * 1024;
 
 /// The longest line, before or after its definitions are applied, in
@@ -80,27 +80,10 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     CTRL SHIFT k: select_units idle soldier5\nCTRL SHIFT l: select_units idle soldier6\n\
     CTRL SHIFT SEMICOLON: select_units idle soldier7\n";
 
-/// Where a message says [`CLIENT_BINDINGS`] are.
-const CLIENT_BINDINGS_PATH: &str = "sound-rst/ui/bindings.txt";
-
-/// The files of the game's bindings, in the order they are read: the
-/// interface's `ui/bindings.txt` of each layer (translations included),
-/// this client's own additions, then the player's own `bindings.txt` if
-/// there is one, so the player's lines win.
+/// The files of the game's bindings, in the order they are read, the
+/// player's own file at `custom` last (see [`crate::layers::Layers::bindings`]).
 pub fn game_bindings_text(res: &Resources, custom: &Path) -> Vec<TextFile> {
-    let mut files = res.interface_files(BINDINGS);
-    files.push(TextFile {
-        path: CLIENT_BINDINGS_PATH.to_owned(),
-        text: CLIENT_BINDINGS.to_owned(),
-    });
-    let limit = u64::try_from(MAX_BINDINGS_BYTES).unwrap_or(u64::MAX);
-    if let Ok(bytes) = read_file(custom, limit) {
-        files.push(TextFile {
-            path: custom.display().to_string(),
-            text: universal_newlines(&String::from_utf8_lossy(&bytes)),
-        });
-    }
-    files
+    res.bindings_files(custom)
 }
 
 /// A key with the modifiers that must be held.
