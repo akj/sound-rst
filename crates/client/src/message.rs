@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use soundrts_protocol::SlotIndex;
 use soundrts_world::events::Reason;
-use soundrts_world::msg::Msg;
+use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg};
 use soundrts_world::{Place, SquareId};
 
 use crate::sound_cache::{Sounds, Spoken};
@@ -151,8 +151,8 @@ pub enum RoomTopic {
     Watcher(soundrts_protocol::Login),
 }
 
-/// What a piece of news is about. Newer news about a subject replaces the
-/// news about it the player has not heard yet.
+/// What a piece of news is about. Newer news about a subject joins the
+/// news about it the player has not heard yet, as the newer news says.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Subject {
     /// The count of the resource with this index.
@@ -178,12 +178,86 @@ pub enum Subject {
     Room(RoomTopic),
 }
 
+/// "3 footmen, 2 archers and 1 peasant": each kind with its count, in the
+/// order they come. With `brief` and more than two kinds, only the count.
+pub fn summary(group: &[Msg], brief: bool) -> Msg {
+    let mut kinds: Vec<&Msg> = Vec::new();
+    for m in group {
+        if !kinds.contains(&m) {
+            kinds.push(m);
+        }
+    }
+    if brief && kinds.len() > 2 {
+        return nb2msg(group.len() as i64);
+    }
+    let mut result = Vec::new();
+    for (i, &kind) in kinds.iter().enumerate() {
+        if i + 1 == kinds.len() && i > 0 {
+            result.extend(msg(Phrase::And));
+        } else if i > 0 {
+            result.extend(comma());
+        }
+        result.extend(nb2msg(group.iter().filter(|&m| m == kind).count() as i64));
+        result.extend(kind.iter().cloned());
+    }
+    result
+}
+
+/// Where a count is said among the counts of the same moment: the
+/// smallest first, and those of the same rank in the order they came. The
+/// game ranks them: by the kind of count, then by the place it counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rank(pub u32, pub u32);
+
+/// What a piece of news counts: one item for each thing, as its title,
+/// said as a [`summary`], then the words that follow the count.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Count {
+    items: Vec<Msg>,
+    brief: bool,
+    then: Msg,
+    rank: Rank,
+}
+
+impl Count {
+    /// "3 footman and 1 archer lost at b 2" counts `items` (footman,
+    /// footman, archer, footman), with `brief` as [`summary`] takes it,
+    /// and `then` is "lost at b 2".
+    pub fn new(items: Vec<Msg>, brief: bool, then: Msg, rank: Rank) -> Count {
+        Count {
+            items,
+            brief,
+            then,
+            rank,
+        }
+    }
+
+    fn words(&self) -> Msg {
+        [summary(&self.items, self.brief), self.then.clone()].concat()
+    }
+}
+
+/// How newer news about a subject joins the news about it that the player
+/// has not heard yet. With none such, newer news is news of its own, except
+/// an update.
+#[derive(Clone, Debug, PartialEq)]
+enum Join {
+    /// Takes the older news's place.
+    Replace,
+    /// Takes the older news's place, and is not news without it: a count
+    /// that only news worth saying on its own brings to the player.
+    Update,
+    /// Takes the older news's place, and counts what the older news
+    /// counted too.
+    Count(Count),
+}
+
 /// A message the game volunteers.
 #[derive(Clone, Debug, PartialEq)]
 pub struct News {
     pub category: Category,
     pub parts: Msg,
-    pub subject: Option<Subject>,
+    about: Option<(Subject, Join)>,
     /// Where it happened.
     pub square: Option<SquareId>,
 }
@@ -193,19 +267,85 @@ impl News {
         News {
             category,
             parts,
-            subject: None,
+            about: None,
             square: None,
         }
     }
 
+    /// News that counts things about `subject`, such as the units lost at
+    /// a place. It waits until the news of its moment is complete, with
+    /// the other counts about its subject; then what they count is added
+    /// to the unheard news about it.
+    pub fn counting(category: Category, subject: Subject, count: Count) -> News {
+        News {
+            category,
+            parts: count.words(),
+            about: Some((subject, Join::Count(count))),
+            square: None,
+        }
+    }
+
+    /// News about `subject`: it replaces the unheard news about it.
     pub fn about(mut self, subject: Subject) -> News {
-        self.subject = Some(subject);
+        self.about = Some((subject, Join::Replace));
+        self
+    }
+
+    /// News that brings the unheard news about `subject` up to date: it
+    /// replaces that news, and is dropped when there is none.
+    pub fn updating(mut self, subject: Subject) -> News {
+        self.about = Some((subject, Join::Update));
         self
     }
 
     pub fn at(mut self, square: Option<SquareId>) -> News {
         self.square = square;
         self
+    }
+
+    pub fn subject(&self) -> Option<&Subject> {
+        self.about.as_ref().map(|(s, _)| s)
+    }
+
+    /// The rank of a count, `None` for news that counts nothing.
+    pub(crate) fn rank(&self) -> Option<Rank> {
+        match &self.about {
+            Some((_, Join::Count(c))) => Some(c.rank),
+            _ => None,
+        }
+    }
+
+    /// Newer news about its subject replaces it, without counting what it
+    /// counted.
+    pub(crate) fn stop_counting(&mut self) {
+        if let Some((_, join @ Join::Count(_))) = &mut self.about {
+            *join = Join::Replace;
+        }
+    }
+
+    /// This news after `older`, the news about its subject that the player
+    /// has not heard yet, if there is any: what takes its place, or `None`
+    /// when this news is not news.
+    pub(crate) fn join(self, older: Option<&News>) -> Option<News> {
+        let older_count = older.and_then(|n| match &n.about {
+            Some((_, Join::Count(c))) => Some(c),
+            _ => None,
+        });
+        match (self.about, older_count) {
+            (Some((_, Join::Update)), _) if older.is_none() => None,
+            (Some((subject, Join::Count(new))), Some(old)) => {
+                let count = Count {
+                    items: [old.items.as_slice(), &new.items].concat(),
+                    ..new
+                };
+                Some(News {
+                    parts: count.words(),
+                    about: Some((subject, Join::Count(count))),
+                    ..self
+                })
+            }
+            (about, _) => Some(News { about, ..self }),
+        }
     }
 }
 
@@ -248,4 +388,40 @@ pub fn translate_and_collapse(parts: &Msg, sounds: &Sounds, which: Parts) -> Vec
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soundrts_world::msg::MsgPart;
+
+    fn t(n: u64) -> Msg {
+        vec![MsgPart::Count(n)]
+    }
+
+    #[test]
+    fn a_summary_counts_each_kind_in_order() {
+        let n = |k| nb2msg(k);
+        assert_eq!(summary(&[], false), Vec::new());
+        assert_eq!(summary(&[t(1), t(1)], false), [n(2), t(1)].concat());
+        assert_eq!(
+            summary(&[t(1), t(2), t(1), t(3)], false),
+            [
+                n(2),
+                t(1),
+                comma(),
+                n(1),
+                t(2),
+                msg(Phrase::And),
+                n(1),
+                t(3)
+            ]
+            .concat()
+        );
+        assert_eq!(
+            summary(&[t(1), t(2)], true),
+            [n(1), t(1), msg(Phrase::And), n(1), t(2)].concat()
+        );
+        assert_eq!(summary(&[t(1), t(2), t(3), t(3)], true), n(4));
+    }
 }

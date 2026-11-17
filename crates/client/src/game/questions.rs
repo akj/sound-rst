@@ -11,12 +11,12 @@ use soundrts_world::rules::{Effect, Stats};
 use soundrts_world::{KnownEntity, KnownTarget, PlayerId, SeatView};
 
 use crate::client::Client;
+use crate::message::summary;
 
 use super::GameInterface;
 use super::command::UnitFilter;
 use super::order::{PRECISION, substitute_args};
 use super::selection::TypeFilter;
-use super::squares::summary;
 use crate::style::mine;
 
 /// How the strength on the player's side of a fight compares with the

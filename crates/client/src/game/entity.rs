@@ -14,6 +14,7 @@ use crate::message::{Category, News, Subject};
 use crate::sound::{Audio, Placement};
 use crate::style::{Noise, Said, Sided, Sounds, TypeStyle, mine};
 
+use super::alerts::UnitsNews;
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::news::must_be_said;
 use super::order::{PRECISION, substitute_args};
@@ -812,11 +813,11 @@ impl GameInterface {
         let attacker_player = attacker.as_ref().and_then(|a| a.player);
         if v.player() == Some(self.me) {
             let t = self.short_title(cx, v);
-            self.lost_units.push((t, v.place()));
+            self.units_news(cx, vec![(t, v.place())], UnitsNews::Lost);
         }
         if attacker_player == Some(self.me) {
             let t = self.short_title(cx, v);
-            self.neutralized_units.push((t, v.place()));
+            self.units_news(cx, vec![(t, v.place())], UnitsNews::Neutralized);
         }
         // A fight is lost or won only by players.
         let Some(owner) = v.player() else {
