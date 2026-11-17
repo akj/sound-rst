@@ -484,7 +484,9 @@ starting_resources 10 10
     }
 
     fn add(w: &mut World, p: PlayerId, items: &str) {
-        w.lang_add_units(p, &words(items), None, 0, None, true);
+        let items: Vec<&str> = items.split_whitespace().collect();
+        let units = crate::triggers::units_to_add(w, &items, None).unwrap();
+        w.add_units(p, &units);
     }
 
     fn set_rule(w: &mut World, t: &str, f: impl FnOnce(&mut crate::rules::Stats)) {
@@ -586,6 +588,56 @@ starting_resources 10 10
         take(&mut w, p1, "build farm a1");
         run_until_idle(&mut w, &[p1, p2], 50);
         assert_eq!(nb(&w, cp, "farm"), 2);
+    }
+
+    /// A construction site has no type of its own: `buildingsite` chooses
+    /// the sites in a trigger, in `has` and in `order`, as the original's
+    /// class name does. The word is a name a map may use only when the
+    /// rules define it, as in the original.
+    #[test]
+    fn a_trigger_chooses_construction_sites_as_buildingsite() {
+        let map = format!(
+            "{TINY_MAP}trigger all (has 1 buildingsite) (add_objective 1 5)\n\
+             trigger all (has 1 buildingsite) (order (a1 buildingsite) ((cancel_building)))\n"
+        );
+        let ai = AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(Rules::load(&[read("res/rules.txt")]), ai.clone(), vec![], 0);
+        assert_eq!(
+            w.load_and_build_map(&map).map_err(|e| e.0),
+            Err(
+                "unknown: buildingsite (in \"trigger all  ( has 1 buildingsite )   \
+                 ( add_objective 1 5 )\")"
+                    .to_owned()
+            )
+        );
+        let rules = Rules::load(&[read("res/rules.txt"), "def buildingsite\n".to_owned()]);
+        let mut w = World::new(rules, ai, vec![], 0);
+        w.load_and_build_map(&map).unwrap();
+        let cp = w
+            .populate_map(&[Controller::computer("timers")], true, false)
+            .unwrap()[0];
+        set_rule(&mut w, "farm", |s| s.time_cost = 1000 * PRECISION);
+        let resources = vec![1000 * PRECISION, 1000 * PRECISION];
+        w.plm(cp).resources = resources.clone();
+        for _ in 0..10 {
+            w.update();
+        }
+        assert!(w.pl(cp).objectives.is_empty());
+        let peasant = find(&w, cp, "peasant", 0).unwrap();
+        take(&mut w, peasant, "build farm a1");
+        for _ in 0..100 {
+            w.update();
+            if !w.pl(cp).objectives.is_empty() {
+                break;
+            }
+        }
+        // `has` counted the site, and `order` cancelled it: its cost came
+        // back, and no farm was built.
+        let objectives: Vec<&str> = w.pl(cp).objectives.iter().map(|o| &*o.number).collect();
+        assert_eq!(objectives, ["1"]);
+        assert_eq!(nb(&w, cp, "buildingsite"), 0);
+        assert_eq!(nb(&w, cp, "farm"), 1);
+        assert_eq!(w.pl(cp).resources, resources);
     }
 
     #[test]
@@ -1311,7 +1363,7 @@ starting_resources 10 10
         assert!(w.c(p2).unwrap().hp > 0);
         assert!(w.e(p).is_cloaked());
         assert!(w.e(p2).is_cloaked());
-        assert!(w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]
@@ -1333,7 +1385,7 @@ starting_resources 10 10
         w.update();
         assert!(w.e(p).is_cloaked());
         assert!(!w.e(p2).is_cloaked());
-        assert!(!w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(!w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]

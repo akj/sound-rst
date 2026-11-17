@@ -14,7 +14,7 @@ use crate::msg::{Msg, MsgPart};
 use crate::nofloat::PRECISION;
 use crate::orders::Order;
 use crate::rules::{FactionId, TypeId};
-use crate::triggers::Expr;
+use crate::triggers::Trigger;
 
 /// Who controls a player.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -198,13 +198,6 @@ pub enum PlayerKind {
 pub struct Objective {
     pub number: String,
     pub description: Msg,
-}
-
-/// A trigger of the map: when the condition holds, the action runs once.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Trigger {
-    pub condition: Expr,
-    pub action: Expr,
 }
 
 /// A remembered entity and when it was last seen.
@@ -417,7 +410,7 @@ pub struct Player {
     pub group: Option<Vec<EntityId>>,
     pub group_had_enough_mana: bool,
     pub stats: PlayerStats,
-    pub triggers: Vec<Trigger>,
+    pub(crate) triggers: Vec<Trigger>,
     /// The menace of the player's mobile soldiers.
     pub menace: i64,
     pub(crate) buckets: BTreeMap<(i64, i64), Vec<EntityId>>,
