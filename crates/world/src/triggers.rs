@@ -235,12 +235,18 @@ fn square_named(w: &World, x: &str) -> Result<SquareId, String> {
     w.square_by_name(x).ok_or_else(|| format!("no square {x}"))
 }
 
-/// The type a word names. A word written as a square's name, such as
-/// `z9`, is said to name no square.
+/// Whether a word is written as a square's name: letters, then digits,
+/// such as `z9`.
+fn looks_like_a_square(x: &str) -> bool {
+    let digits = x.trim_start_matches(|c: char| c.is_ascii_lowercase());
+    digits.len() < x.len() && is_digits(digits)
+}
+
+/// The type a word names. A word written as a square's name is said to
+/// name no square.
 fn type_named(w: &World, x: &str) -> Result<TypeId, String> {
     w.rules.type_id(x).ok_or_else(|| {
-        let digits = x.trim_start_matches(|c: char| c.is_ascii_lowercase());
-        if digits.len() < x.len() && is_digits(digits) {
+        if looks_like_a_square(x) {
             format!("no square {x}")
         } else {
             format!("no type {x}")
@@ -311,9 +317,10 @@ fn read_request(w: &World, words: &[&str]) -> Result<Request, String> {
     }
     if r.target() == Some(&TargetRef::Nothing) {
         let target = words.last().copied().unwrap_or_default();
-        return Err(match type_named(w, target) {
-            Err(no_square) if no_square.starts_with("no square") => no_square,
-            _ => format!("{target} names no target"),
+        return Err(if looks_like_a_square(target) {
+            format!("no square {target}")
+        } else {
+            format!("{target} names no target")
         });
     }
     Ok(r)
