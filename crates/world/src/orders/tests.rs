@@ -1024,7 +1024,7 @@ fn a_block_whose_exit_is_lost_and_a_teleport_at_a_unit_inside_are_impossible() {
 }
 
 #[test]
-fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays() {
+fn a_flyer_aimed_at_a_point_flies_there() {
     let (mut w, a, _) = two_humans("");
     w.queue_command(a, "cmd add_units a1 new_flyingmachine footman");
     w.update();
@@ -1039,20 +1039,44 @@ fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays
     let x = w.e(machine).x;
     assert_eq!(w.action_update(machine), Ok(()));
     assert!(w.e(machine).x > x);
-    // A computer's footman just out of its machine, on a square where the
-    // computer sees an enemy, still moving toward a safe one.
+}
+
+/// A computer's exploring footman on its home square, where the computer
+/// sees an enemy, on its way to the safe square beyond the first exit; and
+/// that exit.
+fn an_explorer_in_danger() -> (World, PlayerId, EntityId, EntityId, SquareId) {
     let (mut w, you, c) = game();
     let here = home(&w, c);
-    let there = w.square(here).neighbors[0];
-    let machine = add(&mut w, "new_flyingmachine", c, here);
+    let exit = w.square(here).exits[0];
+    let other_side = w.exit_other_side(exit).unwrap();
+    let there = w.e(other_side).square().unwrap();
     let footman = add(&mut w, "footman", c, here);
     let theirs = add(&mut w, "footman", you, here);
     w.plm(c).perception.insert(theirs);
     w.update_enemy_menace(c);
     w.update_tactical_knowledge(c);
     assert!(w.square_is_very_dangerous(c, here));
-    w.em(footman).previous_place = Some(Place::Inside(machine));
+    assert!(!w.square_is_very_dangerous(c, there));
     w.set_action_target(footman, Some(Target::Square(there)));
+    (w, c, footman, exit, there)
+}
+
+#[test]
+fn an_explorer_on_a_very_dangerous_square_goes_back_to_the_square_it_came_from() {
+    let (mut w, _, footman, exit, there) = an_explorer_in_danger();
+    w.em(footman).previous_place = Some(Place::Square(there));
+    assert_eq!(w.auto_explore(footman), Ok(()));
+    // It walks back through the exit it came by.
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Entity(e)) if *e == exit));
+}
+
+#[test]
+fn an_explorer_just_out_of_a_transport_on_a_very_dangerous_square_keeps_its_way() {
+    let (mut w, c, footman, _, there) = an_explorer_in_danger();
+    let here = w.e(footman).square().unwrap();
+    let machine = add(&mut w, "new_flyingmachine", c, here);
+    // It has no square to go back to.
+    w.em(footman).previous_place = Some(Place::Inside(machine));
     assert_eq!(w.auto_explore(footman), Ok(()));
     assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == there));
 }

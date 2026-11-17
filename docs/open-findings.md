@@ -374,7 +374,7 @@ All of these change the recordings. Since the cutover that means re-recording wi
 
 ### G1. Computer players play by different rules
 
-**Fixed** in pull requests 23, 68, 77 and 97, for what this finding lists. A computer knows only what a player in its seat is told, and gives only the orders a player could: its code reads and acts through one type whose world is private (`Door` in `crates/world/src/ai/door.rs`), so it cannot name the world. Measured by the sweep, it plays about as strongly as before. Tests in `crates/world/src/ai/fairness.rs`, among them `a_computer_looks_for_a_meadow_where_it_remembers_it` and `a_computer_plans_its_paths_through_the_forests_it_has_seen`. Point by point:
+**Fixed** in pull requests 23, 68, 77 and 97, for what this finding lists. A computer knows only what a player in its seat is told, except for the two points under **Open** below, and gives only the orders a player could: its code reads and acts through one type whose world is private (`Door` in `crates/world/src/ai/door.rs`), so it cannot name the world. Measured by the sweep, it plays about as strongly as before. Tests in `crates/world/src/ai/fairness.rs`, among them `a_computer_looks_for_a_meadow_where_it_remembers_it` and `a_computer_plans_its_paths_through_the_forests_it_has_seen`. Point by point:
 
 - Computers remember a unit for 3 minutes, as a human does. Test: `a_computer_forgets_a_unit_three_minutes_after_losing_sight_of_it` in `crates/world/src/upstream_tests.rs`.
 - A computer chooses a warehouse place by what it has seen. Test: `a_computer_judges_a_warehouse_place_by_what_it_has_seen` in `upstream_tests.rs`.
@@ -384,6 +384,13 @@ All of these change the recordings. Since the cutover that means re-recording wi
 Built since, in the pull request for issues 84, 85, 87 and 88: a computer's level of skill, from 1 to 3, apart from its script (`Skill` in `crates/world/src/ai/skill.rs`; level 3 plays as before), an income for any seat that the room says aloud, and a level for the campaign. The ladder in `crates/world/tests/ai_sweep.rs` shows each level beating the one below in 75 and 76 percent of 160 games. Levels above Normal (86) are still to come: see N24. Fleeing and regrouping are still things only a computer's units do.
 
 Pull request 52 added a measurement over many maps and seeds, `crates/world/tests/ai_sweep.rs`, to judge changes like these. N1 to N3 come from it.
+
+Since issue 115, what a computer derives about the battlefield is its own (`TacticalKnowledge` in `crates/world/src/ai/tactical.rs`), and a human has none. Its door fills only the places with corpses and friends. Test: `the_door_tells_no_more_of_a_thing_than_a_player_is_told` in `fairness.rs`.
+
+**Open.** The world, not the door, finds two things a computer reads, and both say more than a player in its seat is told:
+
+- Whether a harmful thing on a square will end (`cataclysmic_places`). The computer's units wait while it stands. A thing's end comes from its type's decay, from the ability that summoned it, or from the map trigger that added it, and no player is told the last two.
+- The enemy menace of a square, and the squares where the computer knows of enemies (`enemy_menace`, and `enemy_presence`, which the menace gives). They read a thing's range after its owner's upgrades at their levels, and a player is told only the upgrade's name. Every player's units in defensive mode flee by the menace too.
 
 Checked today, except the warehouse point. Size: small to change, then playtesting.
 

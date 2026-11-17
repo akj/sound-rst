@@ -569,10 +569,11 @@ impl World {
     }
 
     /// Finds again the enemy menace by square, from what the player
-    /// perceives and remembers, and for a computer player the squares of a
-    /// harmful thing that will end.
+    /// perceives and remembers, and for a computer player where it knows
+    /// of enemies and the squares of a harmful thing that will end.
     pub(crate) fn update_enemy_menace(&mut self, p: PlayerId) {
         let mut menace: BTreeMap<SquareId, i64> = BTreeMap::new();
+        let mut presence: Vec<SquareId> = Vec::new();
         let mut cataclysmic = BTreeSet::new();
         // Both in id order.
         let perceived: Vec<EntityId> = self.pl(p).perception.iter().copied().collect();
@@ -592,7 +593,12 @@ impl World {
             };
             if self.player_is_an_enemy_of_entity(p, o) {
                 let m = o.menace();
-                *menace.entry(place).or_insert(0) += m;
+                if let Some(v) = menace.get_mut(&place) {
+                    *v += m;
+                } else {
+                    menace.insert(place, m);
+                    presence.push(place);
+                }
                 if !o.is_melee() {
                     for n in self.square(place).neighbors.clone() {
                         *menace.entry(n).or_insert(0) += floordiv(m, 10);
@@ -608,7 +614,7 @@ impl World {
         let pl = self.plm(p);
         pl.enemy_menace = menace;
         if let Some(k) = &mut pl.tactical_knowledge {
-            k.set_cataclysmic_places(cataclysmic);
+            k.set_from_the_world(presence, cataclysmic);
         }
     }
 

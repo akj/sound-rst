@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use super::tests::world;
+use super::tests::{world, world_with_extra_rules};
 use super::*;
 use crate::entity::{MemoryRef, PlayerId, Target};
 use crate::known::KnownEntity;
@@ -18,7 +18,13 @@ use crate::world::World;
 /// A computer alone on a map of three squares in a row, a1 to c1, with a
 /// meadow on each.
 fn three_squares() -> (World, PlayerId) {
-    let mut w = world(
+    three_squares_with_rules("")
+}
+
+/// [`three_squares`], with rules a mod adds.
+fn three_squares_with_rules(extra: &str) -> (World, PlayerId) {
+    let mut w = world_with_extra_rules(
+        extra,
         "
 square_width 12
 nb_columns 3
@@ -295,7 +301,6 @@ struct Told {
     deposit_type: Option<TypeId>,
     is_corpse: bool,
     is_vulnerable: bool,
-    is_melee: bool,
 }
 
 fn told_by_the_door(s: Seen) -> Told {
@@ -311,13 +316,12 @@ fn told_by_the_door(s: Seen) -> Told {
         deposit_type: s.deposit_type(),
         is_corpse: s.is_corpse(),
         is_vulnerable: s.is_vulnerable(),
-        is_melee: s.is_melee(),
     }
 }
 
 /// The same answers, from what a player who perceives or remembers the
-/// thing is told of it, and the rules. Of the upgrades that apply to a
-/// thing, which the player is told, none changes these answers here.
+/// thing is told of it, and the rules: its type, not the levels of its
+/// owner's upgrades, which no player is told.
 fn told_to_a_player(k: &KnownEntity, rules: &Rules) -> Told {
     let type_id = (&k).type_id(rules);
     let stats = type_id.map(|t| &rules.ty(t).stats);
@@ -333,13 +337,15 @@ fn told_to_a_player(k: &KnownEntity, rules: &Rules) -> Told {
         deposit_type: type_id.filter(|_| k.is_deposit()),
         is_corpse: k.class == EntityClass::Corpse,
         is_vulnerable: stats.is_some_and(|s| s.is_vulnerable),
-        is_melee: stats.is_none_or(|s| s.range < 2 * PRECISION),
     }
 }
 
 #[test]
 fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
-    let (mut w, p) = three_squares();
+    // A mod whose footman reaches farther with an upgrade.
+    let (mut w, p) = three_squares_with_rules(
+        "def u_reach\nclass upgrade\neffect bonus range 1\ndef footman\ncan_use u_reach\n",
+    );
     let [a1, b1, c1] = ["a1", "b1", "c1"].map(|n| w.square_by_name(n).unwrap());
     let enemy = w.new_player(&Controller::human("enemy", false)).unwrap();
     let ty = |w: &World, name: &str| w.rules.type_id(name).unwrap();
@@ -350,6 +356,15 @@ fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
     };
     let peasant = add(&mut w, "peasant", Some(p), a1);
     let footman = add(&mut w, "footman", Some(enemy), b1);
+    // Its owner's upgrade, at level 2, makes it strike from afar, where its
+    // type strikes only beside it: the player is told the upgrade's name,
+    // not its level.
+    let reach = ty(&w, "u_reach");
+    for _ in 0..2 {
+        w.upgrade_player(reach, enemy).unwrap();
+    }
+    assert!(w.rules.ty(ty(&w, "footman")).stats.range < 2 * PRECISION);
+    assert!(!w.e(footman).is_melee());
     let archer = add(&mut w, "archer", Some(enemy), b1);
     let dead = add(&mut w, "footman", Some(enemy), c1);
     w.die(dead, None).unwrap();
@@ -387,11 +402,10 @@ fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
         let door = w.door(p);
         let told = told_by_the_door(door.known(id).unwrap());
         assert_eq!(told, expected, "{}", k.type_name);
-        checked.push((told.is_corpse, told.is_vulnerable, told.is_melee));
+        checked.push((told.is_corpse, told.is_vulnerable));
     }
     // The things differ in every answer the door's tactical knowledge
-    // reads: a corpse, a vulnerable unit, a unit that strikes from afar.
-    assert!(checked.contains(&(true, false, true)));
-    assert!(checked.contains(&(false, true, true)));
-    assert!(checked.contains(&(false, true, false)));
+    // reads: a corpse, and a vulnerable unit.
+    assert!(checked.contains(&(true, false)));
+    assert!(checked.contains(&(false, true)));
 }

@@ -1845,6 +1845,15 @@ mod tests {
         world_with_rules(&read("res/rules.txt"), map)
     }
 
+    /// A world of the game's rules, then of `extra`, as a mod adds to them.
+    pub(super) fn world_with_extra_rules(extra: &str, map: &str) -> World {
+        let rules = crate::Rules::load(&[read("res/rules.txt"), extra.to_owned()]);
+        let ai = crate::AiScripts::load(&[read("res/ai.txt")]);
+        let mut w = World::new(rules, ai, Vec::new(), 0);
+        w.load_and_build_map(map).unwrap();
+        w
+    }
+
     fn world_with_rules(rules: &str, map: &str) -> World {
         let rules = crate::Rules::load(&[rules]);
         let ai = crate::AiScripts::load(&[read("res/ai.txt")]);

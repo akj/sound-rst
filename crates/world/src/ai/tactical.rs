@@ -10,13 +10,15 @@ use crate::entity::{Place, SquareId};
 use super::door::Door;
 
 /// The tactical knowledge of a computer player. Its door fills the places
-/// from what it perceives and remembers; the world adds the cataclysms and
-/// the hits its side takes.
+/// with corpses and friends from what it perceives and remembers; the world
+/// adds where it knows of enemies, the cataclysms and the hits its side
+/// takes.
 #[derive(Clone, Debug, Default, Hash)]
 pub(crate) struct TacticalKnowledge {
-    /// The squares where it knows of an enemy, in the order found. A
-    /// square that ranged enemies around it made dangerous before an enemy
-    /// was found on it is not here.
+    /// The squares where it knows of an enemy, in the order found: each
+    /// enemy's square that had no enemy menace yet when the enemy was
+    /// counted. A square that ranged enemies around it made dangerous
+    /// before an enemy was found on it is not here.
     enemy_presence: Vec<SquareId>,
     places_with_corpses: BTreeSet<SquareId>,
     /// The squares where it knows of a vulnerable unit of its side.
@@ -49,11 +51,18 @@ impl TacticalKnowledge {
         *self.subsquare_threat.entry(subsquare).or_insert(0) += damage;
     }
 
-    /// The squares of a harmful thing that will end, as the world knows
-    /// them from what the player perceives and remembers: no player is told
-    /// when a thing will end, so its door cannot tell it.
-    pub(crate) fn set_cataclysmic_places(&mut self, places: BTreeSet<SquareId>) {
-        self.cataclysmic_places = places;
+    /// What the world finds of what the player perceives and remembers,
+    /// and its door cannot show: where it knows of enemies, a by-product of
+    /// the enemy menace, which reads a thing's range after its owner's
+    /// upgrade levels; and the squares of a harmful thing that will end,
+    /// since no player is told when a thing will end.
+    pub(crate) fn set_from_the_world(
+        &mut self,
+        enemy_presence: Vec<SquareId>,
+        cataclysmic_places: BTreeSet<SquareId>,
+    ) {
+        self.enemy_presence = enemy_presence;
+        self.cataclysmic_places = cataclysmic_places;
     }
 
     pub(super) fn enemy_presence(&self) -> &[SquareId] {
@@ -70,16 +79,12 @@ impl TacticalKnowledge {
 }
 
 impl Door<'_> {
-    /// Finds again where it knows of enemies, corpses and friends: from
-    /// what it perceives, then what it remembers, each in id order. A
-    /// square is dangerous once an enemy is on it or a ranged enemy beside
-    /// it; an enemy found on a square already dangerous adds no presence.
+    /// Finds again where it knows of corpses and of vulnerable units of
+    /// its side, from what it perceives and remembers.
     pub(super) fn update_tactical_knowledge(&mut self) {
         if self.tactical().is_none() {
             return;
         }
-        let mut dangerous = BTreeSet::new();
-        let mut presence = Vec::new();
         let mut corpses = BTreeSet::new();
         let mut friends = BTreeSet::new();
         let known = self.perceived().chain(self.remembered().map(|(s, _)| s));
@@ -87,21 +92,13 @@ impl Door<'_> {
             let Some(Place::Square(place)) = o.place() else {
                 continue;
             };
-            if self.is_an_enemy(o) {
-                if dangerous.insert(place) {
-                    presence.push(place);
-                }
-                if !o.is_melee() {
-                    dangerous.extend(self.neighbors(place));
-                }
-            } else if o.is_corpse() {
+            if o.is_corpse() {
                 corpses.insert(place);
             } else if o.owner().is_some_and(|op| self.allied().contains(&op)) && o.is_vulnerable() {
                 friends.insert(place);
             }
         }
         if let Some(k) = self.tactical_mut() {
-            k.enemy_presence = presence;
             k.places_with_corpses = corpses;
             k.places_with_friends = friends;
         }

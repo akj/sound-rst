@@ -106,12 +106,6 @@ impl<'a> Seen<'a> {
     pub(super) fn is_vulnerable(self) -> bool {
         self.e.is_vulnerable()
     }
-
-    /// Whether it strikes only beside it, by its type and the upgrades of
-    /// its owner that apply to it.
-    pub(super) fn is_melee(self) -> bool {
-        self.e.is_melee()
-    }
 }
 
 /// A target as the computer holds it: a square, or a thing it perceived
@@ -462,11 +456,6 @@ impl Door<'_> {
     pub(super) fn exit_xy(&self, e: EntityId) -> (i64, i64) {
         let x = self.world.e(e);
         (x.x, x.y)
-    }
-
-    /// The eight squares around a square.
-    pub(super) fn neighbors(&self, s: SquareId) -> &[SquareId] {
-        &self.world.square(s).neighbors
     }
 
     /// The squares the exits of a square lead to, in the order of its
