@@ -1,9 +1,6 @@
-//! The resource stack: which file is read depends on the preferred
-//! language, the active mods and soundpacks, the campaign and the map.
-//! Sounds are replaced by later layers; some text files are merged.
-//!
-//! A map that came from a server is the top layer for the game's rules,
-//! but not for the interface: see [`Resources::set_map`].
+//! The resources: which file is read depends on the preferred language,
+//! the active mods and soundpacks, the campaign and the map. The layers
+//! and which of their files apply are in [`crate::layers`].
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,42 +9,17 @@
     clippy::arithmetic_side_effects
 )]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::campaign::Campaign;
+use crate::layers::{GameFile, InterfaceFile, Layer, Layers};
 use crate::log::Log;
 use crate::mapfile::Map;
 use crate::package::{Package, PackageStack, TextFile};
 use crate::parameters::Parameters;
-use crate::sound_cache::{SOUNDS_FOLDER, SoundCache, Sounds, TEXT_FOLDER};
+use crate::sound_cache::{SoundCache, Sounds, TEXT_FOLDER};
 use crate::style::Style;
-use crate::translation::{PORT_LANGUAGE_FILES, port_language_file};
-
-/// The folder of a package that holds what differs in a language: its
-/// own `ui/style.txt`, help files and recordings.
-pub fn language_folder(language: &str) -> String {
-    format!("lang/{language}")
-}
-
-/// The path, then its translation if a language is given.
-pub fn localized_paths(path: &str, language: Option<&str>) -> Vec<String> {
-    let mut result = vec![path.to_owned()];
-    if let Some(lang) = language.filter(|l| !l.is_empty()) {
-        result.push(format!("{}/{path}", language_folder(lang)));
-    }
-    result
-}
-
-/// The language file of `language` in `package`, named by the package.
-fn language_file(package: &Package, language: &str) -> Option<TextFile> {
-    let name = format!("{TEXT_FOLDER}/{language}.txt");
-    let text = package.read_text(&name)?;
-    Some(TextFile {
-        path: format!("{}/{name}", package.name),
-        text,
-    })
-}
 
 /// The available language that best matches the preferred one: the same
 /// code, else the same main code, else a longer code with that main code,
@@ -103,17 +75,15 @@ pub struct Resources {
     /// The player's folder of maps that came from a server.
     downloaded: PathBuf,
     pub packages: PackageStack,
-    layers: Vec<Package>,
-    /// The layers and whether the map came from a server, when the style
-    /// and sounds were last read.
-    previous_layers: Option<(Vec<Package>, bool)>,
+    layers: Layers,
+    /// The layers when the style and sounds were last read.
+    previous_layers: Option<Layers>,
     /// The active mods, as a comma separated list of those that exist.
     pub mods: String,
     pub soundpacks: String,
     campaign: Option<Package>,
-    map: Option<Package>,
-    /// The map came from a server.
-    map_downloaded: bool,
+    /// The map's layer: [`Layer::Map`] or [`Layer::MapFromServer`].
+    map: Option<Layer>,
     /// The language of the texts and sounds.
     pub language: String,
     preferred_language: Option<String>,
@@ -143,13 +113,12 @@ impl Resources {
             package_paths,
             downloaded: player.join("downloaded"),
             player,
-            layers: Vec::new(),
+            layers: Layers::new(Vec::new(), None),
             previous_layers: None,
             mods: String::new(),
             soundpacks: String::new(),
             campaign: None,
             map: None,
-            map_downloaded: false,
             language: "en".to_owned(),
             preferred_language,
             style: Style::new(log.clone()),
@@ -163,9 +132,10 @@ impl Resources {
         r
     }
 
-    /// The layers, in loading order: base, mods, soundpacks, campaign, map.
-    pub fn layers(&self) -> &[Package] {
-        &self.layers
+    /// The packages of the layers, in loading order: base, mods,
+    /// soundpacks, campaign, map.
+    pub fn layers(&self) -> Vec<&Package> {
+        self.layers.packages().collect()
     }
 
     pub fn style(&self) -> &Style {
@@ -213,70 +183,27 @@ impl Resources {
             .collect()
     }
 
-    /// The map's layer, if the map came from a server.
-    fn downloaded_map(&self) -> Option<&Package> {
-        self.map.as_ref().filter(|_| self.map_downloaded)
-    }
-
-    /// The layers the interface reads its style, texts, sounds, key
-    /// bindings and help from: every layer but a map that came from a
-    /// server, which is the last layer.
-    fn interface_layers(&self) -> &[Package] {
-        match (self.downloaded_map(), self.layers.split_last()) {
-            (Some(_), Some((_, below))) => below,
-            _ => &self.layers,
-        }
-    }
-
-    /// The player's folder, as a package named by its path, if it exists.
-    fn player_package(&self) -> Option<Package> {
-        let name = self.player.display().to_string();
-        Package::from_path(&self.player)
-            .ok()
-            .map(|p| p.with_name(&name))
-    }
-
     /// The languages that have a language file: in a layer, among the
     /// port's own, or in the player's folder.
     pub fn available_languages(&self) -> Vec<String> {
-        let mut result = vec!["en".to_owned()];
-        let mut add = |lang: &str| {
-            if !result.iter().any(|r| r == lang) {
-                result.push(lang.to_owned());
-            }
-        };
-        let player = self.player_package();
-        for package in self.interface_layers().iter().chain(&player) {
-            let Some(texts) = package.subpackage(TEXT_FOLDER) else {
-                continue;
-            };
-            for name in texts.filenames() {
-                if let Some(lang) = name.strip_suffix(".txt") {
-                    add(lang);
-                }
-            }
-        }
-        for (lang, _) in PORT_LANGUAGE_FILES {
-            add(lang);
-        }
-        result
+        self.layers.languages()
     }
 
-    fn add_layer(&mut self, m: Package, added: &mut Vec<String>) {
+    fn add_layer(&self, m: Package, added: &mut Vec<String>, layers: &mut Vec<Layer>) {
         added.push(m.name.clone());
         for required in m.required_mods.clone() {
             if !added.contains(&required)
                 && let Some(r) = self.packages.find_mod(&required)
             {
-                self.add_layer(r, added);
+                self.add_layer(r, added, layers);
             }
         }
-        self.layers.push(m);
+        layers.push(Layer::Mod(m));
     }
 
     /// Adds the existing mods of the list as layers; returns the list of
     /// those that exist.
-    fn add_layers(&mut self, mods: &str) -> String {
+    fn add_layers(&self, mods: &str, layers: &mut Vec<Layer>) -> String {
         let mut actual = Vec::new();
         let mut added = Vec::new();
         for name in mods.split(',').map(str::trim) {
@@ -284,7 +211,7 @@ impl Resources {
                 continue;
             }
             if let Some(m) = self.packages.find_mod(name) {
-                self.add_layer(m, &mut added);
+                self.add_layer(m, &mut added, layers);
                 actual.push(name.to_owned());
             }
         }
@@ -292,19 +219,24 @@ impl Resources {
     }
 
     fn reload(&mut self) {
-        self.layers = self.packages.0.iter().take(1).cloned().collect();
-        let mods = self.mods.clone();
-        self.mods = self.add_layers(&mods);
-        let soundpacks = self.soundpacks.clone();
-        self.soundpacks = self.add_layers(&soundpacks);
-        if let Some(c) = self.campaign.clone() {
-            self.layers.push(c);
-        }
-        if let Some(m) = self.map.clone() {
-            self.layers.push(m);
-        }
-        let current = (self.layers.clone(), self.map_downloaded);
-        if self.previous_layers.as_ref() != Some(&current) {
+        let mut layers: Vec<Layer> = self
+            .packages
+            .0
+            .iter()
+            .take(1)
+            .cloned()
+            .map(Layer::Game)
+            .collect();
+        self.mods = self.add_layers(&self.mods.clone(), &mut layers);
+        self.soundpacks = self.add_layers(&self.soundpacks.clone(), &mut layers);
+        layers.extend(self.campaign.clone().map(Layer::Campaign));
+        layers.extend(self.map.clone());
+        let player = Package::from_path(&self.player).ok().map(|p| {
+            let name = self.player.display().to_string();
+            p.with_name(&name)
+        });
+        self.layers = Layers::new(layers, player);
+        if self.previous_layers.as_ref() != Some(&self.layers) {
             self.language = best_language_match(
                 self.preferred_language.as_deref(),
                 &self.available_languages(),
@@ -313,38 +245,46 @@ impl Resources {
             if let Some(f) = self.on_change.as_mut() {
                 f(&self.mods, &self.soundpacks);
             }
-            self.previous_layers = Some(current);
+            self.previous_layers = Some(self.layers.clone());
         }
     }
 
     /// Reads the style and the sound cache again, for the current language.
     pub fn load_style_and_sounds(&mut self) {
+        let language = self.language.as_str();
+        let languages = if language == "en" {
+            vec!["en"]
+        } else {
+            vec!["en", language]
+        };
+        let phrases = self.layers.phrases(&languages);
+        let sounds = self.layers.sounds(language);
+        let style = self.layers.style(language);
         // The phrases and the sounds come first: the style is refused each
-        // word that names none of them.
-        let texts = self.language_files(None);
-        let dirs: Vec<(Package, String)> = self.paths(SOUNDS_FOLDER, None, true);
-        let mut cache = SoundCache::new(&texts, &dirs, self.params.clone(), self.log.clone());
-        let style_files = self.files("ui/style", true, None);
-        self.style.load(&style_files, &|name| cache.has(name));
-        if let Some(map) = self.downloaded_map().cloned() {
-            let texts = self.language_files(Some(&map));
-            let sounds = cache.add_downloaded(&texts, &self.paths(SOUNDS_FOLDER, Some(&map), true));
-            let style_files = self.files("ui/style", true, Some(&map));
-            let style = self
-                .style
-                .add_downloaded(&style_files, &|name| cache.has(name));
-            if style > 0 || sounds > 0 {
-                self.log.warning(format!(
-                    "downloaded map {}: ignored {style} style attributes and {sounds} phrases or sounds the game already has",
-                    map.name
-                ));
-            }
-            for name in ["ui/bindings", "ui/menu_help", "ui/game_help"] {
-                if !self.texts(name, true, Some(&map)).is_empty() {
-                    self.log
-                        .warning(format!("downloaded map {}: {name}.txt ignored", map.name));
-                }
-            }
+        // word that names none of them. A layer that only adds names adds
+        // them after, so the style below it names only its own.
+        let mut cache = SoundCache::new(
+            &phrases.replace,
+            &sounds.replace,
+            self.params.clone(),
+            self.log.clone(),
+        );
+        self.style.load(&style.replace, &|name| cache.has(name));
+        let ignored_sounds = cache.add_downloaded(&phrases.add_only, &sounds.add_only);
+        let ignored_style = self
+            .style
+            .add_downloaded(&style.add_only, &|name| cache.has(name));
+        if ignored_style > 0 || ignored_sounds > 0 {
+            let layer = self.map.as_ref().map_or("", Layer::describe);
+            let map = self.map.as_ref().and_then(Layer::package);
+            let map = map.map_or("", |m| m.name.as_str());
+            self.log.warning(format!(
+                "{layer} {map}: ignored {ignored_style} style attributes and {ignored_sounds} phrases or sounds the game already has"
+            ));
+        }
+        for (layer, file) in self.layers.refused(language) {
+            self.log
+                .warning(format!("{}: {} ignored", layer.describe(), file.path));
         }
         self.sounds.replace(cache);
     }
@@ -369,16 +309,17 @@ impl Resources {
         }
     }
 
-    /// Adds the map's resources as the top layer, or removes them.
-    ///
-    /// A map that came from a server gives the game its map, rules and
-    /// computer players, and adds to the style, texts and sounds only
-    /// what the other layers lack, such as its own unit types. Its key
-    /// bindings and help are ignored, and so is anything that would change
-    /// the game's own style, texts or sounds.
+    /// Adds the map's resources as the top layer, or removes them. What a
+    /// map that came from a server gives is in [`Layer::power`].
     pub fn set_map(&mut self, map: Option<&Map>) {
-        self.map = map.and_then(|m| m.resources.clone());
-        self.map_downloaded = map.is_some_and(|m| m.downloaded);
+        self.map = map.and_then(|m| {
+            let package = m.resources.clone()?;
+            Some(if m.downloaded {
+                Layer::MapFromServer(package)
+            } else {
+                Layer::Map(package)
+            })
+        });
         self.reload();
         if let Some(map) = map {
             self.check_map(map);
@@ -413,70 +354,12 @@ impl Resources {
         self.reload();
     }
 
-    /// The (package, path) pairs to look `path` up in, in priority order:
-    /// in `root`, or else in the interface's layers.
-    pub fn paths(
-        &self,
-        path: &str,
-        root: Option<&Package>,
-        localize: bool,
-    ) -> Vec<(Package, String)> {
-        let lang = localize.then_some(self.language.as_str());
-        let roots: Vec<&Package> = match root {
-            Some(r) => vec![r],
-            None => self.interface_layers().iter().collect(),
-        };
-        roots
-            .into_iter()
-            .flat_map(|r| {
-                localized_paths(path, lang)
-                    .into_iter()
-                    .map(move |p| (r.clone(), p))
-            })
-            .collect()
-    }
-
-    /// The language files of `root`, or else of the interface, in priority
-    /// order: for each layer the English, then the language's. The
-    /// interface's start with the port's own phrases in the language, and
-    /// end with the player's folder, which overrides every layer.
-    fn language_files(&self, root: Option<&Package>) -> Vec<TextFile> {
-        let mut languages = vec!["en"];
-        if self.language != "en" {
-            languages.push(&self.language);
-        }
-        let player = self.player_package();
-        let (mut files, roots): (Vec<TextFile>, Vec<&Package>) = match root {
-            Some(r) => (Vec::new(), vec![r]),
-            None => (
-                languages
-                    .iter()
-                    .filter_map(|l| port_language_file(l))
-                    .collect(),
-                self.interface_layers().iter().chain(&player).collect(),
-            ),
-        };
-        for package in roots {
-            for language in &languages {
-                files.extend(language_file(package, language));
-            }
-        }
-        files
-    }
-
     /// The interface's files of one language, in priority order: the
-    /// port's own, each layer's, then the player's.
+    /// port's own, each layer's, then the player's. A map from a server
+    /// adds phrases but translates none of the game's, so its files are
+    /// left out.
     pub fn files_of_language(&self, language: &str) -> Vec<TextFile> {
-        let player = self.player_package();
-        port_language_file(language)
-            .into_iter()
-            .chain(
-                self.interface_layers()
-                    .iter()
-                    .chain(&player)
-                    .filter_map(|p| language_file(p, language)),
-            )
-            .collect()
+        self.layers.phrases(&[language]).replace
     }
 
     /// The player's language file of `language`, which may not exist yet.
@@ -486,69 +369,34 @@ impl Resources {
             .join(format!("{language}.txt"))
     }
 
-    /// Every `<name>.txt` of `root`, or else of the interface's layers, in
-    /// priority order, each with its layer and its path for a message.
-    pub fn files(&self, name: &str, localize: bool, root: Option<&Package>) -> Vec<TextFile> {
-        self.paths(&format!("{name}.txt"), root, localize)
-            .into_iter()
-            .filter_map(|(package, path)| {
-                let text = package.read_text(&path)?;
-                let path = format!("{}/{path}", package.name);
-                Some(TextFile { path, text })
-            })
-            .collect()
+    /// The interface's files `file`, in priority order, each with its
+    /// layer in its path for a message.
+    pub fn interface_files(&self, file: InterfaceFile) -> Vec<TextFile> {
+        self.layers.interface(file, &self.language)
     }
 
-    /// The contents of every `<name>.txt` of `root`, or else of the
-    /// interface's layers, in priority order.
-    pub fn texts(&self, name: &str, localize: bool, root: Option<&Package>) -> Vec<String> {
-        self.paths(&format!("{name}.txt"), root, localize)
-            .into_iter()
-            .filter_map(|(package, path)| package.read_text(&path))
-            .collect()
+    /// The files of the key bindings, in the order they are read, the
+    /// player's file at `custom` last (see [`Layers::bindings`]).
+    pub fn bindings_files(&self, custom: &Path) -> Vec<TextFile> {
+        self.layers.bindings(&self.language, custom)
     }
 
-    /// The content of the `<name>.txt` with the highest priority.
-    pub fn text(&self, name: &str, localize: bool) -> Option<String> {
-        self.texts(name, localize, None).pop()
-    }
-
-    /// The contents of every `<name>.txt`, joined by line ends.
-    pub fn text_appended(&self, name: &str, localize: bool) -> String {
-        self.texts(name, localize, None).join("\n")
-    }
-
-    /// The contents of every `<name>.txt` of every layer, the map's
-    /// included, joined by line ends. Each is under a comment line that
-    /// names its layer and file, so that the simulation, which takes only
-    /// this text, can say where a line it refuses is. Players can play
-    /// together only with the same text, so the map's layer is `map` and
-    /// not its name: a map kept from a server has another file name.
-    fn game_text(&self, name: &str) -> String {
-        self.layers
-            .iter()
-            .flat_map(|p| {
-                let layer = if self.map.as_ref() == Some(p) {
-                    "map"
-                } else {
-                    p.name.as_str()
-                };
-                let file = format!("{layer}/{name}.txt");
-                let texts = self.texts(name, false, Some(p)).into_iter();
-                texts.map(move |t| soundrts_world::defs::with_file_name(&file, &t))
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+    /// The content of the interface's `<name>.txt` with the highest
+    /// priority.
+    #[cfg(test)]
+    pub fn text(&self, name: &'static str, localized: bool) -> Option<String> {
+        let file = InterfaceFile::named(name, localized);
+        self.interface_files(file).pop().map(|f| f.text)
     }
 
     /// The rules for a new world: every `rules.txt` of the layers.
     pub fn rules_text(&self) -> String {
-        self.game_text("rules")
+        self.layers.game_text(GameFile::Rules)
     }
 
     /// The computer players for a new world: every `ai.txt` of the layers.
     pub fn ai_text(&self) -> String {
-        self.game_text("ai")
+        self.layers.game_text(GameFile::Ai)
     }
 
     /// The official maps, from the base package's `multi` folder.
@@ -661,21 +509,14 @@ impl Resources {
     /// What decides whether two players can play together: the SHA-256 of
     /// the simulation version, the rules and the computer players' scripts,
     /// mods included, without any map's.
-    pub fn content_hash(&mut self) -> soundrts_protocol::ContentHash {
-        let map = self.map.take();
-        if map.is_some() {
-            self.reload();
-        }
+    pub fn content_hash(&self) -> soundrts_protocol::ContentHash {
+        let layers = self.layers.without_map();
         let text = format!(
             "{}\n{}\n{}",
             soundrts_world::SIM_VERSION,
-            self.rules_text(),
-            self.ai_text()
+            layers.game_text(GameFile::Rules),
+            layers.game_text(GameFile::Ai)
         );
-        if map.is_some() {
-            self.map = map;
-            self.reload();
-        }
         let hash = soundrts_protocol::MapHash::of(text.as_bytes());
         #[expect(clippy::expect_used, reason = "a SHA-256 is 64 hex digits")]
         soundrts_protocol::ContentHash::new(hash.as_str()).expect("64 hex digits")
@@ -750,20 +591,6 @@ mod tests {
     }
 
     #[test]
-    fn a_language_has_its_own_folder_in_a_package() {
-        assert_eq!(localized_paths("ui/style.txt", None), ["ui/style.txt"]);
-        assert_eq!(localized_paths("sounds", Some("")), ["sounds"]);
-        assert_eq!(
-            localized_paths("ui/style.txt", Some("pt-BR")),
-            ["ui/style.txt", "lang/pt-BR/ui/style.txt"]
-        );
-        assert_eq!(
-            localized_paths("sounds", Some("de")),
-            ["sounds", "lang/de/sounds"]
-        );
-    }
-
-    #[test]
     fn test_best_language_match() {
         let available = [
             "en", "cs", "de", "es", "fr", "it", "pl", "pt-BR", "ru", "sk", "zh",
@@ -794,16 +621,16 @@ mod tests {
         assert_eq!(layer_kinds(&r), kinds(&[("default", "FolderPackage")]));
         assert_eq!((r.mods.as_str(), r.soundpacks.as_str()), ("", ""));
         assert_eq!(
-            r.text("rules", false).unwrap(),
-            "def test\ncost 0 0\n\ndef peasant\ncost 0 0\n"
+            r.rules_text(),
+            "; file: default/rules.txt\ndef test\ncost 0 0\n\ndef peasant\ncost 0 0\n"
         );
 
         let r = stack(&["res.zip", "res2"]);
         assert_eq!(layer_kinds(&r), kinds(&[("default", "ZipPackage")]));
         assert_eq!((r.mods.as_str(), r.soundpacks.as_str()), ("", ""));
         assert_eq!(
-            r.text("rules", false).unwrap(),
-            "def test\ncost 0 0\n\ndef peasant\ncost 0 0\n"
+            r.rules_text(),
+            "; file: default/rules.txt\ndef test\ncost 0 0\n\ndef peasant\ncost 0 0\n"
         );
 
         let mut r = stack(&["res.zip"]);
@@ -965,7 +792,11 @@ mod tests {
         r.set_map(Some(&map));
         let bindings =
             crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
-        assert!(bindings.contains("CTRL SHIFT F12: quit"));
+        assert!(
+            bindings
+                .iter()
+                .any(|f| f.text.contains("CTRL SHIFT F12: quit"))
+        );
         assert_eq!(r.text("ui/menu_help", false).as_deref(), Some("golem\n"));
         assert_eq!(
             r.sounds().text("what_are_your_orders").as_deref(),
@@ -973,6 +804,53 @@ mod tests {
         );
         assert_eq!(r.style().get("footman").title_msg(), [name("golem")]);
         assert_eq!(sound_layer(&r, "ambience/wood_2"), "intrusive");
+    }
+
+    #[test]
+    fn a_refused_line_of_a_mods_bindings_is_logged_with_the_mods_file_and_its_line() {
+        let root = game_root();
+        let user = tempfile::tempdir().unwrap();
+        let mods = user.path().join("mine");
+        let keys = mods.join("mods/keys/ui");
+        std::fs::create_dir_all(&keys).unwrap();
+        std::fs::write(
+            keys.join("bindings.txt"),
+            "; my keys\n\nF11: say_time\nF10: no_such_command\n",
+        )
+        .unwrap();
+        let log_path = user.path().join("client.log");
+        let log = Log::file_only(&log_path);
+        let mut r = Resources::new(
+            vec![root.join("res"), mods],
+            root.join("no-player"),
+            Some("en".into()),
+            Arc::new(Parameters::default()),
+            log.clone(),
+        );
+        r.set_mods("keys");
+        let files = crate::bindings::game_bindings_text(&r, std::path::Path::new("no file"));
+        let mut b = crate::bindings::Bindings::new();
+        b.load(&files, &crate::game::command::GameCommand::parse, &log);
+        let logged = std::fs::read_to_string(&log_path).unwrap();
+        let refused = "keys/ui/bindings.txt line 4 is ignored \
+                       ('no_such_command' is not a command): F10: no_such_command";
+        assert!(logged.contains(refused), "{logged}");
+    }
+
+    #[test]
+    fn the_content_hash_leaves_out_the_map_and_counts_the_mods() {
+        let mut r = game_stack();
+        let plain = r.content_hash();
+        for map in [
+            Map::from_bytes(intrusive_map(), "intrusive.zip").unwrap(),
+            Map::from_server(intrusive_map(), "intrusive.zip").unwrap(),
+        ] {
+            r.set_map(Some(&map));
+            assert!(r.rules_text().contains("def golem"));
+            assert_eq!(r.content_hash(), plain);
+        }
+        r.set_mods("orc");
+        assert_ne!(r.content_hash(), plain);
     }
 
     #[test]
@@ -988,7 +866,8 @@ mod tests {
             r.set_map(Some(&map));
             let bindings =
                 crate::bindings::game_bindings_text(&r, std::path::Path::new("no bindings.txt"));
-            assert_eq!(bindings.contains("SHIFT z: resource_status 2"), !downloaded);
+            let resource = |f: &TextFile| f.text.contains("SHIFT z: resource_status 2");
+            assert_eq!(bindings.iter().any(resource), !downloaded);
             assert_eq!(
                 r.sounds().text("stone_golem").as_deref(),
                 Some("stone golem")

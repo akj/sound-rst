@@ -35,6 +35,32 @@ fn the_players_bindings_file_overrides_the_games() {
 }
 
 #[test]
+fn a_refused_line_of_the_players_bindings_is_logged_with_its_file_and_its_line() {
+    let h = Harness::new("en", Script::new());
+    let custom = h.client.paths.custom_bindings();
+    std::fs::write(
+        &custom,
+        "F12: say_time\r\n; the next key\r\n\r\nWIN a: escape\r\nF11: no_such_command\r\n",
+    )
+    .unwrap();
+    let b = load(&h);
+    assert_eq!(
+        b.get(&Chord::parse("F12").unwrap()),
+        Some(&GameCommand::SayTime)
+    );
+    let log = h.log_text();
+    let custom = custom.display();
+    for refused in [
+        format!("{custom} line 4 is ignored ('WIN' is not an allowed key modifier): WIN a: escape"),
+        format!(
+            "{custom} line 5 is ignored ('no_such_command' is not a command): F11: no_such_command"
+        ),
+    ] {
+        assert!(log.contains(&refused), "{refused} in:\n{log}");
+    }
+}
+
+#[test]
 fn without_a_players_file_the_games_bindings_stand() {
     let h = Harness::new("en", Script::new());
     let b = load(&h);

@@ -467,9 +467,9 @@ impl GameInterface {
 
     /// Reads the bindings of the game and the player's own.
     pub fn load_bindings(&mut self, cx: &Client) {
-        let text = game_bindings_text(&cx.res, &cx.paths.custom_bindings());
+        let files = game_bindings_text(&cx.res, &cx.paths.custom_bindings());
         let mut b = Bindings::new();
-        b.load(&text, &GameCommand::parse, &cx.log);
+        b.load(&files, &GameCommand::parse, &cx.log);
         self.bindings = b;
     }
 
