@@ -76,7 +76,6 @@ use crate::sound::Listener;
 
 use crate::voice::EntryId;
 
-use self::alerts::UnitsNews;
 use self::animation::NoiseSource;
 use self::command::GameCommand;
 use self::entity::EntityView;
@@ -809,10 +808,7 @@ impl GameInterface {
                 }
             }
             SrvEvent::Quit => self.quit_heard(cx),
-            SrvEvent::EndOfTurn(m) => {
-                let sighted = self.srv_end_of_turn(cx, &m);
-                self.units_news(cx, sighted, UnitsNews::Sighted);
-            }
+            SrvEvent::EndOfTurn(m) => self.srv_end_of_turn(cx, &m),
         }
     }
 
@@ -836,9 +832,7 @@ impl GameInterface {
 
     /// The end of a turn: the interface's copies of the squares and the
     /// entities take the turn's, and the seat takes note of what it sees.
-    /// Returns the enemies seen for the first time, with their places.
-    #[must_use]
-    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) -> Vec<(Msg, Option<Place>)> {
+    fn srv_end_of_turn(&mut self, cx: &mut Client, m: &TurnMessage) {
         self.turns_handled += 1;
         self.last_virtual_time = m.time as f64 / 1000.0;
         match &mut self.source {
@@ -859,9 +853,10 @@ impl GameInterface {
         if self.previous_menus.is_empty() {
             self.send_menu_alerts_if_needed(cx);
         }
+        self.units_alert_if_needed(cx, None);
         self.scout_info_if_needed(cx);
         self.follow_replaced_units(m);
-        let sighted = self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
+        self.update_fog_of_war(cx, m.remembered.clone(), m.perceived.clone());
         self.update_group();
         if self.bell_enabled && !self.muted() {
             self.eventually_play_bell(cx);
@@ -870,7 +865,6 @@ impl GameInterface {
             self.play_tick(cx);
         }
         self.record_update_time(cx);
-        sighted
     }
 
     // animation

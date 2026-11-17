@@ -196,25 +196,25 @@ length 9999 208980
 @166457 sounds 107 aba00040facfa4c5
 @166457 step 44 key a
 @166457 voice item "go to , , press tab to select the target and then press enter to confirm"
-@173657 voice info "1 peasant enemy at c 1"
-@176258 sounds 264 d148e65d11ade6a8
-@176258 step 45 key a
-@176258 voice item "patrol to , , press tab to select the target and then press enter to confirm"
-@183858 voice info "30 wood"
-@184958 voice info "1 barracks at building enemy at d 1"
-@188859 sounds 339 ac94f44f465c16c0
-@188859 step 46 key a
-@188859 voice item "load , , press tab to select the target and then press enter to confirm"
-@195959 sounds 149 012549bd61799012
-@195959 step 47 key a
-@195959 voice item "load all from , , press tab to select the target and then press enter to confirm"
-@203959 sounds 160 3b69db150f8a2896
-@203959 step 48 key CTRL UP
-@203959 voice item "c 3 , meadows , 3 footman"
-@206859 sounds 54 7147a0f270965d06
-@206859 step 49 key RETURN
-@206859 voice item "load all from c 3"
-@209757 voice info "1 barracks enemy at d 1"
+@173657 sounds 200 c9d6b0f995148c15
+@173657 step 45 key a
+@173657 voice item "patrol to , , press tab to select the target and then press enter to confirm"
+@181257 voice info "1 peasant enemy at c 1"
+@183857 voice info "30 wood"
+@184957 voice info "1 barracks at building enemy at d 1"
+@188858 sounds 403 15b1a8638fbf11c7
+@188858 step 46 key a
+@188858 voice item "load , , press tab to select the target and then press enter to confirm"
+@195958 sounds 149 012549bd61799012
+@195958 step 47 key a
+@195958 voice item "load all from , , press tab to select the target and then press enter to confirm"
+@203958 sounds 160 3b69db150f8a2896
+@203958 step 48 key CTRL UP
+@203958 voice item "c 3 , meadows , 3 footman"
+@206858 sounds 54 7147a0f270965d06
+@206858 step 49 key RETURN
+@206858 voice item "load all from c 3"
+@210057 voice info "1 barracks enemy at d 1"
 @215757 sounds 127 0d57f97cb3b696b0
 @215757 step 50 wait_turns 30
 @215758 step 51 key SPACE

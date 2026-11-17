@@ -203,6 +203,12 @@ pub fn summary(group: &[Msg], brief: bool) -> Msg {
     result
 }
 
+/// Where a count is said among the counts of the same moment: the
+/// smallest first, and those of the same rank in the order they came. The
+/// game ranks them: by the kind of count, then by the place it counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rank(pub u32, pub u32);
+
 /// What a piece of news counts: one item for each thing, as its title,
 /// said as a [`summary`], then the words that follow the count.
 #[derive(Clone, Debug, PartialEq)]
@@ -210,14 +216,20 @@ pub struct Count {
     items: Vec<Msg>,
     brief: bool,
     then: Msg,
+    rank: Rank,
 }
 
 impl Count {
     /// "3 footman and 1 archer lost at b 2" counts `items` (footman,
     /// footman, archer, footman), with `brief` as [`summary`] takes it,
     /// and `then` is "lost at b 2".
-    pub fn new(items: Vec<Msg>, brief: bool, then: Msg) -> Count {
-        Count { items, brief, then }
+    pub fn new(items: Vec<Msg>, brief: bool, then: Msg, rank: Rank) -> Count {
+        Count {
+            items,
+            brief,
+            then,
+            rank,
+        }
     }
 
     fn words(&self) -> Msg {
@@ -261,7 +273,9 @@ impl News {
     }
 
     /// News that counts things about `subject`, such as the units lost at
-    /// a place: what it counts is added to the unheard news about it.
+    /// a place. It waits until the news of its moment is complete, with
+    /// the other counts about its subject; then what they count is added
+    /// to the unheard news about it.
     pub fn counting(category: Category, subject: Subject, count: Count) -> News {
         News {
             category,
@@ -291,6 +305,22 @@ impl News {
 
     pub fn subject(&self) -> Option<&Subject> {
         self.about.as_ref().map(|(s, _)| s)
+    }
+
+    /// The rank of a count, `None` for news that counts nothing.
+    pub(crate) fn rank(&self) -> Option<Rank> {
+        match &self.about {
+            Some((_, Join::Count(c))) => Some(c.rank),
+            _ => None,
+        }
+    }
+
+    /// Newer news about its subject replaces it, without counting what it
+    /// counted.
+    pub(crate) fn stop_counting(&mut self) {
+        if let Some((_, join @ Join::Count(_))) = &mut self.about {
+            *join = Join::Replace;
+        }
     }
 
     /// This news after `older`, the news about its subject that the player

@@ -412,6 +412,9 @@ pub struct Voice {
     reviewed: Option<Msg>,
     /// Inside the game loop: a message said now does not wait.
     in_game: bool,
+    /// The counts waiting for the news of their moment to be complete,
+    /// one for each subject, in the order they came.
+    held: Vec<(News, Policy)>,
     channel: VoiceChannel,
     input: Input,
     clock: ClockRef,
@@ -434,6 +437,7 @@ impl Voice {
             said_last: None,
             reviewed: None,
             in_game: false,
+            held: Vec::new(),
             channel,
             input,
             clock,
@@ -623,9 +627,59 @@ impl Voice {
 
     /// Takes news as `policy` says: queued to be said (or for its recorded
     /// sounds only), kept unheard, or dropped. It joins the unheard news
-    /// about the same subject, as it says, in that news's turn. The place
-    /// of the news in the log, unless it was dropped.
+    /// about the same subject, as it says, in that news's turn. A count
+    /// waits for [`Voice::news_complete`], joined with the other counts
+    /// about its subject. The place of the news in the log, unless it was
+    /// dropped or waits.
     pub fn news(&mut self, news: News, policy: Policy) -> Option<EntryId> {
+        if news.rank().is_none() {
+            return self.take(news, policy);
+        }
+        let held = news
+            .subject()
+            .and_then(|s| self.held.iter().position(|(n, _)| n.subject() == Some(s)));
+        match held {
+            Some(i) => {
+                if let Some(news) = news.join(Some(&self.held[i].0)) {
+                    self.held[i] = (news, policy);
+                }
+            }
+            None => self.held.push((news, policy)),
+        }
+        None
+    }
+
+    /// The news of the moment is complete (a turn has ended, or a fight):
+    /// the counts held since are taken, in the order of their ranks, each
+    /// joined with the unheard news about its subject.
+    pub fn news_complete(&mut self) {
+        let mut held = std::mem::take(&mut self.held);
+        held.sort_by_key(|(n, _)| n.rank());
+        for (news, policy) in held {
+            self.take(news, policy);
+        }
+    }
+
+    /// The counts held are not news: what a replay's catch-up saw where it
+    /// landed.
+    pub fn give_up_held(&mut self) {
+        self.held.clear();
+    }
+
+    /// The player hears another side, or the same side from another
+    /// moment (a watcher moved to another player, a seat back after a lost
+    /// connection, a replay's jump): the counts held are given up, and a
+    /// newer count replaces the unheard news it would have counted on.
+    pub fn new_side(&mut self) {
+        self.give_up_held();
+        for e in &mut self.log {
+            if let Content::News(n) = &mut e.content {
+                n.stop_counting();
+            }
+        }
+    }
+
+    fn take(&mut self, news: News, policy: Policy) -> Option<EntryId> {
         if news.parts.is_empty() {
             return None;
         }
@@ -864,8 +918,10 @@ impl Voice {
     }
 
     /// A game starts: news from now on does not replace the news of the
-    /// log so far. The place in the log of the game's first message.
+    /// log so far, and the counts held of an earlier game are given up.
+    /// The place in the log of the game's first message.
     pub fn start_game(&mut self) -> EntryId {
+        self.give_up_held();
         self.game_start = EntryId(self.next_id);
         self.game_start
     }

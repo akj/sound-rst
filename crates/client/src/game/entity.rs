@@ -792,15 +792,14 @@ impl GameInterface {
         if cx.cue(Category::Alert) {
             self.event_sound(cx, v, |t| t.lose_fight.as_ref(), true, timing);
         }
-        if let Some(place) = v.place() {
-            self.tell_enemies_in_square(cx, place);
-        }
+        self.units_alert_if_needed(cx, v.place());
     }
 
     fn on_win_fight(&mut self, cx: &mut Client, v: &EntityView, timing: Timing) {
         if cx.cue(Category::Alert) {
             self.event_sound(cx, v, |t| t.win_fight.as_ref(), true, timing);
         }
+        self.units_alert_if_needed(cx, None);
     }
 
     fn on_death_by(

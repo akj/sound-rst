@@ -214,6 +214,7 @@ impl GameInterface {
         attacks.clear();
         scout_info.clear();
         known_resource_places.clear();
+        cx.voice.new_side();
         *alert_jump = None;
         objectives_seen.clear();
         *objective_at = None;

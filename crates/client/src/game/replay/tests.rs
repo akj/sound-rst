@@ -315,7 +315,21 @@ fn a_jump_says_nothing_of_the_enemies_in_sight_where_it_lands() {
     assert_eq!(
         h.client.voice.log().count(),
         log_before,
-        "the enemies in sight where the jump lands are not news"
+        "nothing of the stretch skipped is news"
+    );
+    // Nor when the replay goes on from there.
+    let from = h.utterances().len();
+    assert_eq!(
+        answer(&mut h, &mut g, Key::Space, Mods::SHIFT),
+        "speed normal"
+    );
+    let turn = g.game.view().turn() + 5;
+    h.run_until_turn(&mut g, turn);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert!(
+        !said.iter().any(|s| s.contains("enemy")),
+        "the enemies in sight where the jump landed are not news: {said:?}"
     );
 }
 

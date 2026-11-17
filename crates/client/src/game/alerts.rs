@@ -7,7 +7,7 @@ use soundrts_world::{EntityId, KnownEntity, Place, PlayerId, SquareId};
 
 use crate::audio::{Sound, stereo};
 use crate::client::Client;
-use crate::message::{Category, Count, News, Subject, summary};
+use crate::message::{Category, Count, News, Rank, Subject, summary};
 use crate::sound::StereoVolume;
 
 use super::entity::EntityView;
@@ -47,6 +47,15 @@ impl UnitsNews {
         match self {
             UnitsNews::Neutralized | UnitsNews::Lost => Category::Alert,
             UnitsNews::Sighted => Category::Scouting,
+        }
+    }
+
+    /// The counts of a moment are said by kind in this order.
+    fn rank(self) -> u32 {
+        match self {
+            UnitsNews::Neutralized => 0,
+            UnitsNews::Lost => 1,
+            UnitsNews::Sighted => 2,
         }
     }
 
@@ -208,8 +217,7 @@ impl GameInterface {
         self.place_title(cx, place)
     }
 
-    /// After a fight lost at `place`, tells the enemies there.
-    pub(crate) fn tell_enemies_in_square(&self, cx: &mut Client, place: Place) {
+    fn tell_enemies_in_square(&self, cx: &mut Client, place: Place) {
         let square = self.outer_square(Some(place));
         let enemies: Vec<Msg> = self
             .dobjets
@@ -230,9 +238,10 @@ impl GameInterface {
         }
     }
 
-    /// Tells the units by place, one piece of news for each place, in the
-    /// order of the squares. The voice counts them with the units of the
-    /// news about the same place the player has not heard yet.
+    /// Gives the voice the units by place, one count for each place,
+    /// ranked by kind then by square id. The voice holds the counts until
+    /// [`GameInterface::units_alert_if_needed`], and adds them to the news
+    /// about the same place the player has not heard yet.
     pub(crate) fn units_news(
         &self,
         cx: &mut Client,
@@ -247,8 +256,12 @@ impl GameInterface {
                 places.push(*p);
             }
         }
-        self.sort_by_square_id(&mut places);
         for place in places {
+            let square = self.outer_square(Some(place));
+            let rank = Rank(
+                kind.rank(),
+                square.map_or(u32::MAX, |s| self.view().square(s).protocol_id()),
+            );
             let items = units
                 .iter()
                 .filter(|(_, p)| *p == Some(place))
@@ -260,9 +273,19 @@ impl GameInterface {
                 self.alert_place_title(cx, place),
             ]
             .concat();
-            let count = Count::new(items, kind.brief(), then);
+            let count = Count::new(items, kind.brief(), then, rank);
             let news = News::counting(kind.category(), kind.subject(place), count);
-            cx.news(news.at(self.outer_square(Some(place))));
+            cx.news(news.at(square));
+        }
+    }
+
+    /// The news of a turn or of a fight is complete: the voice says the
+    /// units lost, neutralized and the new enemies it holds; after a lost
+    /// fight at `place`, the enemies there.
+    pub(crate) fn units_alert_if_needed(&mut self, cx: &mut Client, place: Option<Place>) {
+        cx.voice.news_complete();
+        if let Some(p) = place {
+            self.tell_enemies_in_square(cx, p);
         }
     }
 
@@ -360,15 +383,14 @@ impl GameInterface {
     }
 
     /// Makes the views match what the player remembered and perceived at
-    /// the end of the last turn. Returns the enemies perceived for the
-    /// first time, with their places.
-    #[must_use]
+    /// the end of the last turn, and gives the voice the enemies perceived
+    /// for the first time.
     pub(crate) fn update_fog_of_war(
         &mut self,
-        cx: &Client,
+        cx: &mut Client,
         memory: Vec<KnownEntity>,
         perception: Vec<KnownEntity>,
-    ) -> Vec<(Msg, Option<Place>)> {
+    ) {
         let mut sighted = Vec::new();
         let known: std::collections::HashSet<EntityId> =
             memory.iter().chain(&perception).map(|m| m.id).collect();
@@ -425,7 +447,7 @@ impl GameInterface {
                 self.target = None;
             }
         }
-        sighted
+        self.units_news(cx, sighted, UnitsNews::Sighted);
     }
 
     /// The volumes of a sound from `place`, as on a minimap centered on
@@ -616,6 +638,8 @@ mod tests {
         let from = h.utterances().len();
         cx_news(&mut h, "a long message of news");
         dies(&mut h, &mut g, footmen[0], by);
+        // Told at the end of the turn, the loss waits behind the news.
+        run_turns(&mut h, &mut g, 1);
         dies(&mut h, &mut g, peasant, by);
         dies(&mut h, &mut g, footmen[1], by);
         h.run_until_voice_idle(&mut g);
@@ -626,15 +650,16 @@ mod tests {
                 "2 footman and 1 peasant lost at b 1"
             ]
         );
-        // Heard, the next loss is news of its own.
+        // Heard, the next loss is news of its own, at the end of the turn.
         let from = h.utterances().len();
         dies(&mut h, &mut g, footmen[2], by);
+        run_turns(&mut h, &mut g, 1);
         h.run_until_voice_idle(&mut g);
         assert_eq!(h.said_since(from), ["1 footman lost at b 1"]);
     }
 
     /// The enemy's buildings on the player's square, after `cheat` added
-    /// them.
+    /// them and the end of the turn after the one that saw them.
     fn enemy_buildings_at_home(
         h: &mut Harness,
         g: &mut TestGame,
@@ -642,7 +667,7 @@ mod tests {
     ) -> Vec<EntityId> {
         let (them, home) = (enemy(g), home(g));
         cheat(g, them, &format!("add_units {home} {cheat_line}"));
-        run_turns(h, g, 1);
+        run_turns(h, g, 2);
         let square = g.game.place;
         let w = g.game.host().world();
         w.player(them)
@@ -660,7 +685,10 @@ mod tests {
         h.run_until_voice_idle(&mut g);
         let from = h.utterances().len();
         cx_news(&mut h, "a long message of news");
-        for id in buildings {
+        let (first, others) = buildings.split_first().expect("buildings");
+        dies(&mut h, &mut g, *first, footmen[0]);
+        run_turns(&mut h, &mut g, 1);
+        for &id in others {
             dies(&mut h, &mut g, id, footmen[0]);
         }
         h.run_until_voice_idle(&mut g);
@@ -712,6 +740,87 @@ mod tests {
                 "2 footman lost at b 1"
             ]
         );
+    }
+
+    /// The server's next turn reaches the watcher, and the interface
+    /// handles it.
+    fn watched_turn(
+        h: &mut Harness,
+        g: &mut TestGame,
+        server: &crate::testkit::FakeServer,
+        stream: &mut crate::testkit::FakeStream,
+    ) {
+        let next = g.game.view().turn() + 1;
+        for frame in stream.turn(Vec::new()) {
+            server.frame_at(h.clock.now(), frame);
+        }
+        h.run_until_turn(g, next);
+    }
+
+    #[test]
+    fn a_watcher_moved_to_another_player_hears_only_that_players_losses() {
+        use crate::testkit::{FakeStream, slot};
+        use soundrts_protocol::{Computer, Skill, SlotPlayer, Speed};
+        let mut h = Harness::new("en", crate::testkit::Script::new().keep_open());
+        let server = h.join_fake_server("carol", &[]);
+        let quiet = || SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL));
+        let slots = [slot(quiet(), 1), slot(quiet(), 2)];
+        let mut stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1).watching();
+        let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+        for _ in 0..3 {
+            watched_turn(&mut h, &mut g, &server, &mut stream);
+        }
+        h.run_until_voice_idle(&mut g);
+        let w = stream.host().world();
+        let seats = stream.host().seats();
+        let (a, b) = (seats[0], seats[1]);
+        let of = |p: PlayerId, t: &str| {
+            w.player(p)
+                .units
+                .iter()
+                .copied()
+                .find(|&u| w.entity(u).is_some_and(|e| &*e.type_name == t))
+                .unwrap()
+        };
+        let (a_peasant, a_hall, b_peasant, b_hall) = (
+            of(a, "peasant"),
+            of(a, "townhall"),
+            of(b, "peasant"),
+            of(b, "townhall"),
+        );
+        assert_eq!(g.game.me, a);
+        let from = h.utterances().len();
+        cx_news(&mut h, "a long message of news");
+        // A's peasant is lost; its news waits behind the long one.
+        let a_place = g.game.view().perceived(a_peasant).unwrap().place;
+        dies(&mut h, &mut g, a_peasant, b_hall);
+        watched_turn(&mut h, &mut g, &server, &mut stream);
+        // The watcher is moved to B, whose peasant is lost where A's was.
+        server.frame_at(h.clock.now(), stream.follow(1));
+        while g.game.me != b {
+            h.step(&mut g);
+        }
+        let mut entity = g.game.view().perceived(b_peasant).unwrap();
+        entity.place = a_place;
+        let event = SrvEvent::Entity {
+            entity: Box::new(entity),
+            event: EntityEvent::DeathBy(a_hall),
+        };
+        g.game.process_srv_event(&mut h.client, event);
+        watched_turn(&mut h, &mut g, &server, &mut stream);
+        h.run_until_voice_idle(&mut g);
+        let said = h.said_since(from);
+        // B's loss replaces A's unheard one, and does not count it. The
+        // scouting news of B's side follows.
+        assert_eq!(
+            said[..3],
+            [
+                "a long message of news",
+                "watching quiet computer , level 3",
+                "1 peasant lost at b 1"
+            ]
+        );
+        assert_eq!(said.iter().filter(|s| s.contains("lost")).count(), 1);
     }
 
     /// Queues news that keeps the voice busy for a while.

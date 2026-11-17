@@ -1,10 +1,10 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, and part 14, units counted by place, added with issue #114.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, and part 13, a translation in the settings folder, added with issue #93.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
-The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6, part 11, part 13 and part 14 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
+The parts are in order of importance. Part 1 decides whether the rest is worth doing that day. Parts 1 to 6, part 11 and part 13 need only you. Part 7 needs one other player on another computer, and part 8 needs two.
 
 ## How to report
 
@@ -353,23 +353,3 @@ with_unlimited_resources_and_no_requirements = avec des ressources illimitées e
 13.8. Run the command of 13.1 again. Expected: the first line says that the game refuses your `fr.txt` whole, and ends with "line 4: not 'name = words'."
 
 13.9. Delete the `text` folder you made, and put back the `language` line of `settings.toml` as you noted it in 13.4.
-
-## Part 14. Units counted by place
-
-The voice now counts the units lost, neutralized and seen for the first time at a place. A unit that falls while the news about its place waits unheard is counted in that news. Units are told as they fall, not at the end of the turn, and enemies seen during a turn are told at the end of that turn, a third of a second sooner than before. This part needs only you, on jl1 against the quiet computer. The fight goes at its own pace, so the counts you hear vary: the steps give the form of each message. For a step that fails, report what you heard: "14.5 fail: 1 peasant neutralized at b 4, said twice".
-
-14.1. From the main menu, choose "single player", then "start a game on", then "jl1", then "invite quiet computer, level 3", then "start". Expected: "objective: neutralized enemy", then the square under the cursor: "b 1, meadows, 1 town hall, 1 farm and 1 peasant".
-
-14.2. Press the backquote key. Expected: "Enter a command." Type `a 10 footman` and press Enter. Expected: "a 10 footman", then "footman 1 at b 1" and so on, to "footman 10 at b 1".
-
-14.3. Press F. Expected: "You control 10 footman".
-
-14.4. Press Control+Up three times. Expected: "b 2", then "b 3", then "b 4", each with what you know of the square.
-
-14.5. Press Backspace. Expected: "go to b 4". Press nothing for two minutes. Expected: the enemies your footmen see, such as "1 peasant enemy at b 4", then the enemies they defeat, such as "1 peasant neutralized at b 4" or "1 peasant and 1 farm neutralized at b 4". Each message counts the units by kind, and more than two kinds as one number. A unit is in one message only: you never hear the same farm or town hall neutralized twice.
-
-14.6. Press F5 a few times. Expected: the messages of 14.5 again, as you heard them, each once.
-
-14.7. When you hear a message that starts with a count and "neutralized", press C at once to cut it. Expected: the food, such as "9 food to 21", then the message you cut, said again from the start. If more units fell meanwhile at the same place, the message counts them too: "1 peasant neutralized at b 4" comes back as "2 peasant neutralized at b 4".
-
-14.8. Let the game end. Expected: "quiet computer, level 3 has been defeated", then "Victory!" and the score.
