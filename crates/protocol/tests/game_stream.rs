@@ -2,31 +2,34 @@
 //! made: whole games are played, every seat is told the events of each
 //! turn, and for every seat on every turn
 //!
-//! - the whole message is encoded and decoded, and must come back equal;
-//! - the change from the seat's last message is encoded, decoded and
-//!   applied, and must give back exactly the current message;
+//! - the whole message is encoded and decoded, and must come back equal
+//!   from the seat's stream, as to a seat that returns;
+//! - the change from the seat's last message is encoded, decoded, and
+//!   taken by the seat's stream, and must give back exactly the current
+//!   message;
 //! - so must the change for a seat 10 and 50 turns behind, with the events
 //!   it missed that are not about an entity;
 //! - a `SeatView` fed only what was decoded must answer as one fed the
 //!   host's own messages.
 //!
-//! The start, with the rules the client loads itself, and the end are
-//! checked the same way.
+//! Each seat reads the stream as its client does, through
+//! [`JoinStream`] and [`SeatStream`]: the start, with the rules the client
+//! loads itself, and the end are checked the same way.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::Duration;
 
 use soundrts_protocol::game::{
-    apply_change, decode_end, decode_setup, decode_start, decode_turn, encode_change, encode_end,
-    encode_setup, encode_start, encode_turn,
+    Back, Checked, JoinStream, Joined, Joining, Returning, Role, RulesHash, SeatFrame, SeatStream,
+    decode_frame, decode_setup, encode_frame, encode_setup,
 };
+use soundrts_protocol::{MapFileName, MapHash, MapInfo, SeatToken, Speed};
 use soundrts_world::orders::Keyword;
 use soundrts_world::test_games::{
     Case, Game, allies_sharing_control, cheat_mode_and_defeat, mods, sixteen,
 };
-use soundrts_world::{
-    EntityId, Event, GameStart, Rules, SeatView, SquareId, TurnChange, TurnMessage,
-};
+use soundrts_world::{EntityId, Event, SeatView, SquareId, TurnChange, TurnMessage};
 
 fn read(relative: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -87,18 +90,64 @@ fn same_answers(count: &mut Count, a: &SeatView, b: &SeatView, at: &str) {
     assert_eq!(a.stats(), b.stats(), "{at}: stats");
 }
 
+/// A frame as a seat receives it: encoded, then decoded.
+fn sent(frame: SeatFrame) -> SeatFrame {
+    decode_frame(&encode_frame(&frame).unwrap()).unwrap()
+}
+
+/// The stream of the player of slot `you`, joined as its client joins a
+/// game on the map of hash `map`: the start, read with the rules of the
+/// text `rules`, then `first`, its whole message.
+fn join(rules: &str, map: &MapHash, start: &SeatFrame, you: usize, first: &TurnMessage) -> Joined {
+    let join = JoinStream::new(Role::Player(you), map.clone(), rules);
+    let Joining::Started(join) = join.take(sent(start.clone())).unwrap() else {
+        panic!("the start did not ask for the whole message");
+    };
+    let Joining::Joined(joined) = join.take(sent(SeatFrame::Whole(first.clone()))).unwrap() else {
+        panic!("the whole message did not join the game");
+    };
+    joined
+}
+
+/// The message `stream` takes from a change.
+fn applied(stream: &mut SeatStream, change: TurnChange) -> Arc<TurnMessage> {
+    match stream.take(sent(SeatFrame::Change(change))).unwrap() {
+        Checked::Turn(m) => m,
+        other => panic!("a change gave {other:?}"),
+    }
+}
+
+/// What a seat that returns is sent: its seat, the start and `whole`, its
+/// whole message as it is now. What its stream takes of it.
+fn returned(stream: &SeatStream, opening: &[SeatFrame; 2], whole: &TurnMessage) -> Back {
+    let mut back = stream.returning();
+    for frame in opening {
+        back = match back.take(sent(frame.clone())).unwrap() {
+            Returning::More(more) => more,
+            other => panic!("the opening of a return gave {other:?}"),
+        };
+    }
+    match back.take(sent(SeatFrame::Whole(whole.clone()))).unwrap() {
+        Returning::Back(back) => back,
+        other => panic!("the whole message of a return gave {other:?}"),
+    }
+}
+
 fn play(case: &Case, count: &mut Count) {
     let setup = case.setup(read);
     assert_eq!(decode_setup(&encode_setup(&setup).unwrap()).unwrap(), setup);
 
     let mut game = Game::new(case, read, true);
     let host_start = Arc::new(game.start());
-    let sent = decode_start(&encode_start(&host_start.message()).unwrap()).unwrap();
-    assert_eq!(sent, host_start.message());
-    // The client supplies the rules, from the same texts.
-    let rules = Rules::load(&[setup.rules.as_str()]);
-    assert_eq!(rules.types(), host_start.rules.types(), "{}", case.name);
-    let start = Arc::new(GameStart::from_message(sent, rules));
+    let start = SeatFrame::Start {
+        start: host_start.message(),
+        rules: RulesHash::of(&setup.rules),
+    };
+    let SeatFrame::Start { start: s, .. } = sent(start.clone()) else {
+        panic!("a start");
+    };
+    assert_eq!(s, host_start.message());
+    let map = MapHash::of(setup.map.as_bytes());
 
     let first = game.messages();
     let mut host_views: Vec<SeatView> = first
@@ -109,25 +158,49 @@ fn play(case: &Case, count: &mut Count) {
             v
         })
         .collect();
-    let mut seat_views: Vec<SeatView> = first
-        .iter()
-        .map(|m| {
-            let m = decode_turn(&encode_turn(m).unwrap(), &start).unwrap();
-            let mut v = SeatView::new(Arc::clone(&start), m);
-            v.remember();
-            v
-        })
-        .collect();
-    // Each seat's last 50 messages as sent whole, with their events.
-    let mut history: Vec<VecDeque<(Vec<u8>, Vec<Event>)>> =
+    // Each seat joins: the client supplies the rules, from the same texts.
+    let mut streams = Vec::new();
+    let mut seat_views = Vec::new();
+    for (s, m) in first.iter().enumerate() {
+        let Joined { stream, message } = join(&setup.rules, &map, &start, s, m);
+        assert_eq!(&*message, m, "{}: seat {s} joins", case.name);
+        let rules = &stream.start().rules;
+        assert_eq!(rules.types(), host_start.rules.types(), "{}", case.name);
+        let mut v = SeatView::new(Arc::clone(stream.start()), message);
+        v.remember();
+        streams.push(stream);
+        seat_views.push(v);
+    }
+    let opening = |s: usize| {
+        [
+            SeatFrame::Seated {
+                you: Role::Player(s),
+                map: MapInfo {
+                    file_name: MapFileName::new("map.txt").unwrap(),
+                    hash: map.clone(),
+                    title: Vec::new(),
+                    nb_players_min: 1,
+                    nb_players_max: 16,
+                },
+                speed: Speed::Normal,
+                paused: false,
+                hold: Duration::from_secs(30),
+                token: SeatToken::from_bits(7),
+            },
+            start.clone(),
+        ]
+    };
+    // Each seat's stream and message as of each of its last 50 turns.
+    let mut history: Vec<VecDeque<(SeatStream, Arc<TurnMessage>)>> =
         first.iter().map(|_| VecDeque::new()).collect();
     let mut turn = 0;
     while let Some(now) = game.step() {
         turn += 1;
         for (s, m) in now.iter().enumerate() {
             let at = format!("{} turn {turn} seat {s}", case.name);
-            let whole = encode_turn(m).unwrap();
-            assert_eq!(&decode_turn(&whole, &start).unwrap(), m, "{at}: whole");
+            // Whole, as a seat that returns is sent it.
+            let back = returned(&streams[s], &opening(s), m);
+            assert_eq!(&*back.message, m, "{at}: whole");
             count.messages += 1;
             count.events += m.events.len() as u64;
 
@@ -138,11 +211,10 @@ fn play(case: &Case, count: &mut Count) {
                 .iter()
                 .map(|g| g.ids.as_slice().len() as u64)
                 .sum::<u64>();
-            let bytes = encode_change(&change).unwrap();
-            let applied = apply_change(&bytes, &last, &start).unwrap();
-            assert_eq!(&applied, m, "{at}: change");
+            let applied_now = applied(&mut streams[s], change);
+            assert_eq!(&*applied_now, m, "{at}: change");
             count.changes += 1;
-            seat_views[s].install(applied);
+            seat_views[s].install(Arc::clone(&applied_now));
             seat_views[s].remember();
             host_views[s].install(m.clone());
             host_views[s].remember();
@@ -153,11 +225,11 @@ fn play(case: &Case, count: &mut Count) {
                 if h.len() < back {
                     continue;
                 }
-                let old = decode_turn(&h[h.len() - back].0, &start).unwrap();
+                let (mut old, old_message) = h[h.len() - back].clone();
                 let missed: Vec<&Event> = h
                     .iter()
                     .skip(h.len() - back + 1)
-                    .flat_map(|(_, e)| e)
+                    .flat_map(|(_, m)| m.events.iter())
                     .collect();
                 let told: Vec<Event> = missed
                     .iter()
@@ -166,13 +238,13 @@ fn play(case: &Case, count: &mut Count) {
                     .chain(m.events.iter().cloned())
                     .collect();
                 count.events_not_about_an_entity_caught_up += (told.len() - m.events.len()) as u64;
-                let change = TurnChange::catching_up(&old, missed, m);
-                let applied = apply_change(&encode_change(&change).unwrap(), &old, &start).unwrap();
+                let change = TurnChange::catching_up(&old_message, missed, m);
+                let caught_up = applied(&mut old, change);
                 let expected = TurnMessage {
                     events: told,
                     ..m.clone()
                 };
-                assert_eq!(applied, expected, "{at}: {back} turns behind");
+                assert_eq!(*caught_up, expected, "{at}: {back} turns behind");
                 if back == 10 {
                     count.behind_10 += 1;
                 } else {
@@ -180,7 +252,7 @@ fn play(case: &Case, count: &mut Count) {
                 }
             }
             let h = &mut history[s];
-            h.push_back((whole, m.events.clone()));
+            h.push_back((streams[s].clone(), applied_now));
             if h.len() > 50 {
                 h.pop_front();
             }
@@ -188,9 +260,13 @@ fn play(case: &Case, count: &mut Count) {
     }
     for (s, &p) in game.players().iter().enumerate() {
         let end = game.game_end(p);
-        assert_eq!(decode_end(&encode_end(&end).unwrap()).unwrap(), end);
-        host_views[s].install_end(end.clone());
-        seat_views[s].install_end(decode_end(&encode_end(&end).unwrap()).unwrap());
+        let Checked::End(sent_end) = streams[s].take(sent(SeatFrame::End(end.clone()))).unwrap()
+        else {
+            panic!("an end");
+        };
+        assert_eq!(sent_end, end);
+        host_views[s].install_end(end);
+        seat_views[s].install_end(sent_end);
         same_answers(count, &host_views[s], &seat_views[s], case.name);
     }
 }
@@ -219,8 +295,14 @@ fn every_seat_gets_back_exactly_what_the_host_made() {
 /// whole, in a change, and to a seat that fell behind.
 #[test]
 fn a_unit_replaced_is_told_whole_in_a_change_and_to_a_seat_behind() {
-    let mut game = Game::new(&cheat_mode_and_defeat(100), read, false);
-    let start = game.start();
+    let case = cheat_mode_and_defeat(100);
+    let rules = case.setup(read).rules;
+    let mut game = Game::new(&case, read, false);
+    let start = SeatFrame::Start {
+        start: game.start().message(),
+        rules: RulesHash::of(&rules),
+    };
+    let map = MapHash::of(b"");
     let last = game.messages().remove(0);
     let next = game.step().unwrap().remove(0);
     let replaced = Event::Replaced {
@@ -231,15 +313,11 @@ fn a_unit_replaced_is_told_whole_in_a_change_and_to_a_seat_behind() {
         events: vec![replaced.clone()],
         ..next.clone()
     };
-    assert_eq!(
-        decode_turn(&encode_turn(&now).unwrap(), &start).unwrap(),
-        now
-    );
-    let change = TurnChange::between(&last, &now);
-    let bytes = encode_change(&change).unwrap();
-    assert_eq!(apply_change(&bytes, &last, &start).unwrap(), now);
+    assert_eq!(*join(&rules, &map, &start, 0, &now).message, now);
+    let mut stream = join(&rules, &map, &start, 0, &last).stream;
+    let mut behind = stream.clone();
+    assert_eq!(*applied(&mut stream, TurnChange::between(&last, &now)), now);
     let change = TurnChange::catching_up(&last, [&replaced], &next);
-    let bytes = encode_change(&change).unwrap();
-    let caught_up = apply_change(&bytes, &last, &start).unwrap();
+    let caught_up = applied(&mut behind, change);
     assert_eq!(caught_up.events[..1], [replaced]);
 }

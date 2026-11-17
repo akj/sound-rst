@@ -14,9 +14,11 @@
 //! rules, so a client whose rules differ does not play the game, and says
 //! why.
 //!
-//! Everything received is checked before it is trusted. A frame that
-//! cannot be right ends the game, with a short reason said, and the player
-//! goes back to the server's lobby.
+//! Everything received is checked before it is trusted: the interface
+//! reads the stream only through [`JoinStream`], [`SeatStream`] and
+//! [`ReturnStream`], and checks the news of the game against the room. A
+//! frame that cannot be right ends the game, with a short reason said, and
+//! the player goes back to the server's lobby.
 //!
 //! A watcher's seat plays the same way, from the stream of the player it
 //! follows: the interface is that player's, and only the orders are not
@@ -31,21 +33,24 @@
 //! Meanwhile the client opens a new connection to the same server, says
 //! hello, and presents the seat's token, again after a pause, for as long as
 //! the server holds the seat. The server sends the seat, the start and
-//! the whole message again, which replace the seat's view once checked:
-//! the same slot, the same game, the same player, not back in time. A
-//! seat the server no longer holds ends the game with the reason said, as
-//! a lost connection did. Each step polls; nothing waits.
+//! the whole message again, which replace the seat's view once checked
+//! ([`ReturnStream`]): the same slot, the same game, the same player, not
+//! back in time. A seat the server no longer holds ends the game with the
+//! reason said, as a lost connection did. Each step polls; nothing waits.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use soundrts_protocol::game::{Role, RulesHash, SeatFrame, encode_command, encode_turn};
+use soundrts_protocol::game::{
+    self, Checked, JoinRefused, JoinStream, Joined, Joining, ReturnStream, Role, SeatFrame,
+    SeatStream, encode_command,
+};
 use soundrts_protocol::{
-    Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, MapHash, Refusal, RoomId,
-    RoomState, SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
+    Channel, ClientMsg, ClockChange, Login, MAX_TURN_ORDER_BYTES, Refusal, RoomId, RoomState,
+    SeatToken, ServerMsg, SlotPlayer, Speed, Step, StopReason, Whereabouts,
 };
 use soundrts_world::msg::{Cue, Phrase, cue, msg};
-use soundrts_world::{Command, GameEnd, GameStart, Rules, SeatView, TurnMessage};
+use soundrts_world::{Command, GameEnd, SeatView, TurnMessage};
 
 use super::GameInterface;
 use super::watching::Orders;
@@ -93,10 +98,9 @@ pub struct ServerGame {
     /// The objectives the turns taken brought, each counted when it came.
     objectives_given: usize,
     seat: SeatKey,
+    /// The seat's stream, checked, as of the last frame taken.
+    stream: SeatStream,
     link: Link,
-    /// The start of the game, which a watcher's view of another player is
-    /// made from.
-    start: Arc<GameStart>,
     /// Whether a watcher gave orders, and heard that it gives none.
     orders: Orders,
 }
@@ -104,11 +108,6 @@ pub struct ServerGame {
 /// What takes the seat back after a lost connection. No `Debug`: the
 /// token is a secret for the length of the game.
 struct SeatKey {
-    /// The player's slot in the room, or that the player watches.
-    you: Role,
-    map: MapHash,
-    /// The rules the seat reads the stream with, which are the game's.
-    rules: RulesHash,
     /// How long the server holds the seat once it notices the loss, in
     /// seconds.
     hold: f64,
@@ -116,13 +115,10 @@ struct SeatKey {
 }
 
 impl SeatKey {
-    fn of(seated: &Seated, rules: RulesHash) -> SeatKey {
+    fn of(hold: Duration, token: SeatToken) -> SeatKey {
         SeatKey {
-            you: seated.you,
-            map: seated.map.hash.clone(),
-            rules,
-            hold: seated.hold.min(MAX_HOLD).as_secs_f64(),
-            token: seated.token.clone(),
+            hold: hold.min(MAX_HOLD).as_secs_f64(),
+            token,
         }
     }
 }
@@ -171,22 +167,8 @@ struct Presented {
     /// watches may have changed while the connection was lost.
     room: Option<RoomState>,
     since: f64,
-    expect: Expect,
-}
-
-/// What the server sends next of a seat it gives back.
-enum Expect {
-    Seat,
-    Start(Clock),
-    Whole(Clock),
-}
-
-/// The seat and the clock as the server gives them back.
-struct Clock {
-    speed: Speed,
-    paused: bool,
-    hold: Duration,
-    token: SeatToken,
+    /// The seat's stream on the new connection.
+    stream: ReturnStream,
 }
 
 /// What an attempt to return came to.
@@ -209,8 +191,7 @@ struct Back {
     conn: Connection,
     lobby: LobbyModel,
     room: Option<RoomState>,
-    clock: Clock,
-    message: TurnMessage,
+    back: game::Back,
 }
 
 /// Why the player cannot return.
@@ -233,7 +214,7 @@ enum End {
 }
 
 impl ServerGame {
-    fn new(seated: &Seated, start: Arc<GameStart>, rules: RulesHash, now: f64) -> ServerGame {
+    fn new(seated: &Seated, stream: SeatStream, now: f64) -> ServerGame {
         let mut game = ServerGame {
             speed: seated.speed,
             paused: seated.paused,
@@ -241,9 +222,9 @@ impl ServerGame {
             end: End::Waiting,
             quit: false,
             objectives_given: 0,
-            seat: SeatKey::of(seated, rules),
+            seat: SeatKey::of(seated.hold, seated.token.clone()),
+            stream,
             link: Link::Playing { sent_since_turn: 0 },
-            start,
             orders: Orders::NoneGiven,
         };
         game.next_turn = game.after_a_turn(now);
@@ -252,18 +233,12 @@ impl ServerGame {
 
     /// Whether the player only watches.
     pub(crate) fn watching(&self) -> bool {
-        self.seat.you == Role::Watcher
+        self.stream.role() == Role::Watcher
     }
 
     /// Whether a watcher gave orders, and heard that it gives none.
     pub(crate) fn watcher_orders(&mut self) -> &mut Orders {
         &mut self.orders
-    }
-
-    /// The start of the game, which a watcher's view of another player is
-    /// made from.
-    pub(crate) fn start(&self) -> Arc<GameStart> {
-        Arc::clone(&self.start)
     }
 
     /// The watcher now follows another player, whose message brought
@@ -337,7 +312,7 @@ fn is_room_host(cx: &Client) -> bool {
 /// meanwhile.
 pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Option<String>> {
     let deadline = cx.clock.now() + JOIN_WAIT;
-    let mut start: Option<(Arc<GameStart>, RulesHash)> = None;
+    let mut stream = JoinStream::new(seated.you, seated.map.hash.clone(), &cx.res.rules_text());
     loop {
         crate::net::pump(cx);
         let gone = cx.net.as_ref().is_none_or(|n| n.closed.is_some());
@@ -354,49 +329,39 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
             continue;
         };
         let frame = frame.map_err(|e| Some(format!("a frame cannot be read: {e}")))?;
-        match (*frame, &start) {
-            (SeatFrame::Start { start: s, rules }, None) => {
-                s.check().map_err(|e| Some(format!("the start: {e}")))?;
-                let ours_text = cx.res.rules_text();
-                let ours = RulesHash::of(&ours_text);
-                if ours != rules {
-                    cx.log.warning(format!(
-                        "cannot play the game: its rules are {rules:?}, ours {ours:?}"
-                    ));
-                    cx.news(News::new(Category::System, msg(Phrase::RulesDiffer)));
-                    return Err(None);
-                }
-                let loaded = Rules::load(&[ours_text]);
-                start = Some((Arc::new(GameStart::from_message(s, loaded)), rules));
+        let Joined { stream, message: m } = match stream.take(*frame) {
+            Ok(Joining::Started(next)) => {
+                stream = next;
+                continue;
             }
-            (SeatFrame::Whole(m), Some((start, rules))) => {
-                start
-                    .check(&m)
-                    .map_err(|e| Some(format!("the first message: {e}")))?;
-                let m = Arc::new(m);
-                let seat = SeatView::new(Arc::clone(start), Arc::clone(&m));
-                let server = ServerGame::new(seated, Arc::clone(start), *rules, cx.clock.now());
-                let mut game = GameInterface::on_server(cx, seat, server);
-                if seated.you == Role::Watcher {
-                    // A watcher may join a game that is paused: the
-                    // entities and squares of the first message are taken
-                    // at once, as at a return.
-                    game.take_turn(Arc::clone(&m), Some(m), Vec::new());
-                    game.now_following(cx);
-                }
-                return Ok(game);
+            Ok(Joining::Joined(joined)) => joined,
+            Err(why @ JoinRefused::RulesDiffer { .. }) => {
+                cx.log.warning(format!("cannot play the game: {why}"));
+                cx.news(News::new(Category::System, msg(Phrase::RulesDiffer)));
+                return Err(None);
             }
-            (other, _) => return Err(Some(format!("before the game: {}", kind(&other)))),
+            Err(JoinRefused::Invalid(why)) => return Err(Some(why.0)),
+        };
+        let seat = SeatView::new(Arc::clone(stream.start()), Arc::clone(&m));
+        let server = ServerGame::new(seated, stream, cx.clock.now());
+        let mut game = GameInterface::on_server(cx, seat, server);
+        if seated.you == Role::Watcher {
+            // A watcher may join a game that is paused: the entities and
+            // squares of the first message are taken at once, as at a
+            // return.
+            game.take_turn(Arc::clone(&m), Some(m), Vec::new());
+            game.now_following(cx);
         }
+        return Ok(game);
     }
 }
 
 impl Returning {
     /// Moves the attempt on, without waiting: starts one once the pause is
     /// over, takes the new connection once it is open, then what the
-    /// server answers to the token. `key` is the seat's, and `seat` what
-    /// the player knows of the game.
-    fn attempt(&mut self, key: &SeatKey, seat: &SeatView, cx: &mut Client) -> Outcome {
+    /// server answers to the token. `key` is the seat's, and `stream` its
+    /// stream as of the last frame taken.
+    fn attempt(&mut self, key: &SeatKey, stream: &SeatStream, cx: &mut Client) -> Outcome {
         let now = cx.clock.now();
         let retry = Attempt::Pause {
             at: now + RETRY_PAUSE,
@@ -414,9 +379,9 @@ impl Returning {
                     cx.log.info(format!("cannot reach the server: {e:?}"));
                     (retry, Outcome::Waiting)
                 }
-                Some(Ok((conn, snapshot))) => self.welcomed(key, conn, &snapshot, now),
+                Some(Ok((conn, snapshot))) => self.welcomed(key, stream, conn, &snapshot, now),
             },
-            Attempt::Presented(p) => p.answers(key, seat, cx, now),
+            Attempt::Presented(p) => p.answers(cx, now),
         };
         self.attempt = next;
         outcome
@@ -429,6 +394,7 @@ impl Returning {
     fn welcomed(
         &mut self,
         key: &SeatKey,
+        stream: &SeatStream,
         mut conn: Connection,
         snapshot: &soundrts_protocol::LobbySnapshot,
         now: f64,
@@ -463,7 +429,7 @@ impl Returning {
             lobby: LobbyModel::new(snapshot),
             room: None,
             since: now,
-            expect: Expect::Seat,
+            stream: stream.returning(),
         };
         (Attempt::Presented(Box::new(presented)), Outcome::Waiting)
     }
@@ -476,19 +442,14 @@ enum Answer {
     Lost,
     /// The return is over, without the seat.
     Over(Outcome),
-    /// The seat's whole message, checked: the seat is back.
-    Whole(Clock, Box<TurnMessage>),
+    /// A frame of the seat's stream, for the stream to check.
+    Frame(Box<SeatFrame>),
 }
 
 impl Presented {
-    /// Takes what the server sent after the token, as much as has come.
-    fn answers(
-        mut self: Box<Self>,
-        key: &SeatKey,
-        seat: &SeatView,
-        cx: &mut Client,
-        now: f64,
-    ) -> (Attempt, Outcome) {
+    /// Takes what the server sent after the token, as much as has come:
+    /// the seat's stream, and the lobby's messages meanwhile.
+    fn answers(self: Box<Self>, cx: &mut Client, now: f64) -> (Attempt, Outcome) {
         let retry = Attempt::Pause {
             at: now + RETRY_PAUSE,
         };
@@ -496,139 +457,67 @@ impl Presented {
             cx.log.info("the server did not answer the return in time");
             return (retry, Outcome::Waiting);
         }
+        let mut p = *self;
         for _ in 0..PUMP_LIMIT {
-            let Some(event) = self.conn.poll() else {
+            let Some(event) = p.conn.poll() else {
                 break;
             };
-            match self.answer(key, seat, cx, event) {
-                Answer::GoOn => {}
+            let frame = match p.answer(cx, event) {
+                Answer::GoOn => continue,
                 Answer::Lost => return (retry, Outcome::Waiting),
                 Answer::Over(outcome) => return (retry, outcome),
-                Answer::Whole(clock, message) => {
-                    let Presented {
-                        conn, lobby, room, ..
-                    } = *self;
+                Answer::Frame(frame) => frame,
+            };
+            match p.stream.take(*frame) {
+                Ok(game::Returning::More(next)) => p.stream = next,
+                Ok(game::Returning::Back(back)) => {
                     let back = Back {
-                        conn,
-                        lobby,
-                        room,
-                        clock,
-                        message: *message,
+                        conn: p.conn,
+                        lobby: p.lobby,
+                        room: p.room,
+                        back,
                     };
                     return (retry, Outcome::Back(Box::new(back)));
                 }
+                Ok(game::Returning::Stopped(reason)) => return (retry, Outcome::Stopped(reason)),
+                Err(why) => return (retry, Outcome::CannotBeRight(why.0)),
             }
         }
-        (Attempt::Presented(self), Outcome::Waiting)
+        (Attempt::Presented(Box::new(p)), Outcome::Waiting)
     }
 
-    /// Takes one message the server sent after the token: the seat, the
-    /// start and the whole message come in that order, each checked
-    /// against the seat the player had.
-    fn answer(
-        &mut self,
-        key: &SeatKey,
-        seat: &SeatView,
-        cx: &mut Client,
-        event: NetEvent,
-    ) -> Answer {
+    /// Takes one message the server sent after the token. A frame of the
+    /// seat's stream is left for the stream, which checks it.
+    fn answer(&mut self, cx: &mut Client, event: NetEvent) -> Answer {
         let wrong = |what: String| Answer::Over(Outcome::CannotBeRight(what));
-        let frame = match event {
+        match event {
             NetEvent::Closed(reason) => {
                 cx.log
                     .info(format!("the connection to return on closed: {reason}"));
-                return Answer::Lost;
+                Answer::Lost
             }
             NetEvent::Msg(ServerMsg::Refused {
                 reason: Refusal::NoSuchRoom,
-            }) => return Answer::Over(Outcome::Failed(Failure::GameOver)),
+            }) => Answer::Over(Outcome::Failed(Failure::GameOver)),
             NetEvent::Msg(ServerMsg::Refused { .. }) => {
-                return Answer::Over(Outcome::Failed(Failure::SeatGivenUp));
+                Answer::Over(Outcome::Failed(Failure::SeatGivenUp))
             }
-            NetEvent::Msg(ServerMsg::Lobby { change }) => {
-                return match self.lobby.apply(change, false) {
-                    Ok(_) => Answer::GoOn,
-                    Err(too_many) => wrong(too_many.to_string()),
-                };
-            }
+            NetEvent::Msg(ServerMsg::Lobby { change }) => match self.lobby.apply(change, false) {
+                Ok(_) => Answer::GoOn,
+                Err(too_many) => wrong(too_many.to_string()),
+            },
             NetEvent::Msg(ServerMsg::Room { room, .. }) => {
                 if let Err(too_many) = check_watchers(room.watchers.len()) {
                     return wrong(too_many.to_string());
                 }
                 self.room = Some(room);
-                return Answer::GoOn;
+                Answer::GoOn
             }
             // Of the lobby, while the seat is not back yet.
-            NetEvent::Msg(_) => return Answer::GoOn,
-            NetEvent::Frame(Err(e)) => return wrong(format!("a frame: {e}")),
-            NetEvent::Frame(Ok(frame)) => *frame,
-        };
-        match (frame, std::mem::replace(&mut self.expect, Expect::Seat)) {
-            (SeatFrame::Stopped(reason), _) => Answer::Over(Outcome::Stopped(reason)),
-            (
-                SeatFrame::Seated {
-                    you,
-                    map,
-                    speed,
-                    paused,
-                    hold,
-                    token,
-                },
-                Expect::Seat,
-            ) => {
-                if you != key.you || map.hash != key.map {
-                    return wrong(format!("the seat {you:?}"));
-                }
-                self.expect = Expect::Start(Clock {
-                    speed,
-                    paused,
-                    hold,
-                    token,
-                });
-                Answer::GoOn
-            }
-            (SeatFrame::Start { start, rules }, Expect::Start(clock)) => {
-                let same = rules == key.rules && start == seat.game_start().message();
-                if start.check().is_err() || !same {
-                    return wrong("the start of another game".into());
-                }
-                self.expect = Expect::Whole(clock);
-                Answer::GoOn
-            }
-            (SeatFrame::Whole(message), Expect::Whole(clock)) => {
-                let last = seat.message();
-                if let Err(e) = seat.game_start().check(&message) {
-                    return wrong(format!("the whole message: {e}"));
-                }
-                // A watcher may have been moved on to another player
-                // meanwhile.
-                if message.seat != last.seat && key.you != Role::Watcher {
-                    return wrong(format!("the message of player {}", message.seat.0));
-                }
-                if message.time < last.time {
-                    return wrong("a message back in time".into());
-                }
-                Answer::Whole(clock, Box::new(message))
-            }
-            (other, _) => wrong(format!("{} before the seat was back", kind(&other))),
+            NetEvent::Msg(_) => Answer::GoOn,
+            NetEvent::Frame(Err(e)) => wrong(format!("a frame: {e}")),
+            NetEvent::Frame(Ok(frame)) => Answer::Frame(frame),
         }
-    }
-}
-
-/// What a frame is, for the log.
-fn kind(frame: &SeatFrame) -> &'static str {
-    match frame {
-        SeatFrame::Start { .. } => "a start",
-        SeatFrame::Whole(_) => "a whole message",
-        SeatFrame::Change(_) => "a change",
-        SeatFrame::End(_) => "an end",
-        SeatFrame::Seated { .. } => "a seat",
-        SeatFrame::Seat { .. } => "news of a seat",
-        SeatFrame::Clock { .. } => "news of the clock",
-        SeatFrame::Host { .. } => "news of the host",
-        SeatFrame::Flare { .. } => "a flare",
-        SeatFrame::Stopped(_) => "a stop",
-        SeatFrame::NotStarted(_) => "a refused start",
     }
 }
 
@@ -811,7 +700,7 @@ impl GameInterface {
             r.unsent = Orders::Told;
             cx.voice.item(&msg(Phrase::NotSentNotConnected));
         }
-        match r.attempt(&server.seat, &self.seat, cx) {
+        match r.attempt(&server.seat, &server.stream, cx) {
             Outcome::Waiting => {}
             Outcome::Back(back) => self.back(cx, *back),
             Outcome::Failed(why) => {
@@ -832,9 +721,14 @@ impl GameInterface {
             conn,
             lobby,
             room,
-            clock,
-            mut message,
+            back:
+                game::Back {
+                    stream,
+                    message,
+                    seated,
+                },
         } = back;
+        let mut message = Arc::unwrap_or_clone(message);
         let last = self.view().message();
         // The events of a turn already taken were told then.
         if message.time == last.time {
@@ -854,13 +748,14 @@ impl GameInterface {
         if server.objectives_given > MAX_OBJECTIVES_SEEN {
             return self.cannot_be_right(cx, "on return: more objectives than a game gives");
         }
-        server.speed = clock.speed;
-        server.paused = clock.paused;
-        server.seat.hold = clock.hold.min(MAX_HOLD).as_secs_f64();
-        server.seat.token = clock.token;
+        server.speed = seated.speed;
+        server.paused = seated.paused;
+        server.seat = SeatKey::of(seated.hold, seated.token);
+        server.stream = stream;
         server.next_turn = server.after_a_turn(now);
         server.link = Link::Playing { sent_since_turn: 0 };
-        let you = server.seat.you;
+        let you = server.stream.role();
+        let start = Arc::clone(server.stream.start());
         self.speed = server.speed_factor();
         // The time away is no turn's.
         self.previous_update_time = None;
@@ -874,14 +769,11 @@ impl GameInterface {
         }
         cx.log.info("back in the game");
         cx.news(News::new(Category::System, msg(Phrase::BackInTheGame)));
-        // A watcher moved on to another player meanwhile follows that one.
-        if message.seat != self.me {
-            if let Err(why) = self.follow(cx, message) {
-                self.cannot_be_right(cx, &format!("on return: {why}"));
-            }
-            return;
-        }
         let m = Arc::new(message);
+        // A watcher moved on to another player meanwhile follows that one.
+        if m.seat != self.me {
+            return self.follow(cx, start, m);
+        }
         self.take_turn(Arc::clone(&m), Some(m), Vec::new());
         if self.srv_queue.len() > MAX_WAITING_EVENTS {
             self.cannot_be_right(cx, "on return: more events than the game can tell");
@@ -980,20 +872,21 @@ impl GameInterface {
         }
     }
 
-    /// Takes one frame of the stream. `Err` says why it cannot be right.
+    /// Takes one frame of the stream, once the seat's stream has checked
+    /// it. `Err` says why it cannot be right.
     fn take_frame(&mut self, cx: &mut Client, frame: Incoming) -> Result<(), String> {
         let frame = frame.map_err(|e| format!("a frame cannot be read: {e}"))?;
-        if let Some(ServerGame {
-            end: End::Came(_) | End::Taken,
-            ..
-        }) = self.server()
-        {
-            return Err(format!("{} after the end", kind(&frame)));
-        }
-        match *frame {
-            SeatFrame::Change(change) => self.take_change(cx, change),
-            SeatFrame::End(end) => {
-                end.check().map_err(|e| format!("the end: {e}"))?;
+        let Some(server) = self.server() else {
+            return Err("a frame of a game played here".into());
+        };
+        let start = Arc::clone(server.stream.start());
+        match server.stream.take(*frame).map_err(|e| e.0)? {
+            Checked::Turn(m) => self.take_change(cx, m),
+            Checked::Follow(m) => {
+                self.follow(cx, start, m);
+                Ok(())
+            }
+            Checked::End(end) => {
                 let mut quit = false;
                 if let Some(server) = self.server() {
                     server.end = End::Came(end);
@@ -1009,7 +902,7 @@ impl GameInterface {
                 }
                 Ok(())
             }
-            SeatFrame::Seat { slot, change } => {
+            Checked::Seat { slot, change } => {
                 let who = cx
                     .net
                     .as_ref()
@@ -1020,7 +913,7 @@ impl GameInterface {
                 cx.news(News::new(Category::System, words::seat_news(who, &change)));
                 Ok(())
             }
-            SeatFrame::Host { slot } => {
+            Checked::Host { slot } => {
                 let room = cx
                     .net
                     .as_mut()
@@ -1036,11 +929,11 @@ impl GameInterface {
                 cx.news(News::new(Category::System, m).about(topic));
                 Ok(())
             }
-            SeatFrame::Flare { from, square } => {
+            Checked::Flare { from, square } => {
                 self.flare_alert(cx, from, square);
                 Ok(())
             }
-            SeatFrame::Clock { by, change } => {
+            Checked::Clock { by, change } => {
                 let now = cx.clock.now();
                 if let Some(server) = self.server() {
                     match change {
@@ -1056,45 +949,20 @@ impl GameInterface {
                 cx.news(News::new(Category::System, m).about(Subject::Clock));
                 Ok(())
             }
-            SeatFrame::Stopped(reason) => {
+            Checked::Stopped(reason) => {
                 self.stopped(cx, reason);
                 Ok(())
             }
-            SeatFrame::Whole(m) if self.server().is_some_and(|s| s.watching()) => {
-                self.follow(cx, m)
-            }
-            other @ (SeatFrame::Start { .. }
-            | SeatFrame::Whole(_)
-            | SeatFrame::Seated { .. }
-            | SeatFrame::NotStarted(_)) => Err(format!("{} during the game", kind(&other))),
         }
     }
 
-    /// Takes a change: the seat's new message, current from now on. A
-    /// change of a later time while the player is in the game is the end of
-    /// a turn; one of the same time as the last, or after the player left
-    /// the game, is what followed the end of their turn.
-    fn take_change(
-        &mut self,
-        cx: &mut Client,
-        change: soundrts_world::TurnChange,
-    ) -> Result<(), String> {
+    /// Takes a turn's change, applied and checked: the seat's new message,
+    /// current from now on. A change of a later time while the player is in
+    /// the game is the end of a turn; one of the same time as the last, or
+    /// after the player left the game, is what followed the end of their
+    /// turn.
+    fn take_change(&mut self, cx: &mut Client, m: Arc<TurnMessage>) -> Result<(), String> {
         let last = self.view().message();
-        let mut m = change.apply(last).map_err(|e| format!("a change: {e}"))?;
-        self.view()
-            .game_start()
-            .check(&m)
-            .map_err(|e| format!("a turn: {e}"))?;
-        if m.seat != self.me {
-            return Err(format!("a turn of player {}", m.seat.0));
-        }
-        if m.time < last.time {
-            return Err("a turn back in time".into());
-        }
-        // A message the server could not send whole, as it does to a seat
-        // that joins, cannot be right: so a stream cannot grow it without
-        // bound.
-        encode_turn(&m).map_err(|e| format!("a turn: {e}"))?;
         let before = &last.state.objectives;
         let new = m
             .state
@@ -1117,9 +985,9 @@ impl GameInterface {
                 }
                 server.next_turn = server.after_a_turn(now);
             }
-            let m = Arc::new(m);
             self.take_turn(Arc::clone(&m), Some(m), Vec::new());
         } else {
+            let mut m = Arc::unwrap_or_clone(m);
             let then = std::mem::take(&mut m.events);
             self.take_turn(Arc::new(m), None, then);
         }

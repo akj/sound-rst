@@ -500,7 +500,7 @@ The check speaks nothing and opens no window. It fetches the data into a tempora
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
 - `text/` holds the words of the port's own phrases in each language but English, one file a language, which the program carries inside it. Their English and the notes for translators are in `crates/world/src/phrases.rs`. The original's phrases come from its translations, through the import. A test fails on a line of `text/` that is not a phrase of the port.
 - `crates/import` is the importer: it converts the original's files into the files the game reads, as a library that the game runs at its first start and for `--import`, and as the `soundrts-import` program that the fetch script runs. `crates/import/src/original_names.txt` is its table: the name of each numbered phrase and sound of the original. Only the importer knows the numbers.
-- `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form.
+- `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form, and checks a player's frames in order before the interface reads them.
 - `crates/server` is the multiplayer server, as a library that the game can start and as the `soundrts-server` program.
 - `crates/listening-room` is the listening room.
 - `scripts/fetch-upstream.ps1` fetches the original game and imports it. `scripts/upstream-commit.txt` names its pinned commit, which the game also downloads and imports when it has no data.
