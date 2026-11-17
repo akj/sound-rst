@@ -84,13 +84,29 @@ fn seen_enemies(w: &mut World, you: PlayerId, c: PlayerId, s: SquareId, n: usize
     }
 }
 
+/// What `c` knows of the battlefield, found again as at its update.
+fn update_knowledge(w: &mut World, c: PlayerId) {
+    w.update_enemy_menace(c);
+    w.update_tactical_knowledge(c);
+}
+
 #[test]
 fn raise_dead_is_used_on_the_square_of_the_user() {
-    let (mut w, c, _) = game();
+    let (mut w, c, you) = game();
     let s = home(&w, c);
     let n = add(&mut w, "necromancer", c, s);
     w.computer_state(c).raise_dead_users = vec![(n, ty(&w, "a_raise_dead"))];
-    w.plm(c).places_with_corpses.insert(s);
+    // It sees a corpse there.
+    let dead = add(&mut w, "footman", you, s);
+    w.die(dead, None).unwrap();
+    let corpse = w
+        .square(s)
+        .objects
+        .iter()
+        .copied()
+        .find(|&o| w.e(o).is_corpse());
+    w.plm(c).perception.insert(corpse.unwrap());
+    update_knowledge(&mut w, c);
     w.door(c).raise_dead().unwrap();
     assert_eq!(orders(&w, n), [words(&["use", "a_raise_dead", &id(&w, s)])]);
 }
@@ -136,9 +152,9 @@ fn a_cataclysm_on_a_place_too_strong_to_attack_is_cast_from_nearby() {
     let s = home(&w, c);
     let far = far_from(&mut w, s);
     let mage = add(&mut w, "mage", c, s);
-    seen_enemies(&mut w, you, c, far, 1);
     // Too strong to attack.
-    w.plm(c).enemy_menace.insert(far, i64::MAX / 1000);
+    seen_enemies(&mut w, you, c, far, 10);
+    update_knowledge(&mut w, c);
     w.computer_state(c).cataclysm_users = vec![(mage, ty(&w, "a_meteors"))];
     w.door(c)
         .eventually_attack(vec![Some(Place::Square(far))])

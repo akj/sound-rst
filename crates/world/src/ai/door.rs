@@ -13,8 +13,9 @@
 //!   and their orders ([`Own`]), and the state of its plan.
 //! - **What it perceives now, or remembers** as its memory holds it, with
 //!   only what a player who perceives a thing is told of it ([`Seen`]),
-//!   and what the world derives from these alone: the enemy menace and
-//!   presence by square, the places with corpses or friends.
+//!   and what is derived from these alone: the enemy menace by square,
+//!   which the world finds for every player, and the computer's
+//!   [`TacticalKnowledge`].
 //!
 //! A target, of an order or of the computer's plan, is a [`Mark`]: it names
 //! a square or a thing, and the computer reads the thing through the door,
@@ -27,7 +28,6 @@
 //! The random draws are the world's, so that a game stays the same for a
 //! seed.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use crate::abort::Res;
@@ -41,9 +41,9 @@ use crate::questions;
 use crate::rules::{AirGround, ClassId, EntityClass, FactionId, Rules, TypeId};
 use crate::world::{INF, TPlace, World};
 
-use super::Computer;
 use super::script::Script;
 use super::skill::Skill;
+use super::{Computer, TacticalKnowledge};
 
 /// What a computer player may read and do: see the [module](self).
 pub(super) struct Door<'w> {
@@ -96,6 +96,21 @@ impl<'a> Seen<'a> {
     /// For a deposit, its type.
     pub(super) fn deposit_type(self) -> Option<TypeId> {
         self.e.deposit().map(|d| d.type_id)
+    }
+
+    pub(super) fn is_corpse(self) -> bool {
+        self.e.is_corpse()
+    }
+
+    /// Whether it can be hurt, by its type.
+    pub(super) fn is_vulnerable(self) -> bool {
+        self.e.is_vulnerable()
+    }
+
+    /// Whether it strikes only beside it, by its type and the upgrades of
+    /// its owner that apply to it.
+    pub(super) fn is_melee(self) -> bool {
+        self.e.is_melee()
     }
 }
 
@@ -335,6 +350,13 @@ impl World {
         self.door(p).on_unit_attacked(unit, attacker);
     }
 
+    /// Finds again what a computer player knows of the battlefield, from
+    /// what it perceives and remembers. Any other player has nothing to
+    /// find.
+    pub(crate) fn update_tactical_knowledge(&mut self, p: PlayerId) {
+        self.door(p).update_tactical_knowledge();
+    }
+
     /// `Computer.time_has_come` without the cataclysm check: whether the
     /// units waiting on a square are strong enough.
     pub(crate) fn computer_time_has_come(&self, p: PlayerId, s: SquareId) -> bool {
@@ -440,6 +462,11 @@ impl Door<'_> {
     pub(super) fn exit_xy(&self, e: EntityId) -> (i64, i64) {
         let x = self.world.e(e);
         (x.x, x.y)
+    }
+
+    /// The eight squares around a square.
+    pub(super) fn neighbors(&self, s: SquareId) -> &[SquareId] {
+        &self.world.square(s).neighbors
     }
 
     /// The squares the exits of a square lead to, in the order of its
@@ -699,9 +726,19 @@ impl Door<'_> {
         s.owner().is_some_and(|o| !self.allied().contains(&o))
     }
 
+    /// What it knows of the battlefield: only a computer has it.
+    pub(super) fn tactical(&self) -> Option<&TacticalKnowledge> {
+        self.world.pl(self.me).tactical_knowledge.as_ref()
+    }
+
+    pub(super) fn tactical_mut(&mut self) -> Option<&mut TacticalKnowledge> {
+        self.world.plm(self.me).tactical_knowledge.as_mut()
+    }
+
     /// The squares where it knows of an enemy, in the order found.
     pub(super) fn enemy_presence(&self) -> &[SquareId] {
-        &self.world.pl(self.me).enemy_presence
+        self.tactical()
+            .map_or(&[], TacticalKnowledge::enemy_presence)
     }
 
     /// The menace of the enemies it knows on a square, and around it for
@@ -714,12 +751,13 @@ impl Door<'_> {
         self.world.square_is_dangerous(self.me, s)
     }
 
-    pub(super) fn places_with_friends(&self) -> &BTreeSet<SquareId> {
-        &self.world.pl(self.me).places_with_friends
+    /// Whether it knows of a vulnerable unit of its side on the square.
+    pub(super) fn has_friends_on(&self, s: SquareId) -> bool {
+        self.tactical().is_some_and(|k| k.has_friends_on(s))
     }
 
-    pub(super) fn places_with_corpses(&self) -> &BTreeSet<SquareId> {
-        &self.world.pl(self.me).places_with_corpses
+    pub(super) fn has_corpses_on(&self, s: SquareId) -> bool {
+        self.tactical().is_some_and(|k| k.has_corpses_on(s))
     }
 
     /// Whether an exit is closed, gates included, by what it perceives or

@@ -34,12 +34,14 @@ mod door;
 mod handicap;
 pub(crate) mod script;
 mod skill;
+mod tactical;
 
 use door::{Door, Followed, Mark, Own, OwnOrder, Seen};
 pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 use script::{Plan, Step};
 pub use skill::Skill;
+pub(crate) use tactical::TacticalKnowledge;
 
 /// The deepest the computer player's planning may go. Getting a unit asks
 /// for its makers, its requirements, resources and food, and each of these
@@ -879,7 +881,7 @@ impl Door<'_> {
     }
 
     fn friendly_presence(&self, place: Option<Place>) -> bool {
-        matches!(place, Some(Place::Square(s)) if self.places_with_friends().contains(&s))
+        matches!(place, Some(Place::Square(s)) if self.has_friends_on(s))
     }
 
     fn eventually_attack(&mut self, places: Vec<Option<Place>>) -> Res {
@@ -1159,7 +1161,7 @@ impl Door<'_> {
     fn raise_dead(&mut self) -> Res {
         for (u, a) in self.state().raise_dead_users.clone() {
             if let Some(Place::Square(s)) = self.unit(u).and_then(Own::place)
-                && self.places_with_corpses().contains(&s)
+                && self.has_corpses_on(s)
             {
                 let raise = Request::use_ability(self.name_of(a)).at(TargetRef::Square(s));
                 self.give(u, raise, true)?;

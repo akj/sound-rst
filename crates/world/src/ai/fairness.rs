@@ -6,9 +6,13 @@ use std::sync::Arc;
 use super::tests::world;
 use super::*;
 use crate::entity::{MemoryRef, PlayerId, Target};
+use crate::known::KnownEntity;
 use crate::msg::{Msg, MsgPart, comma, msg, nb2msg};
+use crate::nofloat::PRECISION;
 use crate::phrases::{Pause, Phrase};
 use crate::player::{Controller, Remembrance};
+use crate::questions::EntityFacts;
+use crate::rules::Rules;
 use crate::world::World;
 
 /// A computer alone on a map of three squares in a row, a1 to c1, with a
@@ -157,7 +161,7 @@ fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
         .create_creature(footman, Some(p), Place::Square(a1), x, y)
         .unwrap();
     // The footman walks to b1, and is to wait for the right time to go to
-    // c1, where the computer knows of a menace far beyond it.
+    // c1, where the computer sees a footman of an enemy.
     w.cm(f).unwrap().action = Some(crate::entity::Action {
         kind: crate::entity::ActionKind::Plain,
         target: Some(Target::Square(b1)),
@@ -168,7 +172,13 @@ fn a_computer_stops_a_unit_with_the_order_a_human_gives() {
     w.take_order(f, Request::from(&wait), false, false, None)
         .unwrap();
     assert_eq!(orders(&w, f).len(), 1);
-    w.plm(p).enemy_menace.insert(c1, i64::MAX / 1000);
+    let enemy = w.new_player(&Controller::human("enemy", false)).unwrap();
+    let (cx, cy) = (w.square(c1).x, w.square(c1).y);
+    let theirs = w
+        .create_creature(footman, Some(enemy), Place::Square(c1), cx, cy)
+        .unwrap();
+    w.plm(p).perception.insert(theirs);
+    w.update_enemy_menace(p);
     // Too weak, it is stopped: its orders are gone, and it stands still.
     w.door(p).update_time_has_come().unwrap();
     assert!(orders(&w, f).is_empty());
@@ -269,4 +279,119 @@ fn a_computer_plans_its_paths_through_the_forests_it_has_seen() {
     // Once it has seen them, it is closed.
     let (mut w, p) = forests_between_b1_and_c1(true);
     assert_eq!(w.door(p).distance(a1, c1, false).unwrap(), crate::INF);
+}
+
+/// Every answer the door gives of a thing it perceives or remembers.
+#[derive(Debug, PartialEq)]
+struct Told {
+    id: EntityId,
+    class: EntityClass,
+    type_id: Option<TypeId>,
+    owner: Option<PlayerId>,
+    place: Option<Place>,
+    is_meadow: bool,
+    is_deposit: bool,
+    is_exit: bool,
+    deposit_type: Option<TypeId>,
+    is_corpse: bool,
+    is_vulnerable: bool,
+    is_melee: bool,
+}
+
+fn told_by_the_door(s: Seen) -> Told {
+    Told {
+        id: s.id(),
+        class: s.class(),
+        type_id: s.type_id(),
+        owner: s.owner(),
+        place: s.place(),
+        is_meadow: s.is_meadow(),
+        is_deposit: s.is_deposit(),
+        is_exit: s.is_exit(),
+        deposit_type: s.deposit_type(),
+        is_corpse: s.is_corpse(),
+        is_vulnerable: s.is_vulnerable(),
+        is_melee: s.is_melee(),
+    }
+}
+
+/// The same answers, from what a player who perceives or remembers the
+/// thing is told of it, and the rules. Of the upgrades that apply to a
+/// thing, which the player is told, none changes these answers here.
+fn told_to_a_player(k: &KnownEntity, rules: &Rules) -> Told {
+    let type_id = (&k).type_id(rules);
+    let stats = type_id.map(|t| &rules.ty(t).stats);
+    Told {
+        id: k.id,
+        class: k.class,
+        type_id,
+        owner: k.player,
+        place: k.place,
+        is_meadow: k.class == EntityClass::Meadow,
+        is_deposit: k.is_deposit(),
+        is_exit: k.is_exit(),
+        deposit_type: type_id.filter(|_| k.is_deposit()),
+        is_corpse: k.class == EntityClass::Corpse,
+        is_vulnerable: stats.is_some_and(|s| s.is_vulnerable),
+        is_melee: stats.is_none_or(|s| s.range < 2 * PRECISION),
+    }
+}
+
+#[test]
+fn the_door_tells_no_more_of_a_thing_than_a_player_is_told() {
+    let (mut w, p) = three_squares();
+    let [a1, b1, c1] = ["a1", "b1", "c1"].map(|n| w.square_by_name(n).unwrap());
+    let enemy = w.new_player(&Controller::human("enemy", false)).unwrap();
+    let ty = |w: &World, name: &str| w.rules.type_id(name).unwrap();
+    let add = |w: &mut World, name: &str, owner: Option<PlayerId>, s: SquareId| {
+        let (x, y) = (w.square(s).x, w.square(s).y);
+        let t = ty(w, name);
+        w.create_creature(t, owner, Place::Square(s), x, y).unwrap()
+    };
+    let peasant = add(&mut w, "peasant", Some(p), a1);
+    let footman = add(&mut w, "footman", Some(enemy), b1);
+    let archer = add(&mut w, "archer", Some(enemy), b1);
+    let dead = add(&mut w, "footman", Some(enemy), c1);
+    w.die(dead, None).unwrap();
+    let corpse = *w
+        .square(c1)
+        .objects
+        .iter()
+        .find(|&&o| w.e(o).is_corpse())
+        .unwrap();
+    let goldmine = ty(&w, "goldmine");
+    let deposit = w.create_deposit(goldmine, a1, 1000).unwrap();
+    let meadow = meadow_on(&w, b1);
+    let exit = w.square(a1).exits[0];
+    let perceived = [peasant, footman, archer, corpse, deposit, meadow, exit];
+    w.plm(p).perception.extend(perceived);
+    // An archer it remembers where it no longer is.
+    let gone = add(&mut w, "archer", Some(enemy), c1);
+    let mut copy = w.e(gone).clone();
+    copy.place = Some(Place::Square(a1));
+    let time_stamp = w.time;
+    w.plm(p).memory.insert(
+        gone,
+        Remembrance {
+            time_stamp,
+            snapshot: Arc::new(copy),
+        },
+    );
+    let mut checked = Vec::new();
+    for id in perceived.into_iter().chain([gone]) {
+        let k = match w.pl(p).memory.get(&id) {
+            Some(r) => KnownEntity::of(&w, p, &r.snapshot, Some(r.time_stamp)),
+            None => KnownEntity::of(&w, p, w.e(id), None),
+        };
+        let expected = told_to_a_player(&k, &w.rules);
+        let door = w.door(p);
+        let told = told_by_the_door(door.known(id).unwrap());
+        assert_eq!(told, expected, "{}", k.type_name);
+        checked.push((told.is_corpse, told.is_vulnerable, told.is_melee));
+    }
+    // The things differ in every answer the door's tactical knowledge
+    // reads: a corpse, a vulnerable unit, a unit that strikes from afar.
+    assert!(checked.contains(&(true, false, true)));
+    assert!(checked.contains(&(false, true, true)));
+    assert!(checked.contains(&(false, true, false)));
 }

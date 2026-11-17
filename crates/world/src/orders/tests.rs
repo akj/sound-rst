@@ -886,8 +886,7 @@ fn a_unit_killed_by_or_dying_without_an_owner_is_removed() {
 
 #[test]
 fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
-    let (w, me, _) = game();
-    let mut w = w;
+    let (mut w, you, me) = game();
     let s = home(&w, me);
     let (d, plain) = (0..w.squares.len())
         .map(|i| SquareId(i as u32))
@@ -903,8 +902,11 @@ fn a_way_that_avoids_danger_finds_no_path_to_a_very_dangerous_square() {
         w.shortest_path_distance_to(s, d, Some(me), AirGround::Ground, true),
         Ok(plain)
     );
-    w.plm(me).enemy_menace.insert(d, 1);
-    w.plm(me).enemy_presence.push(d);
+    // The computer sees a footman of the other player on d.
+    let theirs = add(&mut w, "footman", you, d);
+    w.plm(me).perception.insert(theirs);
+    w.update_enemy_menace(me);
+    w.update_tactical_knowledge(me);
     // A new turn: the paths found this turn are kept.
     w.time += crate::VIRTUAL_TIME_INTERVAL;
     assert_eq!(
@@ -1037,19 +1039,22 @@ fn a_flyer_aimed_at_a_point_flies_there_and_an_explorer_out_of_a_transport_stays
     let x = w.e(machine).x;
     assert_eq!(w.action_update(machine), Ok(()));
     assert!(w.e(machine).x > x);
-    // A footman just out of the machine, on a very dangerous square, still
-    // moving toward a safe one.
-    let footman = find(&w, a, "footman");
-    let (a1, b1) = (
-        w.square_by_name("a1").unwrap(),
-        w.square_by_name("b1").unwrap(),
-    );
+    // A computer's footman just out of its machine, on a square where the
+    // computer sees an enemy, still moving toward a safe one.
+    let (mut w, you, c) = game();
+    let here = home(&w, c);
+    let there = w.square(here).neighbors[0];
+    let machine = add(&mut w, "new_flyingmachine", c, here);
+    let footman = add(&mut w, "footman", c, here);
+    let theirs = add(&mut w, "footman", you, here);
+    w.plm(c).perception.insert(theirs);
+    w.update_enemy_menace(c);
+    w.update_tactical_knowledge(c);
+    assert!(w.square_is_very_dangerous(c, here));
     w.em(footman).previous_place = Some(Place::Inside(machine));
-    w.set_action_target(footman, Some(Target::Square(b1)));
-    w.plm(a).enemy_menace.insert(a1, 1);
-    w.plm(a).enemy_presence.push(a1);
+    w.set_action_target(footman, Some(Target::Square(there)));
     assert_eq!(w.auto_explore(footman), Ok(()));
-    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == b1));
+    assert!(matches!(w.e(footman).action_target(), Some(Target::Square(t)) if *t == there));
 }
 
 #[test]

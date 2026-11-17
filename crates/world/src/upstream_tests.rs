@@ -335,10 +335,19 @@ mod test_worldplayerbase {
         assert!(w.counterattack_places(p).contains(&a1));
     }
 
+    /// A footman of `enemy` on the square, which `p` perceives, attacks
+    /// `unit`.
+    fn attacked_from(w: &mut World, p: PlayerId, enemy: PlayerId, unit: EntityId, square: &str) {
+        let s = sq(w, square);
+        let hostile = create(w, "footman", enemy, s);
+        w.plm(p).perception.insert(hostile);
+        w.on_unit_attacked(p, unit, hostile);
+    }
+
     #[test]
     fn test_update_counterattacks() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "a1")];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "a1");
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert_eq!(keywords(&w, unit), ["go", "go"]);
@@ -346,8 +355,9 @@ mod test_worldplayerbase {
 
     #[test]
     fn test_update_counterattacks_if_not_nearby() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "c4")];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "c4");
+        assert_eq!(w.counterattack_places(p), [sq(&w, "c4")]);
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert!(w.e(unit).orders().is_empty());
@@ -355,8 +365,13 @@ mod test_worldplayerbase {
 
     #[test]
     fn test_update_counterattacks_if_closer_attackers() {
-        let (mut w, p, _, unit) = setup();
-        w.plm(p).counterattack_places = vec![sq(&w, "a1"), place_of(&w, unit)];
+        let (mut w, p, enemy, unit) = setup();
+        attacked_from(&mut w, p, enemy, unit, "a1");
+        attacked_from(&mut w, p, enemy, unit, "b1");
+        assert_eq!(
+            w.counterattack_places(p),
+            [sq(&w, "a1"), place_of(&w, unit)]
+        );
         w.update_counterattacks(p).unwrap();
         assert!(w.counterattack_places(p).is_empty());
         assert!(w.e(unit).orders().is_empty());
@@ -1921,7 +1936,13 @@ starting_resources 100 100
 
     #[test]
     fn a_ranged_enemy_that_harms_makes_its_own_square_cataclysmic() {
-        let (mut w, a, b) = two_humans();
+        let mut w = world_text(TWO_SQUARES);
+        let seats = [
+            Controller::computer("timers"),
+            Controller::human("b", false),
+        ];
+        let ps = w.populate_map(&seats, false, false).unwrap();
+        let (a, b) = (ps[0], ps[1]);
         let (a1, b1) = (sq(&w, "a1"), sq(&w, "b1"));
         create(&mut w, "footman", a, b1);
         let archer = create(&mut w, "archer", b, b1);
@@ -1929,11 +1950,15 @@ starting_resources 100 100
         w.em(archer).stats.harm_level = 1;
         w.cm(archer).unwrap().time_limit = Some(1_000_000);
         assert!(is_perceiving(&mut w, a, archer));
-        w.update_enemy_menace_and_presence_and_corpses(a);
+        w.update_enemy_menace(a);
         let pl = w.player(a);
-        assert_eq!(pl.cataclysmic_places, [b1].into());
+        let k = pl.tactical_knowledge.as_ref().unwrap();
+        assert!(k.is_cataclysmic(b1));
+        assert!(!k.is_cataclysmic(a1));
         let m = w.e(archer).menace();
         assert_eq!(pl.enemy_menace, [(a1, m / 10), (b1, m)].into());
+        // A human keeps no such knowledge.
+        assert!(w.player(b).tactical_knowledge.is_none());
     }
 
     #[test]
