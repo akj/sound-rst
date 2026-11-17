@@ -5,7 +5,8 @@
 //!   rules, scripts and map as text, and the host builds the game from it.
 //! - The start ([`StartMessage`]): the host sends it to every seat once.
 //!   It leaves out the rules: each client loads the same layers from its
-//!   own files, and supplies them with [`GameStart::from_message`]. The
+//!   own files, and supplies them with
+//!   [`GameStart::from_message`](soundrts_world::GameStart::from_message). The
 //!   start's [`RulesHash`] names the rules the game was built from, and a
 //!   client reads the stream only with rules of the same hash.
 //! - Each turn, a seat's [`TurnMessage`]: whole for the first message of
@@ -30,8 +31,9 @@
 //! [`MAX_GAME_MESSAGE_BYTES`], bytes left over, and anything the encoder
 //! could not have written; it never panics. A list states its length
 //! first, and postcard allocates for no more items than the bytes left
-//! could hold. What is decoded is checked against the game before it is
-//! trusted: a [`SeatView`](soundrts_world::SeatView) made from it answers
+//! could hold. A seat's frames are checked against the game, in order,
+//! before they are trusted ([`SeatStream`]): a
+//! [`SeatView`](soundrts_world::SeatView) made from what they give answers
 //! without panicking.
 #![deny(
     clippy::unwrap_used,
@@ -46,8 +48,7 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use soundrts_world::{
-    Command, GameEnd, GameSetup, GameStart, PlayerId, SquareId, StartMessage, TurnChange,
-    TurnMessage,
+    Command, GameEnd, GameSetup, PlayerId, SquareId, StartMessage, TurnChange, TurnMessage,
 };
 
 use crate::{
@@ -58,6 +59,12 @@ use crate::{
 /// The largest message of the game stream either side reads: as large as
 /// the lobby's largest, which holds a map.
 pub const MAX_GAME_MESSAGE_BYTES: usize = MAX_MESSAGE_BYTES;
+
+mod stream;
+pub use stream::{
+    Back, Checked, JoinRefused, JoinStream, Joined, Joining, Reseated, ReturnStream, Returning,
+    SeatStream,
+};
 
 fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, Invalid> {
     let bytes = postcard::to_allocvec(value).map_err(|e| Invalid(format!("cannot encode: {e}")))?;
@@ -79,10 +86,6 @@ fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Invalid> {
     Ok(value)
 }
 
-fn checked<T>(r: Result<T, soundrts_world::Malformed>) -> Result<T, Invalid> {
-    r.map_err(|e| Invalid(e.0))
-}
-
 pub fn encode_setup(setup: &GameSetup) -> Result<Vec<u8>, Invalid> {
     encode(setup)
 }
@@ -91,49 +94,6 @@ pub fn encode_setup(setup: &GameSetup) -> Result<Vec<u8>, Invalid> {
 /// world's loaders refuse what they cannot read.
 pub fn decode_setup(bytes: &[u8]) -> Result<GameSetup, Invalid> {
     decode(bytes)
-}
-
-pub fn encode_start(start: &StartMessage) -> Result<Vec<u8>, Invalid> {
-    encode(start)
-}
-
-/// The start of the game, checked: every square it names is on its map.
-pub fn decode_start(bytes: &[u8]) -> Result<StartMessage, Invalid> {
-    let start: StartMessage = decode(bytes)?;
-    checked(start.check())?;
-    Ok(start)
-}
-
-pub fn encode_turn(message: &TurnMessage) -> Result<Vec<u8>, Invalid> {
-    encode(message)
-}
-
-/// A whole message, checked against the game it is of.
-pub fn decode_turn(bytes: &[u8], start: &GameStart) -> Result<TurnMessage, Invalid> {
-    let message = decode(bytes)?;
-    checked(start.check(&message))?;
-    Ok(message)
-}
-
-pub fn encode_change(change: &TurnChange) -> Result<Vec<u8>, Invalid> {
-    encode(change)
-}
-
-/// A change, not yet applied: [`apply_change`] applies and checks it.
-pub fn decode_change(bytes: &[u8]) -> Result<TurnChange, Invalid> {
-    decode(bytes)
-}
-
-/// The seat's new message: the change decoded and applied to `last`, the
-/// message it last had, and checked against the game.
-pub fn apply_change(
-    bytes: &[u8],
-    last: &TurnMessage,
-    start: &GameStart,
-) -> Result<TurnMessage, Invalid> {
-    let message = checked(decode_change(bytes)?.apply(last))?;
-    checked(start.check(&message))?;
-    Ok(message)
 }
 
 /// The SHA-256 of the rules text a game is built from: every layer's
@@ -178,10 +138,9 @@ impl fmt::Debug for RulesHash {
 /// when the turn ended the game), a second change of the same game time
 /// follows: what the seat knows after the turn, with those events. A seat
 /// that missed turns is told, in its next change, their events that are
-/// not about an entity, first. A decoded frame is not yet checked: check a start with
-/// [`StartMessage::check`], a whole message with [`GameStart::check`], and
-/// apply a change with [`TurnChange::apply`], then check its result, as
-/// [`decode_start`], [`decode_turn`] and [`apply_change`] do.
+/// not about an entity, first. A decoded frame is not yet checked: a seat
+/// reads its frames through [`JoinStream`], [`SeatStream`] and
+/// [`ReturnStream`], which check them in order.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SeatFrame {
     /// The start of the game, and the hash of the rules the server built
@@ -251,16 +210,8 @@ pub fn encode_frame(frame: &SeatFrame) -> Result<Vec<u8>, Invalid> {
     encode(frame)
 }
 
-/// A frame as sent, not yet checked against the game.
+/// A frame as sent, not yet checked against the game: see [`SeatStream`].
 pub fn decode_frame(bytes: &[u8]) -> Result<SeatFrame, Invalid> {
-    decode(bytes)
-}
-
-pub fn encode_end(end: &GameEnd) -> Result<Vec<u8>, Invalid> {
-    encode(end)
-}
-
-pub fn decode_end(bytes: &[u8]) -> Result<GameEnd, Invalid> {
     decode(bytes)
 }
 

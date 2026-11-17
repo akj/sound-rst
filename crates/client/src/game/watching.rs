@@ -99,46 +99,31 @@ impl GameInterface {
         true
     }
 
-    /// The start of the game a watcher's view of another player is made
-    /// from.
-    fn watched_start(&self) -> Option<Arc<GameStart>> {
-        match &self.source {
-            Source::Server(s) => Some(s.start()),
-            Source::Replay(r) => Some(r.game_start()),
-            Source::Local(_) => None,
-        }
-    }
-
-    /// The watcher follows the player of `m`, that player's whole message:
-    /// from now on the interface is that player's, as if it had just
-    /// joined the game, and the watcher hears whose side it is. `Err` says
-    /// why `m` cannot be right.
-    pub(crate) fn follow(&mut self, cx: &mut Client, m: TurnMessage) -> Result<(), String> {
-        self.restart_from(cx, m)?;
+    /// The watcher follows the player of `m`, that player's whole message
+    /// in the game of `start`: from now on the interface is that player's,
+    /// as if it had just joined the game, and the watcher hears whose side
+    /// it is.
+    pub(crate) fn follow(&mut self, cx: &mut Client, start: Arc<GameStart>, m: Arc<TurnMessage>) {
+        self.restart_from(cx, start, m);
         self.now_following(cx);
-        Ok(())
     }
 
     /// The interface starts again from `m`, a whole message of the player
-    /// it follows from now on, as if it had just joined the game. It keeps
-    /// only what is its own: the keys, the mode, the log, the clock and the
-    /// settings of the listener; what it knew of the game, it learns again
-    /// from `m`, whose end of turn waits in the queue. `Err` says why `m`
-    /// cannot be right.
-    pub(crate) fn restart_from(&mut self, cx: &mut Client, m: TurnMessage) -> Result<(), String> {
-        let Some(start) = self.watched_start() else {
-            return Err("a whole message in a game played here".into());
-        };
-        start
-            .check(&m)
-            .map_err(|e| format!("a whole message: {e}"))?;
-        let last = self.view().message();
-        if m.time < last.time && !matches!(self.source, Source::Replay(_)) {
-            return Err("a whole message back in time".into());
-        }
-        if !m.state.players.contains(&m.seat) {
-            return Err(format!("to follow player {}, not in the game", m.seat.0));
-        }
+    /// it follows from now on in the game of `start`, as if it had just
+    /// joined the game. It keeps only what is its own: the keys, the mode,
+    /// the log, the clock and the settings of the listener; what it knew of
+    /// the game, it learns again from `m`, whose end of turn waits in the
+    /// queue.
+    ///
+    /// `m` is trusted: on a server, the seat's stream checked it
+    /// ([`soundrts_protocol::game::SeatStream`]); in a recorded game, the
+    /// world replayed here made it, and a listener may go back in time.
+    pub(crate) fn restart_from(
+        &mut self,
+        cx: &mut Client,
+        start: Arc<GameStart>,
+        m: Arc<TurnMessage>,
+    ) {
         let objectives = m.state.objectives.len();
         self.silence_noises(cx);
         // Every field is named, so that a new one is given a thought: what
@@ -194,7 +179,6 @@ impl GameInterface {
             orders_list: _,
         } = self;
         *me = m.seat;
-        let m = Arc::new(m);
         *seat = SeatView::new(start, Arc::clone(&m));
         dobjets.clear();
         scouted_squares.clear();
@@ -232,7 +216,6 @@ impl GameInterface {
         // Its end of turn brings the interface's copies of the entities
         // and squares to the new player's.
         self.take_turn(Arc::clone(&m), Some(m), Vec::new());
-        Ok(())
     }
 
     /// Says whose side the watcher now hears, and puts the cursor on the
