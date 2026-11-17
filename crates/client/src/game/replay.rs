@@ -458,10 +458,8 @@ impl GameInterface {
             return self.followed_left(cx);
         }
         let minutes = m.time.div_euclid(60_000);
-        if let Err(why) = self.restart_from(cx, m) {
-            cx.log.warning(format!("cannot catch up: {why}"));
-            return;
-        }
+        let start = r.game_start();
+        self.restart_from(cx, start, Arc::new(m));
         self.previous_available_food = self.available_food();
         self.previous_used_food = self.used_food();
         self.previous_nb_minutes = minutes;
@@ -503,9 +501,8 @@ impl GameInterface {
         let over = r.replayer.is_over();
         match next.map(|p| r.message(p)) {
             Some(Ok(m)) => {
-                if let Err(why) = self.follow(cx, m) {
-                    cx.log.warning(format!("cannot follow: {why}"));
-                }
+                let start = r.game_start();
+                self.follow(cx, start, Arc::new(m));
             }
             Some(Err(e)) => self.recording_broke(cx, &e),
             // The game's last turn: the recording ends with it.
@@ -688,10 +685,8 @@ impl GameInterface {
         };
         match r.message(next) {
             Ok(m) => {
-                if let Err(why) = self.follow(cx, m) {
-                    cx.log.warning(format!("cannot follow: {why}"));
-                    cx.voice.item(&cue(Cue::Beep));
-                }
+                let start = r.game_start();
+                self.follow(cx, start, Arc::new(m));
             }
             Err(_) => cx.voice.item(&msg(Phrase::RecordingDamaged)),
         }

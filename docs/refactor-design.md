@@ -803,7 +803,7 @@ Count: 16 dissolve, 10 are built inside one of the four pieces, 5 stand alone or
 1. Chat and alerts dropped while an item is spoken (reproduced): patched in phase 0; the cause dissolves into the announcer, where "what is on the voice channel" is one value.
 2. A late "you have been removed" breaks the lobby (reproduced): patched in phase 0; the cause dissolves in the event-driven client, where a server event is handled once and is not a flag.
 3. Shift+F7 in the game menu writes to everyone (reproduced): patched in phase 0; the cause dissolves into the mode enum.
-4. A refund for an order never paid for (reproduced at the world's interface): patched in phase 0; made unrepresentable when production orders carry a payment state (section 7).
+4. A refund for an order never paid for (reproduced at the world's interface): patched in phase 0; then made impossible by each player's ledger of payments (`crates/world/src/ledger.rs`), which gives back only a payment it holds, and only once (section 7, item 10).
 5. A refused map download says "Downloading" forever: patched in phase 0.
 6. A failed resurrection leaves a ghost unit in the update list: built, in phase 4, when an entity gets its id at the moment it gets a place.
 7. Two sounds fight over one audio channel: built, in the sound work of section 10, by recording who owns a channel.

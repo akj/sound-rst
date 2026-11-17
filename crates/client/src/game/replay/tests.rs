@@ -102,7 +102,12 @@ fn ten_turns(h: &mut Harness, g: &mut TestGame) -> f64 {
 /// A listener to `record` on jl1, following its first player, before
 /// the first turn, once "watching" and the objective are said.
 fn listening(h: &mut Harness, record: Record) -> TestGame {
-    let m = h.multiplayer_map("jl1");
+    listening_on(h, "jl1", record)
+}
+
+/// As [`listening`], to a record of a game on the multiplayer map `map`.
+fn listening_on(h: &mut Harness, map: &str, record: Record) -> TestGame {
+    let m = h.multiplayer_map(map);
     h.client.res.set_map(Some(&m));
     let replay = Replay::new(Arc::new(record), Completeness::Whole, Keep::AlreadyKept).unwrap();
     let me = replay.first_player().unwrap();
@@ -635,4 +640,85 @@ fn going_fastest_on_the_players_last_turn_hears_nothing_of_it() {
     h.step(&mut g);
     assert!(g.game.end_loop);
     assert_eq!(h.client.voice.log().count(), log);
+}
+
+/// The record of a game on jl2 of `turns` turns, between a person and
+/// two computers, each alone, where the person quits at turn 10 and the
+/// computers play on.
+fn person_quits_at_10_of_three(turns: u64) -> Record {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let m = h.multiplayer_map("jl2");
+    let texts = crate::multiplayer::game_texts(&mut h.client, &m).unwrap();
+    let alone = |mut c: soundrts_world::Controller, alliance: &str| {
+        c.alliance = Some(alliance.into());
+        c
+    };
+    let controllers = vec![
+        alone(soundrts_world::Controller::human("me", true), "1"),
+        alone(soundrts_world::Controller::computer("aggressive"), "2"),
+        alone(soundrts_world::Controller::computer("aggressive"), "3"),
+    ];
+    let setup = soundrts_world::GameSetup::multiplayer(
+        texts.rules.into_string(),
+        texts.ai.into_string(),
+        texts.map.into_string(),
+        1,
+        controllers,
+    );
+    let mut host = soundrts_world::Host::new(&setup).unwrap();
+    let me = host.seats()[0];
+    for turn in 0..turns {
+        if turn == 10 {
+            let _told = host.queue(me, soundrts_world::Command::Quit);
+        }
+        host.step_seats(&[]);
+    }
+    host.record().clone()
+}
+
+/// A listener who follows a computer jumps past the person's departure,
+/// and asks for the next player while the jump is under way and once it
+/// has landed: the person who left is never followed. Every pass of a jump brings the view to where the replay is
+/// before a key is taken, so the next player is chosen from those still
+/// in the game.
+#[test]
+fn a_player_who_left_during_a_jump_is_not_followed() {
+    let record = person_quits_at_10_of_three(400);
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening_on(&mut h, "jl2", record);
+    let person = g.game.me;
+    h.run_until_turn(&mut g, 3);
+    assert_eq!(answer(&mut h, &mut g, Key::Space, Mods::SHIFT), "paused");
+    h.run_until_voice_idle(&mut g);
+    h.key(&mut g, Key::F12, Mods::CTRL);
+    let computer = g.game.me;
+    assert_ne!(computer, person);
+    h.run_until_voice_idle(&mut g);
+    // The first pass of a jump of a minute: 50 turns, past turn 10.
+    h.press(Key::RightBracket, Mods::NONE);
+    while g.game.view().turn() < 10 {
+        h.step(&mut g);
+    }
+    assert!(g.game.muted(), "the jump is under way");
+    assert_eq!(g.game.view().turn(), 53);
+    assert!(!g.game.view().players().contains(&person));
+    let from = h.utterances().len();
+    h.press(Key::F12, Mods::CTRL);
+    while g.game.muted() {
+        h.step(&mut g);
+    }
+    h.run_until_voice_idle(&mut g);
+    // The other computer, the next player still in the game.
+    let said = h.said_since(from);
+    assert!(
+        said.contains(&"watching aggressive computer , level 3".to_owned()),
+        "{said:?}"
+    );
+    let other = g.game.me;
+    assert!(other != person && other != computer, "{other:?}");
+    // Once landed, the person is not among the players to follow either.
+    for expected in [computer, other, computer] {
+        h.key(&mut g, Key::F12, Mods::CTRL);
+        assert_eq!(g.game.me, expected);
+    }
 }

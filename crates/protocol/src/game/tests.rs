@@ -138,7 +138,6 @@ fn bytes_left_over_and_too_many_bytes_are_refused() {
     bytes.push(0);
     assert!(decode_command(&bytes).unwrap_err().0.contains("left over"));
     let long = vec![0; MAX_GAME_MESSAGE_BYTES + 1];
-    assert!(decode_end(&long).unwrap_err().0.contains("too long"));
     assert!(decode_frame(&long).unwrap_err().0.contains("too long"));
 }
 
@@ -345,10 +344,10 @@ fn remembered_entities_nest_only_so_deep() {
     let marker = || entity(7, "a_marker_of_its_own");
     let nested = |depth: u32| (0..depth).fold(marker(), |inner, i| aiming_at(100 + i, inner));
     let at_limit = message(vec![nested(8)], Vec::new());
-    let bytes = encode_turn(&at_limit).unwrap();
+    let bytes = encode(&at_limit).unwrap();
     let back: TurnMessage = decode(&bytes).unwrap();
     assert_eq!(back, at_limit);
-    assert!(encode_turn(&message(vec![nested(9)], Vec::new())).is_err());
+    assert!(encode(&message(vec![nested(9)], Vec::new())).is_err());
 
     // The bytes of one level around the marker, to nest by hand.
     let marker_bytes = postcard::to_allocvec(&marker()).unwrap();
@@ -376,10 +375,9 @@ fn remembered_entities_nest_only_so_deep() {
     }
 }
 
-/// Each player's faction is sent with the start, by player id.
-#[test]
-fn the_start_carries_each_players_faction() {
-    let start = StartMessage {
+/// A start of no squares, for `factions`.
+fn empty_start(factions: Vec<String>) -> StartMessage {
+    StartMessage {
         map: soundrts_world::GameMap {
             square_width: 12_000,
             squares: Vec::new(),
@@ -387,38 +385,51 @@ fn the_start_carries_each_players_faction() {
             objective: Vec::new(),
             intro: Vec::new(),
         },
-        player_names: vec![Vec::new(), Vec::new()],
-        player_factions: vec!["orc_faction".into(), "human_faction".into()],
+        player_names: factions.iter().map(|_| Vec::new()).collect(),
+        player_factions: factions,
         cheats_allowed: false,
+    }
+}
+
+/// Each player's faction is sent with the start, by player id.
+#[test]
+fn the_start_carries_each_players_faction() {
+    let start = empty_start(vec!["orc_faction".into(), "human_faction".into()]);
+    let frame = SeatFrame::Start {
+        start,
+        rules: RulesHash::of(""),
     };
-    let sent = decode_start(&encode_start(&start).unwrap()).unwrap();
+    let Ok(SeatFrame::Start { start: sent, .. }) = decode_frame(&encode_frame(&frame).unwrap())
+    else {
+        panic!("a start");
+    };
     assert_eq!(sent.player_factions, ["orc_faction", "human_faction"]);
-    let start = GameStart::from_message(sent, soundrts_world::Rules::default());
+    let start = soundrts_world::GameStart::from_message(sent, soundrts_world::Rules::default());
     assert_eq!(
         start.message().player_factions,
         ["orc_faction", "human_faction"]
     );
 }
 
+/// What a seat that joins a game of no squares and no rules makes of
+/// `first`, its whole message.
+fn joined(first: &TurnMessage) -> Result<Joining, JoinRefused> {
+    let start = SeatFrame::Start {
+        start: empty_start(Vec::new()),
+        rules: RulesHash::of(""),
+    };
+    let join = JoinStream::new(Role::Player(0), crate::MapHash::of(b""), "");
+    let Ok(Joining::Started(join)) = join.take(start) else {
+        panic!("the start refused");
+    };
+    join.take(SeatFrame::Whole(first.clone()))
+}
+
 /// A cost the order menus subtract from: one out of range would overflow
-/// there, so it is refused before a seat's view sees it.
+/// there, so it is refused before a seat's view sees it, in a whole
+/// message and in a change.
 #[test]
 fn an_own_number_out_of_range_is_refused() {
-    let start = GameStart::from_message(
-        StartMessage {
-            map: soundrts_world::GameMap {
-                square_width: 12_000,
-                squares: Vec::new(),
-                exits: Vec::new(),
-                objective: Vec::new(),
-                intro: Vec::new(),
-            },
-            player_names: Vec::new(),
-            player_factions: Vec::new(),
-            cheats_allowed: false,
-        },
-        soundrts_world::Rules::default(),
-    );
     let mut unit = aiming_at(1, entity(2, "footman"));
     unit.place = None;
     if let Some(KnownTarget::Remembered(inner)) =
@@ -427,15 +438,51 @@ fn an_own_number_out_of_range_is_refused() {
         inner.place = None;
     }
     let fine = message(vec![unit.clone()], Vec::new());
-    assert_eq!(
-        decode_turn(&encode_turn(&fine).unwrap(), &start),
-        Ok(fine.clone())
-    );
+    let Ok(Joining::Joined(Joined {
+        mut stream,
+        message: first,
+    })) = joined(&fine)
+    else {
+        panic!("the fine message refused");
+    };
+    assert_eq!(*first, fine);
     unit.own.as_mut().unwrap().food_cost = i64::MIN;
     let hostile = message(vec![unit], Vec::new());
-    assert!(decode_turn(&encode_turn(&hostile).unwrap(), &start).is_err());
+    let Err(JoinRefused::Invalid(why)) = joined(&hostile) else {
+        panic!("the hostile message taken");
+    };
+    assert!(why.0.starts_with("the first message: "), "{why}");
     let change = TurnChange::between(&fine, &hostile);
-    assert!(apply_change(&encode_change(&change).unwrap(), &fine, &start).is_err());
+    let why = stream.take(SeatFrame::Change(change)).unwrap_err();
+    assert!(why.0.starts_with("a turn: "), "{why}");
+}
+
+/// A change that makes the seat's message larger than a server could send
+/// whole is refused, though the change itself fits in a frame: a stream
+/// cannot grow the message without bound.
+#[test]
+fn a_change_cannot_grow_a_message_beyond_what_is_sent_whole() {
+    let name = "x".repeat(1 << 20);
+    let units = |n: u32| {
+        let perceived = (0..n)
+            .map(|i| {
+                let mut e = entity(i, &name);
+                e.place = None;
+                e
+            })
+            .collect();
+        message(perceived, Vec::new())
+    };
+    let first = units(20);
+    assert!(encode(&first).is_ok(), "the first message fits");
+    let Ok(Joining::Joined(Joined { mut stream, .. })) = joined(&first) else {
+        panic!("the first message refused");
+    };
+    let change = TurnChange::between(&first, &units(25));
+    assert!(encode(&SeatFrame::Change(change.clone())).is_ok());
+    let why = stream.take(SeatFrame::Change(change)).unwrap_err();
+    assert!(why.0.starts_with("a turn: "), "{why}");
+    assert!(why.0.ends_with(" bytes is too long"), "{why}");
 }
 
 /// A part of a message names its phrase by its id, in a save, in a record

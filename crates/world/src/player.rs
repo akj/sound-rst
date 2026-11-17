@@ -9,10 +9,10 @@ use std::sync::Arc;
 use crate::ai::{Computer, Handicap, Skill, TacticalKnowledge, handicapped_name};
 use crate::entity::{Entity, EntityId, Names, SquareId, StatType};
 use crate::events::Event;
+use crate::ledger::Ledger;
 use crate::message::TurnMessage;
 use crate::msg::{Msg, MsgPart};
 use crate::nofloat::PRECISION;
-use crate::orders::Order;
 use crate::rules::{FactionId, TypeId};
 use crate::triggers::Trigger;
 
@@ -369,8 +369,8 @@ pub struct Player {
     pub memory: BTreeMap<EntityId, Remembrance>,
     pub objectives: Vec<Objective>,
     pub units: Vec<EntityId>,
-    /// Build orders whose cost is reserved.
-    pub budget: Vec<Order>,
+    /// What its orders have paid and not yet delivered.
+    pub(crate) ledger: Ledger,
     pub upgrades: Upgrades,
     /// The types the player may not build, train, research or use.
     pub forbidden_techs: BTreeSet<TypeId>,
@@ -448,7 +448,7 @@ impl Hash for Player {
             memory,
             objectives,
             units,
-            budget,
+            ledger,
             upgrades,
             forbidden_techs,
             observed_before_squares,
@@ -495,7 +495,7 @@ impl Hash for Player {
         memory.hash(state);
         objectives.hash(state);
         units.hash(state);
-        budget.hash(state);
+        ledger.hash(state);
         upgrades.hash(state);
         forbidden_techs.hash(state);
         observed_before_squares.hash(state);
@@ -563,7 +563,7 @@ impl Player {
             memory: BTreeMap::new(),
             objectives: Vec::new(),
             units: Vec::new(),
-            budget: Vec::new(),
+            ledger: Ledger::default(),
             upgrades: Upgrades::default(),
             forbidden_techs: BTreeSet::new(),
             observed_before_squares: BTreeSet::new(),
@@ -600,13 +600,13 @@ impl Player {
     }
 
     /// Calls `f` with each id the player's state names (see [`Names`]):
-    /// what it perceives and remembers, its units, the orders of its
-    /// budget, what its units revealed until a time not yet past, the
-    /// enemies it found this turn, its selection and its computer's
-    /// bookkeeping. Its buckets name its units only when `buckets_read`:
-    /// an allied player in the game looks through them. A remembered copy
-    /// is read as it was, so what it holds is not named; which units were
-    /// detected is only asked about, never looked up.
+    /// what it perceives and remembers, its units, the land of the
+    /// projects its ledger holds, what its units revealed until a time not
+    /// yet past, the enemies it found this turn, its selection and its
+    /// computer's bookkeeping. Its buckets name its units only when
+    /// `buckets_read`: an allied player in the game looks through them. A
+    /// remembered copy is read as it was, so what it holds is not named;
+    /// which units were detected is only asked about, never looked up.
     pub(crate) fn names(&self, now: i64, buckets_read: bool, f: &mut impl FnMut(EntityId)) {
         let Player {
             obj_id: _,
@@ -620,7 +620,7 @@ impl Player {
             memory,
             objectives: _,
             units,
-            budget,
+            ledger,
             upgrades: _,
             forbidden_techs: _,
             observed_before_squares: _,
@@ -658,7 +658,7 @@ impl Player {
         perception.iter().for_each(|&o| f(o));
         memory.keys().for_each(|&o| f(o));
         units.names(f);
-        budget.names(f);
+        ledger.names(f);
         for (&o, &until) in observed_objects {
             if until >= now {
                 f(o);
@@ -679,7 +679,7 @@ impl Player {
     }
 
     /// Forgets, once out of the game, what nothing reads any more: what
-    /// it perceived and remembered, its budget, which units were detected,
+    /// it perceived and remembered, its ledger, which units were detected,
     /// the enemies it found, its selection, and its computer's
     /// bookkeeping and tactical knowledge. Its statistics, resources,
     /// alliances, upgrades and squares stay, for the score and its allies;
@@ -688,7 +688,7 @@ impl Player {
     pub(crate) fn forget_after_leaving(&mut self) {
         self.perception.clear();
         self.memory.clear();
-        self.budget.clear();
+        self.ledger.forget();
         self.detected_units.clear();
         self.known_enemies_cache.clear();
         self.group = None;
