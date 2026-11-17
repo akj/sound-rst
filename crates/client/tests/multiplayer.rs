@@ -863,8 +863,11 @@ fn a_game_on_a_server_that_gives_ever_more_objectives_is_ended() {
     h.finish(&mut g);
     let said = h.said_since(0);
     assert_eq!(
-        said.last().map(String::as_str),
-        Some("game ended: the server sent what cannot be right"),
+        said[said.len().saturating_sub(2)..],
+        [
+            "game ended: the server sent what cannot be right",
+            "Menu please make a selection"
+        ],
         "{said:#?}"
     );
 }
@@ -885,11 +888,13 @@ fn a_frame_that_cannot_be_right_ends_the_game_and_leaves_it() {
     h.finish(&mut g);
     let said = h.said_since(from);
     assert_eq!(
-        said.last().map(String::as_str),
-        Some("game ended: the server sent what cannot be right"),
+        said[said.len().saturating_sub(2)..],
+        [
+            "game ended: the server sent what cannot be right",
+            "Menu please make a selection"
+        ],
         "{said:#?}"
     );
-    soundrts::session::leave_server_game(&mut h.client);
     assert_eq!(server.sent(), [ClientMsg::LeaveGame]);
 }
 
@@ -1851,7 +1856,7 @@ fn when_the_host_leaves_a_game_on_a_server_the_next_player_hosts_it() {
     andrew.key(&mut a, Key::Down, Mods::NONE);
     andrew.key(&mut a, Key::Return, Mods::NONE);
     assert!(a.game.end_loop, "Andrew left the paused game");
-    soundrts::session::leave_server_game(&mut andrew.client);
+    soundrts::net::leave_game(&mut andrew.client);
     let start = std::time::Instant::now();
     while !bob
         .said_since(from)

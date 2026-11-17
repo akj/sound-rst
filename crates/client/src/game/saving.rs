@@ -5,23 +5,15 @@
 use soundrts_world::msg::{Phrase, comma, msg};
 use std::path::PathBuf;
 
-use super::{GameInterface, Source};
+use super::GameInterface;
 use crate::client::Client;
-use crate::saves::{self, InterfaceState, SaveInfo, Slot};
+use crate::saves::{self, InterfaceState, Slot};
 
 impl GameInterface {
-    /// Gives a game run here what it needs to be saved. A game on a
-    /// server is not saved.
-    pub fn set_save_info(&mut self, info: SaveInfo) {
-        if let Source::Local(l) = &mut self.source {
-            l.save = Some(info);
-        }
-    }
-
     /// Whether the game can be saved: a game run here that knows what it
     /// is.
     pub(crate) fn can_be_saved(&self) -> bool {
-        matches!(&self.source, Source::Local(l) if l.save.is_some())
+        self.source.local().is_some_and(|l| l.save.is_some())
     }
 
     /// Whether the game is still on for the player: in the game, without a
@@ -36,8 +28,8 @@ impl GameInterface {
     /// loaded and saved again before its first end of turn keeps the
     /// selection it has yet to take back.
     fn interface_state(&self) -> InterfaceState {
-        let selection = match &self.source {
-            Source::Local(l) if !l.selection_to_restore.is_empty() => &l.selection_to_restore,
+        let selection = match self.source.local() {
+            Some(l) if !l.selection_to_restore.is_empty() => &l.selection_to_restore,
             _ => &self.group,
         };
         InterfaceState {
@@ -57,8 +49,8 @@ impl GameInterface {
             self.queue_at_once(c);
         }
         let ui = self.interface_state();
-        let Source::Local(l) = &self.source else {
-            return Err(std::io::Error::other("a game on a server"));
+        let Some(l) = self.source.local() else {
+            return Err(std::io::Error::other("a game not run here"));
         };
         let Some(info) = &l.save else {
             return Err(std::io::Error::other("this game cannot be saved"));
@@ -92,7 +84,7 @@ impl GameInterface {
     /// left, silently, as the last finished game of its kind in the
     /// records folder, where the player can listen to it.
     pub fn keep_finished(&mut self, cx: &mut Client) {
-        let Source::Local(l) = &self.source else {
+        let Some(l) = self.source.local() else {
             return;
         };
         let Some(info) = &l.save else {
@@ -139,7 +131,7 @@ impl GameInterface {
         self.place = ui
             .cursor
             .filter(|s| usize::try_from(s.0).is_ok_and(|i| i < squares));
-        if let Source::Local(l) = &mut self.source {
+        if let Some(l) = self.source.local_mut() {
             l.selection_to_restore = ui.selection;
         }
         let mut told = msg(Phrase::Loaded);

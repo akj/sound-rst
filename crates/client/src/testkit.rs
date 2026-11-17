@@ -1421,8 +1421,8 @@ impl Harness {
         self.client.res.set_map(Some(&m));
         let host = Host::new(setup).expect("a game");
         let me = host.seats()[0];
-        let mut game = GameInterface::local(&mut self.client, host, me);
-        crate::session::prepare(&mut self.client, &mut game, Vec::new());
+        let mut game = GameInterface::local(&mut self.client, host, me, None);
+        game.begin(&mut self.client, Vec::new());
         self.client.input.clear();
         TestGame {
             session: None,
@@ -1623,10 +1623,17 @@ impl Harness {
     }
 
     /// Runs the game loop until the world has played `turn` turns and their
-    /// events are handled.
+    /// events are handled. It gives up when 10 s of the test clock a turn
+    /// and 10 minutes more have passed, and [`WAIT_LIMIT`] of real time
+    /// too: a real server keeps real time, whatever the test clock says.
     pub fn run_until_turn(&mut self, g: &mut TestGame, turn: i64) {
+        let turns = (turn - g.game.view().turn()).max(0) as f64;
+        let limit = self.clock.now() + 600.0 + 10.0 * turns;
+        let start = std::time::Instant::now();
         while g.game.view().turn() < turn || g.game.has_pending_server_events() {
             assert!(!g.game.end_loop, "the game ended before turn {turn}");
+            let late = self.clock.now() > limit && start.elapsed() > WAIT_LIMIT;
+            assert!(!late, "turn {turn} did not come");
             self.step(g);
         }
     }
@@ -1668,16 +1675,25 @@ impl Harness {
         self.said_since(from)
     }
 
-    /// Runs the game loop until the game ends, then says the score.
+    /// Runs the game loop until the game ends. It gives up when 10 minutes
+    /// of the test clock and [`WAIT_LIMIT`] of real time have both passed.
+    /// Then it ends the game as the client does once its loop ends: the
+    /// score, and what each kind of game does around it (see
+    /// [`GameInterface::end`]).
     pub fn finish(&mut self, g: &mut TestGame) {
+        let limit = self.clock.now() + 600.0;
+        let start = std::time::Instant::now();
         while !g.game.end_loop {
+            let late = self.clock.now() > limit && start.elapsed() > WAIT_LIMIT;
+            assert!(!late, "the game did not end");
             self.step(g);
         }
-        match &mut g.session {
-            Some(session) => session.finish(&mut self.client, &mut g.game),
-            None => {
-                crate::session::finish(&mut self.client, &mut g.game);
-            }
+        let won = g
+            .game
+            .end(&mut self.client, Ok(()))
+            .expect("the window stays open");
+        if let Some(session) = &mut g.session {
+            session.has_victory = won;
         }
     }
 }

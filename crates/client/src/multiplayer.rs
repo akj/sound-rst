@@ -904,7 +904,7 @@ fn play(cx: &mut Client, seated: net::Seated) -> Result<(), Exit> {
         Some(map) => session::play_on_server(cx, &map, &seated),
         None => {
             cx.log.warning("cannot play the game: no map");
-            session::leave_server_game(cx);
+            crate::net::leave_game(cx);
             cx.voice
                 .alert(&[cue(Cue::Beep), msg(Phrase::GameCannotStart)].concat());
             Ok(())

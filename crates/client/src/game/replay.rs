@@ -236,6 +236,11 @@ impl Replay {
         self.waiting_for_world_update = false;
     }
 
+    /// Whether the listener paused the record.
+    pub(crate) fn paused(&self) -> bool {
+        self.paused
+    }
+
     /// Whether sounds and news are muted: while jumping, and at the
     /// fastest pace.
     pub(crate) fn muted(&self) -> bool {
@@ -304,16 +309,7 @@ impl GameInterface {
     }
 
     fn replay(&mut self) -> Option<&mut Replay> {
-        match &mut self.source {
-            Source::Replay(r) => Some(r),
-            Source::Local(_) | Source::Server(_) => None,
-        }
-    }
-
-    /// Whether sounds are muted: while a listener jumps, or plays the
-    /// record at its fastest.
-    pub(crate) fn muted(&self) -> bool {
-        matches!(&self.source, Source::Replay(r) if r.muted())
+        self.source.replay_mut()
     }
 
     /// One pass of a listener's loop: the turn due at the pace, or a
@@ -628,14 +624,6 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
-    /// Whether the listener paused the record; `None` for anyone else.
-    pub(crate) fn listening_paused(&self) -> Option<bool> {
-        match &self.source {
-            Source::Replay(r) => Some(r.paused),
-            Source::Local(_) | Source::Server(_) => None,
-        }
-    }
-
     /// The listener goes `minutes` of game time forward, or back below 0,
     /// from where the replay is or is going: forward by replaying silently
     /// and fast, back by replaying again from the start. The news waiting
@@ -727,21 +715,6 @@ impl GameInterface {
             }
         }
     }
-}
-
-/// Says what the end of the listening left to say, then the result and
-/// the score of the player followed, and waits until it is said (a key
-/// skips ahead). A player still in the game when the record ended has a
-/// game not over.
-pub fn finish_listening(cx: &mut Client, game: &mut GameInterface) {
-    cx.voice.flush(true);
-    game.end_game();
-    let still_on = game.goes_on();
-    for m in crate::game::stats::score_msgs_of(game.view(), cx.res.style(), still_on) {
-        cx.news(News::new(Category::System, m));
-    }
-    cx.voice.flush(true);
-    game.stop_noises(cx);
 }
 
 /// The players of `players` after `me`, in the order `step` goes, round

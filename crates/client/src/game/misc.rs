@@ -17,7 +17,8 @@ use soundrts_protocol::{Channel, Step};
 use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
 use super::replay::Pace;
-use super::{GameInterface, Mode, Source, Story, TURN};
+use super::source::Speeds;
+use super::{GameInterface, Mode, Story, TURN};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -343,10 +344,10 @@ impl GameInterface {
         cx.voice.item(&m);
     }
 
-    /// Whether the player may cheat: in a game run here that allows it.
-    /// Nobody cheats in a game on a server, nor in a record listened to.
+    /// Whether the player may cheat: in a game that takes cheats and
+    /// allows them.
     fn cheats_allowed(&self) -> bool {
-        matches!(self.source, Source::Local(_)) && self.view().cheats_allowed()
+        self.takes_cheats() && self.view().cheats_allowed()
     }
 
     fn cmd_toggle_cheatmode(&mut self, cx: &mut Client) {
@@ -483,7 +484,8 @@ impl GameInterface {
         };
         let mut menu = Menu::new(msg(Phrase::Menu), Vec::new());
         menu.append(msg(Phrase::CancelGame), set(GameMenuChoice::Quit), None);
-        if let Some(paused) = self.listening_paused() {
+        let speeds = self.speeds_offered();
+        if let Speeds::Paces { paused } = speeds {
             let item = if paused {
                 Phrase::Resume
             } else {
@@ -525,7 +527,7 @@ impl GameInterface {
             );
         }
         // In a game on a server, the room's host sets the server's speed.
-        if self.offers_speeds() {
+        if speeds == Speeds::Game {
             menu.append(
                 msg(Phrase::SetSpeedToSlow),
                 set(GameMenuChoice::Speed(0.5)),
@@ -612,7 +614,7 @@ impl GameInterface {
             Some(GameMenuChoice::Speed(s)) => {
                 self.send_command(cx, Command::Speed(s));
                 // The next single-player game starts at this speed.
-                if self.waits_for_the_player() {
+                if self.speed_is_the_worlds() {
                     cx.config.speed = s;
                     cx.save_config();
                 }

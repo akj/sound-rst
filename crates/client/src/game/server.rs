@@ -266,6 +266,23 @@ impl ServerGame {
         }
     }
 
+    /// The game told the player it is over for them: whether the game
+    /// ends now. It ends once the end has come, with the statistics of the
+    /// score, and a watcher's when its own end comes: the server moves it on
+    /// to another player meanwhile.
+    pub(crate) fn told_over(&mut self) -> bool {
+        if self.watching() {
+            return false;
+        }
+        match self.end {
+            End::Waiting => {
+                self.quit = true;
+                false
+            }
+            End::Came(_) | End::Taken => true,
+        }
+    }
+
     /// The end the server sent, once.
     pub(crate) fn take_end(&mut self) -> Option<GameEnd> {
         match std::mem::replace(&mut self.end, End::Taken) {
@@ -525,22 +542,15 @@ impl Presented {
 
 impl GameInterface {
     fn server(&mut self) -> Option<&mut ServerGame> {
-        match &mut self.source {
-            super::Source::Server(s) => Some(s),
-            super::Source::Local(_) | super::Source::Replay(_) => None,
-        }
+        self.source.server_mut()
     }
 
     /// Whether the connection is lost and the client is returning to the
     /// seat.
     pub fn returning(&self) -> bool {
-        matches!(
-            self.source,
-            super::Source::Server(ServerGame {
-                link: Link::Returning(_),
-                ..
-            })
-        )
+        self.source
+            .server()
+            .is_some_and(|s| matches!(s.link, Link::Returning(_)))
     }
 
     /// Plays from the stream, or goes on returning to the seat.
@@ -688,7 +698,7 @@ impl GameInterface {
     /// once that a chat line or a flare was not sent, then moves the
     /// attempt on.
     fn return_update(&mut self, cx: &mut Client) {
-        let super::Source::Server(server) = &mut self.source else {
+        let Some(server) = self.source.server_mut() else {
             return;
         };
         let Link::Returning(r) = &mut server.link else {
@@ -791,23 +801,6 @@ impl GameInterface {
             link.ended = true;
         }
         self.srv_quit(cx);
-    }
-
-    /// The game told the player it is over for them. On a server, the
-    /// loop ends once the end has come, with the statistics of the score.
-    /// A watcher hears that the player it follows is out of the game: the
-    /// server moves it on to another player, or ends its game. A listener
-    /// to a record moves on to the next person still in the game, or the
-    /// listening ends.
-    pub(crate) fn quit_heard(&mut self, cx: &mut Client) {
-        if matches!(self.source, super::Source::Replay(_)) {
-            return self.followed_left(cx);
-        }
-        match self.server() {
-            Some(server) if server.watching() => {}
-            Some(server) if matches!(server.end, End::Waiting) => server.quit = true,
-            _ => self.srv_quit(cx),
-        }
     }
 
     /// Ends the game on a frame that cannot be right: says so, and leaves
@@ -1030,18 +1023,6 @@ impl GameInterface {
             return;
         }
         crate::net::send(cx, ClientMsg::Flare { square });
-    }
-
-    /// Whether the game menu offers the speeds: in a game run here, to its
-    /// first player; on a server, to every player, and only the room's
-    /// host's choice goes to the server. A listener to a record has its
-    /// own paces.
-    pub(crate) fn offers_speeds(&self) -> bool {
-        match &self.source {
-            super::Source::Server(_) => true,
-            super::Source::Local(_) => self.view().players().first() == Some(&self.me),
-            super::Source::Replay(_) => false,
-        }
     }
 
     /// Whether the game is paused, for the game menu of the room's host in
