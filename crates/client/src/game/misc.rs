@@ -713,7 +713,7 @@ impl GameInterface {
     }
 
     fn cmd_say_time(&self, cx: &mut Client) {
-        let t = self.known.time() as i64;
+        let t = self.view().time() / 1000;
         let (m, s) = (t.div_euclid(60), t.rem_euclid(60));
         let m = [
             nb2msg(m),

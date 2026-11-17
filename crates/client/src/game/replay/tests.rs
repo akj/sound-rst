@@ -204,6 +204,29 @@ fn listening_from_the_start_says_and_plays_what_the_player_heard_live() {
 }
 
 #[test]
+fn where_the_replay_is_is_the_turn_taken_before_its_end_is_handled() {
+    let record = record_of(100);
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut g = listening(&mut h, record);
+    h.run_until_turn(&mut g, 9);
+    assert_eq!(g.game.view().time(), 2700);
+    // The next turn is taken, then the key handled, before the turn's end.
+    g.game.set_turn_due(h.clock.now());
+    let from = h.utterances().len();
+    h.press(Key::F3, Mods::NONE);
+    h.step(&mut g);
+    assert_eq!(g.game.view().time(), 3000);
+    assert!(g.game.has_pending_server_events());
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    let time = said.iter().find(|s| s.contains(" of 0 minutes 30 seconds"));
+    assert_eq!(
+        time.map(String::as_str),
+        Some("0 minutes 3 seconds of 0 minutes 30 seconds , speed normal")
+    );
+}
+
+#[test]
 fn a_paused_record_runs_no_turn_and_the_keys_still_answer() {
     let record = record_of(100);
     let mut h = Harness::new("en", Script::new().keep_open());

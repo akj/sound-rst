@@ -59,7 +59,9 @@ impl GameInterface {
         let style = cx.res.style();
         let mut productions: Vec<((bool, i64), Msg)> = Vec::new();
         for id in self.units(cx, true, false) {
-            let v = &self.known[id];
+            let Some(v) = &self.known.current(id) else {
+                continue;
+            };
             let Some((o, left)) = v.orders().first().and_then(|o| Some((o, o.time_left?))) else {
                 continue;
             };
@@ -97,7 +99,7 @@ impl GameInterface {
         let workers: Vec<_> = self
             .units(cx, true, false)
             .into_iter()
-            .map(|id| &self.known[id])
+            .filter_map(|id| self.known.current(id))
             .filter(|v| types.iter().any(|t| t == v.type_name()))
             .collect();
         if workers.is_empty() {
@@ -107,7 +109,7 @@ impl GameInterface {
         let mut idle = 0;
         let mut building = 0;
         let mut gathering = vec![0; view.resources().len()];
-        for v in workers {
+        for v in &workers {
             let Some(o) = v.orders().first() else {
                 idle += 1;
                 continue;
@@ -218,7 +220,8 @@ impl GameInterface {
         let view = self.view();
         let (mut ours, mut theirs) = (Vec::new(), Vec::new());
         let (mut our_threat, mut their_threat) = (0i64, 0i64);
-        for (_, v) in self.known.entities() {
+        for v in self.known.perceived_now() {
+            let v = &v;
             if v.is_memory() || !self.is_in(v, self.place) {
                 continue;
             }
@@ -433,6 +436,47 @@ mod tests {
         assert_eq!(
             ask(&mut h, &mut g, Key::B, Mods::NONE),
             "recruit footman 9 seconds at barracks 1 , recruit peasant 10 seconds at town hall 1"
+        );
+    }
+
+    #[test]
+    fn the_questions_answer_for_the_turn_taken_before_its_end_is_handled() {
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        // The turn to take ends a second of the game.
+        while g.game.view().time() % 1000 != 900 {
+            run_turns(&mut h, &mut g, 1);
+        }
+        let me = g.game.me;
+        let (_, name) = home(&g, me);
+        cheat(&mut g, me, &format!("add_units {name} 3 footman"));
+        let townhall = unit(&g, me, "townhall");
+        order(&mut g, me, townhall, "train peasant");
+        let w = g.game.host().world();
+        let gold = w
+            .entities()
+            .find(|e| &*e.type_name == "goldmine")
+            .unwrap()
+            .id;
+        let peasant = units(&g, me, "peasant")[0];
+        order(&mut g, me, peasant, &format!("gather {}", gold.0));
+        // The next turn is taken; its end, which brings the interface's
+        // copies up to date, waits while the keys are handled.
+        g.game.run_turn(&mut h.client);
+        let from = h.utterances().len();
+        for key in [Key::M, Key::B, Key::N, Key::F3] {
+            h.press(key, Mods::NONE);
+        }
+        h.step(&mut g);
+        h.run_until_voice_idle(&mut g);
+        assert_eq!(
+            h.said_since(from)[..4],
+            [
+                "stronger , 1 peasant and 3 footman against nothing!",
+                "recruit peasant 10 seconds at town hall 1",
+                "0 idle , 1 on gold",
+                "0 minutes 16 seconds , speed 1.0"
+            ]
         );
     }
 

@@ -545,7 +545,7 @@ impl GameInterface {
     /// "3 minutes 20 seconds of 12 minutes 0 seconds": where the replay
     /// is, of the whole record.
     fn where_the_replay_is(&mut self) -> Msg {
-        let now = self.known.time() as i64;
+        let now = self.view().time() / 1000;
         let total = self.replay().map_or(0, |r| r.total_seconds());
         [time_msg(now), msg(Phrase::OutOf), time_msg(total)].concat()
     }

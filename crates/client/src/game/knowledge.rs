@@ -91,6 +91,22 @@ impl Knowledge {
         self.shown.get(&self.shown_id(id)?)
     }
 
+    /// The entity `id` as the player knows it now, from the last turn
+    /// taken.
+    pub fn current(&self, id: EntityId) -> Option<EntityView> {
+        self.seat.known(id).map(EntityView::new)
+    }
+
+    /// The entities the player perceives now, from the last turn taken.
+    pub fn perceived_now(&self) -> impl Iterator<Item = EntityView> {
+        self.seat
+            .message()
+            .perceived
+            .iter()
+            .cloned()
+            .map(EntityView::new)
+    }
+
     /// As [`Knowledge::unit`], to change how it is presented.
     pub(super) fn unit_mut(&mut self, id: EntityId) -> Option<&mut EntityView> {
         let id = self.shown_id(id)?;
