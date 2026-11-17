@@ -505,12 +505,13 @@ mod tests {
         };
         assert_eq!(c.skill(&ini), Skill::NORMAL, "no file");
         assert_eq!(skill_in("[campaign1]\nchapter = 2\n"), Skill::NORMAL);
-        for bad in ["0", "4", "-1", "level 2", "", "99999999999999999999"] {
+        for bad in ["0", "5", "-1", "level 2", "", "99999999999999999999"] {
             let text = format!("[campaign1]\nlevel = {bad}\n");
             assert_eq!(skill_in(&text), Skill::NORMAL, "{bad:?}");
         }
         assert_eq!(skill_in("[other]\nlevel = 1\n"), Skill::NORMAL);
         assert_eq!(skill_in("[campaign1]\nLevel: 2\n"), Skill::Level2);
+        assert_eq!(skill_in("[campaign1]\nlevel = 4\n"), Skill::Level4);
         // Writing the level keeps the bookmark and the other campaigns.
         std::fs::write(&ini, "[campaign1]\nchapter = 2\n\n[other]\nlevel = 1\n").unwrap();
         c.set_ini_value(&ini, "level", Skill::Level2.number().to_string())

@@ -770,6 +770,40 @@ fn commands_naming_freed_entities_aim_at_nothing() {
     }
 }
 
+/// A record is a file anyone can hand over. One that names a computer's
+/// level that does not exist, for a seat or for the game, is refused as
+/// damaged; one that names level 4 reads.
+#[test]
+fn a_record_with_a_level_that_does_not_exist_is_refused() {
+    let setup = GameSetup::multiplayer(
+        common::read("res/rules.txt"),
+        common::read("res/ai.txt"),
+        common::read(PLAYED_MAP),
+        0,
+        vec![Controller::human("a", true), Controller::computer("easy")],
+    );
+    let host = Host::new(&setup).unwrap();
+    let text = String::from_utf8(host.record().to_bytes()).unwrap();
+    let normal = r#""Level3""#;
+    // The computer's seat and the game's level of computers.
+    assert_eq!(text.matches(normal).count(), 2);
+    for (i, _) in text.match_indices(normal) {
+        for bad in [r#""Level0""#, r#""Level5""#, r#""level4""#, "4", "null"] {
+            let changed = [&text[..i], bad, &text[i + normal.len()..]].concat();
+            assert!(
+                matches!(
+                    Record::read(changed.as_bytes()),
+                    Err(ReadError::Damaged { .. })
+                ),
+                "{bad} at {i}"
+            );
+        }
+    }
+    let at_four = text.replace(normal, r#""Level4""#);
+    let (record, _) = Record::read(at_four.as_bytes()).unwrap();
+    assert_eq!(record.setup().computer_skill, soundrts_world::Skill::Level4);
+}
+
 /// A record is a file anyone can hand over. One that gives a seat an
 /// income outside 25 to 400 percent is refused as damaged; one at the
 /// bounds reads.

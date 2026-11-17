@@ -284,3 +284,26 @@ fn hostile_game_messages_are_refused_without_a_panic() {
     );
     assert!(refused > 0);
 }
+
+/// A set-up that names a level of the computers that does not exist is
+/// refused; one at level 4 decodes.
+#[test]
+fn a_setup_with_a_level_that_does_not_exist_is_refused() {
+    let mut setup = cheat_mode_and_defeat(120).setup(read);
+    setup.computer_skill = soundrts_world::Skill::NORMAL;
+    let normal = encode_setup(&setup).unwrap();
+    setup.computer_skill = soundrts_world::Skill::Level4;
+    let four = encode_setup(&setup).unwrap();
+    assert_eq!(
+        decode_setup(&four).unwrap().computer_skill,
+        soundrts_world::Skill::Level4
+    );
+    // The level is the one byte that differs.
+    let at: Vec<usize> = (0..four.len()).filter(|&i| four[i] != normal[i]).collect();
+    assert_eq!(at.len(), 1);
+    for bad in [4, 5, 0x7f] {
+        let mut changed = four.clone();
+        changed[at[0]] = bad;
+        assert!(decode_setup(&changed).is_err(), "{bad}");
+    }
+}

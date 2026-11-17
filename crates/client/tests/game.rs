@@ -315,6 +315,17 @@ fn seats(g: &soundrts::game::GameInterface) -> String {
 
 #[test]
 fn the_training_menu_builds_the_game_with_each_players_level_and_income() {
+    training_at_level(2);
+}
+
+#[test]
+fn the_training_menu_offers_level_four() {
+    training_at_level(4);
+}
+
+/// A training game on jl1 with a quiet computer set from level 3 to
+/// `level`, and the player at 200 percent income.
+fn training_at_level(level: u8) {
     let index = map_index("jl1");
     let mut script = Script::new()
         .keep_open()
@@ -332,11 +343,12 @@ fn the_training_menu_builds_the_game_with_each_players_level_and_income() {
         t += 10.0;
     }
     // The map; invite a quiet computer; "set quiet computer, level 3, to
-    // level 2", the seventh item; "set player to 200 percent income", the
-    // fifth; start, the first.
+    // level 2", the seventh item, or "to level 4", the eighth; "set player
+    // to 200 percent income", the fifth; start, the first.
     script = script.at(t).tap(Key::Return);
     t += 15.0;
-    for downs in [1, 7, 5, 1] {
+    let choice = if level < 3 { 5 + level } else { 4 + level };
+    for downs in [1, choice, 5, 1] {
         for _ in 0..downs {
             script = script.at(t).tap(Key::Down);
             t += 8.0;
@@ -353,9 +365,10 @@ fn the_training_menu_builds_the_game_with_each_players_level_and_income() {
         Step::Keys(
             "game menu",
             vec![
-                (0.0, Key::F10, N),
-                (3.0, Key::Down, N),
-                (6.0, Key::Return, N),
+                (0.0, Key::F11, N),
+                (5.0, Key::F10, N),
+                (8.0, Key::Down, N),
+                (11.0, Key::Return, N),
                 (400.0, Key::Escape, N),
                 (420.0, Key::Escape, N),
             ],
@@ -365,10 +378,16 @@ fn the_training_menu_builds_the_game_with_each_players_level_and_income() {
     install(&mut h.client, &player);
     assert_eq!(main_menu(&mut h.client), Ok(()));
     let all = h.said_since(0);
+    // The list of players names the computer at its level.
+    let players = format!("player , quiet computer , level {level} ,");
+    assert!(all.contains(&players), "{all:#?}");
+    let choice = format!("set quiet computer , level 3 , to level {level}");
     assert!(
-        all.contains(&"set quiet computer , level 3 , to level 2".to_owned())
-            && all.contains(&"set player to 200 percent income".to_owned()),
+        all.contains(&choice) && all.contains(&"set player to 200 percent income".to_owned()),
         "{all:#?}"
     );
-    assert_eq!(player.borrow().note("seats"), "player 200%, easy 2 100%");
+    assert_eq!(
+        player.borrow().note("seats"),
+        format!("player 200%, easy {level} 100%")
+    );
 }

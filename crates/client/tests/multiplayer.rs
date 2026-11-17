@@ -2337,6 +2337,7 @@ fn the_organizer_sets_a_computers_level_and_any_seats_income_from_the_room_menu(
         "move quiet computer , level 3 , to alliance 3",
         "set quiet computer , level 3 , to level 1",
         "set quiet computer , level 3 , to level 2",
+        "set quiet computer , level 3 , to level 4",
         "set quiet computer , level 3 , to 50 percent income",
         "set quiet computer , level 3 , to 75 percent income",
         "set quiet computer , level 3 , to 150 percent income",
@@ -2359,6 +2360,14 @@ fn the_organizer_sets_a_computers_level_and_any_seats_income_from_the_room_menu(
         [ClientMsg::SetSkill {
             slot: 1,
             skill: Skill::Level2
+        }]
+    );
+    let (_, sent) = organizer_menu(at("set quiet computer , level 3 , to level 4"), true);
+    assert_eq!(
+        sent,
+        [ClientMsg::SetSkill {
+            slot: 1,
+            skill: Skill::Level4
         }]
     );
     let (_, sent) = organizer_menu(at("set andrew to 150 percent income"), true);
@@ -2414,11 +2423,13 @@ fn a_member_hears_each_level_and_income_the_organizer_sets() {
                 &state,
             ),
         );
+        state.slots[2].player = SlotPlayer::Computer(Computer::Aggressive(Skill::Level4));
+        s.at(90.0, room(RoomChange::Skill { slot: 2 }, &state));
     });
     let said = said(&h);
     let news = from(&said, "aggressive computer , level 1");
     assert_eq!(
-        news[..7],
+        news[..8],
         [
             "aggressive computer , level 1",
             "aggressive computer , level 1 , 150 percent income",
@@ -2427,6 +2438,7 @@ fn a_member_hears_each_level_and_income_the_organizer_sets() {
             "bob , 200 percent income",
             "move aggressive computer , level 1 , 150 percent income , to alliance 1",
             "carol has just joined 4 players on 4 the game will start when the organizer is ready . bob , 200 percent income . andrew . aggressive computer , level 1 , 150 percent income . carol",
+            "aggressive computer , level 4",
         ]
     );
 }
