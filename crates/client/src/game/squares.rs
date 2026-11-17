@@ -560,8 +560,8 @@ impl GameInterface {
     pub(crate) fn set_obs_pos(&mut self, cx: &mut Client) {
         if self.place.is_none() {
             let units = self.units(cx, true, true);
-            if let Some(&first) = units.first()
-                && let Some(s) = self.outer_square(self.known[first].place())
+            if let Some(first) = units.iter().find_map(|&u| self.known.unit(u))
+                && let Some(s) = self.outer_square(first.place())
             {
                 self.select_and_say_square(cx, s, &Vec::new());
             }

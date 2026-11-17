@@ -16,6 +16,12 @@
 //! gives each entity shown with the id the game gives it now. Only the end
 //! of a turn ([`GameInterface::update_fog_of_war`]) changes the copy.
 //!
+//! The questions and the selection read what the seat knows now
+//! ([`Knowledge::seat`], [`Knowledge::current`]). The news, the sounds and
+//! what is said of the targets and squares read the copy
+//! ([`Knowledge::unit`], [`Knowledge::entities`]), so that they keep the
+//! original's order.
+//!
 //! Nothing here reads the world: the seat's messages are all it knows.
 
 use std::collections::BTreeSet;

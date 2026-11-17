@@ -100,6 +100,11 @@ impl GameInterface {
         ids
     }
 
+    /// The unit `id` as the player knows it now.
+    fn current(&self, id: EntityId) -> EntityView {
+        self.known.current(id).expect("a unit the player knows")
+    }
+
     /// The selected object.
     fn target_view(&self) -> Option<&EntityView> {
         self.known.unit(self.target?)
@@ -157,7 +162,7 @@ impl GameInterface {
         let mut result: Vec<EntityId> = Vec::new();
         for e in view.controlled_units() {
             let u = e.id;
-            if e.is_inside() || self.known.unit(u).is_none() {
+            if e.is_inside() {
                 continue;
             }
             let has_menu = even_if_no_menu || {
@@ -173,7 +178,7 @@ impl GameInterface {
         }
         if sort {
             let key = |id: &EntityId| {
-                let v = &self.known[*id];
+                let v = &self.current(*id);
                 let t: Vec<usize> = self
                     .short_title(cx, v)
                     .iter()
@@ -198,7 +203,7 @@ impl GameInterface {
         self.group = group
             .into_iter()
             .filter(|&u| {
-                self.known.unit(u).is_some_and(|v| {
+                self.known.current(u).is_some_and(|v| {
                     v.player()
                         .is_some_and(|vp| vp == self.me || view.controls(vp))
                 })
@@ -227,7 +232,7 @@ impl GameInterface {
     fn regroup(&mut self, cx: &mut Client, portion: NonZeroU32, filter: &UnitFilter) {
         self.update_group();
         if let Some(&first) = self.group.first() {
-            let initial = &self.known[first];
+            let initial = &self.current(first);
             let initial_type = initial.type_name().to_owned();
             let local_place = if self.is_in(initial, self.place) {
                 self.place
@@ -240,7 +245,7 @@ impl GameInterface {
                     &self
                         .group
                         .iter()
-                        .map(|&id| self.known[id].type_name().to_owned())
+                        .map(|&id| self.current(id).type_name().to_owned())
                         .collect::<Vec<_>>(),
                 ),
             };
@@ -251,7 +256,7 @@ impl GameInterface {
                     .iter()
                     .copied()
                     .filter(|&x| {
-                        let v = &self.known[x];
+                        let v = &self.current(x);
                         v.type_name() == t
                             && (!filter.local
                                 || match &self.zoom {
@@ -285,7 +290,7 @@ impl GameInterface {
 
     fn command_unit(&mut self, cx: &mut Client, unit: EntityId, silent: bool) {
         if !silent {
-            let v = &self.known[unit];
+            let v = &self.current(unit);
             let m = [
                 self.ext_title(cx, v),
                 self.orders_txt(cx, v),
@@ -311,7 +316,7 @@ impl GameInterface {
             .units(cx, filter.even_if_no_menu, true)
             .into_iter()
             .filter(|&x| {
-                let v = &self.known[x];
+                let v = &self.current(x);
                 types.accepts(v.type_name())
                     && (!filter.local
                         || match &self.zoom {
@@ -354,7 +359,7 @@ impl GameInterface {
     pub(crate) fn say_group(&mut self, cx: &mut Client, prefix: &Msg) {
         self.update_group();
         if self.group.len() == 1 {
-            let v = &self.known[self.group[0]];
+            let v = &self.current(self.group[0]);
             let m = [
                 prefix.clone(),
                 msg(Phrase::YouControl),
@@ -367,7 +372,7 @@ impl GameInterface {
             let mut orders = Vec::new();
             let mut titles = Vec::new();
             for x in &self.group {
-                if let Some(v) = self.known.unit(*x) {
+                if let Some(v) = &self.known.current(*x) {
                     orders.push(self.orders_txt(cx, v));
                     titles.push(self.short_title(cx, v));
                 }
@@ -394,7 +399,7 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_unit_status(&mut self, cx: &mut Client) {
-        let place_title = match self.group.first().and_then(|&g| self.known.unit(g)) {
+        let place_title = match self.group.first().and_then(|&g| self.known.current(g)) {
             Some(v) => v
                 .place()
                 .map(|p| self.place_title(cx, p))
@@ -416,14 +421,19 @@ impl GameInterface {
     /// unit is badly hurt below half its hit points.
     pub(crate) fn cmd_unit_hp_status(&self, cx: &mut Client) {
         if self.group.len() == 1
-            && let Some(v) = self.known.unit(self.group[0])
+            && let Some(v) = &self.known.current(self.group[0])
         {
             let d = self.description(cx, v);
             cx.voice.item(&d);
         } else if self.group.len() > 1 {
             let (mut hp, mut hp_max, mut hurt) = (0, 0, 0);
             let mut titles = Vec::new();
-            for v in self.group.iter().filter_map(|&u| self.known.unit(u)) {
+            for v in &self
+                .group
+                .iter()
+                .filter_map(|&u| self.known.current(u))
+                .collect::<Vec<_>>()
+            {
                 hp += v.model.hp;
                 hp_max += v.model.hp_max;
                 if v.model.hp * 2 < v.model.hp_max {
@@ -469,7 +479,7 @@ impl GameInterface {
         let mut result: Vec<OrderTypeView> = Vec::new();
         let mut done: Vec<MenuEntry> = Vec::new();
         for &id in &self.group {
-            if self.known.unit(id).is_none() {
+            if self.view().known(id).is_none() {
                 continue;
             }
             let entries = match menu {
@@ -720,7 +730,7 @@ impl GameInterface {
     fn say_default_confirmation(&mut self, cx: &mut Client, target: OrderTarget, title: &Msg) {
         let mut msgs: Vec<Msg> = Vec::new();
         for &id in &self.group {
-            if self.known.unit(id).is_none() {
+            if self.view().known(id).is_none() {
                 continue;
             }
             let keyword = self.view().default_order(id, target);
@@ -1235,6 +1245,34 @@ mod tests {
         s.h.client.game.hook = None;
         assert_eq!(shown.get(), Some(old));
         assert_eq!(s.g.game.pending_commands(), [Command::Control(vec![new])]);
+    }
+
+    #[test]
+    fn a_unit_the_turn_taken_brings_is_selected_before_the_end_of_the_turn() {
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        let me = g.game.me;
+        let townhall = unit(&g, me, "townhall");
+        let w = g.game.host().world();
+        let home = w.entity(townhall).unwrap().square().unwrap();
+        let home = g.game.view().square(home).name().to_owned();
+        cheat(&mut g, me, &format!("add_units {home} footman"));
+        // The next turn is taken; its end, which brings the interface's
+        // copies up to date, waits while the keys are handled.
+        g.game.run_turn(&mut h.client);
+        let from = h.utterances().len();
+        h.press(Key::R, Mods::NONE);
+        h.press(Key::V, Mods::NONE);
+        h.step(&mut g);
+        assert!(g.game.has_pending_server_events());
+        h.run_until_voice_idle(&mut g);
+        assert_eq!(
+            h.said_since(from)[..2],
+            [
+                "footman 1 at b 1 , awaiting your orders",
+                ", 15 hit points on 15 , ,"
+            ]
+        );
     }
 
     #[test]
