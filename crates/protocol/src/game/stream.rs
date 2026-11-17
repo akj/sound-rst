@@ -146,8 +146,7 @@ impl JoinStream {
                     stream: SeatStream {
                         seat,
                         start,
-                        last: Arc::clone(&message),
-                        over: false,
+                        stage: Stage::Playing(Arc::clone(&message)),
                     },
                     message,
                 }))
@@ -167,17 +166,24 @@ impl JoinStream {
 /// - A whole message during the game is a watcher's only: it now follows
 ///   the player of that message, who is in the game. Time does not go
 ///   back.
-/// - The end is checked, and comes once: nothing follows it.
+/// - The end is checked, and comes once: nothing follows it, and the seat
+///   cannot return to the game.
 /// - The news of the game is the interface's to check against the room.
 /// - A start or a seat during the game cannot be right.
 #[derive(Clone, Debug)]
 pub struct SeatStream {
     seat: Seat,
     start: Arc<GameStart>,
-    /// The seat's last message.
-    last: Arc<TurnMessage>,
+    stage: Stage,
+}
+
+/// Whether the game is over for the seat.
+#[derive(Clone, Debug)]
+enum Stage {
+    /// The seat plays, or watches: its last message.
+    Playing(Arc<TurnMessage>),
     /// The end came.
-    over: bool,
+    Over,
 }
 
 /// A frame of a seat's stream during the game, checked.
@@ -215,10 +221,9 @@ impl SeatStream {
 
     /// Takes the next frame of the stream.
     pub fn take(&mut self, frame: SeatFrame) -> Result<Checked, Invalid> {
-        if self.over {
+        let Stage::Playing(last) = &self.stage else {
             return invalid(format!("{} after the end", kind(&frame)));
-        }
-        let last = &self.last;
+        };
         let checked = match frame {
             SeatFrame::Change(change) => {
                 let m = change
@@ -232,7 +237,7 @@ impl SeatStream {
                 }
                 encode(&m).map_err(|e| Invalid(format!("a turn: {}", e.0)))?;
                 let m = Arc::new(m);
-                self.last = Arc::clone(&m);
+                self.stage = Stage::Playing(Arc::clone(&m));
                 Checked::Turn(m)
             }
             SeatFrame::Whole(m) if self.seat.you == Role::Watcher => {
@@ -246,13 +251,13 @@ impl SeatStream {
                     return invalid(format!("to follow player {}, not in the game", m.seat.0));
                 }
                 let m = Arc::new(m);
-                self.last = Arc::clone(&m);
+                self.stage = Stage::Playing(Arc::clone(&m));
                 Checked::Follow(m)
             }
             SeatFrame::End(end) => {
                 end.check()
                     .map_err(|e| Invalid(format!("the end: {}", e.0)))?;
-                self.over = true;
+                self.stage = Stage::Over;
                 Checked::End(end)
             }
             SeatFrame::Seat { slot, change } => Checked::Seat { slot, change },
@@ -272,13 +277,18 @@ impl SeatStream {
 
     /// The stream of this seat on a new connection, after the last one was
     /// lost: what the server sends when the seat's token is presented.
-    pub fn returning(&self) -> ReturnStream {
-        ReturnStream {
+    /// `None` once the end came: the game is over for the seat, and it
+    /// has nothing to return to.
+    pub fn returning(&self) -> Option<ReturnStream> {
+        let Stage::Playing(last) = &self.stage else {
+            return None;
+        };
+        Some(ReturnStream {
             seat: self.seat.clone(),
             start: Arc::clone(&self.start),
-            last: Arc::clone(&self.last),
+            last: Arc::clone(last),
             next: Return::Seat,
-        }
+        })
     }
 }
 
@@ -399,8 +409,7 @@ impl ReturnStream {
                     stream: SeatStream {
                         seat,
                         start,
-                        last: Arc::clone(&message),
-                        over: false,
+                        stage: Stage::Playing(Arc::clone(&message)),
                     },
                     message,
                     seated,

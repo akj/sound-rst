@@ -268,7 +268,7 @@ impl From<OrderTarget> for TargetRef {
 /// An order given to a unit: its keyword, the type for the keywords that
 /// take one (see [`Keyword::is_complex`]), and what follows. A keyword
 /// that takes a type always has one, and no other keyword has one.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Request {
     keyword: Keyword,
     type_name: Option<String>,
@@ -276,7 +276,7 @@ pub(crate) struct Request {
 }
 
 /// What follows the keyword and the type of an order.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Arg {
     Target(TargetRef),
     /// The name of a recallable group (`join_group`).

@@ -484,6 +484,65 @@ fn changed_maps_load_and_play_or_are_refused() {
     });
 }
 
+/// A map from a server has a trigger that names a square, a type or a
+/// faction that does not exist. Each word has the shape of a name, so it
+/// passes the check of the map's words; the trigger is read when the map
+/// loads, and the map is refused with the trigger's line.
+#[test]
+fn a_trigger_naming_what_does_not_exist_refuses_the_map_with_its_line() {
+    let map = common::read(PLAYED_MAP);
+    for (trigger, refusal) in [
+        (
+            "trigger player1 (has_entered z9) (victory)",
+            "no square z9 (in \"trigger player1 ( has_entered z9 ) ( victory )\")",
+        ),
+        (
+            "trigger players (timer 0) (order (a1 footman) ((go c9)))",
+            "no square c9 (in \"trigger players ( timer 0 ) ( order ( a1 footman ) ( ( go c9 ) ) )\")",
+        ),
+        (
+            "trigger player1 (timer 0) (add_units a1 2 go)",
+            "no type go (in \"trigger player1 ( timer 0 ) ( add_units a1 2 go )\")",
+        ),
+        (
+            "trigger player1 (has 2 easy) (victory)",
+            "no type easy (in \"trigger player1 ( has 2 easy ) ( victory )\")",
+        ),
+        (
+            "trigger all (timer 0) (faction footman)",
+            "no faction footman (in \"trigger all ( timer 0 ) ( faction footman )\")",
+        ),
+        // A type inside an order.
+        (
+            "trigger players (timer 0) (order (a1 footman) ((train easy)))",
+            "no type easy (in \"trigger players ( timer 0 ) ( order ( a1 footman ) ( ( train easy ) ) )\")",
+        ),
+        // An action where the condition goes.
+        (
+            "trigger player1 (add_units a1 footman) (victory)",
+            "add_units is not a condition (in \"trigger player1 ( add_units a1 footman ) ( victory )\")",
+        ),
+        // A condition without its parentheses.
+        (
+            "trigger player1 timer (victory)",
+            "timer is not in parentheses (in \"trigger player1 timer ( victory )\")",
+        ),
+        // A number too large to be finite.
+        (
+            "trigger player1 (timer 1e999) (victory)",
+            "1e999 is not a number (in \"trigger player1 ( timer 1e999 ) ( victory )\")",
+        ),
+    ] {
+        let mut w = World::new(common::rules(), common::ai(), Vec::new(), 0);
+        let refused = w.load_and_build_map(&format!("{map}\n{trigger}\n"));
+        assert_eq!(
+            refused.map_err(|e| e.0),
+            Err(refusal.to_owned()),
+            "{trigger}"
+        );
+    }
+}
+
 /// Plays 30 turns of a human and an `easy` computer on [`PLAYED_MAP`] with
 /// the original's rules and scripts and a layer of each on top, on the stack
 /// of a Windows program's main thread, and returns the warnings.

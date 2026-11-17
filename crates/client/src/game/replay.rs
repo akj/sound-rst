@@ -467,9 +467,7 @@ impl GameInterface {
             self.process_srv_event(cx, e);
         }
         self.scout_info.clear();
-        self.new_enemy_units.clear();
-        self.lost_units.clear();
-        self.neutralized_units.clear();
+        cx.voice.give_up_held();
         if self.place.is_none() {
             let square = self
                 .view()

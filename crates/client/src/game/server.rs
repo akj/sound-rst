@@ -129,11 +129,11 @@ enum Link {
     /// last turn came.
     Playing { sent_since_turn: usize },
     /// The connection is lost, and the client returns to the seat.
-    Returning(Box<Returning>),
+    Returning(Box<Return>),
 }
 
 /// A return to the seat under way.
-struct Returning {
+struct Return {
     room: RoomId,
     /// The player's login when the connection was lost: while the server
     /// still has it playing, it has not noticed the loss yet.
@@ -177,7 +177,7 @@ enum Outcome {
     Waiting,
     /// The seat is back, checked: the game plays on from the new
     /// connection.
-    Back(Box<Back>),
+    Back(Box<Reconnected>),
     /// The server no longer holds the seat.
     Failed(Failure),
     /// What came cannot be right.
@@ -187,7 +187,7 @@ enum Outcome {
 }
 
 /// What returns the player to the game.
-struct Back {
+struct Reconnected {
     conn: Connection,
     lobby: LobbyModel,
     room: Option<RoomState>,
@@ -356,7 +356,7 @@ pub(crate) fn join(cx: &mut Client, seated: &Seated) -> Result<GameInterface, Op
     }
 }
 
-impl Returning {
+impl Return {
     /// Moves the attempt on, without waiting: starts one once the pause is
     /// over, takes the new connection once it is open, then what the
     /// server answers to the token. `key` is the seat's, and `stream` its
@@ -388,9 +388,10 @@ impl Returning {
     }
 
     /// A new connection is open: presents the token, unless the game is
-    /// over, or the server still has the player playing and has not
-    /// noticed the old connection is lost: then the server's hold has not
-    /// started yet, and the next attempt follows a pause.
+    /// over, on the server or for the seat's stream, or the server still has
+    /// the player playing and has not noticed the old connection is lost:
+    /// then the server's hold has not started yet, and the next attempt
+    /// follows a pause.
     fn welcomed(
         &mut self,
         key: &SeatKey,
@@ -403,12 +404,13 @@ impl Returning {
             .rooms
             .iter()
             .any(|r| r.id == self.room && r.started);
-        if !running {
+        let returning = stream.returning();
+        let (true, Some(returning)) = (running, returning) else {
             return (
                 Attempt::Pause { at: now },
                 Outcome::Failed(Failure::GameOver),
             );
-        }
+        };
         let still_playing = snapshot
             .players
             .iter()
@@ -429,7 +431,7 @@ impl Returning {
             lobby: LobbyModel::new(snapshot),
             room: None,
             since: now,
-            stream: stream.returning(),
+            stream: returning,
         };
         (Attempt::Presented(Box::new(presented)), Outcome::Waiting)
     }
@@ -471,7 +473,7 @@ impl Presented {
             match p.stream.take(*frame) {
                 Ok(game::Returning::More(next)) => p.stream = next,
                 Ok(game::Returning::Back(back)) => {
-                    let back = Back {
+                    let back = Reconnected {
                         conn: p.conn,
                         lobby: p.lobby,
                         room: p.room,
@@ -611,7 +613,7 @@ impl GameInterface {
         self.pending_commands.clear();
         let now = cx.clock.now();
         if let Some(server) = self.server() {
-            server.link = Link::Returning(Box::new(Returning {
+            server.link = Link::Returning(Box::new(Return {
                 room,
                 login,
                 until: now + server.seat.hold,
@@ -716,8 +718,8 @@ impl GameInterface {
     /// The seat is back: the whole message the server sent replaces the
     /// view, the clock is the server's, and the new connection carries the
     /// stream from now on.
-    fn back(&mut self, cx: &mut Client, back: Back) {
-        let Back {
+    fn back(&mut self, cx: &mut Client, back: Reconnected) {
+        let Reconnected {
             conn,
             lobby,
             room,

@@ -392,13 +392,22 @@ fn a_hostile_stream_of_a_game_is_refused_at_the_frame_that_cannot_be_right() {
 /// returns (the seat, the start, the whole message); and 3 turns more,
 /// then the end.
 fn return_stream() -> [Vec<Vec<u8>>; 3] {
-    let mut stream = Stream::new("jl1", 0);
+    returning(Stream::new("jl1", 0), None)
+}
+
+/// The frames of a return for `stream`'s seat, as [`return_stream`]
+/// gives them: when `follow` names a slot, the server moved the seat, a
+/// watcher's, on to that slot's player while its connection was lost.
+fn returning(mut stream: Stream, follow: Option<usize>) -> [Vec<Vec<u8>>; 3] {
     let mut before = stream.opening();
     for _ in 0..5 {
         before.extend(stream.turn());
     }
     for _ in 0..3 {
         stream.turn();
+    }
+    if let Some(slot) = follow {
+        stream.follow(slot);
     }
     let back = stream.opening();
     let mut later = Vec::new();
@@ -417,15 +426,16 @@ enum ReturnRefused {
 }
 
 /// Reads `before`, then, on a new connection, `back` as a seat that returns
-/// does, then `later` from the seat given back.
+/// does, then `later` from the seat given back: the player whose side the
+/// seat is back on.
 fn read_return(
     before: &[Vec<u8>],
     back: &[Vec<u8>],
     later: &[Vec<u8>],
-) -> Result<(), ReturnRefused> {
+) -> Result<PlayerId, ReturnRefused> {
     let (mut stream, from) = joined(&rules(), before).unwrap();
     play(&mut stream, before, from).unwrap();
-    let mut returning: ReturnStream = stream.returning();
+    let mut returning: ReturnStream = stream.returning().unwrap();
     for (i, f) in back.iter().enumerate() {
         let f = decode_frame(f).map_err(|e| ReturnRefused::Back((i, e.0)))?;
         match returning
@@ -434,7 +444,8 @@ fn read_return(
         {
             Returning::More(next) => returning = next,
             Returning::Back(mut b) => {
-                return play(&mut b.stream, later, 0).map_err(ReturnRefused::Later);
+                play(&mut b.stream, later, 0).map_err(ReturnRefused::Later)?;
+                return Ok(b.message.seat);
             }
             Returning::Stopped(r) => return Err(ReturnRefused::Back((i, format!("{r:?}")))),
         }
@@ -448,7 +459,7 @@ fn a_hostile_return_to_a_game_is_refused_at_the_frame_that_cannot_be_right() {
     let [before, back, later] = return_stream();
     assert_eq!(
         read_return(&before, &back, &later),
-        Ok(()),
+        Ok(PlayerId(0)),
         "the real return"
     );
     let with = |i: usize, f: Vec<u8>| {
@@ -564,6 +575,54 @@ fn a_hostile_return_to_a_game_is_refused_at_the_frame_that_cannot_be_right() {
         failures.push(format!("bytes that are no frame: {no_frame:?}"));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// A watcher may be moved on to another player while its connection is
+/// lost: it comes back on that player's side, if that player is still in
+/// the game. A player comes back on its own side only.
+#[test]
+fn a_watcher_returns_to_the_player_it_was_moved_on_to_if_still_in_the_game() {
+    let computer = |stream: &Stream| stream.host.seats()[1];
+    let watching = Stream::new("jl1", 0).watching();
+    let them = computer(&watching);
+    let [before, back, later] = returning(watching, Some(1));
+    assert_eq!(read_return(&before, &back, &later), Ok(them));
+    let SeatFrame::Whole(mut gone) = frame(&back, 2) else {
+        panic!("a whole message");
+    };
+    gone.state.players.retain(|&p| p != them);
+    let mut refused = back.clone();
+    refused[2] = encode_frame(&SeatFrame::Whole(gone)).unwrap();
+    assert_eq!(
+        read_return(&before, &refused, &later),
+        Err(ReturnRefused::Back((
+            2,
+            format!("to follow player {}, not in the game", them.0)
+        )))
+    );
+    // The same moves for a player's seat.
+    let playing = Stream::new("jl1", 0);
+    let them = computer(&playing);
+    let [before, back, later] = returning(playing, Some(1));
+    assert_eq!(
+        read_return(&before, &back, &later),
+        Err(ReturnRefused::Back((
+            2,
+            format!("the message of player {}", them.0)
+        )))
+    );
+}
+
+/// Once its end came, the seat has no game to return to.
+#[test]
+fn a_seat_whose_game_is_over_cannot_return() {
+    let frames = real_stream();
+    let n = frames.len();
+    let (mut stream, from) = joined(&rules(), &frames).unwrap();
+    play(&mut stream, &frames[..n - 1], from).unwrap();
+    assert!(stream.returning().is_some(), "before the end");
+    play(&mut stream, &frames, n - 1).unwrap();
+    assert!(stream.returning().is_none(), "after the end");
 }
 
 /// The frames a server sends Carol, who watches Andrew's game: the seat,

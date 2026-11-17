@@ -787,13 +787,20 @@ mod tests {
     #[test]
     fn each_command_of_the_games_keys_has_a_description_of_its_own() {
         use crate::bindings::{Bindings, CLIENT_BINDINGS};
+        use crate::package::TextFile;
         let path = crate::testkit::game_root().join("res/ui/bindings.txt");
-        let text = format!(
-            "{}\n{CLIENT_BINDINGS}",
-            std::fs::read_to_string(path).unwrap()
-        );
+        let files = [
+            TextFile {
+                path: "res/ui/bindings.txt".to_owned(),
+                text: std::fs::read_to_string(path).unwrap(),
+            },
+            TextFile {
+                path: "client".to_owned(),
+                text: CLIENT_BINDINGS.to_owned(),
+            },
+        ];
         let mut b = Bindings::new();
-        b.load(&text, &GameCommand::parse, &crate::log::Log::silent());
+        b.load(&files, &GameCommand::parse, &crate::log::Log::silent());
         let mut seen: Vec<(String, GameCommand)> = Vec::new();
         for (_, c) in b.iter() {
             let d = c.description();

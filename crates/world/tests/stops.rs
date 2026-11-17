@@ -1,8 +1,7 @@
 //! A ratchet on the places where the simulation can stop part-way or
 //! panic. For each source file of the crate, outside its tests, it counts:
 //!
-//! - the stops raised, by kind (see `src/abort.rs`): a map's trigger that
-//!   cannot be read, and a broken invariant;
+//! - the stops raised (see `src/abort.rs`): a broken invariant;
 //! - `.unwrap()`, `.expect(` and indexing with `[]`, each of which panics
 //!   when it is wrong, and a panic ends a single-player game.
 //!
@@ -15,32 +14,32 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// The counts of one file, in the order of [`COLUMNS`].
-type Counts = [usize; 5];
+type Counts = [usize; 4];
 
-const COLUMNS: [&str; 5] = ["trigger", "invariant", "unwrap", "expect", "index"];
+const COLUMNS: [&str; 4] = ["invariant", "unwrap", "expect", "index"];
 
 /// The committed counts. A file not listed has none.
 #[rustfmt::skip]
 const COMMITTED: &[(&str, Counts)] = &[
-    // file                   trig inv unwrap expect index
-    ("ai.rs",                 [  0,  0,  0,  0,  4]),
-    ("ai/door.rs",            [  0,  0,  0,  2,  0]),
-    ("map.rs",                [  0,  0,  0,  7,  2]),
-    ("nofloat.rs",            [  0,  0,  0,  0,  3]),
-    ("orders.rs",             [  0, 17,  0, 14,  3]),
-    ("pathfinding.rs",        [  0,  1,  0,  0,  3]),
-    ("player.rs",             [  0,  0,  0,  0,  1]),
-    ("playerlogic.rs",        [  0,  3,  0,  2,  4]),
-    ("pyrandom.rs",           [  0,  0,  0,  0, 25]),
-    ("questions.rs",          [  0,  0,  0,  0,  2]),
-    ("rules.rs",              [  0,  0,  0,  0,  2]),
-    ("seat_view.rs",          [  0,  0,  0,  1,  0]),
-    ("square.rs",             [  0,  0,  0,  0,  1]),
-    ("squarelogic.rs",        [  0,  0,  0,  1,  1]),
-    ("test_games.rs",         [  0,  0,  3,  1,  2]),
-    ("triggers.rs",           [  9,  0,  0,  0,  4]),
-    ("unit.rs",               [  0, 14,  0,  3,  3]),
-    ("world.rs",              [  0,  0,  0,  2,  6]),
+    // file                   inv unwrap expect index
+    ("ai.rs",                 [  0,  0,  0,  4]),
+    ("ai/door.rs",            [  0,  0,  2,  0]),
+    ("map.rs",                [  0,  0,  7,  2]),
+    ("nofloat.rs",            [  0,  0,  0,  3]),
+    ("orders.rs",             [ 17,  0, 14,  3]),
+    ("pathfinding.rs",        [  1,  0,  0,  3]),
+    ("player.rs",             [  0,  0,  0,  1]),
+    ("playerlogic.rs",        [  3,  0,  2,  4]),
+    ("pyrandom.rs",           [  0,  0,  0, 25]),
+    ("questions.rs",          [  0,  0,  0,  2]),
+    ("rules.rs",              [  0,  0,  0,  2]),
+    ("seat_view.rs",          [  0,  0,  1,  0]),
+    ("square.rs",             [  0,  0,  0,  1]),
+    ("squarelogic.rs",        [  0,  0,  1,  1]),
+    ("test_games.rs",         [  0,  3,  1,  2]),
+    ("triggers.rs",           [  0,  0,  0,  3]),
+    ("unit.rs",               [ 14,  0,  3,  3]),
+    ("world.rs",              [  0,  0,  2,  6]),
 ];
 
 fn src_dir() -> PathBuf {
@@ -213,17 +212,14 @@ fn count_indexing(code: &str) -> usize {
 
 fn counts_of(name: &str, text: &str) -> Counts {
     let code = code(text);
-    // The kinds are defined, and written out, in `abort.rs`.
-    let stops = |needle: &str| {
-        if name == "abort.rs" {
-            0
-        } else {
-            count(&code, needle)
-        }
+    // The invariants are defined, and written out, in `abort.rs`.
+    let invariants = if name == "abort.rs" {
+        0
+    } else {
+        count(&code, "Invariant::")
     };
     [
-        stops("TriggerError::"),
-        stops("Invariant::"),
+        invariants,
         count(&code, ".unwrap()"),
         count(&code, ".expect("),
         count_indexing(&code),
@@ -278,9 +274,9 @@ fn the_places_that_stop_or_panic_only_become_fewer() {
         }
     }
     let total = |m: &BTreeMap<String, Counts>| {
-        let mut t = [0; 5];
+        let mut t = [0; 4];
         for c in m.values() {
-            for k in 0..5 {
+            for k in 0..4 {
                 t[k] += c[k];
             }
         }
@@ -310,5 +306,5 @@ mod tests {
     fn t() { x[0].unwrap(); }
 }
 "#;
-    assert_eq!(counts_of("x.rs", text), [0, 0, 1, 0, 2]);
+    assert_eq!(counts_of("x.rs", text), [0, 1, 0, 2]);
 }

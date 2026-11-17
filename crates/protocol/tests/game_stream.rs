@@ -120,7 +120,7 @@ fn applied(stream: &mut SeatStream, change: TurnChange) -> Arc<TurnMessage> {
 /// What a seat that returns is sent: its seat, the start and `whole`, its
 /// whole message as it is now. What its stream takes of it.
 fn returned(stream: &SeatStream, opening: &[SeatFrame; 2], whole: &TurnMessage) -> Back {
-    let mut back = stream.returning();
+    let mut back = stream.returning().unwrap();
     for frame in opening {
         back = match back.take(sent(frame.clone())).unwrap() {
             Returning::More(more) => more,
