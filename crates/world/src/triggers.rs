@@ -1,7 +1,8 @@
-//! Map triggers, the trigger language (`lang_*`) and the text commands of
-//! players (`cmd_*`), from `worldplayerbase.py` and `worldplayercomputer.py`.
+//! Map triggers, read once when the map loads into a typed condition and
+//! action (the trigger language `lang_*`), and the commands of players
+//! (`cmd_*`), from `worldplayerbase.py` and `worldplayercomputer.py`.
 
-use crate::abort::{Res, TriggerError};
+use crate::abort::Res;
 use crate::command::{Cheat, Command, Order, Queue};
 use crate::entity::{EntityId, Place, PlayerId, SquareId, Target};
 use crate::events::{EntityEvent, Event};
@@ -11,51 +12,20 @@ use crate::nofloat::{py_float, py_int};
 use crate::orders::{Request, TargetRef};
 use crate::phrases::Phrase;
 use crate::player::{Objective, PlayerKind};
-use crate::rules::{Summoned, TypeId};
+use crate::rules::{FactionId, Summoned, TypeId};
 use crate::world::{NotEnoughSpace, World};
 
-/// The deepest a trigger may nest parentheses. Dropping, cloning, comparing
-/// or hashing an [`Expr`] goes one call deeper for each level, so this keeps
+/// The deepest a trigger may nest parentheses. Dropping, cloning or
+/// comparing an [`Expr`] goes one call deeper for each level, so this keeps
 /// them far from the end of the stack. The original's triggers nest 3 deep.
 pub const MAX_TRIGGER_DEPTH: usize = 32;
 
 /// A word or a parenthesized list of a trigger. [`list_to_tree`] makes one
 /// at most [`MAX_TRIGGER_DEPTH`] deep.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
     Word(String),
     List(Vec<Expr>),
-}
-
-#[deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::string_slice,
-    clippy::arithmetic_side_effects
-)]
-impl Expr {
-    fn word(&self) -> Res<&str> {
-        match self {
-            Expr::Word(w) => Ok(w),
-            Expr::List(_) => Err(TriggerError::ListForWord.into()),
-        }
-    }
-
-    fn list(&self) -> Res<&[Expr]> {
-        match self {
-            Expr::List(l) => Ok(l),
-            Expr::Word(_) => Err(TriggerError::WordForList.into()),
-        }
-    }
-
-    /// The words of a list, as an order.
-    fn words(&self) -> Res<Vec<String>> {
-        self.list()?
-            .iter()
-            .map(|e| e.word().map(str::to_owned))
-            .collect()
-    }
 }
 
 /// `_list_to_tree`: parentheses make nested lists. A list left open is
@@ -98,10 +68,350 @@ fn is_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// What the words of an action that says something name. The map was
-/// refused when it loaded if one of them named nothing.
-fn named(words: &[&str]) -> Msg {
-    words.iter().filter_map(|w| MsgPart::named(w)).collect()
+/// A trigger of the map: when the condition holds, the action runs once.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Trigger {
+    pub(crate) condition: Condition,
+    pub(crate) action: Action,
+}
+
+/// What the first word of a condition or an action names: a function
+/// `lang_*` of the original.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Name {
+    Timer,
+    Has,
+    HasEntered,
+    NoEnemyLeft,
+    NoEnemyPlayerLeft,
+    NoUnitLeft,
+    NoBuildingLeft,
+    Order,
+    AddUnits,
+    Victory,
+    Defeat,
+    CutScene,
+    AddObjective,
+    ObjectiveComplete,
+    Ai,
+    Faction,
+}
+
+impl Name {
+    fn parse(word: &str) -> Option<Name> {
+        Some(match word {
+            "timer" => Name::Timer,
+            "has" => Name::Has,
+            "has_entered" => Name::HasEntered,
+            "no_enemy_left" => Name::NoEnemyLeft,
+            "no_enemy_player_left" => Name::NoEnemyPlayerLeft,
+            "no_unit_left" => Name::NoUnitLeft,
+            "no_building_left" => Name::NoBuildingLeft,
+            "order" => Name::Order,
+            "add_units" => Name::AddUnits,
+            "victory" => Name::Victory,
+            "defeat" => Name::Defeat,
+            "cut_scene" => Name::CutScene,
+            "add_objective" => Name::AddObjective,
+            "objective_complete" => Name::ObjectiveComplete,
+            "ai" => Name::Ai,
+            "faction" => Name::Faction,
+            _ => return None,
+        })
+    }
+}
+
+/// Whether a word of a map names a condition or an action of a trigger.
+pub(crate) fn is_trigger_name(word: &str) -> bool {
+    Name::parse(word).is_some()
+}
+
+/// When the action of a trigger runs.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Condition {
+    /// `timer <seconds>`: from this second of the game on. The seconds the
+    /// map gives are multiplied by its timer coefficient.
+    Timer { from_second: i64 },
+    /// `has [<count>] <type>...`: the player has at least the count of
+    /// units of each type, 1 if none is given. A count of 0 asks for no
+    /// unit of the type.
+    Has(Vec<(i64, TypeId)>),
+    /// `has_entered <square>...`: a present unit of the first player is on
+    /// one of the squares.
+    HasEntered(Vec<SquareId>),
+    /// `no_enemy_left`: no enemy plays, neutral computers included.
+    NoEnemyLeft,
+    /// `no_enemy_player_left`: no enemy plays but neutral computers.
+    NoEnemyPlayerLeft,
+    /// `no_unit_left`: the player has no unit.
+    NoUnitLeft,
+    /// `no_building_left`: the player has no unit that keeps it in the
+    /// game.
+    NoBuildingLeft,
+}
+
+/// What a trigger does when its condition holds.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Action {
+    /// `order (<units>) ((<order>)...)`: each unit of the player that the
+    /// first list chooses takes the orders in turn.
+    Order {
+        units: Vec<Units>,
+        orders: Vec<Request>,
+    },
+    /// `add_units <units>`: adds the units, or gives an upgrade.
+    AddUnits(Vec<Units>),
+    /// `victory`
+    Victory,
+    /// `defeat`
+    Defeat,
+    /// `cut_scene <phrases and sounds>`: the player hears them in turn.
+    CutScene(Msg),
+    /// `add_objective <number> <phrases and sounds>`
+    AddObjective { number: String, description: Msg },
+    /// `objective_complete <number>`
+    ObjectiveComplete(String),
+    /// `ai <type>`: a computer player plays with another AI type.
+    Ai(String),
+    /// `faction <faction>`
+    Faction(FactionId),
+}
+
+/// Units of a type on a square, as `add_units` and `order` name them:
+/// `a1 2 footman` is 2 footmen on `a1`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Units {
+    square: SquareId,
+    count: i64,
+    ty: TypeId,
+}
+
+impl Trigger {
+    /// Reads the condition and the action of a trigger. The error says
+    /// what the words lack, or the square, type or faction that does not
+    /// exist.
+    pub(crate) fn read(w: &World, condition: &Expr, action: &Expr) -> Result<Trigger, String> {
+        Ok(Trigger {
+            condition: Condition::read(w, condition)?,
+            action: Action::read(w, action)?,
+        })
+    }
+}
+
+/// The first word of a list, which names a condition or an action, and the
+/// rest of the list.
+fn split_name(e: &Expr) -> Result<(&str, &[Expr]), String> {
+    let items = match e {
+        Expr::List(items) => items,
+        Expr::Word(w) => return Err(format!("{w} is not in parentheses")),
+    };
+    let (first, args) = items.split_first().ok_or("an empty list")?;
+    Ok((word(first)?, args))
+}
+
+fn word(e: &Expr) -> Result<&str, String> {
+    match e {
+        Expr::Word(w) => Ok(w),
+        Expr::List(_) => Err("a list where a word is expected".to_owned()),
+    }
+}
+
+fn words(args: &[Expr]) -> Result<Vec<&str>, String> {
+    args.iter().map(word).collect()
+}
+
+/// The first word after the name, which the condition or action needs.
+fn first_word<'a>(name: &str, args: &[&'a str]) -> Result<&'a str, String> {
+    args.first()
+        .copied()
+        .ok_or_else(|| format!("{name} lacks a word"))
+}
+
+fn number(x: &str) -> Result<i64, String> {
+    py_int(x).map_err(|_| format!("{x} is not a number"))
+}
+
+fn square_named(w: &World, x: &str) -> Result<SquareId, String> {
+    w.square_by_name(x).ok_or_else(|| format!("no square {x}"))
+}
+
+/// The type a word names. A word written as a square's name, such as
+/// `z9`, is said to name no square.
+fn type_named(w: &World, x: &str) -> Result<TypeId, String> {
+    w.rules.type_id(x).ok_or_else(|| {
+        let digits = x.trim_start_matches(|c: char| c.is_ascii_lowercase());
+        if digits.len() < x.len() && is_digits(digits) {
+            format!("no square {x}")
+        } else {
+            format!("no type {x}")
+        }
+    })
+}
+
+/// What the words of an action that says something name.
+fn named(words: &[&str]) -> Result<Msg, String> {
+    MsgPart::all_named(words.iter().copied())
+        .map_err(|word| format!("{word} is not a name or a count"))
+}
+
+/// Reads units as `add_units` and `order` name them: a square says where
+/// the next types are, a count how many of the next type there are, 1 if
+/// none is given. Before any square, the units are on `square`, or on
+/// `a1`.
+fn read_units(
+    w: &World,
+    words: &[&str],
+    square: Option<SquareId>,
+    count: impl Fn(&str) -> Result<i64, String>,
+) -> Result<Vec<Units>, String> {
+    let mut square = square.or_else(|| w.square_by_name("a1"));
+    let mut n = 1;
+    let mut units = Vec::new();
+    for &x in words {
+        if let Some(s) = w.square_by_name(x) {
+            square = Some(s);
+            n = 1;
+        } else if is_digits(x) {
+            n = count(x)?;
+        } else {
+            let ty = type_named(w, x)?;
+            let square = square.ok_or("no square a1")?;
+            units.push(Units {
+                square,
+                count: n,
+                ty,
+            });
+            n = 1;
+        }
+    }
+    Ok(units)
+}
+
+/// Reads the units that `add_units` adds (`a1 2 footman b3 archer`).
+/// Before any square, they go on `square`, or on `a1`. A count is at most
+/// [`MAX_START_UNITS`], and a count too large to read is 1.
+pub(crate) fn units_to_add(
+    w: &World,
+    words: &[&str],
+    square: Option<SquareId>,
+) -> Result<Vec<Units>, String> {
+    read_units(w, words, square, |x| {
+        Ok(py_int(x).unwrap_or(1).min(MAX_START_UNITS))
+    })
+}
+
+/// Reads an order that a trigger gives (`go b1`, `train footman`). It
+/// names a type that exists, and its target is not a word that names
+/// nothing.
+fn read_request(w: &World, words: &[&str]) -> Result<Request, String> {
+    let owned: Vec<String> = words.iter().map(|&x| x.to_owned()).collect();
+    let r = Request::parse(w, &owned)?;
+    if let Some(t) = r.type_name() {
+        type_named(w, t)?;
+    }
+    if r.target() == Some(&TargetRef::Nothing) {
+        let target = words.last().copied().unwrap_or_default();
+        return Err(match type_named(w, target) {
+            Err(no_square) if no_square.starts_with("no square") => no_square,
+            _ => format!("{target} names no target"),
+        });
+    }
+    Ok(r)
+}
+
+impl Condition {
+    fn read(w: &World, e: &Expr) -> Result<Condition, String> {
+        let (name, args) = split_name(e)?;
+        let args = words(args)?;
+        Ok(match Name::parse(name) {
+            Some(Name::Timer) => {
+                let s = first_word(name, &args)?;
+                let seconds = py_float(s)
+                    .ok()
+                    .filter(|f| f.is_finite())
+                    .ok_or_else(|| format!("{s} is not a number"))?;
+                // The time counts whole seconds: it reaches the given time
+                // at the first whole second at or past it.
+                let from = (seconds * w.map.timer_coefficient as f64).ceil();
+                Condition::Timer {
+                    from_second: from as i64,
+                }
+            }
+            Some(Name::Has) => {
+                let mut needed = Vec::new();
+                let mut count = 1;
+                for x in args {
+                    if is_digits(x) {
+                        count = number(x)?;
+                    } else {
+                        needed.push((count, type_named(w, x)?));
+                        count = 1;
+                    }
+                }
+                Condition::Has(needed)
+            }
+            Some(Name::HasEntered) => Condition::HasEntered(
+                args.iter()
+                    .map(|x| square_named(w, x))
+                    .collect::<Result<_, _>>()?,
+            ),
+            Some(Name::NoEnemyLeft) => Condition::NoEnemyLeft,
+            Some(Name::NoEnemyPlayerLeft) => Condition::NoEnemyPlayerLeft,
+            Some(Name::NoUnitLeft) => Condition::NoUnitLeft,
+            Some(Name::NoBuildingLeft) => Condition::NoBuildingLeft,
+            _ => return Err(format!("{name} is not a condition")),
+        })
+    }
+}
+
+impl Action {
+    /// Reads an action of a map, or one typed in the console.
+    pub(crate) fn read(w: &World, e: &Expr) -> Result<Action, String> {
+        let (name, args) = split_name(e)?;
+        let kind = Name::parse(name);
+        if kind == Some(Name::Order) {
+            let [Expr::List(choice), Expr::List(orders)] = args else {
+                return Err("order takes the units, then the orders, each a list".to_owned());
+            };
+            let units = read_units(w, &words(choice)?, None, number)?;
+            let orders = orders
+                .iter()
+                .map(|o| match o {
+                    Expr::List(o) => read_request(w, &words(o)?),
+                    Expr::Word(o) => Err(format!("the order {o} is not in parentheses")),
+                })
+                .collect::<Result<_, _>>()?;
+            return Ok(Action::Order { units, orders });
+        }
+        let args = words(args)?;
+        Ok(match kind {
+            Some(Name::AddUnits) => Action::AddUnits(units_to_add(w, &args, None)?),
+            Some(Name::Victory) => Action::Victory,
+            Some(Name::Defeat) => Action::Defeat,
+            Some(Name::CutScene) => Action::CutScene(named(&args)?),
+            Some(Name::AddObjective) => {
+                let number = first_word(name, &args)?.to_owned();
+                let description = named(args.get(1..).unwrap_or_default())?;
+                Action::AddObjective {
+                    number,
+                    description,
+                }
+            }
+            Some(Name::ObjectiveComplete) => {
+                Action::ObjectiveComplete(first_word(name, &args)?.to_owned())
+            }
+            Some(Name::Ai) => Action::Ai(first_word(name, &args)?.to_owned()),
+            Some(Name::Faction) => {
+                let f = first_word(name, &args)?;
+                let id = w
+                    .rules
+                    .faction_id(f)
+                    .ok_or_else(|| format!("no faction {f}"))?;
+                Action::Faction(id)
+            }
+            _ => return Err(format!("{name} is not an action")),
+        })
+    }
 }
 
 impl World {
@@ -112,8 +422,8 @@ impl World {
             return Ok(());
         }
         for t in self.pl(p).triggers.clone() {
-            if self.my_eval(p, &t.condition)? {
-                self.my_eval(p, &t.action)?;
+            if self.holds(p, &t.condition) {
+                self.run_action(p, &t.action)?;
                 if !self.pl(p).is_playing() {
                     break;
                 }
@@ -126,132 +436,78 @@ impl World {
         Ok(())
     }
 
-    /// `my_eval`: runs `lang_<first word>` with the rest; false for an
-    /// unknown name. A lone word names nothing.
-    fn my_eval(&mut self, p: PlayerId, l: &Expr) -> Res<bool> {
-        let Expr::List(items) = l else {
-            return Ok(false);
-        };
-        let Some((name, args)) = items.split_first() else {
-            return Err(TriggerError::Empty.into());
-        };
-        let name = name.word()?.to_owned();
-        self.lang(p, &name, args)
-    }
-
-    pub(crate) fn lang(&mut self, p: PlayerId, name: &str, args: &[Expr]) -> Res<bool> {
-        let arg_word = |i: usize| -> Res<String> {
-            args.get(i)
-                .ok_or_else(|| TriggerError::MissingWord(name.to_owned()))?
-                .word()
-                .map(str::to_owned)
-        };
-        let number = |w: &str| TriggerError::NotANumber(w.to_owned());
-        match name {
-            "timer" => {
-                let s = arg_word(0)?;
-                let f = py_float(&s).map_err(|_| number(&s))?;
-                let lhs = (self.time / 1000) as f64;
-                Ok(lhs >= f * self.map.timer_coefficient as f64)
-            }
-            "order" => {
-                self.lang_order(p, args)?;
-                Ok(false)
-            }
-            "has" => {
-                let mut nb = 1;
-                for x in args {
-                    let x = x.word()?;
-                    if is_digits(x) {
-                        nb = py_int(x).map_err(|_| number(x))?;
-                    } else {
-                        for &u in &self.pl(p).units {
-                            if *self.e(u).type_name == *x {
-                                nb -= 1;
-                                if nb == 0 {
-                                    break;
-                                }
-                            }
+    pub(crate) fn holds(&self, p: PlayerId, condition: &Condition) -> bool {
+        match condition {
+            &Condition::Timer { from_second } => self.time / 1000 >= from_second,
+            Condition::Has(needed) => needed.iter().all(|&(count, ty)| {
+                let mut left = count;
+                for &u in &self.pl(p).units {
+                    if self.e(u).type_id() == Some(ty) {
+                        left -= 1;
+                        if left == 0 {
+                            break;
                         }
-                        if nb != 0 {
-                            return Ok(false);
-                        }
-                        nb = 1;
                     }
                 }
-                Ok(true)
-            }
-            "has_entered" => {
+                left == 0
+            }),
+            Condition::HasEntered(squares) => {
                 // The triggers of a player run while it is in the game.
                 let Some(&first) = self.players.first() else {
-                    return Ok(false);
+                    return false;
                 };
-                for x in args {
-                    let x = x.word()?;
-                    let s = self
-                        .square_by_name(x)
-                        .ok_or_else(|| TriggerError::NoSuchSquare(x.to_owned()))?;
-                    for &o in &self.square(s).objects {
-                        if self.pl(first).units.contains(&o) && self.e(o).stats.presence {
-                            return Ok(true);
-                        }
-                    }
-                }
-                Ok(false)
+                squares.iter().any(|&s| {
+                    self.square(s)
+                        .objects
+                        .iter()
+                        .any(|&o| self.pl(first).units.contains(&o) && self.e(o).stats.presence)
+                })
             }
-            "add_units" => {
-                let items: Vec<String> = args
-                    .iter()
-                    .map(|e| e.word().map(str::to_owned))
-                    .collect::<Res<_>>()?;
-                self.lang_add_units(p, &items, None, 0, None, true);
-                Ok(false)
-            }
-            "no_enemy_left" => Ok(!self
+            Condition::NoEnemyLeft => !self
                 .players
                 .iter()
-                .any(|&op| self.player_is_an_enemy(p, op) && self.pl(op).is_playing())),
-            "no_enemy_player_left" => Ok(!self
+                .any(|&op| self.player_is_an_enemy(p, op) && self.pl(op).is_playing()),
+            Condition::NoEnemyPlayerLeft => !self
                 .true_players()
                 .iter()
-                .any(|&op| self.player_is_an_enemy(p, op) && self.pl(op).is_playing())),
-            "no_unit_left" => Ok(self.pl(p).units.is_empty()),
-            "no_building_left" => Ok(!self
+                .any(|&op| self.player_is_an_enemy(p, op) && self.pl(op).is_playing()),
+            Condition::NoUnitLeft => self.pl(p).units.is_empty(),
+            Condition::NoBuildingLeft => !self
                 .pl(p)
                 .units
                 .iter()
-                .any(|&u| self.e(u).stats.provides_survival)),
-            "victory" => {
-                self.victory(p);
-                Ok(false)
-            }
-            "defeat" => {
-                self.defeat(p, false);
-                Ok(false)
-            }
-            "cut_scene" => {
-                let words: Vec<&str> = args.iter().map(Expr::word).collect::<Res<_>>()?;
-                self.push(p, Event::Sequence(named(&words)));
-                Ok(false)
-            }
-            "add_objective" => {
-                let n = arg_word(0)?;
-                let words: Vec<&str> = args[1..].iter().map(Expr::word).collect::<Res<_>>()?;
-                let description = named(&words);
-                if !self.pl(p).objectives.iter().any(|o| o.number == n) {
+                .any(|&u| self.e(u).stats.provides_survival),
+        }
+    }
+
+    pub(crate) fn run_action(&mut self, p: PlayerId, action: &Action) -> Res {
+        match action {
+            Action::Order { units, orders } => self.give_orders(p, units, orders)?,
+            Action::AddUnits(units) => self.add_units(p, units),
+            Action::Victory => self.victory(p),
+            Action::Defeat => self.defeat(p, false),
+            Action::CutScene(m) => self.push(p, Event::Sequence(m.clone())),
+            Action::AddObjective {
+                number,
+                description,
+            } => {
+                if !self.pl(p).objectives.iter().any(|o| o.number == *number) {
                     let mut m = msg(Phrase::NewObjective);
                     m.extend(description.iter().cloned());
                     self.plm(p).objectives.push(Objective {
-                        number: n,
-                        description,
+                        number: number.clone(),
+                        description: description.clone(),
                     });
                     self.send_voice_important(p, m);
                 }
-                Ok(false)
             }
-            "objective_complete" => {
-                let n = arg_word(0)?;
-                if let Some(i) = self.pl(p).objectives.iter().position(|o| o.number == n) {
+            Action::ObjectiveComplete(number) => {
+                if let Some(i) = self
+                    .pl(p)
+                    .objectives
+                    .iter()
+                    .position(|o| o.number == *number)
+                {
                     let mut m = msg(Phrase::ObjectiveComplete);
                     m.extend(self.pl(p).objectives[i].description.iter().cloned());
                     self.send_voice_important(p, m);
@@ -261,89 +517,36 @@ impl World {
                         self.victory(p);
                     }
                 }
-                Ok(false)
             }
-            "ai" => {
-                let t = arg_word(0)?;
-                self.set_ai(p, &t)?;
-                Ok(false)
-            }
-            "faction" => {
-                let f = args.first().map(Expr::word).transpose()?;
-                match f {
-                    Some(f) if let Some(id) = self.rules.faction_id(f) => {
-                        self.plm(p).faction = Some(id);
-                    }
-                    _ => {
-                        let words: Vec<String> = args
-                            .iter()
-                            .filter_map(|e| e.word().ok().map(str::to_owned))
-                            .collect();
-                        self.warn(format!("unknown faction: {}", words.join(" ")));
-                    }
-                }
-                Ok(false)
-            }
-            _ => Ok(false),
+            Action::Ai(ai_type) => self.set_ai(p, ai_type),
+            &Action::Faction(f) => self.plm(p).faction = Some(f),
         }
+        Ok(())
     }
 
     /// `set_ai`: changes the AI type of a computer player, which keeps
     /// its skill level.
-    fn set_ai(&mut self, p: PlayerId, ai_type: &str) -> Res {
+    fn set_ai(&mut self, p: PlayerId, ai_type: &str) {
         let PlayerKind::Computer { skill, .. } = self.pl(p).kind else {
-            return Ok(());
+            return;
         };
         self.plm(p).kind = PlayerKind::Computer {
             ai_type: ai_type.to_owned(),
             skill,
         };
         self.computer_set_ai(p, ai_type);
-        Ok(())
     }
 
-    fn lang_order(&mut self, p: PlayerId, args: &[Expr]) -> Res {
-        let [select, orders] = args else {
-            return Err(TriggerError::OrderWithoutTwoLists.into());
-        };
-        let select = select.list()?;
-        let words: Vec<Vec<String>> = orders.list()?.iter().map(Expr::words).collect::<Res<_>>()?;
-        // An order the map writes wrong is left out with a warning, before
-        // any unit receives one.
-        let mut orders = Vec::new();
-        for w in &words {
-            match Request::parse(self, w) {
-                Ok(r) => orders.push(r),
-                Err(m) => self.warn(format!("problem with order: {m}")),
-            }
-        }
-        // The whole choice is read before any unit receives an order: a
-        // trigger that stops is tried again, and would give them again.
-        let mut chosen: Vec<(SquareId, i64, &str)> = Vec::new();
-        let mut default_square = "a1".to_owned();
-        let mut n: i64 = 1;
-        for x in select {
-            let x = x.word()?;
-            if self.square_by_name(x).is_some() {
-                default_square = x.to_owned();
-                n = 1;
-            } else if is_digits(x) {
-                n = py_int(x).map_err(|_| TriggerError::NotANumber(x.to_owned()))?;
-            } else {
-                let s = self
-                    .square_by_name(&default_square)
-                    .ok_or_else(|| TriggerError::NoSuchSquare(default_square.clone()))?;
-                chosen.push((s, n, x));
-                n = 1;
-            }
-        }
-        for (s, mut n, x) in chosen {
+    /// Gives the orders to the units of the player that `units` choose.
+    fn give_orders(&mut self, p: PlayerId, units: &[Units], orders: &[Request]) -> Res {
+        for u in units {
+            let mut n = u.count;
             // The list may change while orders are given, as in the
             // original, which walks it by index.
             let mut i = 0;
-            while let Some(&o) = self.square(s).objects.get(i) {
-                if *self.e(o).type_name == *x && self.e(o).player() == Some(p) {
-                    for order in &orders {
+            while let Some(&o) = self.square(u.square).objects.get(i) {
+                if self.e(o).type_id() == Some(u.ty) && self.e(o).player() == Some(p) {
+                    for order in orders {
                         self.take_order(o, order.clone(), false, false, None)?;
                     }
                     n -= 1;
@@ -357,49 +560,22 @@ impl World {
         Ok(())
     }
 
-    /// `lang_add_units`: adds units, upgrades, on squares named in the
-    /// list (`a1 2 footman b3 archer`). Summons use a target, raised dead
-    /// use corpses.
-    pub(crate) fn lang_add_units(
-        &mut self,
-        p: PlayerId,
-        items: &[String],
-        target: Option<&Target>,
-        decay: i64,
-        mut corpses: Option<Vec<EntityId>>,
-        notify: bool,
-    ) {
-        let Some(mut square) = self.square_by_name("a1") else {
-            self.warn("add_units: the map has no square a1");
-            return;
-        };
-        let mut nb: i64 = 1;
-        for i in items {
-            if let Some(s) = self.square_by_name(i) {
-                square = s;
-                nb = 1;
-            } else if is_digits(i) {
-                nb = py_int(i).unwrap_or(1).min(MAX_START_UNITS);
-            } else {
-                match self.rules.type_id(i) {
-                    Some(t) => {
-                        let add = Added {
-                            square,
-                            target,
-                            decay,
-                            notify,
-                        };
-                        self.add_of_type(p, t, nb, &add, corpses.as_mut());
-                    }
-                    None => self.send_voice_important(p, cue(Cue::Beep)),
-                }
-                nb = 1;
-            }
+    /// `lang_add_units`: adds units, or gives upgrades, each unit with an
+    /// event that it is added.
+    pub(crate) fn add_units(&mut self, p: PlayerId, units: &[Units]) {
+        for u in units {
+            let add = Added {
+                square: u.square,
+                target: None,
+                decay: 0,
+                notify: true,
+            };
+            self.add_of_type(p, u.ty, u.count, &add, None);
         }
     }
 
     /// Adds the units a summon or a raising of the dead names, at the
-    /// target, or in place of the corpses: as [`World::lang_add_units`]
+    /// target, or in place of the corpses: as [`World::add_units`]
     /// with types and counts.
     pub(crate) fn add_summoned(
         &mut self,
@@ -560,17 +736,19 @@ impl World {
             }
             Command::Cheat(Cheat::Victory) => self.victory(p),
             Command::Cheat(Cheat::AddUnits { square, units }) => {
-                let name = square.map(|s| self.square(s).name.clone());
-                let items: Vec<String> = name
-                    .into_iter()
-                    .chain(units.split_whitespace().map(str::to_owned))
-                    .collect();
-                self.lang_add_units(p, &items, None, 0, None, true);
+                let words: Vec<&str> = units.split_whitespace().collect();
+                match units_to_add(self, &words, *square) {
+                    Ok(units) => self.add_units(p, &units),
+                    Err(m) => self.refuse_cheat(p, &m),
+                }
             }
             Command::Cheat(Cheat::Trigger(text)) => {
                 let words = text.split_whitespace();
                 let e = Expr::List(words.map(|w| Expr::Word(w.to_owned())).collect());
-                self.my_eval(p, &e)?;
+                match Action::read(self, &e) {
+                    Ok(action) => self.run_action(p, &action)?,
+                    Err(m) => self.refuse_cheat(p, &m),
+                }
             }
             Command::Cheat(
                 cheat @ (Cheat::Resources
@@ -582,6 +760,13 @@ impl World {
             }
         }
         Ok(())
+    }
+
+    /// A cheat typed in the console names nothing, or lacks a word: the
+    /// player hears a beep, and nothing changes.
+    fn refuse_cheat(&mut self, p: PlayerId, why: &str) {
+        self.warn(format!("cheat refused: {why}"));
+        self.send_voice_important(p, cue(Cue::Beep));
     }
 
     fn reset_group(&mut self, name: &str) {

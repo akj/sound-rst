@@ -279,7 +279,9 @@ fn a_map_text_over_the_size_limits_is_refused() {
 }
 
 /// Each `(` of a trigger went one call deeper when the trigger was dropped,
-/// so deep enough parentheses overflowed the stack.
+/// so deep enough parentheses overflowed the stack. Parentheses as deep as
+/// the limit are read, and a list where the condition's name should be is
+/// refused.
 #[test]
 fn a_trigger_nested_too_deep_is_refused() {
     let nested = |depth: usize| {
@@ -289,17 +291,12 @@ fn a_trigger_nested_too_deep_is_refused() {
             " )".repeat(depth)
         )
     };
-    let text = format!(
-        "square_width 12\nnb_columns 3\nstarting_squares a1\n{}\n",
-        nested(32)
+    assert!(
+        map_error(&nested(32))
+            .starts_with("a list where a word is expected (in \"trigger players ( ( ( "),
+        "{}",
+        map_error(&nested(32))
     );
-    build(
-        &joined(&["res/rules.txt"]),
-        &joined(&["res/ai.txt"]),
-        &text,
-        0,
-    )
-    .unwrap();
     assert!(
         map_error(&nested(33))
             .starts_with("parentheses nested more than 32 deep in trigger players"),

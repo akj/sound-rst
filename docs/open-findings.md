@@ -494,10 +494,10 @@ None of these changes what a player hears. Each says what would make it worth do
 
 ### C1. Orders travel as text and are parsed again at every step
 
-**Partly fixed** in pull requests 10, 19, 53, 54, 68 and 97. The interface builds typed commands (`Command` in `crates/world/src/command.rs`), and a game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`. An order in a unit's queue holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). The order menu is typed entries the client reads without parsing (`MenuEntry` in `crates/world/src/questions.rs`), and a rallying point is the target it was given. The computer player holds type ids and typed tasks, and its script is read once into typed steps (`crates/world/src/ai/script.rs`). These are proved by the compiler and by unchanged recordings, not by a test that would fail. Not yet:
+**Partly fixed** in pull requests 10, 19, 53, 54, 68 and 97. The interface builds typed commands (`Command` in `crates/world/src/command.rs`), and a game on a server sends them as typed binary frames. Every order the simulation gives itself is a typed `Request`. An order in a unit's queue holds only its own kind's typed state (`OrderKind` in `crates/world/src/orders.rs`). The order menu is typed entries the client reads without parsing (`MenuEntry` in `crates/world/src/questions.rs`), and a rallying point is the target it was given. The computer player holds type ids and typed tasks, and its script is read once into typed steps (`crates/world/src/ai/script.rs`). These are proved by the compiler and by unchanged recordings, not by a test that would fail. A map's triggers are read once, when the map loads, into a typed condition and action that hold squares, types and factions (`Trigger` in `crates/world/src/triggers.rs`, issue 107). A trigger that names a square, a type or a faction that does not exist refuses the map with its line: `a_trigger_naming_what_does_not_exist_refuses_the_map_with_its_line` in `crates/world/tests/hostile.rs`. Not yet:
 
 - A unit type's own lists (what it can train, build and research, and its requirements) and its effects are still names inside the rules. Issue 94 plans this.
-- Map triggers are text by nature, and the recorded traces read text orders behind the `truth` feature.
+- The recorded traces read text orders behind the `truth` feature. The console's cheats travel as text, and the simulation reads them with the map's trigger reader.
 
 From the review. Size: large.
 

@@ -469,7 +469,9 @@ starting_resources 10 10
     }
 
     fn add(w: &mut World, p: PlayerId, items: &str) {
-        w.lang_add_units(p, &words(items), None, 0, None, true);
+        let items: Vec<&str> = items.split_whitespace().collect();
+        let units = crate::triggers::units_to_add(w, &items, None).unwrap();
+        w.add_units(p, &units);
     }
 
     fn set_rule(w: &mut World, t: &str, f: impl FnOnce(&mut crate::rules::Stats)) {
@@ -1296,7 +1298,7 @@ starting_resources 10 10
         assert!(w.c(p2).unwrap().hp > 0);
         assert!(w.e(p).is_cloaked());
         assert!(w.e(p2).is_cloaked());
-        assert!(w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]
@@ -1318,7 +1320,7 @@ starting_resources 10 10
         w.update();
         assert!(w.e(p).is_cloaked());
         assert!(!w.e(p2).is_cloaked());
-        assert!(!w.lang(cp, "no_enemy_left", &[]).unwrap());
+        assert!(!w.holds(cp, &crate::triggers::Condition::NoEnemyLeft));
     }
 
     #[test]

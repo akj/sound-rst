@@ -4,6 +4,7 @@
 mod common;
 
 use soundrts_world::events::{EntityEvent, Event};
+use soundrts_world::msg::{Cue, cue};
 use soundrts_world::orders::Keyword;
 use soundrts_world::{Controller, PlayerId, World, multiplayer_default_triggers};
 
@@ -94,6 +95,35 @@ fn add_units_adds_at_most_as_many_units_as_the_starts_of_a_map() {
         .count();
     assert!(added > 0 && refused > 0, "{added} added, {refused} refused");
     assert_eq!(added + refused, 10_000);
+}
+
+/// A cheat typed in the console is read as a map's action is. One that
+/// names nothing, or a type that does not exist, changes nothing: the
+/// player hears one beep.
+#[test]
+fn a_cheat_that_names_nothing_beeps_once_and_adds_nothing() {
+    let (mut w, me, _) = game();
+    w.allow_cheatmode = true;
+    let footmen = |w: &World| w.entities().filter(|e| &*e.type_name == "footman").count();
+    for cheat in ["cmd add_units a1 footman fotman", "cmd fly"] {
+        w.drain_events(me);
+        w.queue_command(me, cheat);
+        w.update();
+        let beeps = w
+            .drain_events(me)
+            .into_iter()
+            .filter(|e| *e == Event::VoiceImportant(cue(Cue::Beep)))
+            .count();
+        assert_eq!(beeps, 1, "{cheat}");
+        assert_eq!(footmen(&w), 0, "{cheat}");
+    }
+    assert_eq!(
+        w.drain_warnings(),
+        [
+            "cheat refused: no type fotman",
+            "cheat refused: fly is not an action"
+        ]
+    );
 }
 
 #[test]
