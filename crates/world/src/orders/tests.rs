@@ -1178,6 +1178,122 @@ fn a_build_on_remembered_land_taken_this_turn_is_impossible_and_refunded() {
     assert_eq!(w.pl(me).resources, before);
 }
 
+/// One human on a1 of two squares with meadows and no deposit, so that
+/// nothing gathered changes the resources: 100 gold and 100 wood, a town
+/// hall and three peasants.
+fn three_peasants(extra_rules: &str) -> (World, PlayerId, [EntityId; 3]) {
+    let rules = Rules::load(&[read("res/rules.txt"), extra_rules.to_owned()]);
+    let ai = AiScripts::load(&[read("res/ai.txt")]);
+    let mut w = World::new(rules, ai, Vec::new(), 0);
+    let map = "square_width 12\nnb_columns 2\nnb_lines 1\nnb_meadows_by_square 2\n\
+               west_east_paths a1\nnb_players_min 1\nnb_players_max 1\nstarting_squares a1\n\
+               starting_units townhall peasant peasant peasant\nstarting_resources 100 100\n";
+    w.load_and_build_map(map).unwrap();
+    let me = w
+        .populate_map(&[Controller::human("me", false)], false, false)
+        .unwrap()[0];
+    w.update();
+    let peasants: Vec<EntityId> = all(&w, me, "peasant");
+    (w, me, peasants.try_into().unwrap())
+}
+
+#[test]
+fn a_project_whose_paying_order_lost_its_land_is_refunded_though_another_waits() {
+    let (mut w, me, [a, b, c]) = three_peasants("");
+    let a1 = w.square_by_name("a1").unwrap();
+    let on_a1 = |w: &World, f: fn(&crate::entity::Entity) -> bool| {
+        let mut objects = w.square(a1).objects.iter().copied();
+        objects.find(|&o| f(w.e(o))).unwrap()
+    };
+    let meadow = on_a1(&w, crate::entity::Entity::is_a_building_land);
+    let exit = on_a1(&w, crate::entity::Entity::is_exit);
+    assert_eq!(w.pl(me).resources, [100_000, 100_000]);
+    // A and B are given one command to build a farm on the meadow; B
+    // blocks the exit to b1 first, which lasts until B is told otherwise.
+    let block = Request::plain(Keyword::Block)
+        .unwrap()
+        .at(TargetRef::Entity(exit));
+    w.take_order(b, block, true, false, Some(4)).unwrap();
+    let farm = || Request::build("farm", TargetRef::Entity(meadow));
+    w.take_order(a, farm(), true, false, Some(5)).unwrap();
+    w.take_order(b, farm(), false, false, Some(5)).unwrap();
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+    // C, by another command, takes the meadow first.
+    w.take_order(c, farm(), true, false, Some(6)).unwrap();
+    assert_eq!(w.pl(me).resources, [90_000, 90_000]);
+    let uid = |w: &World, u: EntityId| w.e(u).orders().last().unwrap().uid;
+    assert_eq!(w.order_execute(c, uid(&w, c)), Ok(()));
+    assert_eq!(all(&w, me, "buildingsite").len(), 1);
+    assert_eq!(w.pl(me).resources, [90_000, 90_000]);
+    // A, which paid, loses the meadow and fails.
+    assert_eq!(w.order_execute(a, uid(&w, a)), Ok(()));
+    assert_eq!(w.e(a).orders()[0].progress(), Progress::Impossible);
+    assert_eq!(w.pl(me).resources, [90_000, 90_000]);
+    // A leaves its queue, and the next slow update gives the payment back,
+    // though B, still patrolling, has the same build order queued.
+    for _ in 0..10 {
+        w.update();
+    }
+    assert!(w.e(a).orders().is_empty());
+    assert_eq!(w.e(b).orders()[1].keyword(), Keyword::Build);
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+    // B stops patrolling and goes on to the meadow that is gone.
+    w.cm(b).unwrap().orders.remove(0);
+    assert_eq!(w.order_execute(b, uid(&w, b)), Ok(()));
+    let build = &w.e(b).orders()[0];
+    assert_eq!(build.progress(), Progress::Impossible);
+    assert!(build.target().is_none());
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+    update_until(&mut w, |w| w.e(b).orders().is_empty());
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+    assert_eq!(
+        all(&w, me, "buildingsite").len() + all(&w, me, "farm").len(),
+        1
+    );
+    assert_eq!(w.drain_warnings(), Vec::<String>::new());
+}
+
+#[test]
+fn a_site_that_finds_the_ground_full_gives_the_payment_back() {
+    // A flying farm finds room in the air; its site stands on the ground.
+    let (mut w, me, [a, _, _]) =
+        three_peasants("def farm\nairground_type air\nis_buildable_anywhere 1\n");
+    let a1 = w.square_by_name("a1").unwrap();
+    let footman = w.rules.type_id("footman").unwrap();
+    w.take_order(
+        a,
+        Request::build("farm", TargetRef::Square(a1)),
+        true,
+        false,
+        None,
+    )
+    .unwrap();
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+    // The ground fills before the peasant puts the site down.
+    let mut crowd = Vec::new();
+    for x in (0..12).map(|i| i * 1000 + 500) {
+        for y in (0..12).map(|i| i * 1000 + 500) {
+            while let Ok(f) = w.create_creature(footman, Some(me), Place::Square(a1), x, y) {
+                crowd.push(f);
+            }
+        }
+    }
+    let uid = w.e(a).orders()[0].uid;
+    assert_eq!(
+        w.order_execute(a, uid),
+        Err(crate::abort::Invariant::NoRoomWhereRoomWas.into())
+    );
+    assert!(all(&w, me, "buildingsite").is_empty());
+    assert_eq!(w.pl(me).resources, [100_000, 100_000]);
+    // Once there is room, the site is put down and paid.
+    for f in crowd {
+        w.delete(f);
+    }
+    assert_eq!(w.order_execute(a, uid), Ok(()));
+    assert_eq!(all(&w, me, "buildingsite").len(), 1);
+    assert_eq!(w.pl(me).resources, [95_000, 95_000]);
+}
+
 #[test]
 fn a_group_pays_once_for_a_building_and_again_after_a_refused_worker_was_refunded() {
     let (mut w, me, _) = game();

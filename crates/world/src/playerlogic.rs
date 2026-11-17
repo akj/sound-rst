@@ -789,17 +789,17 @@ impl World {
         pl.ledger.refund(&mut pl.resources, purpose);
     }
 
-    /// Refunds each building project that no order of the player holds any
-    /// more: neither the order that paid it, nor a `build` order of the
-    /// same project.
+    /// Refunds each building project that no queued `build` order of the
+    /// player holds any more. The payment follows the target of the order
+    /// that made it (see [`crate::ledger::Ledger::follow`]).
     fn refund_projects_without_workers(&mut self, p: PlayerId) {
-        let projects: Vec<(Project, u64)> = self.pl(p).ledger.projects().collect();
-        for (project, payer) in projects {
+        let projects: Vec<Project> = self.pl(p).ledger.projects().collect();
+        for project in projects {
             let worker = self.pl(p).units.iter().any(|&u| {
                 self.e(u)
                     .orders()
                     .iter()
-                    .any(|o| o.uid == payer || o.project() == Some(project))
+                    .any(|o| o.project() == Some(project))
             });
             if !worker {
                 self.refund(p, &Purpose::Building(project));

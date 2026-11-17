@@ -1057,11 +1057,7 @@ impl Order {
                 creation_time,
                 target,
             }),
-            &OrderKind::Build { building, .. } => Some(Likeness::Build {
-                building,
-                target,
-                id: self.id,
-            }),
+            &OrderKind::Build { building, .. } => Some(self.project_of(building).into()),
             OrderKind::Production(_)
             | OrderKind::Attack { .. }
             | OrderKind::Patrol { .. }
@@ -1115,11 +1111,28 @@ pub(crate) enum Likeness {
         creation_time: Option<i64>,
         target: Option<TargetIdentity>,
     },
+    /// A `build` order's [`Project`], field by field.
     Build {
         building: TypeId,
         target: Option<TargetIdentity>,
         id: Option<u64>,
     },
+}
+
+impl From<Project> for Likeness {
+    fn from(
+        Project {
+            building,
+            target,
+            command,
+        }: Project,
+    ) -> Likeness {
+        Likeness::Build {
+            building,
+            target,
+            id: command,
+        }
+    }
 }
 
 /// Costs and arguments of an order a unit could receive, for menus.
@@ -1544,8 +1557,17 @@ impl World {
     }
 
     fn set_target(&mut self, unit: EntityId, uid: u64, t: Option<Target>) {
+        let before = self.ord(unit, uid).and_then(Order::project);
         if let Some(aim) = self.kind_mut(unit, uid).and_then(OrderKind::aim_mut) {
             aim.target = t;
+        }
+        let after = self.ord(unit, uid).and_then(Order::project);
+        // The payment a `build` order made is held under its project, which
+        // names where it aims.
+        if let (Some(from), Some(to), Some(p)) = (before, after, self.e(unit).player())
+            && from != to
+        {
+            self.plm(p).ledger.follow(uid, from, to);
         }
     }
 
@@ -2723,29 +2745,23 @@ impl World {
         };
         if at_target {
             let project = Purpose::Building(o.project_of(building));
-            let bt = self.rules.ty(building);
-            let airground = bt.airground_type;
-            let (tx, ty) = self.t_xy(&t);
-            let Some(Place::Square(s)) = here else {
-                return Err(Invariant::ActingInside.into());
-            };
-            if self.find_free_space(s, airground, tx, ty).is_none() {
+            let put = self.put_building_site(unit, uid, building, t, &project);
+            // Refused, or stopped by an error before the site stood: the
+            // payment goes back. Once the site stands it is spent, and this
+            // gives nothing back.
+            if !matches!(put, Ok(true)) {
                 self.refund(p, &project);
-                self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
-                return Ok(());
             }
-            if self.check_count_limit(p, building) {
-                self.put_building_site(unit, uid, building, t, &project)?;
-            } else {
-                self.refund(p, &project);
-                self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
-            }
+            put?;
         } else if self.e(unit).is_idle() {
             self.move_to_or_fail(unit, uid, Some(t))?;
         }
         Ok(())
     }
 
+    /// Puts down the site of a `build` order whose unit stands at its
+    /// target, and spends the payment of its project. False when it is
+    /// refused: the order is then impossible.
     fn put_building_site(
         &mut self,
         unit: EntityId,
@@ -2753,11 +2769,23 @@ impl World {
         type_id: TypeId,
         target: Target,
         project: &Purpose,
-    ) -> Res {
+    ) -> Res<bool> {
         let Some(p) = self.e(unit).player() else {
-            return Ok(());
+            return Ok(false);
         };
         let bt = self.rules.ty(type_id).clone();
+        let (tx, ty) = self.t_xy(&target);
+        let Some(Place::Square(s)) = self.e(unit).place else {
+            return Err(Invariant::ActingInside.into());
+        };
+        if self.find_free_space(s, bt.airground_type, tx, ty).is_none() {
+            self.mark_as_impossible(unit, uid, Some(Reason::NotEnoughSpace));
+            return Ok(false);
+        }
+        if !self.check_count_limit(p, type_id) {
+            self.mark_as_impossible(unit, uid, Some(Reason::CountLimitReached));
+            return Ok(false);
+        }
         let target = match target {
             Target::Memory(m) => Target::Entity(m.snapshot.id),
             t => t,
@@ -2770,9 +2798,8 @@ impl World {
             _ => match self.t_place_of(&target) {
                 Some(place) => place,
                 None => {
-                    self.refund(p, project);
                     self.mark_as_impossible(unit, uid, Some(Reason::CannotBuildHere));
-                    return Ok(());
+                    return Ok(false);
                 }
             },
         };
@@ -2790,11 +2817,10 @@ impl World {
         let site = self
             .create_building_site(p, place, x, y, type_id)
             .map_err(|_| Invariant::NoRoomWhereRoomWas)?;
-        match self.plm(p).ledger.take(project) {
-            Some(payment) => payment.commit(),
-            // An order of the project that came first failed here, and gave
-            // the payment back: the site is paid now.
-            None => self.pay(p, &bt.cost),
+        // An order of the project that came first was refused here, and
+        // gave the payment back: the site is paid now.
+        if !self.plm(p).ledger.commit(project) {
+            self.pay(p, &bt.cost);
         }
         // `site` was just created as a creature.
         if remember_land && let Some(c) = self.cm(site) {
@@ -2804,7 +2830,7 @@ impl World {
             self.block(site, e);
         }
         let Some(order) = self.ord(unit, uid).cloned() else {
-            return Ok(());
+            return Ok(true);
         };
         let phase_two = || OrderKind::BuildPhaseTwo {
             aim: Aim::new(Some(TargetRef::Entity(site))),
@@ -2832,7 +2858,7 @@ impl World {
             *slot = Order::new(nuid, phase_two());
             self.order_on_queued(unit, nuid)?;
         }
-        Ok(())
+        Ok(true)
     }
 
     // use

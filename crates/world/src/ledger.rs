@@ -5,8 +5,10 @@
 //! cannot. The ledger holds each payment once, under what it was paid for:
 //! a payment is made at most once for the same thing, and given back at
 //! most once. Money moved without the ledger is spent at once and never
-//! given back: a repair, and a building site's own cost when it is
-//! cancelled.
+//! given back: a repair; a building site's own cost when it is cancelled;
+//! and the cost of a site put down after its project's payment was given
+//! back, because an order of the project that came first was refused at
+//! the site.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -24,9 +26,14 @@ pub(crate) enum Purpose {
     Building(Project),
 }
 
-/// What a `build` order asks for: the building, where, and the command
-/// that gave it. The units of a group given one command share a project;
-/// so do orders without a command for the same building at the same place.
+/// What a `build` order asks for: the building, where it aims now, and
+/// the command that gave it. The units of a group given one command share
+/// a project; so do orders without a command for the same building at the
+/// same place.
+///
+/// The land it names may have left the map since, taken by another
+/// building: the ledger only compares its id and never looks it up, and an
+/// id is never given to another entity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Project {
     pub(crate) building: TypeId,
@@ -47,27 +54,6 @@ struct Held {
 #[derive(Clone, Debug, Default, Hash)]
 pub(crate) struct Ledger {
     held: BTreeMap<Purpose, Held>,
-}
-
-/// A payment taken out of the ledger, to be committed or refunded. Only
-/// [`Ledger::take`] makes one, from a payment [`Ledger::reserve`] made;
-/// refunding or committing it uses it up.
-#[must_use = "a payment taken out of the ledger is committed or refunded"]
-#[derive(Debug)]
-pub(crate) struct Payment {
-    cost: Vec<i64>,
-}
-
-impl Payment {
-    /// Gives the payment back to `resources`.
-    pub(crate) fn refund(self, resources: &mut [i64]) {
-        for (r, c) in resources.iter_mut().zip(self.cost) {
-            *r += c;
-        }
-    }
-
-    /// Spends the payment for good.
-    pub(crate) fn commit(self) {}
 }
 
 impl Ledger {
@@ -93,36 +79,54 @@ impl Ledger {
         self.held.contains_key(purpose)
     }
 
-    /// Takes the payment for `purpose` out of the ledger; `None` when none
-    /// is held: it was never made, or was already committed or refunded.
-    pub(crate) fn take(&mut self, purpose: &Purpose) -> Option<Payment> {
-        self.held
-            .remove(purpose)
-            .map(|Held { cost, .. }| Payment { cost })
-    }
-
-    /// Gives back the payment for `purpose`, if one is held.
+    /// Gives back the payment for `purpose` to `resources`, if one is held.
     pub(crate) fn refund(&mut self, resources: &mut [i64], purpose: &Purpose) {
-        if let Some(payment) = self.take(purpose) {
-            payment.refund(resources);
+        if let Some(Held { cost, .. }) = self.held.remove(purpose) {
+            for (r, c) in resources.iter_mut().zip(cost) {
+                *r += c;
+            }
         }
     }
 
-    /// Spends the payment for `purpose` for good, if one is held.
-    pub(crate) fn commit(&mut self, purpose: &Purpose) {
-        if let Some(payment) = self.take(purpose) {
-            payment.commit();
+    /// Spends the payment for `purpose` for good. False when none was held:
+    /// it was never made, or was already committed or refunded.
+    pub(crate) fn commit(&mut self, purpose: &Purpose) -> bool {
+        self.held.remove(purpose).is_some()
+    }
+
+    /// The order `payer`, a `build` order of `from`, now aims elsewhere, so
+    /// its project is `to`: the payment it made follows it. Another order of
+    /// `from` then shares it no more, and only an order of `to` holds it.
+    /// Two payments that come to the same project, which happens when the
+    /// orders that made them both lost their land, are held together and
+    /// given back together.
+    pub(crate) fn follow(&mut self, payer: u64, from: Project, to: Project) {
+        let from = Purpose::Building(from);
+        if !matches!(self.held.get(&from), Some(held) if held.payer == payer) {
+            return;
+        }
+        let Some(moved) = self.held.remove(&from) else {
+            return;
+        };
+        match self.held.entry(Purpose::Building(to)) {
+            Entry::Vacant(slot) => {
+                slot.insert(moved);
+            }
+            Entry::Occupied(mut slot) => {
+                let held = slot.get_mut();
+                for (h, m) in held.cost.iter_mut().zip(&moved.cost) {
+                    *h += m;
+                }
+            }
         }
     }
 
-    /// Each building project paid for, with the uid of the order that paid.
-    pub(crate) fn projects(&self) -> impl Iterator<Item = (Project, u64)> + '_ {
-        self.held
-            .iter()
-            .filter_map(|(purpose, held)| match purpose {
-                Purpose::Building(project) => Some((*project, held.payer)),
-                Purpose::Production(_) => None,
-            })
+    /// Each building project paid for.
+    pub(crate) fn projects(&self) -> impl Iterator<Item = Project> + '_ {
+        self.held.keys().filter_map(|purpose| match purpose {
+            Purpose::Building(project) => Some(*project),
+            Purpose::Production(_) => None,
+        })
     }
 
     /// Forgets every payment, spent: the player has left the game.
@@ -132,10 +136,10 @@ impl Ledger {
 }
 
 /// A building project names the entity it is built on, for as long as it
-/// is paid for.
+/// is paid for, as the orders aiming at it do.
 impl Names for Ledger {
     fn names(&self, f: &mut impl FnMut(EntityId)) {
-        for (project, _) in self.projects() {
+        for project in self.projects() {
             if let Some(TargetIdentity::Entity(e)) = project.target {
                 f(e);
             }
@@ -155,6 +159,16 @@ mod tests {
         ledger
     }
 
+    fn farm(target: Option<TargetIdentity>) -> Project {
+        Project {
+            building: TypeId(3),
+            target,
+            command: Some(2),
+        }
+    }
+
+    const MEADOW: Option<TargetIdentity> = Some(TargetIdentity::Entity(EntityId(40)));
+
     #[test]
     fn an_order_is_refunded_once() {
         let mut resources = [10000, 500];
@@ -164,7 +178,7 @@ mod tests {
         assert_eq!(resources, [10000, 500]);
         ledger.refund(&mut resources, &PEASANT);
         assert_eq!(resources, [10000, 500]);
-        assert!(ledger.take(&PEASANT).is_none());
+        assert!(!ledger.commit(&PEASANT));
     }
 
     #[test]
@@ -182,39 +196,71 @@ mod tests {
     fn a_committed_order_is_not_refunded() {
         let mut resources = [10000, 500];
         let mut ledger = ledger_with_a_peasant_paid(&mut resources);
-        ledger.commit(&PEASANT);
+        assert!(ledger.commit(&PEASANT));
         ledger.refund(&mut resources, &PEASANT);
         assert_eq!(resources, [6000, 500]);
+        assert!(!ledger.commit(&PEASANT));
     }
 
     #[test]
     fn a_project_is_paid_once_by_every_order_of_it() {
-        let farm = Purpose::Building(Project {
-            building: TypeId(3),
-            target: Some(TargetIdentity::Entity(EntityId(40))),
-            command: Some(2),
-        });
+        let paid = Purpose::Building(farm(MEADOW));
         let mut resources = [10000, 500];
         let mut ledger = Ledger::default();
-        ledger.reserve(&mut resources, farm, 11, vec![1000, 200]);
-        ledger.reserve(&mut resources, farm, 12, vec![1000, 200]);
+        ledger.reserve(&mut resources, paid, 11, vec![1000, 200]);
+        ledger.reserve(&mut resources, paid, 12, vec![1000, 200]);
         assert_eq!(resources, [9000, 300]);
-        assert_eq!(
-            ledger.projects().collect::<Vec<_>>(),
-            [(
-                Project {
-                    building: TypeId(3),
-                    target: Some(TargetIdentity::Entity(EntityId(40))),
-                    command: Some(2),
-                },
-                11
-            )]
-        );
+        assert_eq!(ledger.projects().collect::<Vec<_>>(), [farm(MEADOW)]);
         let mut named = Vec::new();
         ledger.names(&mut |e| named.push(e));
         assert_eq!(named, [EntityId(40)]);
-        ledger.refund(&mut resources, &farm);
-        ledger.refund(&mut resources, &farm);
+        ledger.refund(&mut resources, &paid);
+        ledger.refund(&mut resources, &paid);
+        assert_eq!(resources, [10000, 500]);
+    }
+
+    #[test]
+    fn a_payment_follows_the_order_that_made_it_and_no_other() {
+        let mut resources = [10000, 500];
+        let mut ledger = Ledger::default();
+        ledger.reserve(
+            &mut resources,
+            Purpose::Building(farm(MEADOW)),
+            11,
+            vec![1000, 200],
+        );
+        // Order 12 shares the project but did not pay: nothing moves.
+        ledger.follow(12, farm(MEADOW), farm(None));
+        assert_eq!(ledger.projects().collect::<Vec<_>>(), [farm(MEADOW)]);
+        ledger.follow(11, farm(MEADOW), farm(None));
+        assert_eq!(ledger.projects().collect::<Vec<_>>(), [farm(None)]);
+        assert!(!ledger.is_reserved(&Purpose::Building(farm(MEADOW))));
+        ledger.refund(&mut resources, &Purpose::Building(farm(None)));
+        assert_eq!(resources, [10000, 500]);
+    }
+
+    #[test]
+    fn two_payments_that_lose_their_land_are_given_back_together() {
+        let other = Some(TargetIdentity::Entity(EntityId(41)));
+        let mut resources = [10000, 500];
+        let mut ledger = Ledger::default();
+        ledger.reserve(
+            &mut resources,
+            Purpose::Building(farm(MEADOW)),
+            11,
+            vec![1000, 200],
+        );
+        ledger.reserve(
+            &mut resources,
+            Purpose::Building(farm(other)),
+            13,
+            vec![1000, 200],
+        );
+        ledger.follow(11, farm(MEADOW), farm(None));
+        ledger.follow(13, farm(other), farm(None));
+        assert_eq!(resources, [8000, 100]);
+        assert_eq!(ledger.projects().collect::<Vec<_>>(), [farm(None)]);
+        ledger.refund(&mut resources, &Purpose::Building(farm(None)));
         assert_eq!(resources, [10000, 500]);
     }
 }
