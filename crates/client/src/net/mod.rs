@@ -591,6 +591,14 @@ pub fn game_link(cx: &mut Client) -> Option<&mut GameLink> {
     cx.net.as_mut().and_then(|n| n.game.as_mut())
 }
 
+/// Tells the server the player has left its game, unless it ended the
+/// game for the player.
+pub fn leave_game(cx: &mut Client) {
+    if !game_link(cx).is_some_and(|g| g.ended) {
+        send(cx, ClientMsg::LeaveGame);
+    }
+}
+
 /// Sends an encoded command of the player, if connected.
 pub fn send_command(cx: &mut Client, bytes: Vec<u8>) {
     if let Some(net) = &mut cx.net {

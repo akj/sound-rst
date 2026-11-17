@@ -331,21 +331,14 @@ fn play(cx: &mut Client, read: Read) -> Result<(), Exit> {
             return super::load::cannot_load(cx);
         }
     };
-    game.now_following(cx);
     let intro = if mission {
-        game.view()
-            .map_intro()
-            .iter()
-            .map(|part| vec![part.clone()])
-            .collect()
+        game.mission_intro()
     } else {
         Vec::new()
     };
-    crate::session::prepare(cx, &mut game, intro);
-    game.run_loop(cx)?;
-    crate::game::replay::finish_listening(cx, &mut game);
-    cx.input.set_game(None);
-    Ok(())
+    game.begin(cx, intro);
+    let ran = game.run_loop(cx);
+    game.end(cx, ran).map(drop)
 }
 
 #[cfg(test)]

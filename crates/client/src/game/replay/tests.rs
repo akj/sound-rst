@@ -112,8 +112,7 @@ fn listening_on(h: &mut Harness, map: &str, record: Record) -> TestGame {
     let replay = Replay::new(Arc::new(record), Completeness::Whole, Keep::AlreadyKept).unwrap();
     let me = replay.first_player().unwrap();
     let mut game = GameInterface::listening(&mut h.client, replay, me).unwrap();
-    game.now_following(&mut h.client);
-    crate::session::prepare(&mut h.client, &mut game, Vec::new());
+    game.begin(&mut h.client, Vec::new());
     h.client.input.clear();
     h.run_voice_for(30.0);
     game.set_turn_due(h.clock.now());
@@ -190,7 +189,7 @@ fn listening_from_the_start_says_and_plays_what_the_player_heard_live() {
     }
     assert_eq!(said(&h).last().unwrap(), "end of the recording");
     let from = h.utterances().len();
-    crate::game::replay::finish_listening(&mut h.client, &mut g.game);
+    h.finish(&mut g);
     let score = h.said_since(from);
     let seconds = record.game_time_ms() / 1000;
     assert_eq!(
@@ -353,7 +352,7 @@ fn at_the_fastest_pace_only_how_far_it_has_got_is_said() {
     while !g.game.end_loop {
         h.step(&mut g);
     }
-    crate::game::replay::finish_listening(&mut h.client, &mut g.game);
+    h.finish(&mut g);
     let said: Vec<String> = h
         .said_since(from)
         .into_iter()
@@ -433,9 +432,7 @@ fn an_order_key_changes_nothing_and_the_listener_hears_so_once() {
     while !g.game.end_loop {
         h.step(&mut g);
     }
-    let Source::Replay(r) = &g.game.source else {
-        panic!("a replay")
-    };
+    let r = g.game.source.replay().expect("a replay");
     let mine = r.replayer.host().record();
     assert_eq!(mine, &record);
 }
@@ -521,7 +518,7 @@ fn when_the_player_followed_leaves_and_no_person_is_left_the_listening_ends() {
     // followed leaves, with nobody left to follow.
     assert!(g.game.view().turn() < 15, "{}", g.game.view().turn());
     let from = h.utterances().len();
-    crate::game::replay::finish_listening(&mut h.client, &mut g.game);
+    h.finish(&mut g);
     assert_eq!(h.said_since(from)[0], "Defeat at 0 minutes 3 seconds");
 }
 
@@ -557,7 +554,7 @@ fn a_recording_that_ends_with_its_player_leaving_says_so_then_the_result() {
     while !g.game.end_loop {
         h.step(&mut g);
     }
-    finish_listening(&mut h.client, &mut g.game);
+    h.finish(&mut g);
     let said = h.said_since(from);
     let end = said
         .iter()
@@ -575,7 +572,7 @@ fn a_jump_past_the_players_departure_ends_with_its_result() {
         h.step(&mut g);
     }
     let from = h.utterances().len();
-    finish_listening(&mut h.client, &mut g.game);
+    h.finish(&mut g);
     assert_eq!(h.said_since(from)[0], "Defeat at 0 minutes 3 seconds");
 }
 
@@ -594,9 +591,7 @@ fn going_fastest_hears_nothing_more_of_the_turn_waiting() {
         .push_back(crate::game::SrvEvent::VoiceImportant(news));
     let played = h.audio.played().len();
     let log = h.client.voice.log().count();
-    let Source::Replay(r) = &mut g.game.source else {
-        panic!("a replay")
-    };
+    let r = g.game.source.replay_mut().expect("a replay");
     r.pace = Pace::Fast8;
     h.press(Key::Equals, Mods::NONE);
     h.step(&mut g);
@@ -613,9 +608,7 @@ fn going_fastest_on_the_players_last_turn_hears_nothing_of_it() {
     // The turn the player leaves on is taken, and what it told waits, its
     // leaving last: each turn is taken once the last is handled.
     while g.game.view().players().contains(&me) {
-        let Source::Replay(r) = &mut g.game.source else {
-            panic!("a replay")
-        };
+        let r = g.game.source.replay_mut().expect("a replay");
         if r.waiting_for_world_update || !g.game.srv_queue.is_empty() {
             h.step(&mut g);
         } else {
@@ -631,9 +624,7 @@ fn going_fastest_on_the_players_last_turn_hears_nothing_of_it() {
     g.game
         .srv_queue
         .push_front(crate::game::SrvEvent::VoiceImportant(news));
-    let Source::Replay(r) = &mut g.game.source else {
-        panic!("a replay")
-    };
+    let r = g.game.source.replay_mut().expect("a replay");
     r.pace = Pace::Fast8;
     let log = h.client.voice.log().count();
     h.press(Key::Equals, Mods::NONE);

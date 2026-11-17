@@ -13,10 +13,9 @@
 use soundrts_world::msg::{Phrase, msg};
 use std::sync::Arc;
 
-use soundrts_protocol::Step;
 use soundrts_world::{GameStart, SeatView, TurnMessage};
 
-use super::{GameInterface, Source};
+use super::GameInterface;
 use crate::client::Client;
 use crate::message::{Category, News};
 
@@ -30,25 +29,6 @@ pub(crate) enum Orders {
 }
 
 impl GameInterface {
-    /// Whether the player only watches: a watcher of a game on a server,
-    /// or a listener to a recorded game.
-    pub(crate) fn is_watching(&self) -> bool {
-        match &self.source {
-            Source::Server(s) => s.watching(),
-            Source::Replay(_) => true,
-            Source::Local(_) => false,
-        }
-    }
-
-    /// Whether the watcher gave orders, and heard so; `None` for a player.
-    fn watcher_orders(&mut self) -> Option<&mut Orders> {
-        match &mut self.source {
-            Source::Server(s) if s.watching() => Some(s.watcher_orders()),
-            Source::Replay(r) => Some(&mut r.orders),
-            Source::Server(_) | Source::Local(_) => None,
-        }
-    }
-
     /// A command given by a watcher: not taken, and it hears so once.
     /// Whether the player watches.
     pub(crate) fn refuse_while_watching(&mut self) -> bool {
@@ -70,20 +50,6 @@ impl GameInterface {
         {
             *orders = Orders::Told;
             cx.voice.item(&msg(Phrase::WatchingNoOrders));
-        }
-    }
-
-    /// A watcher follows the next player still in the game, or the
-    /// previous one: on a server, the server sends that player's whole
-    /// message; in a recorded game, the replay gives it. Anyone else hears
-    /// that only a watcher can.
-    pub(crate) fn follow_player(&mut self, cx: &mut Client, step: Step) {
-        match &self.source {
-            Source::Server(s) if s.watching() => self.ask_server_to_follow(cx, step),
-            Source::Replay(_) => self.follow_in_record(cx, step),
-            Source::Server(_) | Source::Local(_) => {
-                cx.voice.item(&msg(Phrase::OnlyAWatcherFollows));
-            }
         }
     }
 
@@ -208,11 +174,7 @@ impl GameInterface {
         terrain_noises.clear();
         srv_queue.clear();
         pending_commands.clear();
-        match source {
-            Source::Server(server) => server.followed(objectives),
-            Source::Replay(replay) => replay.followed(),
-            Source::Local(_) => {}
-        }
+        source.followed(objectives);
         // Its end of turn brings the interface's copies of the entities
         // and squares to the new player's.
         self.take_turn(Arc::clone(&m), Some(m), Vec::new());
