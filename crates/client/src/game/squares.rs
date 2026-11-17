@@ -116,9 +116,9 @@ impl GameInterface {
     /// The terrain, and whether the square is in the fog or unknown.
     pub fn square_postfix(&self, cx: &Client, place: SquareId) -> Msg {
         let mut postfix = Vec::new();
-        if self.known.observed().contains(&place) {
+        if self.known.observed_now().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
-        } else if self.known.observed_before().contains(&place) {
+        } else if self.known.observed_before_now().contains(&place) {
             postfix.extend(self.square_terrain(cx, place));
             postfix.extend(comma());
             postfix.extend(msg(Phrase::InTheFog));
@@ -444,7 +444,7 @@ impl GameInterface {
     }
 
     pub(crate) fn cmd_select_scouted_square(&mut self, cx: &mut Client, increment: i64) {
-        let squares = self.known.observed().iter().copied().collect();
+        let squares = self.known.observed_now().iter().copied().collect();
         self.select_square_from_list(cx, increment, squares)
     }
 
@@ -463,7 +463,7 @@ impl GameInterface {
     pub(crate) fn cmd_select_unknown_square(&mut self, cx: &mut Client, increment: i64) {
         let squares = (0..self.view().square_count() as u32)
             .map(SquareId)
-            .filter(|s| !self.known.observed_before().contains(s))
+            .filter(|s| !self.known.observed_before_now().contains(s))
             .collect();
         self.select_square_from_list(cx, increment, squares)
     }
@@ -679,6 +679,32 @@ mod tests {
         assert_eq!(game.view().terrain(b3), "");
         let m = game.square_postfix(&h.client, b3);
         assert_eq!(said(&mut h, &m), ", unknown");
+    }
+
+    #[test]
+    fn the_squares_observed_in_the_turn_taken_are_known_before_its_end_is_handled() {
+        use crate::input::{Key, Mods};
+        use soundrts_world::{Cheat, Command};
+        let (mut h, mut g) = training();
+        h.run_until_voice_idle(&mut g);
+        let me = g.game.me;
+        // Cheat mode: every square is observed from the next turn on.
+        let _ = g
+            .game
+            .host_mut()
+            .queue(me, Command::Cheat(Cheat::ToggleMode));
+        g.game.run_turn(&mut h.client);
+        let from = h.utterances().len();
+        h.press(Key::PageDown, Mods::ALT);
+        h.press(Key::PageDown, Mods::NONE);
+        h.step(&mut g);
+        assert!(g.game.has_pending_server_events());
+        h.run_until_voice_idle(&mut g);
+        // No square is unknown now; the next square observed is a 1.
+        assert_eq!(
+            h.said_since(from)[..2],
+            ["nothing!", "a 1 , meadows , 1 gold mine"]
+        );
     }
 
     #[test]

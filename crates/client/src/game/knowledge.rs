@@ -157,6 +157,16 @@ impl Knowledge {
         &mut self.shown
     }
 
+    /// The squares observed now, in the last turn taken.
+    pub fn observed_now(&self) -> &BTreeSet<SquareId> {
+        &self.seat.message().squares.observed
+    }
+
+    /// The squares observed before the last turn taken.
+    pub fn observed_before_now(&self) -> &BTreeSet<SquareId> {
+        &self.seat.message().squares.observed_before
+    }
+
     /// The squares observed at the last end of turn handled.
     pub fn observed(&self) -> &BTreeSet<SquareId> {
         &self.observed
