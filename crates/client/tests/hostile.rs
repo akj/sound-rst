@@ -722,7 +722,17 @@ fn slots() -> [soundrts_protocol::Slot; 2] {
 /// 0.3 s; loses the connection; then returns to a server that sends
 /// `back`, as it comes. What was said meanwhile.
 fn play_return(h: &mut Harness, before: &[Vec<u8>], back: &[Vec<u8>]) -> Vec<String> {
-    let server = h.join_fake_server("andrew", &[]);
+    play_return_as(h, "andrew", before, back)
+}
+
+/// As [`play_return`], for the client of `login`.
+fn play_return_as(
+    h: &mut Harness,
+    login: &str,
+    before: &[Vec<u8>],
+    back: &[Vec<u8>],
+) -> Vec<String> {
+    let server = h.join_fake_server(login, &[]);
     let map = h.multiplayer_map("jl1").info().unwrap();
     let room = soundrts::testkit::fake_room(map, slots().to_vec());
     h.enter_fake_room(&room);
@@ -732,7 +742,7 @@ fn play_return(h: &mut Harness, before: &[Vec<u8>], back: &[Vec<u8>]) -> Vec<Str
     }
     let lost = t0 + 0.3 * before.len() as f64;
     server.close_at(lost);
-    let returned = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    let returned = server.dial_to(soundrts::testkit::welcome_back(login, &room, &[]));
     for (i, f) in back.iter().enumerate() {
         returned.bytes_at(lost + 0.5 + 0.3 * i.saturating_sub(2) as f64, f);
     }
@@ -753,6 +763,10 @@ fn play_return(h: &mut Harness, before: &[Vec<u8>], back: &[Vec<u8>]) -> Vec<Str
     };
     h.run_for(&mut g, lost - t0 + 0.3 * back.len() as f64 + 5.0);
     let ended = g.game.end_loop;
+    // Every stream ends the game in time: its end, a refusal, or a return
+    // that gives up once the server no longer holds the seat.
+    h.run_for(&mut g, RETURN_BOUND);
+    assert!(g.game.end_loop, "the game did not end");
     h.finish(&mut g);
     h.client.res.set_map(None);
     h.run_voice_for(5.0);
@@ -763,6 +777,11 @@ fn play_return(h: &mut Harness, before: &[Vec<u8>], back: &[Vec<u8>]) -> Vec<Str
     );
     said
 }
+
+/// How much longer than its stream a game a client returns to may take
+/// to end, on the test clock: more than the fake server holds a seat
+/// ([`soundrts::testkit::FAKE_HOLD`]) and the pause before an attempt.
+const RETURN_BOUND: f64 = 60.0;
 
 /// Whether the game ended on what cannot be right.
 fn refused(said: &[String]) -> bool {
@@ -888,6 +907,34 @@ fn hostile_frames_of_a_return_to_a_game_are_taken_without_a_panic() {
         .unwrap();
     let failures = worker.join().unwrap();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Carol watches Andrew's game. While her connection is lost, the server
+/// moves her on to the computer; on her return, it says the computer is no
+/// longer in the game. She hears that the server sent what cannot be
+/// right, and not first that she is back in the game.
+#[test]
+fn a_watcher_returned_to_a_player_no_longer_in_the_game_is_not_back() {
+    let mut h = Harness::new("en", Script::new().keep_open());
+    let mut stream = FakeStream::new(&mut h, "jl1", &slots(), 0, 1).watching();
+    let map = h.multiplayer_map("jl1").info().unwrap();
+    let mut before = stream.opening(map.clone(), Speed::Normal);
+    for _ in 0..5 {
+        before.extend(stream.turn(Vec::new()));
+    }
+    for _ in 0..3 {
+        stream.turn(Vec::new());
+    }
+    let SeatFrame::Whole(mut gone) = stream.follow(1) else {
+        panic!("a whole message");
+    };
+    gone.state.players.retain(|&p| p != gone.seat);
+    let mut back = stream.opening(map, Speed::Normal);
+    back[2] = SeatFrame::Whole(gone);
+    let encode = |frames: Vec<SeatFrame>| frames.into_iter().map(encoded).collect::<Vec<_>>();
+    let said = play_return_as(&mut h, "carol", &encode(before), &encode(back));
+    assert!(refused(&said), "{said:#?}");
+    assert!(!said.iter().any(|s| s == "back in the game"), "{said:#?}");
 }
 
 /// Returns with a frame changed at random.

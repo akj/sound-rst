@@ -1,7 +1,8 @@
 //! Hostile bytes on the game stream. Messages of a real game, each kind
 //! the stream carries, are changed at random many times over, and each
-//! changed message must decode, apply and pass the checks, or be refused
-//! with an error, and never panic. A message cut short is always refused.
+//! changed message must be taken by the seat's stream and pass the checks,
+//! or be refused with an error, and never panic. A message cut short is
+//! always refused.
 //!
 //! The changes come from a fixed seed, so a failure reproduces: the
 //! message gives the seed, the kind of message and the case.
@@ -11,15 +12,16 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
+use soundrts_protocol::MapHash;
 use soundrts_protocol::game::{
-    apply_change, decode_command, decode_end, decode_setup, decode_start, decode_turn,
-    encode_change, encode_command, encode_end, encode_setup, encode_start, encode_turn,
+    Checked, JoinStream, Joining, Role, RulesHash, SeatFrame, SeatStream, decode_command,
+    decode_frame, decode_setup, encode_command, encode_frame, encode_setup,
 };
 use soundrts_world::orders::Keyword;
 use soundrts_world::test_games::{Game, cheat_mode_and_defeat};
 use soundrts_world::{
-    Command, EntityId, GameStart, KeywordOrder, Order, OrderTarget, Queue, Rules, SeatView,
-    SquareId, TurnChange, TurnMessage,
+    Command, EntityId, GameStart, KeywordOrder, Order, OrderTarget, Queue, SeatView, SquareId,
+    TurnChange, TurnMessage,
 };
 
 fn read(relative: &str) -> String {
@@ -110,7 +112,7 @@ fn mutate(rng: &mut Rng, bytes: &mut Vec<u8>) -> bool {
 
 /// What passes the checks, a seat's view answers from: asks it the
 /// questions that read the message's places and numbers.
-fn ask(start: &Arc<GameStart>, m: TurnMessage) {
+fn ask(start: &Arc<GameStart>, m: Arc<TurnMessage>) {
     let v = SeatView::new(Arc::clone(start), m);
     for e in v.message().perceived.iter().chain(&v.message().remembered) {
         let _ = (
@@ -130,13 +132,40 @@ fn ask(start: &Arc<GameStart>, m: TurnMessage) {
 
 /// What a sample is, and how a receiver reads it.
 enum Kind {
-    Start,
-    Whole,
-    /// A change, with the message it applies to.
-    Change(Box<TurnMessage>),
-    End,
+    /// A frame for a seat that joins, which waits for the start, or after
+    /// the start for its whole message.
+    Join(Box<JoinStream>),
+    /// A frame for a seat in the game, whose stream is as of the sample's
+    /// turn.
+    Game(Box<SeatStream>),
     Command,
     Setup,
+}
+
+/// Reads `bytes` as a receiver of a sample of `kind` does: refused, or
+/// what passes the checks asked of a seat's view.
+fn read_as(kind: &Kind, bytes: &[u8]) -> Result<(), String> {
+    match kind {
+        Kind::Join(join) => {
+            let frame = decode_frame(bytes).map_err(|e| e.0)?;
+            match (**join).clone().take(frame).map_err(|e| e.to_string())? {
+                Joining::Started(_) => {}
+                Joining::Joined(j) => ask(j.stream.start(), j.message),
+            }
+            Ok(())
+        }
+        Kind::Game(stream) => {
+            let frame = decode_frame(bytes).map_err(|e| e.0)?;
+            let mut stream = (**stream).clone();
+            match stream.take(frame).map_err(|e| e.0)? {
+                Checked::Turn(m) | Checked::Follow(m) => ask(stream.start(), m),
+                _ => {}
+            }
+            Ok(())
+        }
+        Kind::Command => decode_command(bytes).map(drop).map_err(|e| e.0),
+        Kind::Setup => decode_setup(bytes).map(drop).map_err(|e| e.0),
+    }
 }
 
 #[test]
@@ -147,19 +176,23 @@ fn hostile_game_messages_are_refused_without_a_panic() {
     let case = cheat_mode_and_defeat(120);
     let setup = case.setup(read);
     let mut game = Game::new(&case, read, true);
-    let host_start = game.start();
-    let start = Arc::new(GameStart::from_message(
-        host_start.message(),
-        Rules::load(&[setup.rules.as_str()]),
-    ));
+    let map = MapHash::of(setup.map.as_bytes());
+    let start = SeatFrame::Start {
+        start: game.start().message(),
+        rules: RulesHash::of(&setup.rules),
+    };
+    let joining = JoinStream::new(Role::Player(0), map.clone(), &setup.rules);
     let mut samples: Vec<(String, Kind, Vec<u8>)> = vec![
         (
             "start".into(),
-            Kind::Start,
-            encode_start(&host_start.message()).unwrap(),
+            Kind::Join(Box::new(joining.clone())),
+            encode_frame(&start).unwrap(),
         ),
         ("setup".into(), Kind::Setup, encode_setup(&setup).unwrap()),
     ];
+    let Joining::Started(started) = joining.take(start.clone()).unwrap() else {
+        panic!("the start did not ask for the whole message");
+    };
     for c in [
         Command::Control(vec![EntityId(3), EntityId(9)]),
         Command::Order {
@@ -178,32 +211,48 @@ fn hostile_game_messages_are_refused_without_a_panic() {
         samples.push((format!("{c:?}"), Kind::Command, encode_command(&c).unwrap()));
     }
     let mut last = game.messages();
+    // Each seat's stream, as its client reads it.
+    let mut streams: Vec<SeatStream> = last
+        .iter()
+        .enumerate()
+        .map(|(s, m)| {
+            let join = JoinStream::new(Role::Player(s), map.clone(), &setup.rules);
+            let Joining::Started(join) = join.take(start.clone()).unwrap() else {
+                panic!("the start did not ask for the whole message");
+            };
+            let Joining::Joined(joined) = join.take(SeatFrame::Whole(m.clone())).unwrap() else {
+                panic!("the whole message did not join the game");
+            };
+            joined.stream
+        })
+        .collect();
     let mut turn = 0;
     while let Some(now) = game.step() {
         turn += 1;
-        if turn % 20 == 0 {
-            for (s, m) in now.iter().enumerate() {
+        for (s, m) in now.iter().enumerate() {
+            let change = TurnChange::between(&last[s], m);
+            if turn % 20 == 0 {
                 let label = format!("turn {turn} seat {s}");
                 samples.push((
                     format!("{label}, whole"),
-                    Kind::Whole,
-                    encode_turn(m).unwrap(),
+                    Kind::Join(Box::new(started.clone())),
+                    encode_frame(&SeatFrame::Whole(m.clone())).unwrap(),
                 ));
-                let change = encode_change(&TurnChange::between(&last[s], m)).unwrap();
                 samples.push((
                     format!("{label}, change"),
-                    Kind::Change(Box::new(last[s].clone())),
-                    change,
+                    Kind::Game(Box::new(streams[s].clone())),
+                    encode_frame(&SeatFrame::Change(change.clone())).unwrap(),
                 ));
             }
+            streams[s].take(SeatFrame::Change(change)).unwrap();
         }
         last = now;
     }
-    for &p in game.players() {
+    for (s, &p) in game.players().iter().enumerate() {
         samples.push((
             format!("end of {}", p.0),
-            Kind::End,
-            encode_end(&game.game_end(p)).unwrap(),
+            Kind::Game(Box::new(streams[s].clone())),
+            encode_frame(&SeatFrame::End(game.game_end(p))).unwrap(),
         ));
     }
 
@@ -213,14 +262,7 @@ fn hostile_game_messages_are_refused_without_a_panic() {
             let mut rng = Rng::new(seed, i as u64, case);
             let mut b = bytes.clone();
             let cut = mutate(&mut rng, &mut b);
-            let read = catch_unwind(AssertUnwindSafe(|| match kind {
-                Kind::Start => decode_start(&b).map(drop),
-                Kind::Setup => decode_setup(&b).map(drop),
-                Kind::Command => decode_command(&b).map(drop),
-                Kind::End => decode_end(&b).map(drop),
-                Kind::Whole => decode_turn(&b, &start).map(|m| ask(&start, m)),
-                Kind::Change(last) => apply_change(&b, last, &start).map(|m| ask(&start, m)),
-            }));
+            let read = catch_unwind(AssertUnwindSafe(|| read_as(kind, &b)));
             let Ok(result) = read else {
                 panic!("a panic: seed {seed:#x}, {label}, case {case}");
             };
