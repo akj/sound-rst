@@ -350,7 +350,11 @@ impl<C> Bindings<C> {
         let mut left = MAX_BINDINGS_BYTES;
         for file in files {
             let numbers = source_lines(&file.text);
-            for (i, raw) in preprocess(&file.text).split('\n').enumerate() {
+            // A file's last newline ends its last line and starts none, so
+            // the limit counts the same lines however many files hold them.
+            let lines = preprocess(&file.text);
+            let lines = lines.strip_suffix('\n').unwrap_or(&lines);
+            for (i, raw) in lines.split('\n').enumerate() {
                 let line_number = numbers.get(i).copied().unwrap_or(0);
                 let at = format!("{} line {line_number}", file.path);
                 let expanded = self.apply_definitions(raw);

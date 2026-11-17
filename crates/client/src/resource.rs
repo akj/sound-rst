@@ -275,10 +275,11 @@ impl Resources {
             .style
             .add_downloaded(&style.add_only, &|name| cache.has(name));
         if ignored_style > 0 || ignored_sounds > 0 {
+            let layer = self.map.as_ref().map_or("", Layer::describe);
             let map = self.map.as_ref().and_then(Layer::package);
             let map = map.map_or("", |m| m.name.as_str());
             self.log.warning(format!(
-                "downloaded map {map}: ignored {ignored_style} style attributes and {ignored_sounds} phrases or sounds the game already has"
+                "{layer} {map}: ignored {ignored_style} style attributes and {ignored_sounds} phrases or sounds the game already has"
             ));
         }
         for (layer, file) in self.layers.refused(language) {
