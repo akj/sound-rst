@@ -1,7 +1,7 @@
 //! Moving through the squares of the map, and what a square says: its
 //! name, terrain, fog, and the summary of what is on it.
 
-use soundrts_world::msg::{Msg, Phrase, comma, msg, nb2msg};
+use soundrts_world::msg::{Msg, Phrase, comma, msg};
 use soundrts_world::rules::AirGround;
 use soundrts_world::{INF, Place, SquareId};
 
@@ -12,6 +12,7 @@ use super::GameInterface;
 use super::animation::{NoisePlayer, NoiseSite, NoiseSource};
 use super::entity::EntityView;
 use super::focus::Zoom;
+use crate::message::summary;
 use crate::style::mine;
 
 /// Keeps the first of each equal item, in order.
@@ -23,26 +24,6 @@ pub fn remove_duplicates<T: PartialEq + Clone>(l: &[T]) -> Vec<T> {
         }
     }
     m
-}
-
-/// "3 footmen, 2 archers and 1 peasant": each kind with its count, in the
-/// order they come. With `brief` and more than two kinds, only the count.
-pub fn summary(group: &[Msg], brief: bool) -> Msg {
-    let types = remove_duplicates(group);
-    if brief && types.len() > 2 {
-        return nb2msg(group.len() as i64);
-    }
-    let mut result = Vec::new();
-    for t in &types {
-        if Some(t) == types.last() && types.len() > 1 {
-            result.extend(msg(Phrase::And));
-        } else if Some(t) != types.first() {
-            result.extend(comma());
-        }
-        result.extend(nb2msg(group.iter().filter(|x| *x == t).count() as i64));
-        result.extend(t.iter().cloned());
-    }
-    result
 }
 
 /// The square `dxc` columns and `dyc` rows away, wrapping around the map's
@@ -672,7 +653,6 @@ mod tests {
     use super::super::testing::{cheat, enemy, go, run_until, said, training, training_on, unit};
     use super::*;
     use soundrts_world::EntityId;
-    use soundrts_world::msg::MsgPart;
 
     #[test]
     fn a_square_in_the_fog_has_the_terrain_last_observed() {
@@ -778,36 +758,6 @@ mod tests {
         h.run_until_turn(&mut g, turn);
         let m = g.game.square_postfix(&h.client, a4);
         assert_eq!(said(&mut h, &m), ", meadows , in the fog of war");
-    }
-
-    fn t(n: u64) -> Msg {
-        vec![MsgPart::Count(n)]
-    }
-
-    #[test]
-    fn a_summary_counts_each_kind_in_order() {
-        let n = |k| nb2msg(k);
-        assert_eq!(summary(&[], false), Vec::new());
-        assert_eq!(summary(&[t(1), t(1)], false), [n(2), t(1)].concat());
-        assert_eq!(
-            summary(&[t(1), t(2), t(1), t(3)], false),
-            [
-                n(2),
-                t(1),
-                comma(),
-                n(1),
-                t(2),
-                msg(Phrase::And),
-                n(1),
-                t(3)
-            ]
-            .concat()
-        );
-        assert_eq!(
-            summary(&[t(1), t(2)], true),
-            [n(1), t(1), msg(Phrase::And), n(1), t(2)].concat()
-        );
-        assert_eq!(summary(&[t(1), t(2), t(3), t(3)], true), n(4));
     }
 
     #[test]
