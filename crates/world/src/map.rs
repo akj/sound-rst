@@ -1401,3 +1401,225 @@ impl World {
         f
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
+mod tests {
+    use super::*;
+    use crate::triggers::Action;
+    use crate::{AiScripts, Rules};
+
+    /// The parts of what a map says, each with the first word of the line
+    /// it is on: `title`, `objective`, `intro` or `trigger`.
+    type Said = Vec<(String, MsgPart)>;
+
+    /// The order the loader keeps the parts of a map in.
+    const KINDS: [&str; 4] = ["title", "objective", "intro", "trigger"];
+
+    /// What the importer takes for said in a map: the words it rewrites
+    /// from a number to a name, each with its line. The loader keeps the
+    /// title, the objective and the intro apart from the triggers, so the
+    /// words are put in that order; within each, they keep the order of
+    /// the file.
+    fn said_by_the_importer(text: &str) -> Vec<(usize, String, MsgPart)> {
+        let lines: Vec<&str> = text.split('\n').collect();
+        let mut said: Vec<_> = soundrts_import::words_a_map_says(text)
+            .into_iter()
+            .map(|(line, word)| {
+                // A said line inside `#random_choice`, or one continued
+                // with a backslash, gets the wrong kind here: the test
+                // then fails falsely, and never passes falsely.
+                let first = lines[line - 1].split_whitespace().next().unwrap_or("");
+                let part = MsgPart::named(&word).unwrap_or(MsgPart::Literal(word));
+                (line, first.to_owned(), part)
+            })
+            .collect();
+        said.sort_by_key(|(_, kind, _)| KINDS.iter().position(|k| k == kind));
+        said
+    }
+
+    /// Where the two lists first differ, in one sentence; `None` if they
+    /// are the same.
+    fn first_difference(importer: &[(usize, String, MsgPart)], loader: &Said) -> Option<String> {
+        let at = (0..importer.len().max(loader.len())).find(|&i| {
+            importer.get(i).map(|(_, kind, part)| (kind, part))
+                != loader.get(i).map(|(kind, part)| (kind, part))
+        })?;
+        let importer_has = importer
+            .get(at)
+            .map_or("nothing more".to_owned(), |(line, kind, part)| {
+                format!("{part:?} in a {kind} line on line {line}")
+            });
+        let loader_has = loader
+            .get(at)
+            .map_or("nothing more".to_owned(), |(kind, part)| {
+                format!("{part:?} in a {kind} line")
+            });
+        Some(format!(
+            "at said word {}, the importer has {importer_has}, and the loader has {loader_has}",
+            at + 1
+        ))
+    }
+
+    /// What the loader takes for said in a map: its title, objective and
+    /// intro, then the words that the action of each trigger says, in the
+    /// order of the file.
+    fn said_by_the_loader(rules: &[String], ai: &[String], text: &str) -> Result<Said, String> {
+        let world = || World::new(Rules::load(rules), AiScripts::load(ai), Vec::new(), 0);
+        // Built as a game builds it, so that the actions can name squares.
+        let mut w = world();
+        w.load_and_build_map(text).map_err(|e| e.0)?;
+        // The built world keeps each trigger once for each of its owners;
+        // the trees keep each once, in the order of the file.
+        let trees = world().parse_map(text).map_err(|e| e.0)?;
+        let mut said: Said = Vec::new();
+        for (kind, m) in [
+            ("title", &w.map.title),
+            ("objective", &w.map.objective),
+            ("intro", &w.map.intro),
+        ] {
+            said.extend(m.iter().map(|p| (kind.to_owned(), p.clone())));
+        }
+        for (tree, line) in trees {
+            let [_owners, _condition, action] = &tree[..] else {
+                return Err(format!("not a trigger: {line}"));
+            };
+            match Action::read(&w, action)? {
+                Action::CutScene(m) | Action::AddObjective { description: m, .. } => {
+                    said.extend(m.into_iter().map(|p| ("trigger".to_owned(), p)));
+                }
+                _ => {}
+            }
+        }
+        Ok(said)
+    }
+
+    /// The game's data, imported from the original.
+    fn game_data() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vendor/game-data")
+    }
+
+    fn read(path: &std::path::Path) -> String {
+        let bytes = std::fs::read(path)
+            .unwrap_or_else(|e| panic!("{}: {e}: run scripts/fetch-upstream.ps1", path.display()));
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    fn sorted_names(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Each map of the game, with the rules and the computer players it is
+    /// played with: those of the game, then those of its campaign or of its
+    /// package. A cut scene of a campaign is no map: the client reads it.
+    fn maps() -> Vec<(String, Vec<String>, Vec<String>, String)> {
+        let root = game_data();
+        let (rules, ai) = (
+            read(&root.join("res/rules.txt")),
+            read(&root.join("res/ai.txt")),
+        );
+        let mut maps = Vec::new();
+        for name in sorted_names(&root.join("res/multi")) {
+            let path = root.join("res/multi").join(&name);
+            if name.ends_with(".txt") {
+                maps.push((name, vec![rules.clone()], vec![ai.clone()], read(&path)));
+            } else if name.ends_with(".zip") {
+                let files = soundrts_import::read_zip(&std::fs::read(&path).unwrap()).unwrap();
+                let text = |f: &str| {
+                    files
+                        .get(f)
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                };
+                let layer = |base: &String, f| [Some(base.clone()), text(f)].into_iter().flatten();
+                maps.push((
+                    name,
+                    layer(&rules, "rules.txt").collect(),
+                    layer(&ai, "ai.txt").collect(),
+                    text("map.txt").unwrap(),
+                ));
+            }
+        }
+        for campaign in sorted_names(&root.join("single")) {
+            let dir = root.join("single").join(&campaign);
+            let layer = |base: &String, f: &str| {
+                let own = dir.join(f);
+                [Some(base.clone()), own.is_file().then(|| read(&own))]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            };
+            for n in 0.. {
+                let path = dir.join(format!("{n}.txt"));
+                if !path.is_file() {
+                    break;
+                }
+                let text = read(&path);
+                if !text.starts_with("cut_scene_chapter\n") {
+                    let name = format!("{campaign}/{n}.txt");
+                    maps.push((name, layer(&rules, "rules.txt"), layer(&ai, "ai.txt"), text));
+                }
+            }
+        }
+        maps
+    }
+
+    /// The importer rewrites a number to a name where it believes a map
+    /// says a phrase or a sound, and the loader reads a name where it
+    /// believes so. Where the importer misses a word, a phrase stays a
+    /// number and is said as a count; where it takes a word too many, a
+    /// count becomes a name. Either way the two lists below differ.
+    #[test]
+    fn the_importer_and_the_loader_agree_on_the_words_each_map_says() {
+        let (mut files, mut words) = (0, 0);
+        for (name, rules, ai, text) in maps() {
+            let loader = said_by_the_loader(&rules, &ai, &text)
+                .unwrap_or_else(|e| panic!("{name}: the loader refuses it: {e}"));
+            if let Some(difference) = first_difference(&said_by_the_importer(&text), &loader) {
+                panic!("{name}: {difference}");
+            }
+            files += 1;
+            words += loader.len();
+        }
+        // 88 text maps and 1 package of the game, 12 missions of the
+        // campaign and 1 of the orc campaign; the names and counts that
+        // their titles, objectives, intros and triggers say.
+        assert_eq!((files, words), (102, 563), "maps and words compared");
+    }
+
+    /// An objective's identifier is any word, a negative number too: it is
+    /// neither said nor checked as a name, and only the words after it are
+    /// said. No map of the game has such an identifier.
+    #[test]
+    fn an_objective_named_minus_one_says_only_the_words_after_it() {
+        let root = game_data();
+        let rules = [read(&root.join("res/rules.txt"))];
+        let ai = [read(&root.join("res/ai.txt"))];
+        let text = "square_width 12
+nb_columns 1
+nb_lines 1
+nb_meadows_by_square 9
+nb_players_min 1
+nb_players_max 1
+starting_squares a1
+starting_units townhall farm peasant
+starting_resources 10 10
+trigger player1 (timer 0) (add_objective -1 chapter)
+";
+        let loader = said_by_the_loader(&rules, &ai, text).unwrap();
+        let chapter = MsgPart::Name("chapter".to_owned());
+        assert_eq!(loader, [("trigger".to_owned(), chapter.clone())]);
+        assert_eq!(
+            said_by_the_importer(text),
+            [(10, "trigger".to_owned(), chapter)]
+        );
+    }
+}

@@ -446,6 +446,16 @@ macro_rules! type_style {
                 noise_when: BTreeMap::new(),
             };
 
+            /// The name of each attribute that is not of a family, and
+            /// whether its words name phrases and sounds.
+            #[cfg(test)]
+            const ATTRIBUTES: &[(&str, bool)] = &[
+                $( ($said_name, true), )*
+                $( ($sounds_name, true), )*
+                $( ($noise_name, true), )*
+                $( ($words_name, false), )*
+            ];
+
             /// Reads the words of one attribute into its field. False if
             /// the game has no attribute of this name.
             fn set(&mut self, attr: &str, words: &[String], r: &mut Reader) -> bool {
@@ -1209,5 +1219,74 @@ mod tests {
         let hit = |object: &str| style.get(object).attack_hit_at(2).unwrap().mine().clone();
         assert_eq!(hit("unit"), words("combat/evil"));
         assert_eq!(hit("footman"), words("combat/sword"));
+    }
+
+    /// A line of a style of the original as the importer writes it: its
+    /// numbers that name a phrase or a sound become names. 4271 is the
+    /// number of the phrase `chapter`.
+    fn imported(line: &str) -> String {
+        let text = format!("def x\n{line}\n");
+        let files = soundrts_import::Files::from([("ui/style.txt".to_owned(), text.into_bytes())]);
+        let mut report = soundrts_import::Report::default();
+        let out = soundrts_import::import_files(&files, &mut report).unwrap();
+        let text = String::from_utf8(out["ui/style.txt"].clone()).unwrap();
+        text.lines().nth(1).unwrap().to_owned()
+    }
+
+    /// The importer rewrites the numbers of an attribute whose words this
+    /// reader takes for phrases and sounds, and keeps those of any other.
+    /// Where the two disagree, a phrase is said as a count, or a key, a
+    /// ground or a parent becomes a name.
+    #[test]
+    fn the_importer_names_the_words_of_an_attribute_exactly_when_the_style_reads_names() {
+        let families = [
+            format!("{}1{}", RESOURCE_TITLE.0, RESOURCE_TITLE.1),
+            format!("{NOT_ENOUGH_RESOURCE}1"),
+            format!("{PROPORTION}1"),
+            format!("{STORE_RESOURCE}1"),
+            format!("{ATTACK_HIT_LEVEL}1"),
+            format!("{MOVE_ON}grass"),
+            format!("{NOISE_WHEN}building"),
+        ];
+        let attributes = TypeStyle::ATTRIBUTES
+            .iter()
+            .map(|&(attr, names)| (attr.to_owned(), names))
+            .chain(UNREAD.iter().map(|attr| ((*attr).to_owned(), false)))
+            .chain(families.into_iter().map(|attr| (attr, true)));
+        for (attr, names) in attributes {
+            let expected = if names { "chapter" } else { "4271" };
+            assert_eq!(
+                imported(&format!("{attr} 4271")),
+                format!("{attr} {expected}")
+            );
+        }
+        // The words of the syntax, and a noise's interval and volume, are
+        // kept; this reader reads each line as imported with no refusal.
+        for (line, expected) in [
+            (
+                "title if_me 4271 else 4271",
+                "title if_me chapter else chapter",
+            ),
+            ("noise loop 4271 4271", "noise loop chapter 4271"),
+            (
+                "noise ambient loop 4271 4271",
+                "noise ambient loop chapter 4271",
+            ),
+            (
+                "noise repeat 4271 4271 4271",
+                "noise repeat 4271 chapter chapter",
+            ),
+            (
+                "noise if_me loop 4271 4271 else repeat 4271 4271",
+                "noise if_me loop chapter 4271 else repeat 4271 chapter",
+            ),
+        ] {
+            assert_eq!(imported(line), expected);
+            let log = Log::silent();
+            log.keep_errors();
+            let mut style = Style::new(log.clone());
+            style.load(&[file(&format!("def x\n{expected}\n"))], &|_| true);
+            assert_eq!(log.take_errors(), Vec::<String>::new(), "{expected}");
+        }
     }
 }
