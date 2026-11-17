@@ -27,7 +27,9 @@ use crate::entity::{EntityId, Place, SquareId};
 use crate::nofloat::{floordiv, square_of_distance};
 use crate::orders::{Keyword, Request, TargetRef};
 use crate::player::PlayerKind;
-use crate::rules::{AirGround, ClassId, Effect, EffectTarget, EntityClass, Role, TypeId};
+use crate::rules::{
+    AirGround, BaseClass, ClassId, Effect, EffectTarget, EntityClass, Role, TypeId,
+};
 use crate::world::TPlace;
 
 mod door;
@@ -41,6 +43,7 @@ pub(crate) use handicap::handicapped_name;
 pub use handicap::{Handicap, RANDOM_AI_TYPE, computer_name};
 use script::{Plan, Step};
 pub use skill::Skill;
+use skill::{Defence, MoreMakers, Research};
 pub(crate) use tactical::TacticalKnowledge;
 
 /// The deepest the computer player's planning may go. Getting a unit asks
@@ -409,21 +412,25 @@ impl Door<'_> {
         } else {
             self.defensive_routine()?;
         }
+        let settings = self.skill().settings();
+        // How many fighters it lacks to match the enemy's it knows of, if
+        // it defends.
+        let lacking_fighters = match settings.defence {
+            Defence::WhenOutnumbered => {
+                let (enemies, mine) = self.fighters_known();
+                (enemies > mine).then(|| enemies - mine)
+            }
+            Defence::AsTheOriginal => None,
+        };
+        let defends = lacking_fighters.is_some();
         if self.state().research != 0 {
-            self.idle_buildings_research()?;
+            self.idle_buildings_research(defends)?;
         }
         self.raise_dead()?;
         self.build_a_warehouse_if_useful()?;
-        let worker = self.role_type(Role::Worker);
-        match self.get(self.skill().settings().workers.kept(), worker) {
-            Ok(_) => {}
-            Err(Unplanned::TooDeep) => {
-                let ai_type = self.ai_type();
-                self.warn(format!(
-                    "recursion error with {ai_type}; getting its workers"
-                ));
-            }
-            Err(Unplanned::Stop(a)) => return Err(a),
+        self.get_workers(settings.workers.kept())?;
+        if let Some(lacking) = lacking_fighters {
+            self.train_defenders(lacking)?;
         }
         match self.follow_plan() {
             Ok(()) => {}
@@ -444,7 +451,96 @@ impl Door<'_> {
             }
             Err(Unplanned::Stop(a)) => return Err(a),
         }
+        if let Some(spare) = settings.workers.spare()
+            && !defends
+            && let Some(worker) = self.role_type(Role::Worker)
+        {
+            let cost = self.rules().ty(worker).cost.clone();
+            if self.potential(&cost) >= 2 {
+                self.get_workers(spare)?;
+            }
+        }
         self.gather_what_is_lacking()
+    }
+
+    /// Works toward having `nb` workers.
+    fn get_workers(&mut self, nb: i64) -> Res {
+        let worker = self.role_type(Role::Worker);
+        match self.get(nb, worker) {
+            Ok(_) => {}
+            Err(Unplanned::TooDeep) => {
+                let ai_type = self.ai_type();
+                self.warn(format!(
+                    "recursion error with {ai_type}; getting its workers"
+                ));
+            }
+            Err(Unplanned::Stop(a)) => return Err(a),
+        }
+        Ok(())
+    }
+
+    /// Whether a unit of type `t` is a fighter: a soldier whose type can
+    /// attack. A transport or an explorer that harms nothing is none.
+    fn is_a_fighter(&self, t: Option<TypeId>) -> bool {
+        t.is_some_and(|t| {
+            let ty = self.rules().ty(t);
+            ty.base == BaseClass::Soldier && ty.stats.damage > 0
+        })
+    }
+
+    /// How many fighters of an enemy that is not neutral it perceives or
+    /// remembers, and how many fighters it has.
+    fn fighters_known(&self) -> (i64, i64) {
+        let mut seen = BTreeSet::new();
+        let enemies = self
+            .perceived()
+            .chain(self.remembered().map(|(s, _)| s))
+            .filter(|s| seen.insert(s.id()))
+            .filter(|&s| {
+                self.is_an_enemy(s)
+                    && !s.owner().is_some_and(|o| self.is_neutral(o))
+                    && self.is_a_fighter(s.type_id())
+            })
+            .count();
+        let mine = self
+            .units()
+            .iter()
+            .filter(|&&u| self.is_a_fighter(self.unit(u).and_then(|e| e.type_id())))
+            .count();
+        (
+            i64::try_from(enemies).unwrap_or(i64::MAX),
+            i64::try_from(mine).unwrap_or(i64::MAX),
+        )
+    }
+
+    /// Works toward `lacking` more fighters, of the cheapest type, in all
+    /// resources, that a maker it has can train now. Of two as cheap, the
+    /// first its makers list.
+    fn train_defenders(&mut self, lacking: i64) -> Res {
+        let mut cheapest: Option<(i64, TypeId)> = None;
+        for &u in self.units() {
+            let Some(maker) = self.unit(u).and_then(|e| e.type_id()) else {
+                continue;
+            };
+            for &t in &self.rules().ty(maker).can_train {
+                let ty = self.rules().ty(t);
+                if !self.is_a_fighter(Some(t)) || !ty.requirements.iter().all(|&r| self.has(r)) {
+                    continue;
+                }
+                let cost: i64 = ty.cost.iter().sum();
+                if cheapest.is_none_or(|(c, _)| cost < c) {
+                    cheapest = Some((cost, t));
+                }
+            }
+        }
+        let Some((_, t)) = cheapest else {
+            return Ok(());
+        };
+        let nb = self.nb(&Sel::One(t)) + lacking;
+        match self.get(nb, Some(t)) {
+            Ok(_) | Err(Unplanned::TooDeep) => Ok(()),
+            Err(Unplanned::Stop(a)) => Err(a),
+        }
     }
 
     /// The name of its AI type, as a warning names it.
@@ -1135,7 +1231,14 @@ impl Door<'_> {
         Ok(())
     }
 
-    fn idle_buildings_research(&mut self) -> Res {
+    /// Has its idle buildings research what it can pay for. While it
+    /// `defends`, it researches as in the original.
+    fn idle_buildings_research(&mut self, defends: bool) -> Res {
+        // How many times over it must be able to pay for an upgrade.
+        let times = match self.skill().settings().research {
+            Research::AsSoonAsAffordable if !defends => 1,
+            Research::AsSoonAsAffordable | Research::AsTheOriginal => 4,
+        };
         for u in self.units().to_vec() {
             let Some(e) = self.unit(u) else { continue };
             if e.has_orders() {
@@ -1149,7 +1252,7 @@ impl Door<'_> {
                 let cost = self.rules().ty(t).cost.clone();
                 if self.future_nb(&Sel::List(vec![t])) == 0
                     && self.missing_resources(&cost).is_empty()
-                    && self.potential(&cost) > 3
+                    && self.potential(&cost) >= times
                 {
                     self.give(u, Request::research(self.name_of(t)), true)?;
                 }
@@ -1671,10 +1774,15 @@ impl Door<'_> {
                 self.order(4, maker_sel, Task::Build(made, id), true)?;
             }
         } else if mc.can_train.contains(&made) {
-            let nb_maker = self.nb(&maker_sel);
+            // The makers it counts, and how many units it must be able to
+            // pay for, for each, before it builds one more.
+            let (nb_maker, at) = match self.skill().settings().more_makers {
+                MoreMakers::AsTheOriginal => (self.nb(&maker_sel), 100),
+                MoreMakers::CountingSites(at) => (self.future_nb(&maker_sel), at),
+            };
             if self.nb(&Sel::Workers) != 0
                 && nb > nb_maker * 3
-                && self.potential(&t.cost) > nb_maker * 100
+                && self.potential(&t.cost) > nb_maker * at
             {
                 // additional production sites
                 self.build_or_train_or_upgradeto_or_summon(maker, 1, depth)?;

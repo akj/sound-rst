@@ -695,6 +695,12 @@ impl Door<'_> {
         }
     }
 
+    /// Whether `p` is a neutral player, as every player is told when the
+    /// game starts: a neutral player has no name.
+    pub(super) fn is_neutral(&self, p: PlayerId) -> bool {
+        self.world.pl(p).neutral
+    }
+
     pub(super) fn is_an_enemy(&self, s: Seen) -> bool {
         s.owner().is_some_and(|o| !self.allied().contains(&o))
     }

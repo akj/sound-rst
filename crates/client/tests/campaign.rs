@@ -170,12 +170,23 @@ fn a_mission_packages_resources_are_unloaded_when_it_ends() {
 
 #[test]
 fn the_level_chosen_in_the_campaign_menu_is_kept_and_builds_its_missions() {
-    // Single player, the campaign, "set the computers, level 3, to level
-    // 2" (after the prologue and level 1), then the prologue, whose cut
-    // scene runs chapter 1.
+    campaign_at_level(2);
+}
+
+#[test]
+fn the_campaign_menu_offers_level_four() {
+    campaign_at_level(4);
+}
+
+/// Single player, the campaign, "set the computers, level 3, to level
+/// `level`" (after the prologue and the levels before it), then the
+/// prologue, whose cut scene runs chapter 1: the mission is at that level,
+/// which is kept beside the bookmark.
+fn campaign_at_level(level: u8) {
+    let choice = if level < 3 { level } else { level - 1 };
     let mut script = Script::new().keep_open();
     let mut t = 5.0;
-    for (downs, gap) in [(1, 10.0), (1, 15.0), (3, 15.0), (1, 15.0)] {
+    for (downs, gap) in [(1, 10.0), (1, 15.0), (1 + choice, 15.0), (1, 15.0)] {
         for _ in 0..downs {
             script = script.at(t).tap(Key::Down);
             t += 6.0;
@@ -213,15 +224,13 @@ fn the_level_chosen_in_the_campaign_menu_is_kept_and_builds_its_missions() {
     install(&mut h.client, &player);
     assert_eq!(main_menu(&mut h.client), Ok(()));
     let all = h.said_since(0);
-    assert!(
-        all.contains(&"set the computers , level 3 , to level 2".to_owned()),
-        "{all:#?}"
-    );
-    assert_eq!(player.borrow().note("level"), "2");
+    let choice = format!("set the computers , level 3 , to level {level}");
+    assert!(all.contains(&choice), "{all:#?}");
+    assert_eq!(player.borrow().note("level"), level.to_string());
     // The level is kept beside the bookmark.
     let ini = h.client.paths.campaigns_config();
     assert_eq!(
         std::fs::read_to_string(&ini).unwrap(),
-        "[campaign]\nlevel = 2\nchapter = 1\n\n"
+        format!("[campaign]\nlevel = {level}\nchapter = 1\n\n")
     );
 }
