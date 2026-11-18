@@ -1,5 +1,6 @@
 # Gathers the files of the Windows download into dist/<Name>: the game and
-# its .pdb, the server, the DLLs the game loads, and the licenses. The zip
+# its .pdb, the server, the DLLs the game loads, the game's own data folder,
+# and the licenses. The zip
 # and the installer are both made from this folder. Safe to rerun.
 #
 # Build first:
@@ -38,6 +39,12 @@ foreach ($file in 'soundrts.exe', 'soundrts.pdb', 'soundrts-server.exe',
         'nvdaControllerClient64.dll', 'SAAPI64.dll', 'nvdaControllerClient.dll') {
     Copy-Required (Join-Path $Target $file) (Join-Path $Folder $file)
 }
+
+# The game's own data, with the mods that come with it. The game looks for
+# it next to soundrts.exe.
+$Data = Join-Path $Repo 'data'
+if (-not (Test-Path $Data -PathType Container)) { throw "$Data is missing." }
+Copy-Item $Data (Join-Path $Folder 'data') -Recurse -Force
 
 Copy-Required (Join-Path $Repo 'LICENSE.txt') (Join-Path $Folder 'LICENSE.txt')
 Copy-Required (Join-Path $Repo 'packaging/README.txt') (Join-Path $Folder 'README.txt')

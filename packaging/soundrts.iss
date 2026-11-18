@@ -47,6 +47,11 @@ SolidCompression=yes
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; The data folder comes whole with each version: an update removes the
+; files that the new version no longer has.
+Type: filesandordirs; Name: "{app}\data"
+
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 

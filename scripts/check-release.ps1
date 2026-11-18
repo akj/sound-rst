@@ -3,7 +3,8 @@
 #
 # 1. The game in the folder that scripts/stage-release.ps1 made fetches the
 #    original game's data, imports it, finds it, and the data has the same
-#    bytes as the imported data that scripts/fetch-upstream.ps1 makes.
+#    bytes as the imported data that scripts/fetch-upstream.ps1 makes. The
+#    game finds its own data folder next to it, with the checkout's files.
 # 2. With -Installer: the installer installs without a question, the
 #    installed game finds the same data, and the uninstaller removes the
 #    program and its Start menu entry.
@@ -63,19 +64,26 @@ function Invoke-Program([string] $Program, [string[]] $Arguments, [hashtable] $E
     $text
 }
 
-# The game's own report of what it found must name the fetched data.
+# The game's own report of what it found must name the fetched data, and
+# the data folder next to the game.
 function Assert-FindsTheData([string] $Game) {
     $report = Invoke-Program $Game @('--probe') @{ APPDATA = $AppData }
     Write-Output $report
-    $root = ($report -split "`r?`n" | Where-Object { $_ -like 'game root: *' }) -replace '^game root: ', ''
+    $lines = $report -split "`r?`n"
+    $root = ($lines | Where-Object { $_ -like 'game root: *' }) -replace '^game root: ', ''
     if ($root -ne $ExpectedRoot) {
         throw "$Game found its data in '$root', not in '$ExpectedRoot'."
     }
+    $expectedData = Join-Path (Split-Path -Parent $Game) 'data'
+    $data = ($lines | Where-Object { $_ -like 'program data: *' }) -replace '^program data: ', ''
+    if ($data -ne $expectedData) {
+        throw "$Game found its own data in '$data', not in '$expectedData'."
+    }
 }
 
-function Get-Hashes([string] $Root) {
+function Get-Hashes([string] $Root, [string[]] $Folders) {
     $hashes = @{}
-    foreach ($folder in $DataFolders) {
+    foreach ($folder in $Folders) {
         Get-ChildItem (Join-Path $Root $folder) -Recurse -File | ForEach-Object {
             $hashes[[IO.Path]::GetRelativePath($Root, $_.FullName)] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
         }
@@ -83,15 +91,20 @@ function Get-Hashes([string] $Root) {
     $hashes
 }
 
+# The files that differ between two sets of hashes, or that only one has.
+function Get-Differences([hashtable] $Expected, [hashtable] $Actual) {
+    @($Expected.Keys | Where-Object { $Actual[$_] -ne $Expected[$_] }) +
+        @($Actual.Keys | Where-Object { -not $Expected.ContainsKey($_) })
+}
+
 # 1. The folder as the zip holds it.
 $game = Join-Path $Folder 'soundrts.exe'
 Write-Output (Invoke-Program $game @('--fetch-data') @{ APPDATA = $AppData })
 Assert-FindsTheData $game
 
-$fetched = Get-Hashes $ExpectedRoot
-$checkout = Get-Hashes $Upstream
-$different = @($checkout.Keys | Where-Object { $fetched[$_] -ne $checkout[$_] }) +
-    @($fetched.Keys | Where-Object { -not $checkout.ContainsKey($_) })
+$fetched = Get-Hashes $ExpectedRoot $DataFolders
+$checkout = Get-Hashes $Upstream $DataFolders
+$different = Get-Differences $checkout $fetched
 if ($different.Count -gt 0) {
     throw "The fetched data differs from $Upstream in $($different.Count) files, for example $($different[0])."
 }
@@ -99,6 +112,13 @@ if ((Get-Content (Join-Path $ExpectedRoot 'import.txt') -Raw) -ne (Get-Content (
     throw "The fetched data and $Upstream were imported with different tables of names."
 }
 Write-Output "The fetched data is the checkout's imported data: $($fetched.Count) files, the same bytes."
+
+$stagedData = Get-Hashes $Folder @('data')
+$different = Get-Differences (Get-Hashes $Repo @('data')) $stagedData
+if ($different.Count -gt 0) {
+    throw "The staged data folder differs from the checkout's in $($different.Count) files, for example $($different[0])."
+}
+Write-Output "The staged data folder is the checkout's: $($stagedData.Count) files, the same bytes."
 
 $server = Invoke-Program (Join-Path $Folder 'soundrts-server.exe') @('--help')
 if ($server -notlike '*--port*') { throw "soundrts-server.exe --help does not describe --port:`n$server" }

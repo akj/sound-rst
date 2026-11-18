@@ -23,7 +23,7 @@ use soundrts::input::{
 };
 use soundrts::log::Log;
 use soundrts::mainmenu::main_menu;
-use soundrts::paths::Paths;
+use soundrts::paths::{Paths, program_data_from_environment};
 use soundrts::sound::{SoundEvent, SoundLog, StereoVolume};
 use soundrts::testkit::{RecordingSpeech, game_root};
 use soundrts::voice::{UtteranceLog, UtterancePart, VoiceEvent};
@@ -683,6 +683,7 @@ fn run(s: &Scenario) -> String {
     let user_dir = tempfile::tempdir().expect("temporary folder");
     let paths = Paths {
         root: game_root(),
+        program_data: program_data_from_environment(),
         user: user_dir.path().to_path_buf(),
     };
     paths.create_user_folders(&Log::silent());

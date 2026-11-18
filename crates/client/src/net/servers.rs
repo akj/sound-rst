@@ -182,6 +182,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths {
             root: dir.path().into(),
+            program_data: None,
             user: dir.path().into(),
         };
         let server = ListedServer {
@@ -201,6 +202,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths {
             root: dir.path().into(),
+            program_data: None,
             user: dir.path().into(),
         };
         // A server that calls itself this would add the second line, were
@@ -247,6 +249,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths {
             root: dir.path().into(),
+            program_data: None,
             user: dir.path().into(),
         };
         let s = |a: &str| ListedServer {

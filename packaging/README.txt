@@ -26,6 +26,10 @@ Keep the DLL files next to soundrts.exe. The game reaches your screen
 reader through them. Keep soundrts.pdb there too. It is not a program: it
 lets the log say where the game was if it stops after an error.
 
+The data folder next to soundrts.exe holds the mods that come with the
+game. Keep it there too. A mod of the same name in your own mods folder
+takes the place of the one in it.
+
 
 Where your files are
 

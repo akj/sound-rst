@@ -46,6 +46,14 @@ pub fn report(options: &Options) -> Result<String, String> {
     let mut out = String::new();
     let _ = writeln!(out, "{}", app_title(&res.mods, &res.soundpacks).trim_end());
     let _ = writeln!(out, "game root: {}", paths.root.display());
+    match &paths.program_data {
+        Some(dir) => {
+            let _ = writeln!(out, "program data: {}", dir.display());
+        }
+        None => {
+            let _ = writeln!(out, "program data: none");
+        }
+    }
     let exists = if paths.user.exists() {
         ""
     } else {
