@@ -189,20 +189,20 @@ length 6116 3719
 @211084 voice item "nothing! ,"
 @212084 sounds 1 5b6e5820002457fc
 @212084 step 64 key DOWN
-@212084 voice item "flyingtownhall ,"
-@213684 sounds 1 4648474fc7d85c33
-@213684 step 65 key DOWN
-@213684 voice item "orc ,"
-@214184 sounds 1 1e64affd1f1ad088
-@214184 step 66 key DOWN
-@214184 voice item "teleportation ,"
-@215684 sounds 1 a2e646ae3489b8a2
-@215684 step 67 key DOWN
-@215684 voice item "go back to the previous menu ,"
-@218684 sounds 1 6ba60490c69670f2
-@218684 step 68 key DOWN
-@218684 voice item "nothing! ,"
-@219684 sounds 1 74f0a7acae79471b
+@212084 voice item "crazymod ,"
+@213084 sounds 1 4648474fc7d85c33
+@213084 step 65 key DOWN
+@213084 voice item "flyingtownhall ,"
+@214684 sounds 1 21c92934e51c7f22
+@214684 step 66 key DOWN
+@214684 voice item "orc ,"
+@215184 sounds 1 b2e9766d7a56c3f7
+@215184 step 67 key DOWN
+@215184 voice item "teleportation ,"
+@216684 sounds 1 40fd824db82063c7
+@216684 step 68 key DOWN
+@216684 voice item "go back to the previous menu ,"
+@219684 sounds 1 ba6c332af57afdf1
 @219684 step 69 key ESCAPE
 @219684 voice confirmation "go back to the previous menu"
 @222494 voice menu "SoundRTS 1.3.8.1  , please make a selection"

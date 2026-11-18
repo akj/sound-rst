@@ -1,0 +1,569 @@
+; CrazyMod 8.3a
+
+; messages
+def patrol
+shortcut y
+
+; miscellaneous parameters
+
+
+
+
+; abilities
+
+def a_recall
+shortcut r
+
+; upgrades
+
+
+; research
+
+
+; buildings
+
+
+def farm
+shortcut g
+
+def barracks 
+shortcut b
+
+def lumbermill 
+shortcut c
+
+def townhall
+shortcut a
+
+def stables
+shortcut e
+
+def blacksmith 
+shortcut f
+
+def workshop 
+shortcut t
+
+def temple  
+shortcut t
+
+
+def necropolis
+shortcut n
+
+
+; units
+
+
+
+; resources
+
+
+; passages
+
+
+
+; races
+
+
+
+; CrazyMod
+
+
+def bomber_airship
+shortcut b
+
+def powder_magazine
+shortcut p
+
+def  cannontower
+shortcut t
+
+def high_quality_powder
+shortcut a
+
+def highest_quality_powder
+shortcut m
+
+def a_explode_magazine
+shortcut e
+
+def orchard
+shortcut g
+
+def hospital
+shortcut h
+
+def public_health
+shortcut s
+
+def musketeer
+shortcut m
+
+def magnesite_extractor
+shortcut e
+
+def electric_trap
+shortcut i
+
+
+; new in version 2
+
+def a_hypnotic_wave
+shortcut h
+
+def magnetic_tower
+shortcut q
+
+def a_bewitch
+shortcut h
+
+def a_summon_ectoplasm
+shortcut i
+
+def a_evil_fog
+shortcut b 
+
+def spectral_tower
+shortcut t
+
+def ghoul
+shortcut n
+
+def graveyard
+shortcut m
+
+def a_plant_darkness_tree
+shortcut s
+
+def a_plant_serenity_tree
+shortcut s
+
+def a_grow_carnivorous_plants
+shortcut r
+
+def a_grow_medicinal_plants
+shortcut r
+
+def high_quality_magnesite
+shortcut a
+
+def highest_quality_magnesite
+shortcut m
+
+def transport_airship
+shortcut t
+
+def grenade_launcher
+shortcut l
+
+def fort
+shortcut n
+
+def dragonslair 
+shortcut g
+
+def serf
+shortcut s
+
+def city_hall
+shortcut a
+
+def military_camp
+shortcut c
+
+def laborer
+shortcut t
+
+def airship_factory
+shortcut o
+
+def scout_airship
+shortcut e
+
+def fighter_airship
+shortcut c
+
+def garage
+shortcut a
+
+def minicomputer
+shortcut c
+
+def robot_factory
+shortcut f
+
+def optical_lab
+shortcut l
+
+def signal_modulator
+shortcut m
+
+def particle_accelerator
+shortcut p
+
+def laser_tower
+shortcut t
+
+def radar_tower
+shortcut r
+
+def geek
+shortcut g
+
+def laser_shooter
+shortcut t
+
+def magnetic_cannon
+shortcut g
+
+def plasma_cannon
+shortcut p
+
+def mobile_sensor
+shortcut v
+
+def drone
+shortcut e
+
+def laser_ship
+shortcut l 
+
+def laser_power
+shortcut l
+
+def plasma_power
+shortcut p
+
+def a_radar_image
+shortcut s
+
+def mausoleum
+shortcut m
+
+def vault
+shortcut p
+
+def crypt
+shortcut c
+
+def bone_trap
+shortcut h
+
+def undead_slave
+shortcut e
+
+def cursed_gargoyle
+shortcut g
+
+def thestral
+shortcut t
+
+def lich
+shortcut l 
+
+def a_walk_through_walls
+shortcut p
+
+def a_deadly_fog
+shortcut n
+
+def a_summon_wisps
+shortcut f
+
+def u_unstable_portal
+shortcut i
+
+def a_unstable_portal
+shortcut i
+
+def u_stable_portal
+shortcut p
+
+def a_stable_portal
+shortcut p
+
+def clearing
+shortcut a
+
+def  guardtower
+shortcut t
+
+def forest_arena
+shortcut a
+
+def leafy_garden
+shortcut j
+
+def enchanted_forest
+shortcut b
+
+def root_trap
+shortcut r
+
+def harvester
+shortcut r
+
+def nimble_archer
+shortcut a
+
+def forest_archer
+shortcut b
+
+def centaur
+shortcut c
+
+def druid
+shortcut d
+
+def witch
+shortcut b
+
+def fairy
+shortcut h
+
+def a_swarm
+shortcut e
+
+def a_green_storm
+shortcut t
+
+def encampment
+shortcut c
+
+def pit
+shortcut f
+
+def pen
+shortcut e
+
+def nest
+shortcut n 
+
+def tepee
+shortcut i
+
+def spike_trap
+shortcut u
+
+def peon
+shortcut p
+
+def ogre_rock_thrower
+shortcut r
+
+def winged_serpent
+shortcut s
+
+def hippogriff
+shortcut h
+
+def voodoo_priest
+shortcut s
+
+def kamikaze
+shortcut k
+
+def a_possession
+shortcut p 
+
+def a_forest_illusion
+shortcut i
+
+def a_explode_kamikaze
+shortcut e
+
+def aggression
+shortcut g
+
+def elemental_circle
+shortcut c
+
+def fire_tower
+shortcut f
+
+def water_tower
+shortcut a
+
+def air_tower
+shortcut r
+
+def earth_tower
+shortcut t
+
+def fire_elemental
+shortcut f
+
+def water_elemental
+shortcut a
+
+def air_elemental
+shortcut r
+
+def earth_elemental
+shortcut t
+
+def hidden_bomb
+shortcut b
+
+def a_explode_bomb
+shortcut e
+
+def reinforced_structure
+shortcut r
+
+def magnetic_shooter
+shortcut m
+
+def transport_ball
+shortcut b
+
+def crossbowman
+shortcut b
+
+def a_tame_wolves
+shortcut o 
+
+def a_tame_lions
+shortcut l
+
+def a_tame_snakes
+shortcut s
+
+def burrow
+shortcut m
+
+def hideout
+shortcut e
+
+def training_camp
+shortcut b
+
+def beast_cage
+shortcut j
+
+def spell_hut
+shortcut s
+
+def rogue
+shortcut b
+
+def huntress
+shortcut c
+
+def a_piercing_roots
+shortcut r
+
+def a_plant_sentinel_tree
+shortcut s
+
+def paladin
+shortcut p
+
+def super_armor
+shortcut s
+
+def super_attack
+shortcut s
+
+def super_health
+shortcut s
+
+def super_speed
+shortcut s
+
+def a_thunderbolt
+shortcut r
+
+def a_holy_vision
+shortcut v
+
+def labyrinth
+shortcut l
+
+def flak_gun
+shortcut v 
+
+def necromancer
+shortcut n
+
+def a_generate_energy_ball
+shortcut b
+
+def scholar
+shortcut e
+
+def a_storm_clouds
+shortcut t
+
+def a_clone
+shortcut c
+
+def super_exorcism
+shortcut s
+
+def knight
+shortcut c
+
+def overheated_plasma_cannon
+shortcut p
+
+def a_tear_gas
+shortcut g
+
+def priest
+shortcut s
+
+def dragon
+shortcut d
+
+def ranch
+shortcut g
+
+def pig_farm
+shortcut g
+
+def hydroponic_farm
+shortcut g
+
+def scavenger_farm
+shortcut g
+
+def power_farm
+shortcut g
+
+def hunting_ground
+shortcut z
+
+def dragon_vitality
+shortcut v
+
+def dragon_attack
+shortcut a
+
+def dragon_range
+shortcut l
+
+def dragon_armor
+shortcut a
+
+def dragon_speed
+shortcut i
+
+def sunlit_library
+shortcut s
+
+def a_breath_of_death
+shortcut a
+
+def a_tame_winged_horse
+shortcut p
+
+def a_meteors
+shortcut m
+
+def magic_power
+shortcut p 
+
+def arrow_trap
+shortcut t
