@@ -239,7 +239,7 @@ The game checks the names when it loads the files:
 
 Each package's names are its own. A mod that you install can give other words, or another recording, for a name of the game. A map that came from a server can only add names: see [Play with others](#play-with-others).
 
-The mods that come with the game are in the `data` folder next to the program.
+The mods that come with the game are in the `data` folder next to the program. A mod of the same name in the `mods` folder of your settings folder takes the place of the one that comes with the game.
 
 ### Import a mod or a map of the original
 
