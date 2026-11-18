@@ -100,7 +100,7 @@ CrazyMod 9 beta 10, a mod that the SoundRTS community played, comes with the gam
 
 In the players menu of a training game, an item for each faction sets a player's faction: the player's name, then the faction, for example "player technical" with the login "player". Each faction has a quiet and an aggressive computer. The map list starts with the maps that CrazyMod recommends: pra1 to pra11, can1 to can5, and jl5. On a server, every player has the mod, because it comes with the game, but each player must turn it on.
 
-The mod's own words are plain English names in place of the original's numbers and French names. Its German, Spanish, French and Italian words are the author's. `data/mods/crazymod/readme.txt` lists what the port changed in the mod, and why.
+The mod's own words are plain English names in place of the original's numbers and French names. Its German and French words are the author's, and its Spanish and Italian words are the later translations that the original game's repository keeps. `data/mods/crazymod/readme.txt` lists what the port changed in the mod, and why.
 
 ### Saved games
 

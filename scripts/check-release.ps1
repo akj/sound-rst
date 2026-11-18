@@ -104,7 +104,7 @@ Assert-FindsTheData $game
 
 $fetched = Get-Hashes $ExpectedRoot $DataFolders
 $checkout = Get-Hashes $Upstream $DataFolders
-$different = Get-Differences $checkout $fetched
+$different = @(Get-Differences $checkout $fetched)
 if ($different.Count -gt 0) {
     throw "The fetched data differs from $Upstream in $($different.Count) files, for example $($different[0])."
 }
@@ -114,7 +114,7 @@ if ((Get-Content (Join-Path $ExpectedRoot 'import.txt') -Raw) -ne (Get-Content (
 Write-Output "The fetched data is the checkout's imported data: $($fetched.Count) files, the same bytes."
 
 $stagedData = Get-Hashes $Folder @('data')
-$different = Get-Differences (Get-Hashes $Repo @('data')) $stagedData
+$different = @(Get-Differences (Get-Hashes $Repo @('data')) $stagedData)
 if ($different.Count -gt 0) {
     throw "The staged data folder differs from the checkout's in $($different.Count) files, for example $($different[0])."
 }

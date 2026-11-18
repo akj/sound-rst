@@ -1,6 +1,6 @@
 CrazyMod 9 beta 10 adds ten factions to SoundRTS: traditional, technical, robotic, undead, elf, orc, elemental, wild, vermin and dark elf.
 Its author's site is http://pragmapragma.free.fr/soundrts-crazymod/ and its files do not name the author.
-This copy comes from SoundRTS 1.2-c4 (2018). It uses English names in place of the original's numbers and French ids, and keeps the author's German, Spanish, French and Italian words.
+This copy comes from SoundRTS 1.2-c4 (2018). It uses English names in place of the original's numbers and French ids, and keeps the author's German and French words. Its Spanish and Italian words are the later translations that the original game's repository keeps in misc/crazymod9beta10.
 
 What the port changed, and why:
 - The raise dead spells of the undead no longer list the empty "rien" unit. In 1.2-c4 it raised nothing and used no corpse; the port refuses a type without a class.

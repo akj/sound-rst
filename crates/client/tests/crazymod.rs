@@ -125,6 +125,8 @@ fn crazymod_loads_in_spanish_with_its_own_style() {
     assert_eq!(h.text("bomber_airship"), "avión bombardero");
     // The author's plural, where the game's own Spanish says "orco".
     assert_eq!(h.text("orc"), "orcos");
+    // The later Spanish translation, where the 2018 zip had the French words.
+    assert_eq!(h.text("dark_elf"), "Elfos oscuros");
     // The Spanish style gives the lumbermill the shortcut c, not the game's l.
     let shortcut = h.client.res.style().get("lumbermill").shortcut.clone();
     assert_eq!(shortcut, Some(vec!["c".to_owned()]));

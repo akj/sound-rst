@@ -6,7 +6,7 @@ A downloaded build of the game does not hold the original game's data. The game 
 
 - `first-start-missing` (program): with no data anywhere, a start from a terminal or a script stops, says where it looked, and says to run `soundrts --fetch-data`.
 - `first-start-fetch` (program): `soundrts --fetch-data` downloads the data of the pinned commit into a folder named after that commit in `%APPDATA%\SoundRTS\data`, and says where it is. A second run downloads nothing.
-- `first-start-probe` (program): `soundrts --probe` prints the data folder, the settings folder, the language, the audio device, and the screen reader, and exits.
+- `first-start-probe` (program): `soundrts --probe` prints the data folder, the folder of the mods that come with the game, the settings folder, the language, the audio device, and the screen reader, and exits.
 - `first-start-release` (program): the release folder that `scripts/stage-release.ps1` makes does the same, the fetched data, once imported, has the same bytes as `vendor/game-data`, and `soundrts-server.exe` answers `--help`.
 - `first-start-installer` (GitHub only): the installer installs, the installed game finds the data, and the uninstaller removes the program and leaves the data. The Release workflow checks this on a GitHub runner.
 - `first-start-ask` (ears): a game started from the desktop with no data asks in a message box whether to download it, says how far the download has got, and then starts.
