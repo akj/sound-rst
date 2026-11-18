@@ -120,5 +120,8 @@ fn crazymod_loads_in_french_with_the_authors_words() {
 fn crazymod_loads_in_spanish_with_its_own_style() {
     let h = with_crazymod("es");
     assert_eq!(h.text("bomber_airship"), "avión bombardero");
+    // The Spanish style gives the lumbermill the shortcut c, not the game's l.
+    let shortcut = h.client.res.style().get("lumbermill").shortcut.clone();
+    assert_eq!(shortcut, Some(vec!["c".to_owned()]));
     check("es");
 }
