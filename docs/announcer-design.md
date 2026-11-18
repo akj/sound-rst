@@ -1,6 +1,6 @@
 # News said while it is fresh
 
-Status: proposal, 17 November 2026. Nothing here is built.
+Status: phase 1 built, 18 November 2026, in the recorded speech tests; not yet heard through NVDA. Phase 2 is a proposal.
 
 ## The problem
 

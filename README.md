@@ -64,7 +64,7 @@ It prints where the data is and exits. If the game already has its data, it down
 
 ## Play
 
-The keys are those of the original. `vendor/game-data/res/ui/bindings.txt` lists every key. To change keys, put your own `bindings.txt` in the settings folder.
+The keys are those of the original, except Control, Alt and Shift pressed alone. Control or Alt alone stops speech, in a game and in the menus. Shift alone does nothing, so that it stays your screen reader's: NVDA's own Shift pauses its speech. Examine, which the original puts on Control, is on Shift C: it describes the target, or the square. `vendor/game-data/res/ui/bindings.txt` lists the original's keys. To change keys, put your own `bindings.txt` in the settings folder.
 
 ### Key help
 
@@ -78,7 +78,7 @@ To get a written record of everything the game says, set `debug_mode = true` in 
 
 To play in another language, write its code in `settings.toml`, for example `language = "fr"`. Without it, the game uses the language of Windows.
 
-Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is said again after it, and the sounds go on playing.
+Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is not said again, except an alert, and stays in the log for F4. The sounds go on playing.
 
 In a text field, such as your login, a server's address, a chat message or the console, Control V pastes the text of the clipboard. The field keeps only the characters it allows, drops line breaks, and holds at most 400 characters. It says what it pasted, then the whole line if the line already had text. Enter still sends the line.
 
@@ -146,9 +146,11 @@ In the options menu, Sound and speech has these items. Each item says its name, 
 
 ### News
 
-While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. News is never lost: a message cut off is said again, newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square), and every message is kept in a log, heard or not.
+While you play, the game tells you news: alerts, production, economy, scouting, chat, system news, and the story. News waits its turn and does not interrupt what you asked for. When the voice is free, it says system news first, then alerts, the story, chat, production, economy and scouting, the oldest of each first. The voice says what matters now: a message that a key's answer cuts off is not said again, except an alert, which is said once more. Newer news about the same thing replaces older news you have not heard yet (the latest gold count, an attack on the same square). News is never lost: every message is kept in a log, heard or not, and F4 tells you what you missed.
 
-Nothing said stops the game. Important messages, such as a player defeated, a new objective or the console's answer, are said before other news waiting, while the game goes on. In single-player, the game waits on purpose while the story is told (a mission's intro, the objective, a cut scene) and while the game menu or the console is open. While the story is told, the game menu, the history and news keys, the copy key, help and the volume keys work. Escape skips the rest of the story, and any other key skips the message being said. The lines you skip are not said at all, even when other news waits behind the story, and they stay in the story category of the log, for Comma and Period to review. A campaign's cut scene between missions works the same way: any key skips a line, and Escape skips the rest. In a game on a server, nothing waits.
+Control or Alt, pressed and released alone, stops speech: the message being said and the news waiting stay in the log, unheard, and nothing more is said until new news comes or you press a key. While you hold Control or Alt, no news starts, so a chord such as Control Up is answered first, and the news goes on after it. Shift alone does nothing.
+
+Nothing said stops the game. Important messages, such as a player defeated, a new objective or the console's answer, are said ahead of production, economy and scouting news, while the game goes on. In single-player, the game waits on purpose while the story is told (a mission's intro, the objective, a cut scene) and while the game menu or the console is open. While the story is told, the game menu, the history and news keys, the copy key, help and the volume keys work. A line that one of them cuts off is not said again. Escape skips the rest of the story, and any other key, Control or Alt alone included, skips the message being said. The lines you skip are not said at all, even when other news waits behind the story, and they stay in the story category of the log, for Comma and Period to review. A campaign's cut scene between missions works the same way: any key skips a line, and Escape skips the rest. In a game on a server, nothing waits.
 
 | Key | Does |
 | --- | --- |
@@ -181,6 +183,7 @@ These keys answer what a sighted player sees at the edge of the screen. Each ans
 | Shift+V | How the first unit you control fights, with the upgrades that apply to it: its damage and how often it strikes, its range and armor, then its most hit points and its speed, for example "footman , damage 6 every 1.5 seconds , range 1 , armor 1.5 . 15 hit points , speed 1.5". |
 | M | How the fight on the square goes: stronger, evenly matched or weaker, then the units that can fight on your side and your allies' against the enemies' you see. A side is stronger when its units do at least twice the damage of the other side's, by the rules of their types: upgrades are not counted. |
 | Shift+X | Every resource, also those that a map adds. |
+| Shift+C | The target, or the square: what the original says on Control. |
 | F12 | The other players: each an ally or an enemy, and whether defeated. |
 | F11 | The players' names, as before. When the rules have more than one faction, as with the orc mod, each name is followed by the player's faction. |
 | Shift+F11 | Your faction, also the one a random choice gave you. |
@@ -206,7 +209,7 @@ NVDA 2024.1 and later can tell the game when speech has ended, and whether you s
 
 2. In the options menu, in Sound and speech, switch "NVDA tells the game when it has finished speaking" on. In `settings.toml`, that is `nvda_direct = true`. The change applies the next time you start the game.
 
-With `nvda_direct = true`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. A message that you silence with Control counts as heard. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = false`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
+With `nvda_direct = true`, the game speaks through NVDA directly and starts the next message as soon as NVDA has finished the current one. Control silences speech, and the news you did not hear stays in the log for F4. With another screen reader, an older NVDA, or no `nvdaControllerClient.dll`, the game speaks through Tolk as before. To turn the route off, switch the item off, or set `nvda_direct = false`. Turn it off if messages stop, overlap, or wait too long. The log `tmp/client.log` says which route the game uses.
 
 The game finds its data folder in this order: the `--root` option, the `SOUNDRTS_ROOT` environment variable, the folder of the program, the current folder, and the downloaded data in `%APPDATA%\SoundRTS\data`. A folder given with `--root` or `SOUNDRTS_ROOT` must hold the data, and the game then looks nowhere else. The data is imported data: the folder holds `res/rules.txt` and the file `import.txt`, which names the import that made it. The game does not read the folder of the original game. It says so, and names the command that imports it.
 

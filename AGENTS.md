@@ -8,7 +8,7 @@ Players rely on the four things below. Do not trade one of them for a feature.
 
 ### 1. Speech and sound are the whole interface
 
-A blind player has no screen to fall back on. Treat a message that comes late, is cut off, or is lost as you would treat a broken screen. Nothing the game says stops the game. Single-player waits on purpose while a story is told, and the menu, history, and news keys still work. News is never lost. A message that is cut off is said again. Each answer to a question is one sentence.
+A blind player has no screen to fall back on. Treat a message that comes late, is cut off, or is lost as you would treat a broken screen. Nothing the game says stops the game. Single-player waits on purpose while a story is told, and the menu, history, and news keys still work. News is never lost: every message stays in the log, and the player can hear what was missed. Alerts are said first. A message that is cut off is not said again, except an alert, once. Each answer to a question is one sentence.
 
 ### 2. A player hears only what that player knows
 
@@ -16,7 +16,7 @@ The fog of war applies to everything the game says and plays. The interface answ
 
 ### 3. The original's files, imported
 
-The game reads only its own layout, and the importer (`crates/import`) converts the original's rules, maps, sounds, translations, and key bindings into it. An import keeps what each file means. It changes one thing: a phrase or a sound has a name where the original has a number, through the table `crates/import/src/original_names.txt`. Rules, style, maps, and computer players keep the original's line syntax, and the words of a language are one text file of `name = words` lines, so a modder needs only a text editor. A name that does not exist is refused when the files load, with its file and its line. Each package's names are its own: a map from a server cannot replace what the game says. The original's keys keep their meaning. The port adds commands only on keys that the original leaves free.
+The game reads only its own layout, and the importer (`crates/import`) converts the original's rules, maps, sounds, translations, and key bindings into it. An import keeps what each file means. It changes one thing: a phrase or a sound has a name where the original has a number, through the table `crates/import/src/original_names.txt`. Rules, style, maps, and computer players keep the original's line syntax, and the words of a language are one text file of `name = words` lines, so a modder needs only a text editor. A name that does not exist is refused when the files load, with its file and its line. Each package's names are its own: a map from a server cannot replace what the game says. The original's keys keep their meaning. The port adds commands only on keys that the original leaves free. One exception, by the developer's choice: Control and Alt pressed alone stop speech, Shift alone does nothing, and examine moves from Control to Shift C.
 
 ### 4. The same input gives the same game
 

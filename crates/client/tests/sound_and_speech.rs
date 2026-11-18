@@ -161,7 +161,7 @@ fn enter_on_the_volume_goes_from_the_top_back_to_silence() {
 }
 
 #[test]
-fn a_volume_key_interrupts_with_the_level_only_and_the_sentence_is_said_in_full() {
+fn a_volume_key_interrupts_with_the_level_and_stops_no_sound() {
     let mut h = Harness::new("en", Script::new().keep_open());
     let sound = h.client.sounds.get_sound("ui/beep");
     h.client
@@ -177,13 +177,10 @@ fn a_volume_key_interrupts_with_the_level_only_and_the_sentence_is_said_in_full(
         h.clock.advance(0.01);
         h.client.voice.update();
     }
+    // The sentence cut off is not said again: it stays in the log.
     assert_eq!(
         h.spoken(),
-        [
-            "the server is full",
-            "60 percent of the volume",
-            "the server is full"
-        ]
+        ["the server is full", "60 percent of the volume"]
     );
     // The level stops no sound: only the voice channel (0) is stopped,
     // to give the level its turn.

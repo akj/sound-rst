@@ -99,13 +99,12 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
     h.press(Key::Escape, Mods::NONE);
     h.step(&mut g);
     assert!(matches!(g.game.mode, Mode::Story(_)));
-    // The message cut off by the menu is said again.
+    // The message cut off by the menu is not said again: the story goes
+    // on with the next.
     run_until_said(&mut h, &mut g, from, 4);
     assert_eq!(g.game.view().turn(), turn, "the world still waits");
-    // A key skips each message; once the last is skipped, the world goes
+    // A key skips the message; once the last is skipped, the world goes
     // on.
-    h.press(Key::Down, Mods::NONE);
-    run_until_said(&mut h, &mut g, from, 5);
     h.press(Key::Down, Mods::NONE);
     h.step(&mut g);
     h.step(&mut g);
@@ -114,13 +113,28 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
     assert!(g.game.view().turn() > turn);
     assert_eq!(
         h.said_since(from),
-        [
-            "once upon a time",
-            "Menu",
-            "continue game",
-            "once upon a time",
-            "the end"
-        ]
+        ["once upon a time", "Menu", "continue game", "the end"]
+    );
+}
+
+#[test]
+fn control_alone_skips_a_line_of_a_story_as_another_key_does() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game
+        .srv_queue
+        .push_front(story(&["once upon a time", "there was", "the end"]));
+    h.step(&mut g);
+    run_until_said(&mut h, &mut g, from, 1);
+    // Control alone, as the queue gives it once released.
+    h.press(Key::LCtrl, Mods::CTRL);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Story(_)));
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(
+        h.said_since(from),
+        ["once upon a time", "there was", "the end"]
     );
 }
 
@@ -170,7 +184,7 @@ fn escape_skips_the_rest_of_a_story_which_stays_in_the_story_log() {
 }
 
 #[test]
-fn control_shift_c_copies_during_a_story_without_skipping_a_line() {
+fn control_shift_c_copies_during_a_story_and_the_story_goes_on() {
     let (mut h, mut g) = training();
     h.run_until_voice_idle(&mut g);
     let from = h.utterances().len();
@@ -189,10 +203,11 @@ fn control_shift_c_copies_during_a_story_without_skipping_a_line() {
     h.step(&mut g);
     assert!(matches!(g.game.mode, Mode::Story(_)));
     h.run_until_voice_idle(&mut g);
-    // The line cut off by the answer is said again.
+    // The line cut off by the answer is not said again, and the story goes
+    // on.
     assert_eq!(
         h.said_since(from),
-        ["once upon a time", "copied", "once upon a time", "the end"]
+        ["once upon a time", "copied", "the end"]
     );
     assert_eq!(
         h.desktop
@@ -390,12 +405,13 @@ fn key_help_turns_on_during_a_story_and_the_story_is_still_said() {
     h.step(&mut g);
     assert!(matches!(g.game.mode, Mode::KeyHelp));
     assert!(!g.game.world_waits());
-    run_until_said(&mut h, &mut g, from, 3);
+    // The line that key help cuts off is not said again; the rest of the
+    // story is.
+    run_until_said(&mut h, &mut g, from, 2);
     assert_eq!(
-        h.said_since(from)[..3],
+        h.said_since(from)[..2],
         [
             "key help on: press a key to hear what it does, Escape to leave",
-            "once upon a time",
             "the end"
         ]
     );

@@ -145,6 +145,8 @@ impl GameInterface {
             C::HistoryPrevious => cx.voice.previous(),
             C::HistoryNext => cx.voice.say_next(true),
             C::HistoryStop => cx.voice.say_next(false),
+            C::Silence => cx.voice.silence(),
+            C::Nothing => {}
             C::Unheard => cx.voice.unheard(),
             C::ReviewPrevious => cx.voice.review_previous(),
             C::ReviewNext => cx.voice.review_next(),

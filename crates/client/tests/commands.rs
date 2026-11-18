@@ -48,14 +48,17 @@ fn every_command_of_bindings_txt_is_parsed_into_a_handled_command() {
     let mut typed: Bindings<GameCommand> = Bindings::new();
     let text = game_bindings_text(&h.client.res, &h.client.paths.custom_bindings());
     typed.load(&text, &GameCommand::parse, &h.client.log);
-    // The client's own bindings come on top of the file's.
+    // The client's own bindings come on top of the file's, and replace
+    // its six modifiers pressed alone.
     let mut own: Bindings<String> = Bindings::new();
     own.load(
         &file("client", soundrts::bindings::CLIENT_BINDINGS),
         &|name, _| Ok(name.to_owned()),
         &Log::silent(),
     );
-    assert_eq!(typed.len(), raw.len() + own.len());
+    let replaced = own.iter().filter(|(c, _)| raw.get(c).is_some()).count();
+    assert_eq!(replaced, 6);
+    assert_eq!(typed.len(), raw.len() + own.len() - replaced);
     assert_eq!(h.log_text(), "", "no line of bindings.txt was ignored");
     for (name, _) in EXCLUDED {
         assert!(names.iter().any(|n| n == name), "{name} is bound");

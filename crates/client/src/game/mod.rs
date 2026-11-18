@@ -271,7 +271,7 @@ pub struct GameInterface {
 
 impl GameInterface {
     fn with(cx: &mut Client, source: Source, seat: SeatView, speed: f64) -> Self {
-        cx.voice.silent_flush();
+        cx.voice.silence();
         GameInterface {
             source,
             me: seat.player(),

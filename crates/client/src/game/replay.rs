@@ -596,7 +596,7 @@ impl GameInterface {
         let playing = r.run == Run::Playing;
         self.speed = factor;
         if pace == Pace::Fastest && was != Pace::Fastest {
-            cx.voice.silent_flush();
+            cx.voice.silence();
             self.silence_noises(cx);
             // The events of the last turn waiting would be heard.
             if playing {
@@ -654,7 +654,7 @@ impl GameInterface {
         r.run = Run::Jumping { target, from };
         r.progress_said_at = now;
         r.waiting_for_world_update = false;
-        cx.voice.silent_flush();
+        cx.voice.silence();
         self.drop_turns_waiting();
         self.silence_noises(cx);
     }

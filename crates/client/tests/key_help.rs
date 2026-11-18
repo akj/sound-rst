@@ -80,7 +80,7 @@ fn a_modifier_alone_is_described_when_it_is_released() {
     h.run_until_voice_idle(&mut g);
     assert_eq!(
         h.said_since(from),
-        ["Left Control: describe the target or the square"]
+        ["Left Control: stop speech and the news waiting"]
     );
 }
 

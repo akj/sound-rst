@@ -119,7 +119,10 @@ not busy, no queued part) and no message is waiting to be said.
   main key is pressed, with the modifiers held.
 - A modifier pressed alone acts when it is released, and only if no other
   key went down while it was held (`src/input.rs`). So a script presses
-  and releases it: `key LCTRL`, then `release LCTRL`.
+  and releases it: `key LCTRL`, then `release LCTRL`. In a game and in a
+  menu, `LCTRL`, `RCTRL`, `LALT` and `RALT` alone stop speech and give up
+  the news waiting, and `LSHIFT` and `RSHIFT` alone do nothing. While
+  Control or Alt is held, the voice starts no news.
 - A release is an event of its own in the queue. A menu reads one event
   per pass, so a release costs it a pass (10 ms). The game loop reads
   every waiting event in one pass.
@@ -226,7 +229,9 @@ So the events of an update reach the interface one per loop pass, and
 the end of the turn last. Handling the end of the turn brings the
 interface's own copies of the entities and of the observed squares up to
 date, and notes the terrain and the upgrades it sees. A pass takes 1 ms: nothing said holds it. Important messages
-and the messages of a story are news, said before the other news waiting.
+and the messages of a story are news. The voice says the news waiting in
+the order of `Category::ORDER`: system news, alerts, the story, chat,
+production, economy, scouting.
 A story ends when its last message has been said or skipped; any key but
 those of the game menu, the history, the news, help and the volume skips
 the message being said. A key pressed in a game reaches the world with the
@@ -294,7 +299,7 @@ Events:
   - `history`: a message said again from the log (`F5`, the review keys,
     what did I miss).
 - `voice cut queue=<n>`: speech in progress was stopped other than by a new
-  message (a silent flush, sounds stopped, a skip in the history...). `n`
+  message (a silence, sounds stopped, a skip in the history...). `n`
   parts were still queued in the voice channel. When only the sounds were
   stopped, those parts stay there and play on.
 - `step <n> <step>`: step `n` was delivered. A `type` step shows the key
@@ -355,7 +360,7 @@ starts empty: no campaign bookmarks, no remembered menu choices.
 | `menus_options` | modify login (typed letters, a rejected character, SHIFT, Backspace, Enter), a key during the non-interruptible "new login" alert (dropped), an empty login, Escape; the mods menu (Back also closes the options menu); the soundpacks menu; choosing a soundpack (new window title, new main menu, quitting it exits) |
 | `menus_single` | the single player menu, a campaign's chapter menu, the map list (a key interrupting the confirmation and the title, browsing, first-letter search both ways), the players menu (invite quiet, aggressive, random until full; start; the player's own income; cancel), a 4-player game cancelled at once with its score, the map list remembering the last map first |
 | `training_choices` | the players menu of a training game: a computer's level and income, the player's own income, every choice said again with the new values; the game names the computer at its new level (F11) |
-| `training_jl1` | a game on jl1 against a quiet computer: every command of `res/ui/bindings.txt` except `fullscreen` and `say` (168 of its 170 key bindings), building, training, a rally point, gathering, groups, all selection keys, zoom, first person, history with interruptions, cheat mode, the console, changing player, the game menu (speed, three ways in, a quirk), news, quitting and the score |
+| `training_jl1` | a game on jl1 against a quiet computer: every key of `res/ui/bindings.txt` except `fullscreen` and `say` (168 of its 170 key bindings; its six modifiers pressed alone have the client's meaning, so `examine` is pressed on Shift C), building, training, a rally point, gathering, groups, all selection keys, zoom, first person, history with interruptions, cheat mode, the console, changing player, the game menu (speed, three ways in, a quirk), news, quitting and the score |
 | `training_long` | about 1,700 turns on jl5 (water, high ground) against an aggressive computer: enemy sightings, alerts, losses, defeat, the score |
 | `campaign_level` | the level of a campaign's computers: each choice, the menu saying the new level at once, the level kept after leaving the campaign; the prologue and chapter 1, cancelled |
 | `campaign` | the prologue cut scene, chapter 1 (title, intro, objectives, a farm completing an objective, barracks from the console, the cut scene, victory, score), the victory menu, chapter 2 (computer units attack, a unit neutralized), cancel, the defeat menu |
@@ -382,9 +387,6 @@ again.
   every later message of the history, until the end (`training_jl1`: two
   quick F5 say "7 wood" again, then "1 footman enemy at c 2" follows by
   itself).
-- An `info` message cut by another message (`item`, `menu`,
-  `confirmation`) is said again afterwards, from the start, however long
-  it had been playing.
 - An empty login says an `item` message with one empty text part (it ends
   at once), then the "bad login" alert (`menus_options`).
 - Stopping the sounds before a campaign's cut scene (`campaign`, the
@@ -409,11 +411,6 @@ again.
 - Saying the time reports the measured speed (`speed 1.1` a few turns
   after the game menu was open for a while: the average turn duration
   includes the pause; `training_jl1`).
-- A modifier key pressed alone in a game is a command (`LCTRL` examines,
-  `LSHIFT` and `LALT` stop the history). In a menu, CTRL alone says the
-  "press Tab to select" explanation, ALT alone skips the current message,
-  and SHIFT alone says nothing. Each acts when the modifier is released
-  (see Input).
 - Backspace in a menu is a first-letter search for `\x08`: it says
   nothing.
 - A unit's status names a square or a subsquare target by the place's own

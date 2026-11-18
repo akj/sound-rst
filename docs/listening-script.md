@@ -1,6 +1,6 @@
 # One listening script for everything built and not yet heard
 
-Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, part 14, a cheat that the console cannot read, added with issue #107, and part 15, a computer at level 4, added with issue #86.
+Everything the refactor changed in what you hear has been checked only on the recorded speech device. This script gathers the listening steps of every merged pull request into one, most important first. Written 15 November 2026 against `main` at `383b182`; part 6 updated at `40347d9`, listening to a recorded game added to part 4 at `2220932`, part 11, the names of the sounds, added after `274f9b9`, part 13, a translation in the settings folder, added with issue #93, part 14, a cheat that the console cannot read, added with issue #107, and part 15, a computer at level 4, added with issue #86. Steps 1.4, 1.6, 2.1 to 2.6 and 4.10 updated for phase 1 of `docs/announcer-design.md`, which has its own listening script.
 
 Each step is one action and what you should hear. Each has a number such as 1.3, so a report can be short: "1.3 fail: said twice". A step you skip is worth saying too.
 
@@ -36,11 +36,11 @@ This is the oldest unheard change: speech moved to its own thread in pull reques
 
 1.3. Start another training game. While the story is told, press Escape once. Expected: nothing more of the story is said, and no start of a line is heard.
 
-1.4. Press W for the town hall, A until "recruit peasant", then Enter four times quickly. While the peasants train, keep pressing arrows, Space, Z and X, so that the voice is always answering you. Expected: after your answers, every "peasant N ready!" is still said. None is skipped. A gold or wood count is said once, with its latest value.
+1.4. Press W for the town hall, A until "recruit peasant", then Enter four times quickly. While the peasants train, keep pressing arrows, Space, Z and X, so that the voice is always answering you. Expected: a "peasant N ready!" that your answer cuts off is not said again, and F4 then counts it. A gold or wood count is said once, with its latest value.
 
 1.5. While several messages queue, listen at your usual speech rate. Expected: each follows the one before without a silence and without cutting it off.
 
-1.6. While a long message is being said, press Control. Expected: speech stops at once.
+1.6. While a long message is being said, press Control and let go. Expected: speech stops at once, and no other news starts.
 
 1.7. Order more peasants, and press F4 while they finish. Expected: something like "production 2". Press F4 again: each unheard message, one at a time. When none are left, F4 says "nothing!".
 
@@ -54,17 +54,17 @@ This is the oldest unheard change: speech moved to its own thread in pull reques
 
 ## Part 2. Keys and questions
 
-2.1. Press Control and let go. Expected: the square's description, when you let go, not when you press. NVDA may also silence speech when you press Control.
+2.1. Press Shift+C. Expected: the square's description. Press Control and let go: nothing is said.
 
 2.2. Hold Control and press Tab, then let go of both. Expected: only the target, such as "a meadow to the northwest", with no square description before it.
 
-2.3. Wait for some news, such as "peasant 1 ready", and press Shift+Up while it is being said. Expected: the cursor moves, or you hear the edge-of-map sound. The news is not skipped: it is said again after the square.
+2.3. Wait for some news, such as "peasant 1 ready", and press Shift+Up while it is being said. Expected: the cursor moves, or you hear the edge-of-map sound. The news is not said again, and F4 counts it.
 
-2.4. Hold Control for two seconds, then let go. Expected: the square's description once, when you let go.
+2.4. Press Control+F1 for key help, hold Control for two seconds, then let go. Expected: "Left Control: stop speech and the news waiting" once, when you let go. Press Escape.
 
 2.5. Hold an arrow key. Expected: it repeats at your Windows keyboard speed, after your Windows repeat delay.
 
-2.6. Press Alt alone and let go, then press an arrow. Expected: Alt skips the current message, and the arrow is answered normally. If the arrow does nothing, Windows has opened the window's system menu, and I need to know.
+2.6. Press Alt alone and let go while news is said, then press an arrow. Expected: Alt stops speech, and the arrow is answered normally. If the arrow does nothing, Windows has opened the window's system menu, and I need to know.
 
 2.7. Press Control+F1. Expected: "key help on: press a key to hear what it does, Escape to leave". Press Z, then Control+Tab, then Shift+S: each says its name and what it does, and nothing happens in the game. Press Insert: "Insert: no command". Press Escape: "key help off".
 
@@ -126,7 +126,7 @@ This is the oldest unheard change: speech moved to its own thread in pull reques
 
 4.9. During a story, press F1, and while help is speaking press Escape. Expected: the help stops at once.
 
-4.10. During a story, press Control+Shift+C. Expected: "copied", then the line again, and the story goes on.
+4.10. During a story, press Control+Shift+C. Expected: "copied", then the next line: the story goes on.
 
 4.11. In a training game, let the computer beat you. Expected: "You have been defeated" is said while the battle sounds carry on.
 

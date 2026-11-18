@@ -170,18 +170,28 @@ fn a_count_kept_unheard_goes_on_counting() {
 }
 
 #[test]
-fn a_count_cut_off_is_said_again_with_what_it_counted_since() {
+fn a_count_cut_off_is_replaced_by_a_newer_count_with_what_it_counted() {
     let mut h = Harness::new("en", Script::new());
-    h.client.voice.news(lost(&["footman"]), Policy::Speak);
+    let trained = |items: &[&str]| {
+        let items = items.iter().map(|s| t(s)).collect();
+        let count = Count::new(items, false, t("trained"), Rank(0, 0));
+        News::counting(Category::Production, Subject::ProductionDeferred, count)
+    };
+    h.client.voice.news(trained(&["footman"]), Policy::Speak);
     h.client.voice.news_complete();
     run(&mut h, 0.5);
+    // Cut off, the count is given up, and the newer one counts it.
     h.client.voice.item(&t("x"));
-    h.client.voice.news(lost(&["footman"]), Policy::Speak);
+    h.client.voice.news(trained(&["archer"]), Policy::Speak);
     h.client.voice.news_complete();
     run(&mut h, 6.0);
     assert_eq!(
         h.spoken(),
-        ["1 footman lost at b 2", "x", "2 footman lost at b 2"]
+        ["1 footman trained", "x", "1 footman and 1 archer trained"]
+    );
+    assert_eq!(
+        log(&h),
+        [("1 footman and 1 archer trained".to_owned(), Heard::Yes)]
     );
 }
 
@@ -517,7 +527,7 @@ fn a_report_that_speech_goes_on_keeps_the_next_message_waiting_past_the_estimate
 }
 
 #[test]
-fn a_message_cancelled_at_the_screen_reader_is_dismissed_and_not_repeated() {
+fn a_message_cancelled_at_the_screen_reader_is_unheard_and_not_repeated() {
     let mut h = Harness::new("en", Script::new());
     info(&mut h.client.voice, "aaaaaaaaaa");
     info(&mut h.client.voice, "bbbbb");
@@ -529,8 +539,10 @@ fn a_message_cancelled_at_the_screen_reader_is_dismissed_and_not_repeated() {
     h.client.voice.item(&t("x"));
     run(&mut h, 2.0);
     assert_eq!(h.spoken(), ["aaaaaaaaaa", "x", "bbbbb"]);
+    // The player stopped it: what did I miss finds it.
     let heard: Vec<Heard> = log(&h).into_iter().map(|(_, h)| h).collect();
-    assert_eq!(heard, [Heard::Yes, Heard::Yes]);
+    assert_eq!(heard, [Heard::No, Heard::Yes]);
+    assert_eq!(said(&mut h, Voice::unheard), "production 1");
 }
 
 /// Says a 3 s item, queues news with `queue` half a second in, then says
@@ -566,20 +578,137 @@ fn news_queued_while_an_item_is_said_is_said_after_the_next_item() {
 }
 
 #[test]
-fn news_cut_off_after_more_than_a_second_is_said_again() {
+fn news_cut_off_is_not_said_again_and_what_did_i_miss_counts_it() {
     let mut h = Harness::new("en", Script::new());
     info(&mut h.client.voice, "news of thirty characters, 3 s");
     info(&mut h.client.voice, "more");
     run(&mut h, 1.5);
+    // An arrow key's answer.
     h.client.voice.item(&t("x"));
+    run(&mut h, 10.0);
+    assert_eq!(h.spoken(), ["news of thirty characters, 3 s", "x", "more"]);
+    assert_eq!(said(&mut h, Voice::unheard), "production 1");
+    assert_eq!(
+        said(&mut h, Voice::unheard),
+        "news of thirty characters, 3 s"
+    );
+}
+
+/// An attack on square 2, spoken.
+fn attack(s: &str) -> News {
+    let place = Place::Square(SquareId(2));
+    News::new(Category::Alert, t(s)).about(Subject::Attack(place))
+}
+
+#[test]
+fn an_alert_cut_off_is_said_once_more_and_a_newer_one_once_more_again() {
+    let mut h = Harness::new("en", Script::new());
+    h.client
+        .voice
+        .news(attack("alert of thirty characters, 3 s"), Policy::Speak);
+    for answer in ["x", "y"] {
+        run(&mut h, 1.0);
+        h.client.voice.item(&t(answer));
+    }
     run(&mut h, 10.0);
     assert_eq!(
         h.spoken(),
         [
-            "news of thirty characters, 3 s",
+            "alert of thirty characters, 3 s",
             "x",
-            "news of thirty characters, 3 s",
-            "more"
+            "alert of thirty characters, 3 s",
+            "y"
+        ]
+    );
+    // A new attack on the same square is new news: cut off, it too is said
+    // once more.
+    h.client
+        .voice
+        .news(attack("a second attack, 3 seconds long"), Policy::Speak);
+    run(&mut h, 1.0);
+    h.client.voice.item(&t("z"));
+    run(&mut h, 10.0);
+    assert_eq!(
+        h.spoken()[4..],
+        [
+            "a second attack, 3 seconds long",
+            "z",
+            "a second attack, 3 seconds long"
+        ]
+    );
+}
+
+#[test]
+fn an_alert_is_said_before_the_production_news_waiting() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    for m in ["p1 being said", "p2", "p3", "p4"] {
+        info(v, m);
+    }
+    tell(v, Category::Alert, "under attack");
+    run(&mut h, 10.0);
+    assert_eq!(
+        h.spoken(),
+        ["p1 being said", "under attack", "p2", "p3", "p4"]
+    );
+}
+
+#[test]
+fn silence_gives_up_the_message_being_said_and_the_news_waiting() {
+    let mut h = Harness::new("en", Script::new());
+    for m in ["aaaaaaaaaa", "bbbbb", "ccccc"] {
+        info(&mut h.client.voice, m);
+    }
+    run(&mut h, 0.5);
+    h.client.voice.silence();
+    run(&mut h, 3.0);
+    assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
+    assert_eq!(said(&mut h, Voice::unheard), "production 3");
+    // New news is said.
+    info(&mut h.client.voice, "new");
+    run(&mut h, 3.0);
+    assert_eq!(h.spoken()[1..], ["production 3", "new"]);
+}
+
+/// The game of 17 November in short, on the speech device that guesses
+/// the end of speech: news waits, and a key cuts what is said every 2
+/// seconds for 60 seconds. An attack comes after 10 seconds.
+#[test]
+fn news_cut_off_by_a_key_every_two_seconds_never_starts_a_third_time() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    for m in ["1 gold mine and 1 wood at m 2", "1 gold mine at e 7"] {
+        tell(v, Category::Scouting, m);
+    }
+    for m in ["town hall 2 complete", "peasant 3 ready", "farm 2 complete"] {
+        info(v, m);
+    }
+    for i in 0..30 {
+        if i == 5 {
+            h.client
+                .voice
+                .news(attack("alert at c 3, under attack"), Policy::Speak);
+        }
+        run(&mut h, 2.0);
+        h.client.voice.item(&t("x"));
+    }
+    run(&mut h, 10.0);
+    let spoken: Vec<String> = h.spoken().into_iter().filter(|s| s != "x").collect();
+    let starts = |m: &str| spoken.iter().filter(|s| *s == m).count();
+    for m in &spoken {
+        let expected = if m.starts_with("alert at") { 2 } else { 1 };
+        assert_eq!(starts(m), expected, "{m}: {spoken:?}");
+    }
+    assert_eq!(
+        spoken,
+        [
+            "1 gold mine and 1 wood at m 2",
+            "town hall 2 complete",
+            "peasant 3 ready",
+            "farm 2 complete",
+            "1 gold mine at e 7",
+            "alert at c 3, under attack",
+            "alert at c 3, under attack"
         ]
     );
 }
@@ -763,8 +892,8 @@ fn news_of_an_earlier_game_is_not_replaced_by_a_new_games() {
     let gold = |s: &str| News::new(Category::Economy, t(s)).about(Subject::Resource(0));
     let v = &mut h.client.voice;
     v.news(gold("10 gold"), Policy::Log);
-    // The queue given up (as the game menu does) does not end the game.
-    v.silent_flush();
+    // The queue given up does not end the game.
+    v.silence();
     v.news(gold("11 gold"), Policy::Log);
     v.start_game();
     v.news(gold("20 gold"), Policy::Log);
@@ -777,7 +906,7 @@ fn giving_up_the_queue_keeps_its_news_unheard() {
     let mut h = Harness::new("en", Script::new());
     info(&mut h.client.voice, "aaaaaaaaaa");
     info(&mut h.client.voice, "bbbbb");
-    h.client.voice.silent_flush();
+    h.client.voice.silence();
     run(&mut h, 3.0);
     assert_eq!(h.spoken(), ["aaaaaaaaaa"]);
     assert_eq!(

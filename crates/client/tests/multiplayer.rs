@@ -280,7 +280,7 @@ fn what_changes_in_the_room_is_said() {
 }
 
 #[test]
-fn chat_is_said_while_a_submenu_is_open_before_the_queued_messages() {
+fn news_is_said_while_a_submenu_is_open_system_news_before_chat() {
     let script = Script::new()
         .at(8.0)
         .tap(Key::Down)
@@ -298,9 +298,9 @@ fn chat_is_said_while_a_submenu_is_open_before_the_queued_messages() {
         from(&said(&h), "carol has just logged in"),
         [
             "carol has just logged in",
-            "<magic/conversion> bob says hi",
-            "<magic/conversion> bob says hi",
             "dave has just logged in",
+            "<magic/conversion> bob says hi",
+            "<magic/conversion> bob says hi",
             "cancel",
         ]
     );
@@ -2013,11 +2013,17 @@ fn a_flare_on_a_server_takes_an_ally_to_its_square() {
         andrew.press(Key::F7, Mods::CTRL);
         andrew.step(&mut a);
     }
+    // Each flare that went is an alert in Bob's log at its square. An
+    // alert cut off is said once more, so what Bob hears does not count
+    // them.
     let flared = |h: &Harness| {
-        h.said_since(b_from)
-            .iter()
-            .filter(|s| s.starts_with("andrew : flare at "))
-            .count()
+        let mut n = 0;
+        let mut before = None;
+        while let Some((id, at)) = h.client.voice.alert_before(before) {
+            n += usize::from(at == square);
+            before = Some(id);
+        }
+        n
     };
     let too_fast = |h: &Harness| {
         h.said_since(a_from)
@@ -2047,6 +2053,13 @@ fn a_flare_on_a_server_takes_an_ally_to_its_square() {
     assert_eq!(too_fast(&andrew), 1, "{said:#?}");
     assert!(!said.iter().any(|s| s.contains("flare at")), "{said:#?}");
     assert_eq!(flared(&bob), 3, "{:#?}", bob.said_since(b_from));
+    assert!(
+        bob.said_since(b_from)
+            .iter()
+            .any(|s| s.starts_with("andrew : flare at ")),
+        "{:#?}",
+        bob.said_since(b_from)
+    );
     bob.key(&mut b, Key::Delete, Mods::NONE);
     assert_eq!(b.game.place, Some(square));
     server.shutdown();

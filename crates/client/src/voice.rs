@@ -5,11 +5,13 @@
 //! queue. Outside a game, a message said now holds the caller until it is
 //! said or a key is pressed; inside the game loop nothing waits. News the
 //! game volunteers waits in the queue, as the policy of its category says,
-//! and is never lost: a message cut off goes back in the queue, newer news
+//! in the order of [`Category::ORDER`]. The voice says what matters now: a
+//! message cut off is not said again, except an alert, once, and Control
+//! or Alt alone silences it all. The log remembers, so news is never lost:
+//! every message but answers is kept in it, heard or not, and newer news
 //! about a subject joins the unheard news about it (a count adds what it
-//! counts to it), and every message but answers is kept in a log. The
-//! player can walk back through the log, one category at a time, or through
-//! what they have not heard.
+//! counts to it). The player can walk back through the log, one category
+//! at a time, or through what they have not heard.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -296,6 +298,9 @@ pub enum Heard {
     /// recorded sounds to be played.
     Waiting {
         sounds_only: bool,
+        /// Cut off once already: an alert is said again once, nothing else
+        /// is.
+        cut: bool,
     },
     /// Kept without its words being said.
     No,
@@ -454,17 +459,16 @@ impl Voice {
     }
 
     /// The index of the next message waiting to be said, or `log.len()`:
-    /// the first one of the first category of [`Category::AHEAD`] that has
-    /// one, else the first.
+    /// the oldest one of the first category of [`Category::ORDER`] that has
+    /// one.
     fn next_waiting(&self) -> usize {
-        Category::AHEAD
+        Category::ORDER
             .iter()
             .find_map(|&c| {
                 self.log
                     .iter()
                     .position(|e| e.is_waiting() && e.category() == Some(c))
             })
-            .or_else(|| self.log.iter().position(Entry::is_waiting))
             .unwrap_or(self.log.len())
     }
 
@@ -477,12 +481,18 @@ impl Voice {
     }
 
     /// The message being said is over. Under the sound policy, outside the
-    /// history, only its sounds were played: its words stay unheard.
+    /// history, only its sounds were played: its words stay unheard. A
+    /// message the player silenced at the screen reader stays unheard too.
     fn mark_current_as_said(&mut self) {
         let history = self.history;
+        let cancelled = self.channel.was_cancelled();
         if let Some(e) = self.log.get_mut(self.current) {
             e.heard = match e.heard {
-                Heard::Waiting { sounds_only: true } if !history => Heard::No,
+                Heard::Waiting { .. } if cancelled => Heard::No,
+                heard if cancelled => heard,
+                Heard::Waiting {
+                    sounds_only: true, ..
+                } if !history => Heard::No,
                 _ => Heard::Yes,
             };
         }
@@ -492,14 +502,33 @@ impl Voice {
         self.current = self.next_waiting();
     }
 
-    /// The queued message on the voice channel counts as said if the
-    /// player silenced it at the screen reader. Cut off by the game, it
-    /// stays unsaid and is said again when the voice is free. A message
-    /// still waiting is not touched.
-    fn dismiss_current_if_cancelled(&mut self) {
-        if self.active && self.current_message_is_waiting() && self.channel.was_cancelled() {
-            self.mark_current_as_said();
+    /// What is said now cuts off the message of the queue being said, if
+    /// the voice channel is still busy with it; over, or silenced at the
+    /// screen reader, it is marked as said. Cut off, an alert is said once
+    /// more. Any other message, and an alert cut off a second time, is
+    /// given up: it stays in the log, unheard.
+    fn give_up_cut_news(&mut self) {
+        if !(self.active && self.current_message_is_waiting()) {
+            return;
         }
+        if self.channel.was_cancelled() || !self.channel.get_busy() {
+            self.mark_current_as_said();
+            return;
+        }
+        let e = &mut self.log[self.current];
+        e.heard = match (e.category(), e.heard) {
+            (
+                Some(Category::Alert),
+                Heard::Waiting {
+                    sounds_only,
+                    cut: false,
+                },
+            ) => Heard::Waiting {
+                sounds_only,
+                cut: true,
+            },
+            _ => Heard::No,
+        };
     }
 
     fn start_current(&mut self) {
@@ -669,13 +698,19 @@ impl Voice {
 
     /// The player hears another side, or the same side from another
     /// moment (a watcher moved to another player, a seat back after a lost
-    /// connection, a replay's jump): the counts held are given up, and a
-    /// newer count replaces the unheard news it would have counted on.
+    /// connection, a replay's jump): the counts held are given up, the news
+    /// waiting is given up and stays in the log unheard, and a newer count
+    /// replaces the unheard news it would have counted on. The message
+    /// being said goes on.
     pub fn new_side(&mut self) {
         self.give_up_held();
-        for e in &mut self.log {
+        let being_said = self.active.then_some(self.current);
+        for (i, e) in self.log.iter_mut().enumerate() {
             if let Content::News(n) = &mut e.content {
                 n.stop_counting();
+            }
+            if e.is_waiting() && being_said != Some(i) {
+                e.heard = Heard::No;
             }
         }
     }
@@ -690,12 +725,17 @@ impl Voice {
             Content::Now(_) => None,
         });
         let news = news.join(older_news)?;
+        // News that takes the place of news cut off is new: not cut off.
         let heard = match policy {
             Policy::Drop => return None,
-            Policy::Speak => Heard::Waiting { sounds_only: false },
-            Policy::Sound if self.channel.has_sounds(&news.parts) => {
-                Heard::Waiting { sounds_only: true }
-            }
+            Policy::Speak => Heard::Waiting {
+                sounds_only: false,
+                cut: false,
+            },
+            Policy::Sound if self.channel.has_sounds(&news.parts) => Heard::Waiting {
+                sounds_only: true,
+                cut: false,
+            },
             Policy::Sound | Policy::Log => Heard::No,
         };
         let id = match older {
@@ -720,16 +760,16 @@ impl Voice {
         self.log.iter().any(|e| e.id == id && e.is_waiting())
     }
 
-    /// Says now, cutting the message being said (news cut off is said
-    /// again in its turn). Outside a game, waits until the end, or until a
-    /// key press unless it is an alert; the key press stays queued after a
-    /// confirmation or a menu title. In a game, does not wait. Whether
-    /// Escape cut it short.
+    /// Says now, cutting the message being said (see
+    /// [`Voice::give_up_cut_news`]). Outside a game, waits until the end, or
+    /// until a key press unless it is an alert; the key press stays queued
+    /// after a confirmation or a menu title. In a game, does not wait.
+    /// Whether Escape cut it short.
     fn say_now(&mut self, msg: &Msg, kind: VoiceKind, content: Content) -> bool {
         if msg.is_empty() {
             return false;
         }
-        self.dismiss_current_if_cancelled();
+        self.give_up_cut_news();
         self.channel.play(msg, CENTERED, kind, Parts::All);
         let mut escaped = false;
         if !self.in_game {
@@ -774,7 +814,7 @@ impl Voice {
 
     fn answer(&mut self, msg: &Msg, volumes: (f64, f64)) {
         if !msg.is_empty() {
-            self.dismiss_current_if_cancelled();
+            self.give_up_cut_news();
             self.go_to_next_unsaid();
             self.channel.play(msg, volumes, VoiceKind::Item, Parts::All);
             self.active = false;
@@ -784,7 +824,7 @@ impl Voice {
 
     /// Says a message of the log again, now, and counts it as heard.
     fn say_entry(&mut self, i: usize) {
-        self.dismiss_current_if_cancelled();
+        self.give_up_cut_news();
         let e = &mut self.log[i];
         e.heard = Heard::Yes;
         let parts = e.parts().clone();
@@ -941,7 +981,7 @@ impl Voice {
     }
 
     /// Moves the queue along: starts the next unsaid message when the
-    /// voice is free. Call it often.
+    /// voice is free and neither Control nor Alt is held. Call it often.
     pub fn update(&mut self) {
         if self.channel.get_busy() {
             self.channel.update();
@@ -954,13 +994,21 @@ impl Voice {
             self.active = false;
         }
         self.trim();
+        // The screen reader silences speech as the key goes down. Released
+        // alone, the key silences the voice; released after a chord, the
+        // chord's answer is said, and then the queue goes on.
+        if self.input.control_or_alt_held() {
+            return;
+        }
         if !self.history {
             self.go_to_next_unsaid();
         }
         match self.log.get(self.current) {
             Some(e) => {
                 let which = match e.heard {
-                    Heard::Waiting { sounds_only: true } if !self.history => Parts::Sounds,
+                    Heard::Waiting {
+                        sounds_only: true, ..
+                    } if !self.history => Parts::Sounds,
                     _ => Parts::All,
                 };
                 let kind = if self.history {
@@ -986,32 +1034,42 @@ impl Voice {
     }
 
     /// A game is over: the news about it waiting to be said is given up,
-    /// and stays in the log unheard. The news said ahead of the others
-    /// (what players say, news of the game itself, the story) is still
-    /// said, since the end of a game is often what it tells; so is the
-    /// message being said. A walk through the history ends with it.
+    /// and stays in the log unheard. News of the game itself, the story and
+    /// what players say are still said, since the end of a game is often
+    /// what they tell; so is the message being said. A walk through the
+    /// history ends with it.
     pub fn end_game(&mut self) {
+        const STILL_SAID: [Category; 3] = [Category::System, Category::Story, Category::Chat];
         let being_said = self.active.then_some(self.current);
         if std::mem::take(&mut self.history)
             && let Some(e) = being_said.and_then(|i| self.log.get_mut(i))
-            && e.heard == (Heard::Waiting { sounds_only: true })
+            && let Heard::Waiting {
+                sounds_only: true,
+                cut,
+            } = e.heard
         {
             // Said from the history with its words: heard once it ends.
-            e.heard = Heard::Waiting { sounds_only: false };
+            e.heard = Heard::Waiting {
+                sounds_only: false,
+                cut,
+            };
         }
         for (i, e) in self.log.iter_mut().enumerate() {
-            let ahead = e.category().is_some_and(|c| Category::AHEAD.contains(&c));
-            if e.is_waiting() && !ahead && being_said != Some(i) {
+            let still_said = e.category().is_some_and(|c| STILL_SAID.contains(&c));
+            if e.is_waiting() && !still_said && being_said != Some(i) {
                 e.heard = Heard::No;
             }
         }
     }
 
-    /// Stops talking and gives up the queue: the messages waiting stay in
-    /// the log, unheard.
-    pub fn silent_flush(&mut self) {
+    /// Stops talking and gives up the queue: the message being said and the
+    /// messages waiting stay in the log, unheard, and a walk through the
+    /// history ends. Nothing more is said until news comes, or the player
+    /// asks for something.
+    pub fn silence(&mut self) {
         self.channel.stop();
         self.active = false;
+        self.history = false;
         self.current = self.log.len();
         for e in &mut self.log {
             if e.is_waiting() {

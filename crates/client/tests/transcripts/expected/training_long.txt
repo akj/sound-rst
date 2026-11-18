@@ -192,8 +192,8 @@ length 9999 208980
 @435853 sounds 54 1650cb7a98308408
 @435853 step 37 key CTRL PAGEDOWN
 @435853 voice item "j 7 , meadows , plateau , in the fog of war , 2 archer enemy"
-@442253 voice info "1 archer enemy at j 7"
-@444753 voice info "1 peasant lost at j 8"
+@442253 voice info "1 peasant lost at j 8"
+@444753 voice info "1 archer enemy at j 7"
 @455455 voice info "1 archer enemy at j 7"
 @459957 voice info "70 wood"
 @473457 voice info "1 archer enemy at j 7"

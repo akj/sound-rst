@@ -149,6 +149,11 @@ pub enum GameCommand {
     HistoryPrevious,
     HistoryNext,
     HistoryStop,
+    /// Stops speech and gives up the news waiting, which stays in the log.
+    Silence,
+    /// Does nothing: what Shift alone does, so that the screen reader has
+    /// it.
+    Nothing,
     /// What did I miss: the unheard news by category, then each of it.
     Unheard,
     /// The previous message of the category under review.
@@ -312,6 +317,8 @@ const COMMANDS: &[(&str, Parse)] = &[
     ("history_previous", |a| none(a, C::HistoryPrevious)),
     ("history_next", |a| none(a, C::HistoryNext)),
     ("history_stop", |a| none(a, C::HistoryStop)),
+    ("silence", |a| none(a, C::Silence)),
+    ("nothing", |a| none(a, C::Nothing)),
     ("unheard", |a| none(a, C::Unheard)),
     ("review_previous", |a| none(a, C::ReviewPrevious)),
     ("review_next", |a| none(a, C::ReviewNext)),
@@ -633,6 +640,8 @@ impl GameCommand {
             C::HistoryPrevious => "previous message".into(),
             C::HistoryNext => "next message".into(),
             C::HistoryStop => "skip the message being said".into(),
+            C::Silence => "stop speech and the news waiting".into(),
+            C::Nothing => "do nothing".into(),
             C::Unheard => "say what you missed".into(),
             C::ReviewPrevious => "previous message of the category".into(),
             C::ReviewNext => "next message of the category".into(),
@@ -809,6 +818,6 @@ mod tests {
                 None => seen.push((d, c.clone())),
             }
         }
-        assert_eq!(seen.len(), 186);
+        assert_eq!(seen.len(), 187);
     }
 }

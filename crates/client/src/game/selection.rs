@@ -1356,7 +1356,7 @@ mod tests {
         assert_eq!(s.sent(), [Command::Control(vec![peasant]), go]);
         assert!(!s.g.game.has_pending_server_events());
         assert_eq!(s.g.game.target, None);
-        let examined = s.h.key(&mut s.g, Key::LCtrl, Mods::NONE);
+        let examined = s.h.key(&mut s.g, Key::C, Mods::SHIFT);
         assert_eq!(examined, ["b 1 , meadows , 1 farm and 1 peasant"]);
         assert!(s.g.game.known().unit(old).is_none());
     }

@@ -387,9 +387,9 @@ length 9999 208980
 @443764 sounds 53 edf084cd59610b26
 @443764 step 104 key f
 @443764 voice item ", You control 10 footman , , go to b 4 ,"
-@448364 voice info "1 peasant enemy at b 4"
-@450964 voice info "1 peasant neutralized at b 4"
-@454164 voice info "1 town hall neutralized at b 4"
+@448364 voice info "1 peasant neutralized at b 4"
+@451564 voice info "1 town hall neutralized at b 4"
+@454964 voice info "1 peasant enemy at b 4"
 @457564 voice info "1 barracks at building neutralized at b 4"
 @462064 voice info "1 farm neutralized at b 4"
 @464965 sounds 666 910924540a1e4fc9

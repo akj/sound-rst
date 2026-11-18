@@ -72,13 +72,14 @@ fn without_a_players_file_the_games_bindings_stand() {
         ))
     );
     // 172 binding lines; "d" and "CTRL d" are each bound twice. Then the
-    // client's own forty-two, none of them a key of the original's:
-    // reading the chat again, chat and a flare to the allies, the news log
-    // and copying from it, the questions, key help, the previous
-    // objective, the fourteen keys of idle soldiers, a watcher's two to
-    // follow another player, and a listener's seven for the pace, the
-    // pause and the jumps.
-    assert_eq!(b.len(), 212);
+    // client's own forty-three that are no key of the original's: reading
+    // the chat again, chat and a flare to the allies, the news log and
+    // copying from it, the questions, key help, the previous objective, the
+    // fourteen keys of idle soldiers, a watcher's two to follow another
+    // player, a listener's seven for the pace, the pause and the jumps,
+    // and examine. The client's six modifiers pressed alone replace the
+    // original's.
+    assert_eq!(b.len(), 213);
     let news = [
         ("F4", GameCommand::Unheard),
         ("COMMA", GameCommand::ReviewPrevious),
@@ -106,6 +107,13 @@ fn without_a_players_file_the_games_bindings_stand() {
         ("RIGHTBRACKET", GameCommand::ListenJump(1)),
         ("SHIFT LEFTBRACKET", GameCommand::ListenJump(-5)),
         ("SHIFT RIGHTBRACKET", GameCommand::ListenJump(5)),
+        ("SHIFT c", GameCommand::Examine),
+        ("LCTRL", GameCommand::Silence),
+        ("RCTRL", GameCommand::Silence),
+        ("LALT", GameCommand::Silence),
+        ("RALT", GameCommand::Silence),
+        ("LSHIFT", GameCommand::Nothing),
+        ("RSHIFT", GameCommand::Nothing),
     ];
     for (key, c) in news {
         assert_eq!(b.get(&Chord::parse(key).unwrap()), Some(&c), "{key}");
