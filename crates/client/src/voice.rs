@@ -754,6 +754,29 @@ impl Voice {
         Some(id)
     }
 
+    /// The messages of `ids` that wait, as they wait now, for
+    /// [`Voice::wait_again`].
+    pub fn waiting_among(&self, ids: &[EntryId]) -> Vec<(EntryId, Heard)> {
+        self.log
+            .iter()
+            .filter(|e| e.is_waiting() && ids.contains(&e.id))
+            .map(|e| (e.id, e.heard))
+            .collect()
+    }
+
+    /// Makes each message of `waiting` that was given up since wait again
+    /// as it waited: a line of a story that the world waits for, cut off,
+    /// is said again.
+    pub fn wait_again(&mut self, waiting: &[(EntryId, Heard)]) {
+        for e in &mut self.log {
+            if e.heard == Heard::No
+                && let Some(&(_, heard)) = waiting.iter().find(|(id, _)| *id == e.id)
+            {
+                e.heard = heard;
+            }
+        }
+    }
+
     /// Whether the message of the log at `id` waits to be said, or is
     /// being said from the queue.
     pub fn is_waiting(&self, id: EntryId) -> bool {

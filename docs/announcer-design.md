@@ -53,6 +53,7 @@ A key's answer, a menu title, an important message or a message of the history c
 
 - An alert with `cut` not set stays waiting, with `cut` set. It is said again after the answer.
 - Every other message, and an alert cut a second time, becomes `Heard::No`. F4 counts it, and the review keys find it.
+- A line of a story that single-player waits for, cut off by a key that works during the story (the game menu, the history and news keys, copy, help, key help, the volume), waits again as before (`story_key` in `crates/client/src/game/mod.rs`). The world waits for the line, so no backlog builds. On a server nothing waits, an objective is ordinary story news, and the rule above applies.
 
 Newer news about the same subject replaces the entry with `cut` not set, because a new event is new news. Example: a second attack on the same square after 10 quiet seconds.
 
