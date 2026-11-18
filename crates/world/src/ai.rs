@@ -1640,7 +1640,7 @@ impl Door<'_> {
                 let n = nb - self.future_nb(&sel);
                 self.build_or_train_or_upgradeto_or_summon(t, n, depth)?;
                 break;
-            } else if let Some(&m) = makers.first() {
+            } else if let Some(m) = self.maker_to_get(&makers) {
                 self.get_types(1, vec![m], depth)?;
                 return Ok(false);
             }
@@ -1822,6 +1822,18 @@ impl Door<'_> {
     /// in definition order.
     fn makers(&self, t: TypeId) -> Vec<TypeId> {
         self.rules().get_makers(t)
+    }
+
+    /// Of the makers of a type that the player lacks, the one to get first:
+    /// the first for which the player owns a maker, else the first listed.
+    /// The original always took the first listed, so a type with two makers
+    /// waited on one it had no way to make while it could make the other.
+    fn maker_to_get(&self, makers: &[TypeId]) -> Option<TypeId> {
+        makers
+            .iter()
+            .copied()
+            .find(|&m| self.nb(&Sel::List(self.makers(m))) > 0)
+            .or_else(|| makers.first().copied())
     }
 
     /// A list of a unit's type, such as what it can use.

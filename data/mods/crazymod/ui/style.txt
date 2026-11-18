@@ -1,0 +1,2008 @@
+; CrazyMod 9
+
+; messages
+
+
+; miscellaneous parameters
+
+def parameters
+recommended_maps pra1 pra2 pra3 pra4 pra5 pra6 pra7 pra8 pra9 pra10 pra11 can1 can2 can3 can4 can5 jl5
+
+
+; abilities
+
+def a_recall
+alert magic/recall
+
+
+; upgrades
+
+
+; research
+
+
+; buildings
+
+
+def townhall
+is_a starting_point
+
+def stables
+noise repeat 25 ambience/horse_1 ambience/horse_2 ambience/horse_3 ambience/horse_4
+
+def necropolis
+noise repeat 20 ambience/necropolis_1 ambience/necropolis_2 ambience/crows
+
+
+; units
+
+
+
+; resources
+
+
+; passages
+
+
+
+; races
+
+
+
+; CrazyMod
+
+
+def bomber_airship
+is_a unit
+title bomber_airship
+move move/bomber_airship
+keyboard soldier5
+noise repeat 20 ambience/bomber_airship_1 ambience/bomber_airship_2 ambience/bomber_airship_3
+death combat/airship_death_1 combat/airship_death_2
+launch_attack combat/bomber_airship_attack
+attack_hit combat/bomber_airship_hit
+
+def powder_magazine
+is_a building
+title powder_magazine
+
+def high_quality_powder
+title high_quality_powder
+
+def highest_quality_powder
+title highest_quality_powder
+
+def a_explode_magazine
+title explode
+alert magic/explode_magazine
+
+def orchard
+is_a building
+title orchard
+noise repeat 30 ambience/orchard_1 ambience/orchard_2 ambience/orchard_3
+
+def hospital
+is_a building
+title hospital
+noise repeat 30 ambience/hospital_1 ambience/hospital_2 ambience/hospital_3
+
+def public_health
+title public_health
+
+def musketeer
+is_a walking_unit
+title musketeer
+noise repeat 25 ambience/musketeer_1 ambience/musketeer_2 ambience/musketeer_3 ambience/musketeer_4
+launch_attack combat/musketeer_shot
+attack_hit combat/bullet_hit
+keyboard soldier1
+
+def magnesite_extractor
+is_a building
+title magnesite_extractor
+noise repeat 30 ambience/magnesite_extractor
+
+def electric_trap
+is_a building
+title electric_trap
+launch_attack combat/electric_trap_attack
+attack_hit combat/lightning_hit_1 combat/lightning_hit_2 combat/lightning_hit_3 combat/lightning_hit_4
+
+
+; new in version 2
+
+def a_hypnotic_wave
+title hypnotic_wave
+alert magic/hypnotic_wave
+
+def magnetic_tower
+is_a building
+title magnetic_tower
+noise repeat 40 ambience/magnetic_tower_1 ambience/magnetic_tower_2 ambience/magnetic_tower_3 ambience/magnetic_tower_4 ambience/magnetic_tower_5
+attack_hit combat/magnetic_tower_hit
+
+def a_bewitch
+title bewitch
+alert magic/bewitch
+
+def ectoplasm
+is_a unit
+title ectoplasm
+noise repeat 10 ambience/ectoplasm_1 ambience/ectoplasm_2 ambience/ectoplasm_3 ambience/ectoplasm_4
+move move/ectoplasm
+death combat/ectoplasm_death
+keyboard soldier6
+
+def a_summon_ectoplasm
+title summon_ectoplasm
+alert magic/summon_ectoplasm
+
+def a_evil_fog
+title evil_fog
+alert magic/evil_fog
+
+def evil_fog
+title evil_fog
+
+def spectral_tower
+is_a building
+title spectral_tower
+noise repeat 30 ambience/spectral_tower_1 ambience/spectral_tower_2 ambience/spectral_tower_3
+
+def ghoul
+is_a walking_unit
+title ghoul
+noise repeat 30 ambience/ghoul_1 ambience/ghoul_2
+attack_hit combat/kick_1 combat/kick_2 combat/kick_3
+keyboard soldier1
+
+def graveyard
+is_a building
+title graveyard
+noise repeat 30 ambience/graveyard
+
+def a_plant_darkness_tree
+title plant_darkness_tree
+alert magic/plant_seed
+
+def a_plant_serenity_tree
+title plant_serenity_tree
+alert magic/plant_seed
+
+def darkness_tree
+is_a unit
+title darkness_tree
+noise repeat 30 ambience/darkness_tree_1 ambience/darkness_tree_2 ambience/darkness_tree_3
+launch_attack combat/tree_attack_1 combat/tree_attack_2
+attack_hit combat/whip_1 combat/whip_2 combat/whip_3
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier7
+
+def serenity_tree
+is_a unit
+title serenity_tree
+noise repeat 30 ambience/serenity_tree_1 ambience/serenity_tree_2 ambience/serenity_tree_3
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier7
+
+def a_grow_carnivorous_plants
+title grow_carnivorous_plants
+alert magic/grow_plants
+
+def a_grow_medicinal_plants
+title grow_medicinal_plants
+alert magic/grow_plants
+
+def carnivorous_plant
+is_a unit
+title carnivorous_plant
+noise repeat 20 ambience/carnivorous_plant_1 ambience/carnivorous_plant_2 ambience/carnivorous_plant_3 ambience/carnivorous_plant_4
+attack_hit combat/carnivorous_plant_hit_1 combat/carnivorous_plant_hit_2 combat/carnivorous_plant_hit_3 combat/carnivorous_plant_hit_4
+death combat/carnivorous_plant_death
+
+def medicinal_plant
+is_a unit
+title medicinal_plant
+noise repeat 30 ambience/medicinal_plant_1 ambience/medicinal_plant_2 ambience/medicinal_plant_3
+death combat/medicinal_plant_death
+
+def high_quality_magnesite
+title high_quality_magnesite
+
+def highest_quality_magnesite
+title highest_quality_magnesite
+
+def transport_airship
+is_a unit
+title transport_airship
+noise repeat 25 ambience/transport_airship_1 ambience/transport_airship_2 ambience/transport_airship_3
+move move/transport_airship
+death combat/airship_death_1 combat/airship_death_2
+keyboard soldier6
+
+
+def grenade_launcher
+is_a walking_unit
+title grenade_launcher
+noise repeat 18 ambience/grenade_launcher_1 ambience/grenade_launcher_2 ambience/grenade_launcher_3 ambience/grenade_launcher_4
+launch_attack combat/grenade_launcher_shot
+attack_hit combat/grenade_launcher_hit
+keyboard soldier2
+
+def starting_point
+is_a building
+title starting_point
+
+def fort
+is_a building
+title fort
+
+def serf
+is_a peasant
+title serf
+
+def thorny_plant
+is_a unit
+title thorny_plant
+noise repeat 30 ambience/thorny_plant_1 ambience/thorny_plant_2 ambience/thorny_plant_3
+attack_hit combat/thorny_plant_hit
+death combat/thorny_plant_death
+
+def city_hall
+is_a building
+title city_hall
+noise repeat 25 ambience/city_hall
+
+def governors_office
+is_a city_hall
+title governors_office
+
+def chancellors_palace
+is_a city_hall
+title chancellors_palace
+
+def military_camp
+is_a building
+title military_camp
+noise repeat 20 ambience/military_camp_1 ambience/military_camp_2
+
+def laborer
+is_a peasant
+title laborer
+
+def airship_factory
+is_a building
+title airship_factory
+noise repeat 20 ambience/airship_factory_1 ambience/airship_factory_2
+
+def scout_airship
+is_a bomber_airship
+title scout_airship
+move move/scout_airship
+keyboard soldier3
+
+def fighter_airship
+is_a bomber_airship
+title fighter_airship
+move move/fighter_airship
+launch_attack combat/fighter_airship_shot
+attack_hit combat/bullet_hit
+keyboard soldier4
+
+
+def garage
+is_a building
+title garage
+noise repeat 30 ambience/garage_1 ambience/garage_2
+
+def minicomputer
+is_a building
+title minicomputer
+noise repeat 30 ambience/minicomputer
+
+def mainframe
+is_a building
+title mainframe
+noise repeat 30 ambience/mainframe_1 ambience/mainframe_2 ambience/mainframe_3 ambience/mainframe_4
+
+def supercomputer
+is_a building
+title supercomputer
+noise repeat 30 ambience/supercomputer_1 ambience/supercomputer_2 ambience/supercomputer_3 ambience/supercomputer_4 ambience/supercomputer_5
+
+def robot_factory
+is_a building
+title robot_factory
+noise repeat 35 ambience/robot_factory_1 ambience/robot_factory_2
+
+def optical_lab
+is_a building
+title optical_lab
+noise repeat 30 ambience/optical_lab
+
+def signal_modulator
+is_a building
+title signal_modulator
+noise repeat 45 ambience/signal_modulator
+
+def particle_accelerator
+is_a building
+title particle_accelerator
+noise repeat 45 ambience/particle_accelerator
+
+def laser_tower
+is_a building
+title laser_tower
+launch_attack combat/laser_tower_shot
+attack_hit combat/laser_hit
+
+def radar_tower
+is_a building
+title radar_tower
+noise repeat 30 ambience/radar_tower_1 ambience/radar_tower_2
+
+def geek
+is_a peasant
+title geek
+
+def laser_shooter
+is_a unit
+title laser_shooter
+noise repeat 10 ambience/robot_1 ambience/robot_2 ambience/robot_3 ambience/robot_4 ambience/robot_5
+move move/magnetic_boots_1 move/magnetic_boots_2
+launch_attack combat/laser_shooter_shot
+attack_hit combat/laser_hit
+keyboard soldier2
+
+def magnetic_cannon
+is_a unit
+title magnetic_cannon
+move move/magnetic_cannon
+launch_attack combat/magnetic_cannon_shot
+attack_hit combat/magnetic_cannon_hit
+keyboard soldier3
+
+def plasma_cannon
+is_a unit
+title plasma_cannon
+move move/plasma_cannon
+launch_attack combat/plasma_cannon_shot
+attack_hit combat/plasma_cannon_hit_1 combat/plasma_cannon_hit_2
+keyboard soldier4
+
+def mobile_sensor
+is_a unit
+title mobile_sensor
+move move/mobile_sensor
+keyboard soldier5
+
+def drone
+is_a unit
+title drone
+move move/drone
+keyboard soldier6
+
+def laser_ship
+is_a unit
+title laser_ship
+move move/laser_ship
+launch_attack combat/laser_ship_shot
+attack_hit combat/laser_hit
+keyboard soldier7
+
+def laser_power
+title laser_power
+
+def plasma_power
+title plasma_power
+
+def a_radar_image
+title radar_image
+alert magic/radar_image
+
+
+
+def mausoleum
+is_a building
+title mausoleum
+noise repeat 20 ambience/mausoleum_1 ambience/mausoleum_2 ambience/crows
+
+def vault
+is_a building
+title vault
+
+def crypt
+is_a building
+title crypt
+noise repeat 30 ambience/crypt
+
+def bone_trap
+is_a building
+title bone_trap
+attack_hit combat/bone_trap_hit
+
+def undead_slave
+is_a peasant
+title undead_slave
+attack_hit combat/undead_slave_hit
+
+def armored_specter
+is_a unit
+title armored_specter
+noise repeat 30 ambience/armored_specter_1 ambience/armored_specter_2 ambience/armored_specter_3 ambience/armored_specter_4 ambience/armored_specter_5
+move move/armored_specter_1 move/armored_specter_2
+attack_hit combat/armored_specter_hit_1 combat/armored_specter_hit_2 combat/armored_specter_hit_3 combat/armored_specter_hit_4
+keyboard soldier7
+
+def ghost
+is_a unit
+title ghost
+noise repeat 15 ambience/ghost_1 ambience/ghost_2 ambience/ghost_3
+move move/ghost
+launch_attack combat/ghost_shot
+attack_hit combat/ghost_hit
+keyboard soldier7
+
+def cursed_gargoyle
+is_a unit
+title cursed_gargoyle
+noise repeat 12 ambience/cursed_gargoyle_1 ambience/cursed_gargoyle_2
+move move/flap_1 move/flap_2
+keyboard soldier6
+
+def thestral
+is_a unit
+title thestral
+noise repeat 12 ambience/thestral_1 ambience/thestral_2 ambience/thestral_3
+move move/flap_1 move/flap_2
+launch_attack combat/thestral_attack_1 combat/thestral_attack_2
+attack_hit combat/light_hit_5 combat/bite_6 combat/bite_2 combat/crunch_hit combat/bite_1
+keyboard soldier5
+
+def lich
+is_a walking_unit
+title lich
+noise repeat 18 ambience/lich_1 ambience/lich_2 ambience/lich_3
+launch_attack combat/lich_shot
+attack_hit combat/lich_hit
+keyboard soldier4
+
+def a_walk_through_walls
+title walk_through_walls
+alert magic/walk_through_walls
+
+def deadly_fog
+title deadly_fog
+
+def wisp
+is_a unit
+title wisp
+noise repeat 18 ambience/wisp
+attack_hit combat/flame_hit
+death combat/vanish
+
+def a_summon_wisps
+title summon_wisps
+alert magic/summon_wisps
+
+def u_unstable_portal
+title unstable_portal
+
+def a_unstable_portal
+title unstable_portal
+alert magic/unstable_portal
+
+def u_stable_portal
+title stable_portal
+
+def a_stable_portal
+title stable_portal
+alert magic/teleportation
+
+
+
+
+def clearing
+is_a building
+title clearing
+
+def tree_city
+is_a building
+title tree_city
+noise repeat 30 ambience/tree_city
+
+def domain
+is_a building
+title domain
+noise repeat 30 ambience/domain_1 ambience/domain_2
+
+def forest_arena
+is_a building
+title forest_arena
+
+def leafy_garden
+is_a building
+title leafy_garden
+noise repeat 30 ambience/leafy_garden_1 ambience/leafy_garden_2
+
+def enchanted_forest
+is_a building
+title enchanted_forest
+noise repeat 30 ambience/enchanted_forest_1 ambience/enchanted_forest_2
+
+def root_trap
+is_a building
+title root_trap
+attack_hit combat/whip_4
+
+def harvester
+is_a peasant
+title harvester
+
+def nimble_archer
+is_a archer
+title nimble_archer
+keyboard soldier1
+
+def forest_archer
+is_a archer
+title forest_archer
+
+def centaur
+is_a unit
+title centaur
+noise repeat 20 ambience/centaur_1 ambience/centaur_2 ambience/centaur_3
+move move/centaur_1 move/centaur_2
+launch_attack combat/centaur_shot
+attack_hit combat/arrow_hit_upgraded
+keyboard soldier3
+
+def druid
+is_a walking_unit
+title druid
+attack_hit combat/druid_hit
+keyboard soldier6
+
+def witch
+is_a walking_unit
+title witch
+noise repeat 25 ambience/witch_1 ambience/witch_2
+launch_attack combat/witch_shot
+attack_hit combat/spell_hit_1 combat/spell_hit_2
+keyboard soldier3
+
+def fairy
+is_a peasant
+title fairy
+noise repeat 20 ambience/fairy_1 ambience/fairy_2
+move move/fairy
+
+def swarm
+title swarm
+noise loop ambience/swarm
+
+def a_swarm
+title swarm
+alert magic/swarm
+
+def green_storm
+title green_storm
+noise loop ambience/green_storm
+
+def a_green_storm
+title green_storm
+alert magic/green_storm
+
+
+
+def encampment
+is_a building
+title encampment
+
+def fortified_encampment
+is_a building
+title fortified_encampment
+
+def fortress
+is_a building
+title fortress
+
+def pit
+is_a building
+title pit
+
+def pen
+is_a building
+title pen
+noise repeat 30 ambience/pen_1 ambience/pen_2
+
+def nest
+is_a building
+title nest
+
+def tepee
+is_a building
+title tepee
+noise repeat 20 ambience/tepee
+
+def spike_trap
+is_a building
+title spike_trap
+launch_attack combat/spike_trap_attack
+attack_hit combat/spike_trap_hit
+
+def peon
+is_a peasant
+title peon
+keyboard worker
+
+def bruiser_troll
+is_a walking_unit
+title bruiser_troll
+attack_hit combat/bruiser_troll_hit_1 combat/bruiser_troll_hit_2 combat/bruiser_troll_hit_3
+keyboard soldier1
+
+def butcher_troll
+is_a bruiser_troll
+title butcher_troll
+noise repeat 20 ambience/butcher_troll_1 ambience/butcher_troll_2 ambience/butcher_troll_3
+attack_hit combat/smash_1 combat/smash_2 combat/smash_3
+
+def ogre_rock_thrower
+is_a walking_unit
+title ogre_rock_thrower
+noise repeat 20 ambience/ogre_rock_thrower_1 ambience/ogre_rock_thrower_2 ambience/ogre_rock_thrower_3
+launch_attack combat/rock_throw
+attack_hit combat/boulder_hit_1 combat/boulder_hit_2
+keyboard soldier3
+
+def winged_serpent
+is_a unit
+title winged_serpent
+noise repeat 30 ambience/snake_1 ambience/snake_2
+move move/winged_serpent_1 move/winged_serpent_2
+launch_attack combat/snake_strike silence/long silence/long silence/long
+attack_hit combat/bite_2 combat/bite_5 combat/bite_3 combat/bite_4
+keyboard soldier4
+
+def hippogriff
+is_a unit
+title hippogriff
+noise repeat 30 ambience/hippogriff_1 ambience/hippogriff_2 ambience/hippogriff_3
+move move/hippogriff_1 move/hippogriff_2
+attack_hit combat/heavy_hit_1 combat/heavy_hit_2
+keyboard soldier5
+
+def voodoo_priest
+is_a walking_unit
+title voodoo_priest
+keyboard soldier6
+
+def kamikaze
+is_a walking_unit
+title kamikaze
+attack_hit combat/kamikaze_hit_1 combat/kamikaze_hit_2 combat/kamikaze_hit_3 combat/kamikaze_hit_4 combat/kamikaze_hit_5
+keyboard soldier6
+
+
+
+def a_possession
+title possession
+alert magic/possession
+
+
+def traditional
+title traditional
+
+def technical
+title technical
+
+def robotic
+title robotic
+
+def undead
+title undead
+
+def elf
+title elf
+
+def orc
+title orc
+
+
+def forest_illusion
+title forest_illusion
+death combat/vanish
+
+def a_forest_illusion
+title forest_illusion
+alert magic/forest_illusion
+
+def a_explode_kamikaze
+title explode
+alert magic/detonate
+
+def aggression
+title aggression
+
+
+
+
+def elemental_circle
+is_a building
+title elemental_circle
+launch_attack combat/elemental_circle_shot
+attack_hit combat/elemental_circle_hit
+
+def fire_tower
+is_a building
+title fire_tower
+noise repeat 30 ambience/fire_tower
+launch_attack combat/fire_tower_shot
+attack_hit combat/fire_tower_hit
+
+def water_tower
+is_a building
+title water_tower
+noise repeat 30 ambience/water_tower
+launch_attack combat/water_tower_shot
+attack_hit combat/water_tower_hit
+
+def air_tower
+is_a building
+title air_tower
+noise repeat 30 ambience/air_tower
+launch_attack combat/air_tower_shot
+attack_hit combat/air_tower_hit
+
+def earth_tower
+is_a building
+title earth_tower
+noise repeat 30 ambience/earth_tower
+launch_attack combat/earth_tower_shot
+
+def fire_elemental
+is_a unit
+title fire_elemental
+noise loop ambience/fire_elemental
+launch_attack combat/fire_elemental_shot
+attack_hit combat/fire_elemental_hit
+keyboard soldier2
+
+def water_elemental
+is_a unit
+title water_elemental
+noise loop ambience/water_elemental
+launch_attack combat/water_elemental_shot
+attack_hit combat/water_elemental_hit
+keyboard soldier3
+
+def air_elemental
+is_a unit
+title air_elemental
+move move/air_elemental_1 move/air_elemental_2
+launch_attack combat/air_elemental_shot
+attack_hit combat/spell_hit_1 combat/spell_hit_2
+keyboard soldier4
+
+def earth_elemental
+is_a unit
+title earth_elemental
+move move/earth_elemental_1 move/earth_elemental_2
+attack_hit combat/earth_elemental_hit
+keyboard soldier1
+
+def elemental
+title elemental
+
+def hidden_bomb
+is_a building
+title hidden_bomb
+keyboard soldier7
+
+def a_explode_bomb
+title explode
+alert magic/detonate
+
+def reinforced_structure
+title reinforced_structure
+
+def magnetic_shooter
+is_a unit
+title magnetic_shooter
+noise repeat 10 ambience/robot_1 ambience/robot_2 ambience/robot_3 ambience/robot_4 ambience/robot_5
+move move/magnetic_boots_1 move/magnetic_boots_2
+launch_attack combat/magnetic_shooter_shot
+attack_hit combat/magnetic_shooter_hit
+keyboard soldier1
+
+def transport_ball
+is_a unit
+title transport_ball
+move move/transport_ball
+death combat/transport_ball_death_1 combat/transport_ball_death_2
+keyboard soldier7
+
+def crossbowman
+is_a archer
+title crossbowman
+attack_hit combat/bolt_hit_1 combat/bolt_hit_2 combat/bolt_hit_3 combat/bolt_hit_4
+keyboard soldier1
+
+def wolf
+is_a unit
+title wolf
+noise repeat 30 ambience/wolf_1 ambience/wolf_2 ambience/wolf_3 ambience/wolf_4
+move move/wolf_1 move/wolf_2
+launch_attack combat/wolf_attack silence/long silence/long silence/long
+attack_hit combat/bite_2 combat/bite_5 combat/bite_3 combat/bite_4
+death combat/wolf_death_1 combat/wolf_death_2 combat/wolf_death_3
+keyboard soldier5
+
+def a_tame_wolves
+title tame_wolves
+alert magic/tame_wolves_1 magic/tame_wolves_2
+
+def lion
+is_a unit
+title lion
+noise repeat 35 ambience/lion_1 ambience/lion_2 ambience/lion_3
+move move/lion_1 move/lion_2
+launch_attack combat/lion_attack_1 combat/lion_attack_2 combat/lion_attack_3 silence/long silence/long silence/long
+attack_hit combat/claw_hit_1 combat/claw_hit_2 combat/claw_hit_3
+death combat/lion_death
+keyboard soldier5
+
+def a_tame_lions
+title tame_lions
+alert magic/tame_lions_1 magic/tame_lions_2
+
+def snake
+is_a unit
+title snake
+noise repeat 30 ambience/snake_1 ambience/snake_2
+move move/snake_1 move/snake_2
+launch_attack combat/snake_strike silence/long silence/long silence/long
+attack_hit combat/bite_2 combat/bite_5 combat/bite_3 combat/bite_4
+keyboard soldier4
+
+def a_tame_snakes
+title tame_snakes
+alert magic/tame_snakes_1 magic/tame_snakes_2
+
+def burrow
+is_a building
+title burrow
+
+def wild
+title wild
+
+def hideout
+is_a building
+title hideout
+
+def brigand_grove
+is_a building
+title brigand_grove
+
+def freebooter_woods
+is_a building
+title freebooter_woods
+
+def training_camp
+is_a building
+title training_camp
+
+def beast_cage
+is_a building
+title beast_cage
+noise repeat 20 ambience/beast_cage
+
+def spell_hut
+is_a building
+title spell_hut
+
+def rogue
+is_a peasant
+title rogue
+launch_attack combat/throw
+attack_hit combat/rogue_hit_1 combat/rogue_hit_2 combat/rogue_hit_3
+keyboard worker
+
+def huntress
+is_a walking_unit
+title huntress
+attack_hit combat/huntress_hit combat/sword_hit_upgraded
+keyboard soldier1
+
+def piercing_roots
+title piercing_roots
+noise loop ambience/piercing_roots
+
+def a_piercing_roots
+title piercing_roots
+alert magic/piercing_roots
+
+def sentinel_tree
+is_a unit
+title sentinel_tree
+noise repeat 10 ambience/leaves
+launch_attack combat/tree_attack_1 combat/tree_attack_2
+attack_hit combat/whip_1 combat/whip_2 combat/whip_3
+death combat/tree_death_1 combat/tree_death_2
+
+def a_plant_sentinel_tree
+title plant_sentinel_tree
+alert magic/plant_seed
+
+def paladin
+is_a knight
+title paladin
+move move/paladin_1 move/paladin_2
+keyboard soldier3
+
+def super_armor
+title super_armor
+
+def super_attack
+title super_attack
+
+def super_health
+title super_health
+
+def super_speed
+title super_speed
+
+def small_explosion
+title explosion
+
+def large_explosion
+title explosion
+
+def thunderbolt
+title thunderbolt
+noise magic/thunderbolt
+
+def a_thunderbolt
+title thunderbolt
+alert magic/thunderbolt
+
+def holy_vision
+title vision
+
+def labyrinth
+is_a building
+title labyrinth
+noise repeat 15 ambience/labyrinth_1 ambience/labyrinth_2 ambience/labyrinth_3 
+
+def flak_gun
+is_a building
+title flak_gun
+launch_attack combat/flak_gun_shot
+attack_hit combat/bullet_hit
+
+def necromancer
+keyboard soldier3
+
+def zombie
+keyboard soldier7
+
+def energy_ball
+is_a unit
+title energy_ball
+noise loop ambience/energy_ball
+launch_attack combat/energy_ball_shot
+attack_hit combat/spell_hit_1 combat/spell_hit_2
+death combat/vanish
+keyboard soldier5
+
+def a_generate_energy_ball
+title generate_energy_ball
+alert magic/generate_energy_ball
+
+def scholar
+is_a walking_unit
+title scholar
+launch_attack combat/scholar_shot
+attack_hit combat/scholar_hit
+keyboard soldier4
+
+def storm_clouds
+title storm_clouds
+noise loop ambience/storm_clouds
+
+def a_storm_clouds
+title storm_clouds
+alert magic/storm_clouds
+
+def nimble_archer_clone
+is_a nimble_archer
+title nimble_archer_clone
+death combat/vanish
+
+def a_clone
+title clone
+alert magic/clone
+
+def super_exorcism
+title super_exorcism
+
+def knight
+keyboard soldier2
+
+def overheated_plasma_cannon
+is_a plasma_cannon
+title overheated_plasma_cannon
+noise repeat 2 ambience/overheated_plasma_cannon
+
+def tear_gas
+title tear_gas
+
+def a_tear_gas
+title tear_gas
+alert magic/tear_gas
+
+def priest
+keyboard soldier5
+
+def dragon
+keyboard soldier6
+
+def ranch
+is_a building
+title ranch
+noise repeat 30 ambience/ranch_1 ambience/ranch_2
+
+def pig_farm
+is_a building
+title pig_farm
+noise repeat 30 ambience/pig_farm
+
+def hydroponic_farm
+is_a building
+title hydroponic_farm
+noise repeat 30 ambience/hydroponic_farm_1 ambience/hydroponic_farm_2
+
+def scavenger_farm
+is_a building
+title scavenger_farm
+noise repeat 30 ambience/scavenger_farm_1 ambience/scavenger_farm_2
+
+def power_farm
+is_a building
+title power_farm
+noise repeat 30 ambience/power_farm_1 ambience/power_farm_2
+
+def hunting_ground
+is_a building
+title hunting_ground
+noise repeat 30 ambience/hunting_ground_1 ambience/hunting_ground_2
+
+def dragon_vitality
+title dragon_vitality
+
+def dragon_attack
+title dragon_attack
+
+def dragon_range
+title dragon_range
+
+def dragon_armor
+title dragon_armor
+
+def dragon_speed
+title dragon_speed
+
+def sunlit_library
+is_a building
+title sunlit_library
+noise repeat 20 ambience/sunlit_library_1 ambience/sunlit_library_2
+
+def flesh_golem
+is_a unit
+title flesh_golem
+move move/flesh_golem_1 move/flesh_golem_2
+noise repeat 15 ambience/flesh_golem
+attack_hit combat/smash_1 combat/smash_2 combat/smash_3
+keyboard soldier7
+
+def skeletal_dragon
+is_a unit
+title skeletal_dragon
+noise repeat 18 ambience/skeletal_dragon_1 ambience/skeletal_dragon_2
+move move/skeletal_dragon_1 move/skeletal_dragon_2
+launch_attack combat/skeletal_dragon_shot
+attack_hit combat/cannon_hit
+keyboard soldier7
+
+def breath_of_death
+title breath_of_death
+
+def a_breath_of_death
+title breath_of_death
+alert magic/breath_of_death
+
+def winged_horse
+is_a unit
+title winged_horse
+noise repeat 25 ambience/winged_horse_1 ambience/winged_horse_2
+move move/wings_1 move/wings_2
+attack_hit combat/light_hit_1 combat/light_hit_2 combat/light_hit_3 combat/light_hit_4
+keyboard soldier7
+
+def a_tame_winged_horse
+title tame_winged_horse
+alert magic/tame_wolves_1 magic/tame_wolves_2 magic/tame_lions_1 magic/tame_lions_2 magic/tame_snakes_1 magic/tame_snakes_2
+
+def a_meteors
+alert magic/call_meteors
+
+def magic_power
+title magic_power
+
+def arrow_trap
+is_a building
+title arrow_trap
+launch_attack combat/arrow_trap_shot
+attack_hit combat/arrow_trap_hit
+
+def meteors
+is_a 
+title meteors
+
+def vermin
+title vermin
+
+def stump
+is_a building
+title stump
+
+def hatchery
+is_a building
+title hatchery
+keyboard worker
+
+def nursery
+is_a hatchery
+title nursery
+
+def larval_lab
+is_a nursery
+title larval_lab
+
+def transgenic_breeder
+is_a larval_lab
+title transgenic_breeder
+
+def multiplying_incubator
+is_a transgenic_breeder
+title multiplying_incubator
+
+def fruit_tree
+is_a building
+title fruit_tree
+death combat/tree_death_1 combat/tree_death_2
+
+def termite_mound
+is_a building
+title termite_mound
+keyboard soldier1
+
+def honey_tree
+is_a building
+title honey_tree
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier2
+
+def mud_chamber
+is_a building
+title mud_chamber
+keyboard soldier3
+
+def mushroom_gallery
+is_a building
+title mushroom_gallery
+keyboard soldier5
+
+def sparkling_tree
+is_a building
+title sparkling_tree
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier6
+
+def devourer_tree
+is_a voracious_tree
+title devourer_tree
+noise repeat 10 ambience/devourer_tree_1 ambience/devourer_tree_2 ambience/devourer_tree_3
+launch_attack combat/devourer_tree_shot_1 combat/devourer_tree_shot_2 combat/devourer_tree_shot_3 combat/tree_attack_1 combat/tree_attack_2
+attack_hit combat/claw_hit_1 combat/claw_hit_2 combat/claw_hit_3
+
+def guard_termite
+is_a unit
+title guard_termite
+move move/guard_termite_1 move/guard_termite_2
+attack_hit combat/bite_6 combat/bite_2
+keyboard soldier1
+
+def conqueror_termite
+is_a guard_termite
+title conqueror_termite
+move move/conqueror_termite_1 move/conqueror_termite_2
+attack_hit combat/bite_6 combat/bite_2 combat/crunch_hit
+
+def armored_termite
+is_a conqueror_termite
+title armored_termite
+move move/armored_termite_1 move/armored_termite_2
+attack_hit combat/crunch_hit combat/claw_hit_2 combat/claw_hit_3
+
+def angry_wasp
+is_a unit
+title angry_wasp
+move move/angry_wasp_1 move/angry_wasp_2
+attack_hit combat/light_hit_4 combat/light_hit_5 combat/bite_1
+keyboard soldier2
+
+def stinger_wasp
+is_a angry_wasp
+title stinger_wasp
+move move/stinger_wasp_1 move/stinger_wasp_2
+launch_attack combat/stinger_wasp_shot_1 combat/stinger_wasp_shot_2
+
+def thousand_sting_wasp
+is_a stinger_wasp
+title thousand_sting_wasp
+move move/thousand_sting_wasp_1 move/thousand_sting_wasp_2
+
+def insatiable_mosquito
+is_a unit
+title insatiable_mosquito
+move move/insatiable_mosquito
+attack_hit combat/bite_6 combat/bite_2
+keyboard soldier4
+
+def terrible_mosquito
+is_a insatiable_mosquito
+title terrible_mosquito
+move move/terrible_mosquito
+attack_hit combat/bite_6 combat/bite_2 combat/crunch_hit
+
+def bloodthirsty_mosquito
+is_a terrible_mosquito
+title bloodthirsty_mosquito
+move move/bloodthirsty_mosquito
+attack_hit combat/crunch_hit combat/claw_hit_2 combat/claw_hit_3
+
+def pincer_crab
+is_a unit
+title pincer_crab
+move move/pincer_crab_1 move/pincer_crab_2 move/pincer_crab_3
+attack_hit combat/pincer_crab_hit_1 combat/pincer_crab_hit_2
+keyboard soldier3
+
+def shell_thrower_crab
+is_a pincer_crab
+title shell_thrower_crab
+move move/shell_thrower_crab_1 move/shell_thrower_crab_2 move/shell_thrower_crab_3
+launch_attack combat/throw
+attack_hit combat/shell_thrower_crab_hit
+
+def siege_crab
+is_a shell_thrower_crab
+title siege_crab
+move move/siege_crab_1 move/siege_crab_2 move/siege_crab_3
+launch_attack combat/rock_throw
+attack_hit combat/stone_hit
+
+def brawler_mushroom
+is_a unit
+title brawler_mushroom
+move move/brawler_mushroom_1 move/brawler_mushroom_2 
+attack_hit combat/kick_2 combat/kick_3
+keyboard soldier5
+
+def toxic_mushroom
+is_a brawler_mushroom
+title toxic_mushroom
+noise repeat 30 ambience/mushroom
+
+def devastating_mushroom
+is_a toxic_mushroom
+title devastating_mushroom
+noise repeat 10 ambience/mushroom
+move move/devastating_mushroom
+attack_hit combat/light_hit_1 combat/light_hit_4
+
+def scout_firefly
+is_a unit
+title scout_firefly
+noise repeat 15 ambience/scout_firefly
+move move/scout_firefly
+keyboard soldier6
+
+def dazzling_firefly
+is_a scout_firefly
+title dazzling_firefly
+noise repeat 15 ambience/dazzling_firefly
+
+def blazing_firefly
+is_a dazzling_firefly
+title blazing_firefly
+noise repeat 15 ambience/blazing_firefly
+attack_hit combat/flame_hit
+
+def a_grow_stump
+title grow_stump
+alert magic/grow_stump
+
+def a_spawn_larvae_1
+title spawn_larvae
+alert magic/spawn_larvae_1 magic/spawn_larvae_2
+
+def a_spawn_larvae_2
+is_a a_spawn_larvae_1
+
+def a_spawn_larvae_3
+is_a a_spawn_larvae_1
+
+def a_spawn_larvae_4
+is_a a_spawn_larvae_1
+
+def a_spawn_larvae_5
+is_a a_spawn_larvae_1
+
+def larva
+is_a unit
+title larva
+keyboard soldier7
+
+def a_survival_pheromone
+title survival_pheromone
+alert magic/spores
+
+def toxic_spores
+title toxic_spores
+
+def a_toxic_spores
+title toxic_spores
+alert magic/spores
+
+def hallucinogenic_spores
+title hallucinogenic_spores
+
+def a_hallucinogenic_spores
+title hallucinogenic_spores
+alert magic/spores
+
+def healing_spores
+title healing_spores
+
+def a_healing_spores
+title healing_spores
+alert magic/spores
+
+def walking_worker
+is_a basic_peasant
+title walking_worker
+move move/walking_worker_1 move/walking_worker_2
+attack_hit combat/light_hit_4 combat/light_hit_5 combat/bite_1
+keyboard worker
+
+def winged_worker
+is_a walking_worker
+title winged_worker
+move move/winged_worker_1 move/winged_worker_2
+can_upgrade_to royal_worker
+
+def royal_worker
+is_a winged_worker
+title royal_worker
+move move/royal_worker_1 move/royal_worker_2
+
+def basic_peasant
+is_a unit
+noise_when_exploiting_goldmine repeat 1.6 work/mine_gold
+noise_when_exploiting_wood repeat 1.5 work/chop_wood_1 work/chop_wood_2 work/chop_wood_3 work/chop_wood_4
+noise_when_building repeat 4 work/build_1 work/build_2 work/build_3
+store_resource_0 work/store_gold
+store_resource_1 work/store_wood
+
+def supply_tunnel
+is_a building
+title supply_tunnel
+
+def a_dig_supply_tunnel
+title dig_supply_tunnel
+alert magic/dig_supply_tunnel
+
+def blaze
+title blaze
+noise loop ambience/blaze
+
+def a_blaze
+title blaze
+alert magic/blaze
+
+def rocketeer
+is_a walking_unit
+title rocketeer
+launch_attack combat/rocketeer_shot
+attack_hit combat/rocketeer_hit
+keyboard soldier2
+
+def war_troll
+is_a butcher_troll
+title war_troll
+attack_hit combat/war_troll_hit_2 combat/war_troll_hit_3 combat/war_troll_hit_1
+
+def dark_elf
+title dark_elf
+
+def shack
+is_a building
+title shack
+
+def villa
+is_a shack
+title villa
+
+def manor
+is_a villa
+title manor
+
+def blade_workshop
+is_a building
+title blade_workshop
+noise repeat 20 ambience/blade_workshop
+
+def playhouse
+is_a building
+title playhouse
+
+def cenacle
+is_a building
+title cenacle
+
+def wind_tower
+is_a building
+title wind_tower
+
+def thief
+is_a peasant
+title thief
+
+def prowler
+is_a footman
+title prowler
+keyboard soldier1
+
+def assassin
+is_a prowler
+title assassin
+
+def master_assassin
+is_a assassin
+title master_assassin
+
+def darkarcher
+keyboard soldier2
+
+def illusionist
+is_a walking_unit
+title illusionist
+launch_attack combat/knife_throw
+attack_hit combat/knife_hit
+keyboard soldier3
+
+def puppet
+is_a unit
+title puppet
+move move/puppet_1 move/puppet_2
+attack_hit combat/sword_hit_1 combat/sword_hit_2 combat/sword_hit_3
+keyboard soldier5
+
+def a_animate_puppet
+title animate_puppet
+alert magic/animate_puppet_1 magic/animate_puppet_2
+
+def doctor
+is_a walking_unit
+title doctor
+launch_attack combat/knife_throw
+attack_hit combat/shuriken_hit_1 combat/shuriken_hit_2 combat/shuriken_hit_3
+keyboard soldier4
+
+def flying_shuriken
+is_a unit
+title flying_shuriken
+noise loop ambience/flying_shuriken
+attack_hit combat/shuriken_hit_1 combat/shuriken_hit_2 combat/shuriken_hit_3
+death combat/vanish
+keyboard soldier6
+
+def a_flying_shuriken
+title flying_shuriken
+alert magic/flying_shuriken
+
+def vortex
+is_a thing
+title vortex
+noise loop ambience/vortex
+death combat/vortex_death
+keyboard soldier7
+
+def a_vortex
+title vortex
+alert magic/vortex
+
+def whirlwind
+is_a unit
+title whirlwind
+noise loop ambience/whirlwind
+death combat/vanish
+keyboard soldier7
+
+def a_whirlwind
+title whirlwind
+alert magic/whirlwind
+
+def throwing_technique
+title throwing_technique
+
+def animation_speed
+title animation_speed
+
+def fatal_blade
+is_a unit
+title fatal_blade
+attack_hit magic/fatal_blade
+death 
+
+def a_fatal_blade
+title fatal_blade
+alert magic/fatal_blade
+
+def smoke_screen
+title smoke_screen
+
+def a_smoke_screen
+title smoke_screen
+alert magic/smoke_screen
+
+def aviary
+is_a building
+title aviary
+noise repeat 30 ambience/aviary
+
+def pigeon
+is_a unit
+title pigeon
+noise repeat 20 ambience/pigeon
+move move/pigeon_1 move/pigeon_2
+attack_hit combat/light_hit_4 combat/light_hit_5 combat/bite_1
+keyboard soldier5
+
+def a_tame_pigeons
+title tame_pigeons
+alert magic/tame_pigeons
+
+def rain_of_arrows
+is_a unit
+title rain_of_arrows
+attack_hit combat/arrow_hit_upgraded
+death 
+
+def a_rain_of_arrows
+title rain_of_arrows
+alert magic/rain_of_arrows
+
+def watchtower
+is_a building
+title watchtower
+
+def defense_tower
+is_a building
+title defense_tower
+launch_attack combat/arrow_shot
+attack_hit combat/bolt_hit_1 combat/bolt_hit_2 combat/bolt_hit_3 combat/bolt_hit_4
+
+def ballista_tower
+is_a defense_tower
+title ballista_tower
+noise repeat 30 ambience/ballista_tower
+launch_attack combat/ballista_tower_shot
+
+def campanile
+is_a building
+title campanile
+noise repeat 60 ambience/campanile
+
+def belfry
+is_a building
+title belfry
+noise repeat 60 ambience/belfry
+attack_hit combat/volley_hit
+
+def combat_toughness
+title combat_toughness
+
+def combat_fervor
+title combat_fervor
+
+def observation_post
+is_a building
+title observation_post
+
+def missile_battery
+is_a building
+title missile_battery
+launch_attack combat/missile_battery_attack
+attack_hit combat/missile_battery_hit
+
+def dark_tower
+is_a building
+title dark_tower
+noise repeat 30 ambience/dark_tower_1 ambience/dark_tower_2
+
+def misty_tower
+is_a building
+title misty_tower
+noise repeat 30 ambience/misty_tower_1 ambience/misty_tower_2
+
+def torment_tower
+is_a building
+title torment_tower
+noise repeat 120 ambience/torment_tower
+launch_attack combat/torment_tower_shot
+attack_hit combat/torment_tower_hit
+
+def terror_tower
+is_a torment_tower
+title terror_tower
+noise repeat 120 ambience/terror_tower
+launch_attack combat/terror_tower_shot
+
+def a_raise_ghosts
+title raise_ghosts
+alert magic/raise_ghosts
+
+def a_raise_zombies
+title raise_zombies
+alert magic/raise_zombies
+
+def a_raise_flesh_golems
+title raise_flesh_golems
+alert magic/raise_flesh_golems
+
+def magnetic_field
+title magnetic_field
+noise loop ambience/magnetic_field
+
+def a_magnetic_field
+title magnetic_field
+alert magic/magnetic_field
+
+def a_uncontrolled_magnetic_field
+title uncontrolled_magnetic_field
+alert magic/uncontrolled_magnetic_field
+
+def sentry_tower
+is_a building
+title sentry_tower
+
+def great_guard_tower
+is_a guardtower
+title great_guard_tower
+
+def leafy_tower
+is_a building
+title leafy_tower
+
+def razor_leaf_tower
+is_a building
+title razor_leaf_tower
+launch_attack combat/razor_leaf_tower_shot
+attack_hit combat/razor_leaf_tower_hit
+
+def mirror_tower
+is_a building
+title mirror_tower
+
+def solar_tower
+is_a building
+title solar_tower
+launch_attack combat/solar_tower_shot
+
+def sunbeam
+is_a unit
+title sunbeam
+attack_hit combat/spell_hit_1 combat/spell_hit_2
+
+def a_sunbeam
+title sunbeam
+alert magic/sunbeam
+
+def promontory
+is_a building
+title promontory
+
+def grapeshot_tower
+is_a building
+title grapeshot_tower
+launch_attack combat/grapeshot_tower_attack
+attack_hit combat/grapeshot_tower_hit 
+
+def bombard_tower
+is_a cannontower
+title bombard_tower
+attack_hit combat/boulder_hit_1 combat/boulder_hit_2
+
+def rockfall
+is_a building
+title rockfall
+launch_attack combat/rockfall_attack
+attack_hit combat/stone_hit
+
+def massive_tower
+is_a rockfall
+title massive_tower
+attack_hit combat/boulder_hit_1 combat/boulder_hit_2
+
+def cannontower
+attack_hit combat/cannon_tower_hit
+
+def lookout_turret
+is_a building
+title lookout_turret
+
+def ambush_turret
+is_a building
+title ambush_turret
+launch_attack combat/knife_throw
+attack_hit combat/knife_hit
+
+def high_ambush_tower
+is_a ambush_turret
+title high_ambush_tower
+
+def perch_tower
+is_a building
+title perch_tower
+
+def carnivorous_tree
+is_a building
+title carnivorous_tree
+launch_attack combat/tree_attack_1 combat/tree_attack_2
+attack_hit combat/bite_2 combat/bite_5 combat/bite_3 combat/bite_4
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier7
+
+def voracious_tree
+is_a carnivorous_tree
+title voracious_tree
+noise repeat 10 ambience/voracious_tree_1 ambience/voracious_tree_2
+launch_attack combat/voracious_tree_shot_1 combat/voracious_tree_shot_2 combat/tree_attack_1 combat/tree_attack_2
+
+def castle
+attack_hit combat/volley_hit
+
+def root_network
+is_a unit
+title root_network
+attack_hit combat/whip_4
+
+def a_root_network
+title root_network
+alert magic/root_network
+
+def berserk
+title berserk
+
+def berserker_troll
+is_a war_troll
+title berserker_troll
+
+def steel_leaf
+title steel_leaf
+
+def mahout_house
+is_a building
+title mahout_house
+
+def elephant
+is_a unit
+title elephant
+noise repeat 30 ambience/elephant_1 ambience/elephant_2 ambience/elephant_3
+move move/elephant_1 move/elephant_2
+attack_hit combat/elephant_hit_1 combat/elephant_hit_2
+keyboard soldier6
+
+def a_tame_elephant
+title tame_elephant
+alert magic/tame_elephant
+
+def peaceful_vine
+is_a unit
+title peaceful_vine
+noise repeat 10 ambience/leaves
+death combat/tree_death_1 combat/tree_death_2
+keyboard soldier7
+
+def invasive_vine
+is_a peaceful_vine
+title invasive_vine
+launch_attack combat/tree_attack_1 combat/tree_attack_2
+attack_hit combat/whip_1 combat/whip_2 combat/whip_3
+
+def a_plant_peaceful_vine
+title plant_peaceful_vine
+alert magic/plant_seed
+
+def a_set_arrow_trap
+title set_arrow_trap
+alert magic/set_arrow_trap
+
+def quake
+title quake
+noise loop ambience/quake
+
+def a_quake
+title quake
+alert magic/quake
+
+def fire_blast
+title fire_blast
+
+def a_fire_blast
+title fire_blast
+alert magic/fire_blast
+
+def healing
+title healing
+
+def a_healing
+title healing
+alert magic/healing
+
+def a_gust_of_wind
+title gust_of_wind
+alert magic/gust_of_wind
+
+def sea_of_lava
+title sea_of_lava
+noise loop ambience/sea_of_lava
+
+def a_sea_of_lava
+title sea_of_lava
+alert magic/sea_of_lava
+
+def mud_golem
+is_a unit
+title mud_golem
+move move/mud_golem_1 move/mud_golem_2
+launch_attack combat/mud_golem_attack_1 combat/mud_golem_attack_2 combat/mud_golem_attack_3
+attack_hit combat/heavy_hit_1 combat/heavy_hit_2
+keyboard soldier6
+
+def a_mud_golem
+title mud_golem
+alert magic/mud_golem
+
+def sandstorm
+title sandstorm
+noise loop ambience/sandstorm
+
+def a_sandstorm
+title sandstorm
+alert magic/sandstorm
+
+def vapor_cloud
+title vapor_cloud
+noise loop ambience/vapor_cloud
+
+def a_vapor_cloud
+title vapor_cloud
+alert magic/vapor_cloud
+
+def thunderstorm
+is_a unit
+title thunderstorm
+noise loop ambience/thunderstorm
+launch_attack combat/thunderstorm_shot_1 combat/thunderstorm_shot_2 combat/thunderstorm_shot_3
+attack_hit combat/lightning_hit_1 combat/lightning_hit_2 combat/lightning_hit_3 combat/lightning_hit_4
+death combat/thunderstorm_death
+
+def a_thunderstorm
+title thunderstorm
+alert magic/thunderstorm
+
+def frozen_sky
+title frozen_sky
+noise loop ambience/frozen_sky
+
+def a_frozen_sky
+title frozen_sky
+alert magic/frozen_sky
+
+def mahout
+is_a walking_unit
+title mahout
+attack_hit combat/whip_1 combat/whip_2 combat/whip_3
+keyboard soldier1
+
+def mage
+keyboard soldier5
+
+def turret_elephant
+is_a elephant
+title turret_elephant
+launch_attack combat/arrow_shot
+attack_hit combat/arrow_hit_upgraded
+
+def a_soul_absorption
+title soul_absorption
+alert magic/soul_absorption
+
+def necromancy_field
+is_a unit
+title necromancy_field
+noise loop ambience/necromancy_field
+death combat/necromancy_field_death
+keyboard soldier7
+
+def a_necromancy_field
+title necromancy_field
+alert magic/necromancy_field
+
+def a_corpse_explosion
+title corpse_explosion
+alert magic/corpse_explosion
+
+def plague_corpse
+is_a unit
+title plague_corpse
+noise repeat 6 ambience/plague_corpse_1 ambience/plague_corpse_2 ambience/plague_corpse_3 silence/long silence/long silence/long silence/long silence/long silence/long silence/long silence/long silence/long silence/long
+keyboard soldier7
+
+def a_infect_corpses
+title infect_corpses
+alert magic/infect_corpses
+
+def shadow
+is_a footman
+title shadow
+death combat/vanish
+keyboard soldier5
+
+def a_summon_shadows
+title summon_shadows
+alert magic/summon_shadows
+
+def secret_agent
+is_a walking_unit
+title secret_agent
+keyboard soldier7
+
+def a_plant_hidden_bomb
+title plant_hidden_bomb
+alert magic/plant_hidden_bomb
+
+def a_set_electric_trap
+title set_electric_trap
+alert magic/set_electric_trap
+
+def a_set_bone_trap
+title set_bone_trap
+alert magic/set_bone_trap
+
+def a_set_root_trap
+title set_root_trap
+alert magic/set_root_trap
+
+def a_set_spike_trap
+title set_spike_trap
+alert magic/set_spike_trap
+
+def a_drop_secret_agent
+title drop_secret_agent
+alert magic/drop_secret_agent

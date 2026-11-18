@@ -16,6 +16,9 @@ use crate::log::Log;
 /// The file whose presence marks a directory as the game root.
 const ROOT_MARKER: &str = "res/rules.txt";
 
+/// The name of the folder of the program's own data, next to the program.
+const PROGRAM_DATA: &str = "data";
+
 /// The game root could not be found, or the given one holds no game data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootError {
@@ -105,6 +108,31 @@ pub fn find_root(
     Err(RootError { tried })
 }
 
+/// The folder of the program's own data, a package that comes with the
+/// program: `data` next to the executable, else the checkout's `data`
+/// folder (`checkout`), which `cargo run` and the tests find. `None` when
+/// neither exists.
+pub fn find_program_data(exe_dir: Option<&Path>, checkout: Option<&Path>) -> Option<PathBuf> {
+    exe_dir
+        .map(|dir| dir.join(PROGRAM_DATA))
+        .into_iter()
+        .chain(checkout.map(Path::to_path_buf))
+        .find(|dir| dir.is_dir())
+}
+
+/// The checkout's `data` folder, where the program was built.
+fn checkout_program_data() -> Option<PathBuf> {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2)?;
+    Some(repo.join(PROGRAM_DATA))
+}
+
+/// [`find_program_data`] for this program. The tests find the checkout's.
+pub fn program_data_from_environment() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok();
+    let exe_dir = exe.as_deref().and_then(Path::parent);
+    find_program_data(exe_dir, checkout_program_data().as_deref())
+}
+
 /// The player's folder outside the game root: `%APPDATA%\SoundRTS`, else
 /// `~/.SoundRTS`. It also holds the downloaded game data.
 pub fn player_dir(appdata: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
@@ -135,15 +163,19 @@ pub fn find_user_dir(root: &Path, appdata: Option<OsString>, home: Option<OsStri
     }
 }
 
-/// The game root and the player's folder, with the files inside them.
+/// The game root, the program's own data and the player's folder, with the
+/// files inside them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Paths {
     pub root: PathBuf,
+    /// The package that comes with the program, if found (see
+    /// [`find_program_data`]).
+    pub program_data: Option<PathBuf>,
     pub user: PathBuf,
 }
 
 impl Paths {
-    /// Finds both folders from the process environment.
+    /// Finds the folders from the process environment.
     pub fn from_environment(cli_root: Option<&Path>) -> Result<Paths, RootError> {
         let cwd = std::env::current_dir().unwrap_or_default();
         let exe = std::env::current_exe().ok();
@@ -156,8 +188,13 @@ impl Paths {
             &cwd,
             fetched.as_deref(),
         )?;
+        let program_data = program_data_from_environment();
         let user = find_user_dir(&root, std::env::var_os("APPDATA"), std::env::var_os("HOME"));
-        Ok(Paths { root, user })
+        Ok(Paths {
+            root,
+            program_data,
+            user,
+        })
     }
 
     pub fn tmp(&self) -> PathBuf {
@@ -215,12 +252,16 @@ impl Paths {
         }
     }
 
-    /// The package folders and zip files after the base package, in
-    /// loading order: each additional path, then the entries of its
-    /// `packages` folder.
-    pub fn additional_package_paths(&self, base: &str, additional: &[String]) -> Vec<PathBuf> {
+    /// The package folders and zip files, in loading order: the base
+    /// package, the program's own data, each additional path, then the
+    /// entries of each additional path's `packages` folder. A mod is taken
+    /// from the last package that has it, so a player's mod replaces the
+    /// program's mod of the same name.
+    pub fn package_paths(&self, base: &str, additional: &[String]) -> Vec<PathBuf> {
         let base = self.root.join(base);
-        let mut result: Vec<PathBuf> = additional.iter().map(|p| self.package_dir(p)).collect();
+        let mut result = vec![base.clone()];
+        result.extend(self.program_data.clone());
+        result.extend(additional.iter().map(|p| self.package_dir(p)));
         for rp in additional {
             let pp = self.package_dir(rp).join("packages");
             let Ok(entries) = std::fs::read_dir(&pp) else {
@@ -258,6 +299,7 @@ impl Paths {
 )]
 mod tests {
     use super::*;
+    use crate::package::PackageStack;
 
     /// Makes `dir` a game root: the rules and the importer's stamp.
     fn make_root(dir: &Path) {
@@ -423,6 +465,7 @@ mod tests {
         std::fs::create_dir_all(root.join("res/multi")).unwrap();
         let paths = Paths {
             root,
+            program_data: None,
             user: settings.path().to_path_buf(),
         };
         let user = &paths.user;
@@ -458,14 +501,16 @@ mod tests {
         std::fs::create_dir_all(root.path().join("user/packages/extra")).unwrap();
         let paths = Paths {
             root: root.path().to_path_buf(),
+            program_data: None,
             user: find_user_dir(root.path(), Some("A".into()), None),
         };
         let additional: Vec<String> = ["", "user", "user/downloaded", "more"]
             .map(String::from)
             .to_vec();
         assert_eq!(
-            paths.additional_package_paths("res", &additional),
+            paths.package_paths("res", &additional),
             [
+                root.path().join("res"),
                 root.path().to_path_buf(),
                 root.path().join("user"),
                 root.path().join("user").join("downloaded"),
@@ -491,5 +536,63 @@ mod tests {
             find_user_dir(root.path(), Some("A".into()), None),
             root.path().join("user")
         );
+    }
+
+    #[test]
+    fn the_data_next_to_the_program_comes_before_the_checkouts() {
+        let exe = tempfile::tempdir().unwrap();
+        let checkout = tempfile::tempdir().unwrap();
+        let checkout = checkout.path().join("data");
+        let found = || find_program_data(Some(exe.path()), Some(&checkout));
+        assert_eq!(found(), None);
+        std::fs::create_dir(&checkout).unwrap();
+        assert_eq!(found(), Some(checkout.clone()));
+        std::fs::create_dir(exe.path().join("data")).unwrap();
+        assert_eq!(found(), Some(exe.path().join("data")));
+        assert_eq!(find_program_data(None, None), None);
+    }
+
+    /// Writes a mod whose rules are `rules`.
+    fn make_mod(package: &Path, name: &str, rules: &str) {
+        let dir = package.join("mods").join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("rules.txt"), rules).unwrap();
+    }
+
+    #[test]
+    fn a_mod_of_the_program_is_found_and_a_players_mod_of_the_same_name_replaces_it() {
+        let root = tempfile::tempdir().unwrap();
+        let program_data = tempfile::tempdir().unwrap();
+        make_root(root.path());
+        make_mod(program_data.path(), "crazy", "program");
+        let paths = Paths {
+            root: root.path().to_path_buf(),
+            program_data: Some(program_data.path().to_path_buf()),
+            user: root.path().join("user"),
+        };
+        let additional = ["".to_owned(), "user".to_owned()];
+        let package_paths = paths.package_paths("res", &additional);
+        assert_eq!(
+            package_paths,
+            [
+                root.path().join("res"),
+                program_data.path().to_path_buf(),
+                root.path().join(""),
+                root.path().join("user"),
+            ]
+        );
+        let rules = |stack: &PackageStack| {
+            let found = stack.find_mod("crazy").unwrap();
+            found.read_text("rules.txt").unwrap()
+        };
+        let stack = PackageStack::new(&package_paths);
+        let names: Vec<String> = stack.mods().into_iter().map(|m| m.name).collect();
+        assert_eq!(names, ["crazy"]);
+        assert_eq!(rules(&stack), "program");
+
+        make_mod(&root.path().join("user"), "crazy", "player");
+        let stack = PackageStack::new(&paths.package_paths("res", &additional));
+        assert_eq!(stack.mods().len(), 1);
+        assert_eq!(rules(&stack), "player");
     }
 }

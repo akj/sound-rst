@@ -51,13 +51,14 @@
 
 mod common;
 
+use common::{attacks, home, is_true_enemy, units};
+
 use std::collections::BTreeSet;
 
-use soundrts_world::entity::{Action, ActionKind, Entity};
 use soundrts_world::orders::Keyword;
 use soundrts_world::rules::{EntityClass, Role, TypeId};
 use soundrts_world::{
-    AiScripts, Controller, PlayerId, Rules, Skill, SquareId, Target, VIRTUAL_TIME_INTERVAL, World,
+    AiScripts, Controller, PlayerId, Rules, Skill, VIRTUAL_TIME_INTERVAL, World,
     multiplayer_default_triggers,
 };
 
@@ -137,11 +138,6 @@ fn farm_of(w: &World, p: PlayerId) -> Farm {
     }
 }
 
-fn is_true_enemy(w: &World, p: PlayerId, e: &Entity) -> bool {
-    e.player()
-        .is_some_and(|q| !w.player(p).allied.contains(&q) && !w.player(q).neutral)
-}
-
 fn sees_an_enemy(w: &World, p: PlayerId) -> bool {
     let pl = w.player(p);
     pl.perception
@@ -149,19 +145,6 @@ fn sees_an_enemy(w: &World, p: PlayerId) -> bool {
         .filter_map(|&o| w.entity(o))
         .any(|e| is_true_enemy(w, p, e))
         || pl.memory.values().any(|r| is_true_enemy(w, p, &r.snapshot))
-}
-
-fn units(w: &World, p: PlayerId) -> impl Iterator<Item = &Entity> {
-    w.player(p).units.iter().filter_map(|&u| w.entity(u))
-}
-
-/// The squares where `p` has a building, a building site or a worker: its
-/// idle soldiers gather where its workers are.
-fn home(w: &World, p: PlayerId) -> BTreeSet<SquareId> {
-    units(w, p)
-        .filter(|e| e.class().is_building_class() || e.class() == EntityClass::Worker)
-        .filter_map(Entity::square)
-        .collect()
 }
 
 /// `p` has a worker, and no enemy stands in its home.
@@ -174,24 +157,6 @@ fn at_peace(w: &World, p: PlayerId) -> bool {
                 .filter_map(|&o| w.entity(o))
                 .any(|e| is_true_enemy(w, p, e))
         })
-}
-
-fn attacks(w: &World, p: PlayerId) -> bool {
-    let home = home(w, p);
-    units(w, p).any(|e| {
-        let Some(Action {
-            kind: ActionKind::Attack,
-            target: Some(Target::Entity(t)),
-        }) = e.creature().and_then(|c| c.action.as_ref())
-        else {
-            return false;
-        };
-        e.class() == EntityClass::Soldier
-            && e.orders().first().map(|o| o.keyword()) != Some(Keyword::AutoExplore)
-            && w.entity(*t).is_some_and(|t| {
-                is_true_enemy(w, p, t) && t.square().is_some_and(|s| !home.contains(&s))
-            })
-    })
 }
 
 /// A farm site of `p` stands, or a worker has the order to build one.

@@ -42,7 +42,7 @@ You need Windows with the MSVC build tools, [rustup](https://rustup.rs), Git, an
 
 The game data stays outside this repository because the original does not state a license for it. `vendor/` is ignored by Git.
 
-To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
+To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the program's `data` folder, which holds the mods that come with the game, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
 
 ```powershell
 cargo run -p soundrts -- --root vendor/game-data --probe
@@ -93,6 +93,14 @@ In the players menu of a training game, the invite items add a quiet computer, a
 Every player but the random computer also has an income: the share of what the player's workers gather that the player receives. It is 100 percent unless you change it to 50, 75, 150 or 200 percent, for example with "set player to 150 percent income". The menu then names the player with the income: "player, 150 percent income". An income evens out a game between players of different strength. The random computer has no income to set, because its resources are set to 1000 of each anyway.
 
 In a campaign's menu, after the chapters, a choice for each other level sets the level of the computers of its missions, for example "set the computers, level 3, to level 2". The menu says the new level at once. The game keeps the level beside the campaign's bookmark, and every mission that you start from then on uses it. A saved mission keeps the level that it was played at.
+
+### CrazyMod
+
+CrazyMod 9 beta 10, a mod that the SoundRTS community played, comes with the game. It replaces the game's rules with ten factions: traditional, technical, robotic, undead, elf, orc, elemental, wild, vermin and dark elf. To play it, choose Options, then Mods, then crazymod. The main menu opens again with the mod on, and the game keeps it on at the next start. To turn it off, choose "nothing!" in the same menu.
+
+In the players menu of a training game, an item for each faction sets a player's faction: the player's name, then the faction, for example "player technical" with the login "player". Each faction has a quiet and an aggressive computer. The map list starts with the maps that CrazyMod recommends: pra1 to pra11, can1 to can5, and jl5. On a server, every player has the mod, because it comes with the game, but each player must turn it on.
+
+The mod's own words are plain English names in place of the original's numbers and French names. Its German and French words are the author's, and its Spanish and Italian words are the later translations that the original game's repository keeps. `data/mods/crazymod/readme.txt` lists what the port changed in the mod, and why.
 
 ### Saved games
 
@@ -230,6 +238,8 @@ The game checks the names when it loads the files:
 - Rules that name a unit or give a type a property that does not exist are refused whole, with the file and the line.
 
 Each package's names are its own. A mod that you install can give other words, or another recording, for a name of the game. A map that came from a server can only add names: see [Play with others](#play-with-others).
+
+The mods that come with the game are in the folder `data\mods` next to the program, which is not the data folder. A mod of the same name in the `mods` folder of your settings folder takes the place of the one that comes with the game.
 
 ### Import a mod or a map of the original
 
@@ -498,6 +508,7 @@ The check speaks nothing and opens no window. It fetches the data into a tempora
 
 - `crates/world` is the simulation: rules, maps, units, orders, and computer players. It takes text and a seed, and it never touches a file, a sound device, or a window. The same input gives the same game on every machine. A host owns one game: it builds the world from the game's set-up, takes each player's commands, runs the game one turn at a time, and gives each player a view of what that player knows. It also tells each player that knowledge as plain data, made to be sent: the game's map and rules once, then one message a turn, from which a view of the same answers is made without the world. After a seat's first message, what changed since its last one is enough to make the next.
 - `crates/client` is the program: resources, sounds, speech, the voice queue, key bindings, menus, and the in-game interface.
+- `data/` is the game's own package, with the mods that come with the game. The download puts it next to `soundrts.exe`. When the program has no `data` folder beside it, as under `cargo run` and in the tests, it reads the checkout's.
 - `text/` holds the words of the port's own phrases in each language but English, one file a language, which the program carries inside it. Their English and the notes for translators are in `crates/world/src/phrases.rs`. The original's phrases come from its translations, through the import. A test fails on a line of `text/` that is not a phrase of the port.
 - `crates/import` is the importer: it converts the original's files into the files the game reads, as a library that the game runs at its first start and for `--import`, and as the `soundrts-import` program that the fetch script runs. `crates/import/src/original_names.txt` is its table: the name of each numbered phrase and sound of the original. Only the importer knows the numbers.
 - `crates/protocol` is the messages between a client and a server. Its `game` module encodes what a game run by a server sends each player and what a player sends it, in a compact binary form, and checks a player's frames in order before the interface reads them.

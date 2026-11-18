@@ -1274,6 +1274,7 @@ impl Harness {
     ) -> Harness {
         let paths = Paths {
             root: game_root(),
+            program_data: crate::paths::program_data_from_environment(),
             user: user_dir.path().to_path_buf(),
         };
         paths.create_user_folders(&Log::silent());

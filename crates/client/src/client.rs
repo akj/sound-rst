@@ -145,8 +145,7 @@ pub fn open_resources(
     log: &Log,
 ) -> Resources {
     let packages = &params.packages;
-    let mut package_paths = vec![paths.root.join(&packages.base)];
-    package_paths.extend(paths.additional_package_paths(&packages.base, &packages.additional));
+    let package_paths = paths.package_paths(&packages.base, &packages.additional);
     let mut res = Resources::new(
         package_paths,
         paths.user.clone(),

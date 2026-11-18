@@ -1,0 +1,4693 @@
+; CrazyMod 9
+
+clear
+
+; misc parameters
+
+def parameters
+nb_of_resource_types 2 ; gold, wood
+
+
+; resource deposits
+
+def goldmine
+class deposit
+resource_type 0 ; gold
+extraction_time 3
+extraction_qty 1
+
+def wood
+class deposit
+resource_type 1 ; wood
+extraction_time 20
+extraction_qty 2
+
+
+
+; races
+
+;def human_race
+;class race
+
+
+
+; miscellaneous or unused
+
+def u_recall
+class upgrade
+cost 50 0
+time_cost 120
+
+
+def a_teleportation
+class ability
+requirements u_teleportation
+mana_cost 150
+effect teleportation
+effect_target ask
+effect_range anywhere
+universal_notification 1
+
+def a_summon_dragon
+class ability
+requirements u_summon_dragon
+mana_cost 150
+effect summon 120 2 dragon
+
+def u_teleportation
+class upgrade
+cost 50 0
+time_cost 120
+
+def u_meteors
+class upgrade
+cost 50 0
+time_cost 120
+
+def u_deadly_fog
+class upgrade
+cost 50 0
+time_cost 120
+
+def u_conversion
+class upgrade
+cost 50 0
+time_cost 120
+requirements castle
+
+def u_summon_dragon
+class upgrade
+cost 50 0
+time_cost 120
+
+def u_exorcism
+class upgrade
+cost 50 0
+time_cost 120
+
+def u_resurrection
+class upgrade
+cost 50 0
+time_cost 120
+requirements castle
+
+;def a_improved_wood_gathering
+;effect bonus stored_wood --
+;requirements lumbermill
+
+def scouttower
+class building
+provides_survival 0
+cost 6 2
+hp_max 33
+time_cost 60
+sight_range 1 ; can see the adjacent squares
+is_buildable_anywhere 1
+
+def instant_death ; used by some maps to create dead units
+class effect
+harm_level 10000
+harm_target_type
+decay 1
+
+def quicksand ; or surface
+class effect
+harm_level 1
+harm_target_type ground unit
+
+def footman
+class soldier
+cost 6 0
+time_cost 12
+hp_max 15
+speed 1.5
+can_use melee_weapon melee_armor
+armor 0.5
+armor_bonus 1
+range 1
+cooldown 1.5
+damage 4.5
+damage_bonus 2.5
+
+def new_flyingmachine
+class soldier
+cost 5 5
+food_cost 1
+time_cost 10
+airground_type air
+hp_max 30
+speed 1.5
+sight_range 1 ; can see the adjacent squares
+is_repairable 1
+is_healable 0
+transport_capacity 8
+transport_volume 99
+corpse 0
+
+def flyingmachine
+class soldier
+cost 20 10
+food_cost 3
+time_cost 30
+airground_type air
+hp_max 30
+speed 1.5
+requirements temple magestower
+sight_range 1 ; can see the adjacent squares
+range 4.5
+cooldown 1.5
+damage 8
+target_types ground air
+is_repairable 1
+is_healable 0
+transport_volume 99
+corpse 0
+is_a_detector 1
+
+
+
+
+
+
+; shared by several branches
+
+; shared buildings
+
+def starting_point
+class building
+cost 0 0
+time_cost 135
+storable_resource_types 0 1
+can_upgrade_to fort city_hall garage graveyard clearing encampment elemental_circle hideout
+; can_train peasant
+
+def townhall
+is_a starting_point
+
+def lumbermill
+class building
+cost 6 9
+hp_max 200
+time_cost 68
+storable_resource_types 1
+can_research archer_weapon archer_armor archer_range 
+storage_bonus 0 1 ; gold bonus is +0, wood bonus is +1
+
+def blacksmith
+class building
+cost 8 10
+time_cost 90
+hp_max 266.7
+can_research melee_weapon melee_armor 
+
+def powder_magazine
+class building
+cost 18 15
+hp_max 120
+time_cost 90
+can_research high_quality_powder highest_quality_powder
+can_use a_explode_magazine
+mana_max 200
+mana_regen 0.3
+
+
+
+
+
+; shared units
+
+def peasant
+class worker
+cost 4 0
+food_cost 1
+time_cost 10
+hp_max 4
+speed 1.5
+;can_use a_improved_wood_gathering
+range 0.8
+cooldown 1
+damage 1.5
+armor 0
+
+def thorny_plant
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 8
+speed 0
+cooldown 1
+target_types ground
+range 0.25
+damage 0.3
+is_healable 0
+corpse 0
+transport_volume 99
+
+; shared research
+
+def horse_speed
+class upgrade
+cost 22 6
+time_cost 80
+effect apply_bonus speed
+
+def melee_weapon
+class upgrade
+cost 8 10
+time_cost 60
+effect apply_bonus damage
+
+def melee_armor
+class upgrade
+cost 8 10
+time_cost 60
+effect apply_bonus armor
+
+def archer_weapon
+class upgrade
+cost 8 10
+time_cost 60
+effect bonus damage 1.5
+
+def archer_armor
+class upgrade
+cost 8 10
+time_cost 60
+effect bonus armor 0.5
+
+def archer_range
+class upgrade
+cost 8 10
+time_cost 60
+effect bonus range 1
+
+def high_quality_powder
+class upgrade
+cost 30 10
+time_cost 150
+effect bonus damage 1.66
+
+def highest_quality_powder
+class upgrade
+cost 66 16
+time_cost 300
+requirements high_quality_powder
+effect bonus damage 2.66
+
+
+
+
+; shared abilities
+
+def small_explosion
+class effect
+harm_level 60
+harm_target_type ground
+
+def large_explosion
+class effect
+harm_level 800
+
+def a_explode_magazine
+class ability
+mana_cost 200
+effect summon 2 large_explosion
+universal_notification 1
+
+def a_bewitch
+class ability
+mana_cost 75
+effect conversion
+effect_target ask
+
+
+
+
+; traditional branch
+
+def traditional
+class race
+townhall fort
+farm farm
+peasant serf
+easy traditional_easy
+aggressive traditional
+
+
+; traditional buildings
+
+def fort
+class building
+cost 12 16
+food_provided 1
+hp_max 400
+time_cost 135
+storable_resource_types 0 1
+can_train serf
+can_upgrade_to keep
+
+def keep
+is_a fort
+cost 22 32 ; this is the total cost
+time_cost 315 ; this is the total cost
+hp_max 800
+requirements barracks
+can_upgrade_to castle
+
+def castle
+is_a keep
+cost 42 58 ; this is the total cost
+time_cost 675 ; this is the total cost
+hp_max 1600
+requirements barracks lumbermill blacksmith stables
+range 2
+damage 3
+cooldown 4
+can_upgrade_to ; starting_point
+
+def farm
+class building
+cost 5 5
+requirements fort
+food_provided 8
+hp_max 133.3
+time_cost 45
+
+def barracks
+class building
+cost 7 9
+time_cost 90
+requirements fort
+hp_max 266.7
+can_train crossbowman knight
+
+def stables
+class building
+cost 10 14
+requirements keep
+hp_max 266.7
+time_cost 90
+can_research horse_speed
+
+def workshop
+class building
+cost 10 15
+food_provided 0
+hp_max 266.7
+time_cost 90
+requirements keep
+can_train catapult
+
+def temple
+class building
+cost 15 30
+hp_max 300
+time_cost 90
+requirements keep
+can_train priest
+can_research super_exorcism superhealer
+
+def dragonslair
+class building
+cost 15 20
+hp_max 266.7
+time_cost 90
+requirements castle
+can_train dragon
+can_research dragon_vitality dragon_attack dragon_range dragon_armor dragon_speed
+
+def watchtower
+class building
+provides_survival 0
+cost 4 2
+time_cost 60
+hp_max 33
+sight_range 1
+is_buildable_anywhere 1
+can_upgrade_to defense_tower campanile
+
+def defense_tower
+is_a watchtower
+food_cost 1
+cost 7 5
+time_cost 85
+requirements keep lumbermill
+hp_max 66
+can_use archer_weapon archer_range
+armor 1
+range 10
+damage 6
+cooldown 1
+target_types ground air
+is_ballistic 1
+can_upgrade_to ballista_tower
+
+def ballista_tower
+is_a defense_tower
+food_cost 2
+cost 14 12
+time_cost 120
+requirements castle workshop
+hp_max 100
+armor 1.5
+range 16
+damage 10
+cooldown 2
+special_range 1
+can_upgrade_to 
+
+def campanile
+is_a watchtower
+cost 7 5
+time_cost 85
+requirements keep temple
+hp_max 50
+armor 0.75
+heal_level 1
+can_research combat_toughness
+transport_capacity 10
+can_upgrade_to belfry
+
+def belfry
+is_a campanile
+food_cost 1
+cost 12 8
+time_cost 120
+requirements castle
+hp_max 100
+armor 1
+range 2
+damage 3
+cooldown 4
+can_research combat_toughness combat_fervor
+storable_resource_types 0
+transport_capacity 30
+can_upgrade_to 
+
+
+
+; traditional units
+
+def serf
+is_a peasant
+cost 4 0
+time_cost 10
+hp_max 4
+speed 1.5
+can_build farm barracks lumbermill blacksmith stables workshop temple  dragonslair fort watchtower
+range 0.8
+cooldown 1
+damage 1.5
+can_use combat_toughness combat_fervor
+
+def crossbowman
+class soldier
+cost 6 2
+time_cost 18
+hp_max 12
+speed 1.5
+requirements lumbermill
+can_use archer_weapon archer_armor archer_range combat_toughness combat_fervor
+armor 0.5
+cooldown 3
+target_types ground air
+range 8
+damage 6
+is_ballistic 1
+
+def knight
+class soldier
+cost 14 0
+food_cost 2
+time_cost 20
+hp_max 25
+requirements keep stables
+can_use melee_weapon melee_armor horse_speed combat_toughness combat_fervor
+speed 2.3
+speed_bonus 1
+armor 1
+armor_bonus 1.25
+range 1
+cooldown 1.5
+damage 6
+damage_bonus 3
+transport_volume 3
+can_upgrade_to paladin
+
+def paladin
+is_a knight
+cost 22 0
+time_cost 50
+hp_max 30
+requirements keep stables temple
+damage 9.5
+damage_bonus 3.5
+range 1.1
+cooldown 2.25
+is_a_detector 1
+can_upgrade_to
+
+def catapult
+class soldier
+cost 9 5
+food_cost 2
+time_cost 30
+hp_max 30
+speed 0.75
+special_range 1
+cooldown 4
+damage 8
+damage_radius 1
+splash 1
+is_repairable 1
+is_healable 0
+transport_volume 4
+corpse 0
+
+def priest
+class soldier
+cost 13 6
+food_cost 2
+time_cost 20
+hp_max 30
+hp_max_bonus 5
+mana_max 200
+mana_regen 1
+speed 1
+can_use a_holy_vision a_exorcism a_conversion a_resurrection superhealer super_exorcism combat_toughness
+heal_level 1
+transport_volume 2
+is_a_detector 1
+harm_target_type undead
+
+def dragon
+class soldier
+cost 15 10
+food_cost 3
+time_cost 20
+airground_type air
+hp_max 30
+speed 1.75
+sight_range 1 ; can see the adjacent squares
+range 3
+cooldown 3
+damage 6
+target_types ground air
+damage_radius 1
+splash 1
+transport_volume 99
+can_use dragon_vitality dragon_attack dragon_range dragon_armor dragon_speed
+is_a_detector 1
+transport_capacity 2
+
+
+; traditional research
+
+def super_exorcism
+class upgrade
+cost 40 10
+time_cost 120
+effect bonus harm_level 1
+
+def superhealer
+class upgrade
+cost 80 20
+time_cost 150
+effect bonus heal_level 2
+requirements castle
+
+def combat_toughness
+class upgrade
+cost 8 4
+time_cost 150
+effect bonus armor 0.33
+
+def combat_fervor
+class upgrade
+cost 8 4
+time_cost 150
+effect bonus damage 0.66
+
+def dragon_vitality
+class upgrade
+cost 20 15
+time_cost 60
+effect bonus hp_max 6
+
+def dragon_attack
+class upgrade
+cost 20 15
+time_cost 60
+effect bonus damage 2
+
+def dragon_range
+class upgrade
+cost 20 15
+time_cost 60
+effect bonus range 2
+
+def dragon_armor
+class upgrade
+cost 20 15
+time_cost 60
+effect bonus armor 2
+
+def dragon_speed
+class upgrade
+cost 20 15
+time_cost 60
+effect bonus speed 0.5
+
+
+
+
+; traditional abilities
+
+def holy_vision
+class soldier
+presence 0 ; casting holy vision on a square doesn't trigger "player has entered the square"
+food_cost 0
+corpse 0
+is_vulnerable 0
+is_invisible 1
+is_a_detector 1
+
+def a_holy_vision
+class ability
+mana_cost 125
+effect summon 10 holy_vision
+effect_target ask
+effect_range anywhere
+
+def exorcism
+class effect
+harm_level 2
+harm_target_type undead
+can_use super_exorcism
+
+def a_exorcism
+class ability
+mana_cost 150
+effect summon 60 exorcism
+effect_target ask
+effect_range nearby
+
+def a_resurrection
+class ability
+mana_cost 150
+effect resurrection 6
+
+def a_conversion
+class ability
+mana_cost 150
+effect conversion
+effect_target ask
+
+
+
+
+
+
+; technical branch
+
+def technical
+class race
+townhall city_hall
+farm ranch
+peasant laborer
+easy technical_easy
+aggressive technical
+
+
+; technical buildings
+
+def city_hall
+class building
+cost 14 14
+hp_max 325
+time_cost 135
+storable_resource_types 0 1
+can_train laborer
+can_upgrade_to governors_office
+
+def governors_office
+is_a city_hall
+cost 26 30
+hp_max 700
+time_cost 250
+requirements military_camp
+can_upgrade_to chancellors_palace
+
+def chancellors_palace
+is_a governors_office
+cost 42 50
+hp_max 1200
+time_cost 370
+requirements military_camp airship_factory
+can_upgrade_to ; starting_point
+
+def ranch
+class building
+cost 8 10
+requirements city_hall
+food_provided 12
+hp_max 133.3
+time_cost 60
+
+def military_camp
+class building
+cost 10 8
+hp_max 175
+time_cost 60
+requirements city_hall
+can_train musketeer grenade_launcher
+
+def airship_factory
+class building
+cost 13 9
+hp_max 275
+time_cost 90
+requirements governors_office
+can_train scout_airship fighter_airship bomber_airship transport_airship
+can_research reinforced_structure
+
+def hospital
+class building
+cost 34 32
+time_cost 135
+hp_max 266
+requirements chancellors_palace
+heal_level 8
+can_research public_health
+
+def observation_post
+class building
+provides_survival 0
+cost 6 2
+requirements airship_factory
+time_cost 70
+hp_max 50
+sight_range 1
+is_a_detector 1
+is_buildable_anywhere 1
+can_upgrade_to flak_gun missile_battery
+
+def flak_gun
+is_a observation_post
+food_cost 1
+cost 15 8
+requirements blacksmith powder_magazine
+hp_max 60
+time_cost 100
+range 6
+cooldown 1
+damage 4
+target_types air
+splash 1
+damage_radius 0.25
+can_use high_quality_powder highest_quality_powder
+can_upgrade_to 
+
+def missile_battery
+is_a observation_post
+food_cost 1
+cost 15 8
+requirements blacksmith powder_magazine
+hp_max 60
+time_cost 100
+special_range 1
+cooldown 5
+damage 10
+target_types air
+splash 1
+damage_radius 2
+can_use high_quality_powder highest_quality_powder
+can_upgrade_to 
+
+
+
+; technical units
+
+def laborer
+is_a peasant
+cost 5 0
+time_cost 10
+hp_max 6
+hp_max_bonus 2
+speed 1.6
+can_build ranch military_camp airship_factory hospital city_hall blacksmith powder_magazine observation_post
+range 0.7
+cooldown 1
+damage 1
+can_use public_health
+
+def musketeer
+class soldier
+cost 9 0
+time_cost 20
+requirements powder_magazine 
+hp_max 15
+hp_max_bonus 4
+speed 1.3
+range 10
+cooldown 6
+damage 15
+target_types ground air
+can_use high_quality_powder highest_quality_powder melee_armor public_health
+is_ballistic 1
+
+def grenade_launcher
+class soldier
+cost 14 0
+time_cost 20
+requirements powder_magazine blacksmith
+hp_max 16
+hp_max_bonus 4
+speed 1
+range 12
+cooldown 4
+damage 8
+target_types ground
+damage_radius 1.5
+splash 1
+special_range 1
+can_use high_quality_powder highest_quality_powder melee_armor public_health
+armor 0.5
+armor_bonus 1
+transport_volume 2
+
+def scout_airship
+class soldier
+cost 5 4
+time_cost 15
+airground_type air
+hp_max 8
+hp_max_bonus 3
+speed 1.75
+sight_range 1
+is_repairable 1
+is_healable 0
+transport_capacity 1
+transport_volume 99
+corpse 0
+is_a_detector 1
+can_use reinforced_structure a_tear_gas a_drop_secret_agent
+mana_max 200
+mana_regen 0
+
+def fighter_airship
+class soldier
+cost 15 8
+food_cost 3
+time_cost 30
+airground_type air
+hp_max 20
+hp_max_bonus 5
+speed 1.75
+requirements powder_magazine
+sight_range 1
+range 9
+cooldown 3
+damage 12
+damage_bonus 3
+target_types air
+is_repairable 1
+is_healable 0
+transport_volume 99
+corpse 0
+can_use high_quality_powder highest_quality_powder reinforced_structure
+transport_capacity 1
+
+def bomber_airship
+class soldier
+cost 16 10
+food_cost 3
+time_cost 30
+airground_type air
+hp_max 22
+hp_max_bonus 6
+speed 1.75
+requirements powder_magazine
+sight_range 1
+range 0.5
+cooldown 5
+damage 24
+damage_bonus 3
+target_types ground
+is_repairable 1
+is_healable 0
+transport_volume 99
+corpse 0
+damage_radius 4
+splash 1
+can_use high_quality_powder highest_quality_powder reinforced_structure
+transport_capacity 1
+
+def transport_airship
+class soldier
+cost 15 12
+food_cost 2
+time_cost 25
+requirements blacksmith
+airground_type air
+hp_max 26
+hp_max_bonus 6
+speed 1.66
+sight_range 1
+is_repairable 1
+is_healable 0
+transport_capacity 27
+transport_volume 99
+corpse 0
+can_use reinforced_structure
+
+def secret_agent
+class soldier
+;cost 9 1
+;time_cost 20
+;requirements governors_office
+hp_max 10
+hp_max_bonus 2
+speed 1.6
+can_use a_plant_hidden_bomb public_health
+mana_max 200
+mana_regen 1
+is_invisible 1
+is_a_detector 1
+sight_range 1
+
+
+
+; technical research
+
+def public_health
+class upgrade
+cost 60 0
+time_cost 80
+effect apply_bonus hp_max
+
+def reinforced_structure
+class upgrade
+cost 35 25
+time_cost 80
+effect apply_bonus hp_max
+
+
+
+; technical abilities
+
+def hidden_bomb
+class building
+is_buildable_anywhere 1
+hp_max 10
+is_invisible 1
+can_use a_explode_bomb
+mana_max 200
+mana_regen 0
+
+def a_plant_hidden_bomb
+class ability
+mana_cost 200
+requirements powder_magazine
+effect summon 0 1 hidden_bomb
+effect_target ask
+effect_range square
+
+def a_explode_bomb
+class ability
+mana_cost 200
+effect summon 3 small_explosion
+universal_notification 1
+
+def tear_gas
+class effect
+harm_level 1
+harm_target_type healable
+is_a_cloaker 1
+is_cloakable 0
+
+def a_tear_gas
+class ability
+mana_cost 50
+effect summon 15 tear_gas
+effect_target ask
+effect_range nearby
+
+def a_drop_secret_agent
+class ability
+mana_cost 100
+requirements governors_office
+effect summon 0 1 secret_agent
+effect_target ask
+effect_range square
+
+
+; robotic branch
+
+def robotic
+class race
+townhall garage
+farm hydroponic_farm
+peasant geek
+easy robotic_easy
+aggressive robotic
+
+
+; robotic buildings
+
+def garage
+class building
+cost 12 15
+time_cost 135
+hp_max 150
+storable_resource_types 0 1
+can_train geek
+can_upgrade_to ; starting_point
+
+def hydroponic_farm
+class building
+cost 16 8
+requirements garage
+food_provided 24
+hp_max 100
+time_cost 80
+
+def minicomputer
+class building
+cost 128 0
+time_cost 128
+requirements garage
+hp_max 128
+armor 1
+can_upgrade_to mainframe
+
+def mainframe
+class building
+cost 384 0
+time_cost 256
+hp_max 256
+armor 1
+can_upgrade_to supercomputer
+is_a minicomputer
+
+def supercomputer
+class building
+cost 896 0
+time_cost 512
+hp_max 512
+armor 1
+can_upgrade_to
+is_a mainframe
+
+def robot_factory
+class building
+cost 32 0
+hp_max 128
+time_cost 128
+requirements minicomputer
+armor 1
+can_train magnetic_shooter laser_shooter mobile_sensor magnetic_cannon plasma_cannon drone laser_ship
+
+def magnesite_extractor
+class building
+cost 24 0
+requirements minicomputer
+hp_max 100
+time_cost 90
+can_research high_quality_magnesite highest_quality_magnesite
+
+def optical_lab
+class building
+cost 32 0
+hp_max 128
+time_cost 80
+requirements mainframe
+armor 1
+can_research laser_power
+
+def signal_modulator
+class building
+cost 24 0
+hp_max 128
+time_cost 80
+requirements mainframe
+armor 1
+
+def particle_accelerator
+class building
+cost 64 0
+hp_max 256
+time_cost 100
+requirements supercomputer
+armor 1
+can_research plasma_power
+
+def laser_tower
+class building
+provides_survival 0
+cost 16 0
+hp_max 64
+time_cost 100
+requirements optical_lab
+damage 3.33
+damage_bonus 1
+cooldown 0.33
+target_types ground air
+range 8
+armor 1
+is_buildable_anywhere 1
+can_use laser_power
+sight_range 1
+
+def radar_tower
+class building
+provides_survival 0
+cost 12 0
+hp_max 64
+time_cost 100
+requirements signal_modulator
+armor 1
+is_a_detector 1
+can_use a_radar_image
+mana_max 200
+mana_regen 1
+is_buildable_anywhere 1
+sight_range 1
+
+def magnetic_tower
+class building
+provides_survival 0
+cost 24 0
+requirements magnesite_extractor
+hp_max 60
+time_cost 120
+sight_range 1 ; can see the adjacent squares
+range 3
+cooldown 6
+damage 10
+damage_bonus 3
+damage_radius 0.5
+splash 1
+armor 1 
+is_buildable_anywhere 1
+can_use a_hypnotic_wave a_magnetic_field a_uncontrolled_magnetic_field high_quality_magnesite highest_quality_magnesite
+mana_max 200
+mana_regen 0.5
+target_types ground air
+
+def electric_trap
+class building
+provides_survival 0
+;cost 4 0
+;requirements magnesite_extractor
+;time_cost 30
+hp_max 1
+range 2
+cooldown 20
+damage 50
+is_invisible 1
+splash 1
+damage_radius 12
+is_buildable_anywhere 1
+can_use high_quality_magnesite highest_quality_magnesite
+
+
+; robotic units
+
+def robot
+class soldier
+food_cost 0
+armor 1
+is_healable 0
+is_repairable 1
+corpse 0
+
+def geek
+is_a peasant
+cost 6 0
+time_cost 7
+hp_max 6
+speed 1.6
+can_build hydroponic_farm minicomputer robot_factory magnesite_extractor signal_modulator optical_lab particle_accelerator garage radar_tower laser_tower magnetic_tower
+range 0.7
+cooldown 1
+damage 1
+
+def magnetic_shooter
+is_a robot
+cost 8 0
+time_cost 10
+requirements magnesite_extractor
+hp_max 8
+speed 1.8
+damage 2
+cooldown 2
+target_types ground air
+range 6
+can_use high_quality_magnesite highest_quality_magnesite
+
+def laser_shooter
+is_a robot
+cost 8 0
+time_cost 8
+requirements optical_lab
+hp_max 8
+speed 1.8
+damage 2.66
+damage_bonus 0.75
+cooldown 0.75
+target_types ground air
+range 7
+can_use laser_power
+
+def magnetic_cannon
+is_a robot
+cost 16 0
+time_cost 16
+requirements magnesite_extractor
+hp_max 8
+speed 1.4
+damage 4.66
+cooldown 3.33
+range 12
+special_range 1
+transport_volume 3
+can_use high_quality_magnesite highest_quality_magnesite
+target_types ground air
+
+def plasma_cannon
+is_a robot
+cost 24 0
+time_cost 24
+requirements particle_accelerator
+hp_max 16
+speed 1.4
+damage 10
+damage_bonus 3
+cooldown 2
+range 12
+special_range 1
+splash 1
+transport_volume 5
+can_use plasma_power
+target_types ground air
+damage_radius 0.25
+can_upgrade_to overheated_plasma_cannon
+
+def overheated_plasma_cannon
+is_a plasma_cannon
+cost 28 0
+requirements 
+hp_max 12
+armor 0
+damage 12
+damage_bonus 4
+cooldown 0.75
+decay 10
+damage_radius 0.5
+can_upgrade_to 
+
+def mobile_sensor
+is_a robot
+cost 8 0
+time_cost 8
+requirements signal_modulator
+hp_max 8
+speed 1.8
+is_a_detector 1
+sight_range 1
+can_use a_set_electric_trap
+mana_max 200
+mana_regen 1
+
+def drone
+is_a robot
+cost 8 0
+time_cost 8
+requirements magnesite_extractor signal_modulator
+airground_type air
+hp_max 8
+speed 2
+sight_range 1
+is_invisible 1
+is_a_detector 1
+transport_volume 99
+
+def laser_ship
+is_a robot
+cost 16 0
+time_cost 16
+requirements magnesite_extractor optical_lab
+airground_type air
+hp_max 16
+speed 2
+damage 1.75
+damage_bonus 0.66
+cooldown 0.75
+target_types ground air
+range 7
+sight_range 1
+can_use laser_power
+transport_volume 99
+transport_capacity 1
+
+
+
+
+
+; robotic research
+
+def high_quality_magnesite
+class upgrade
+cost 32 0
+time_cost 150
+effect bonus damage 1.66
+
+def highest_quality_magnesite
+class upgrade
+cost 64 0
+time_cost 300
+requirements high_quality_magnesite
+effect bonus damage 2.66
+
+def laser_power
+class upgrade
+cost 48 0
+time_cost 120
+effect apply_bonus damage
+
+def plasma_power
+class upgrade
+cost 80 0
+time_cost 120
+effect apply_bonus damage
+
+
+; robotic abilities
+
+def a_set_electric_trap
+class ability
+mana_cost 100
+requirements magnesite_extractor
+effect summon 0 electric_trap
+effect_target ask
+effect_range square
+
+def magnetic_field
+class effect
+harm_level 1
+harm_target_type unit
+is_a_detector 1
+
+def a_magnetic_field
+class ability
+mana_cost 100
+effect summon 90 magnetic_field
+effect_target ask
+effect_range nearby
+
+def a_uncontrolled_magnetic_field
+class ability
+mana_cost 150
+effect summon 90 magnetic_field
+effect_target random
+effect_range anywhere
+
+def a_hypnotic_wave
+class ability
+mana_cost 50
+effect conversion
+effect_target ask
+effect_range nearby
+
+def a_radar_image
+class ability
+mana_cost 80
+effect summon 10 holy_vision
+effect_target ask
+effect_range anywhere
+universal_notification 1
+
+
+
+
+
+
+; undead branch
+
+def undead
+class race
+townhall graveyard
+farm scavenger_farm
+peasant undead_slave
+easy undead_easy
+aggressive undead
+
+
+; undead buildings
+
+def graveyard
+class building
+cost 14 12
+time_cost 135
+hp_max 150
+storable_resource_types 0 1
+can_upgrade_to mausoleum
+can_train undead_slave
+
+def mausoleum
+is_a graveyard
+cost 34 28
+time_cost 250
+requirements vault
+hp_max 300
+can_upgrade_to necropolis
+
+def necropolis
+is_a mausoleum
+cost 52 46
+time_cost 350
+requirements vault crypt
+hp_max 450
+can_upgrade_to ; starting_point
+
+def scavenger_farm
+class building
+cost 3 2
+requirements graveyard
+food_provided 6
+hp_max 80
+time_cost 45
+
+def vault
+class building
+cost 11 9
+time_cost 75
+requirements graveyard
+hp_max 130
+can_train ghoul skeleton
+
+def crypt
+class building
+cost 16 16
+time_cost 90
+requirements mausoleum
+hp_max 200
+can_train necromancer lich
+
+def labyrinth
+class building
+cost 20 20
+time_cost 180
+requirements necropolis
+hp_max 300
+can_train thestral cursed_gargoyle 
+mana_max 200
+mana_regen 1
+can_use a_soul_absorption
+
+def dark_tower
+class building
+provides_survival 0
+cost 3 3
+time_cost 80
+hp_max 33
+is_invisible 1
+is_a_detector 1
+sight_range 1
+is_buildable_anywhere 1
+can_upgrade_to spectral_tower torment_tower
+
+def spectral_tower
+is_a dark_tower
+cost 22 8
+requirements mausoleum
+time_cost 200
+can_use a_evil_fog a_summon_ectoplasm
+mana_max 200
+mana_regen 0.5
+can_upgrade_to misty_tower
+
+def misty_tower
+is_a spectral_tower
+cost 32 12
+requirements necropolis
+time_cost 290
+can_use a_raise_ghosts a_evil_fog a_summon_ectoplasm
+mana_regen 0.75
+is_invisible 0
+is_a_cloaker 1
+is_cloakable 0
+harm_level 1
+harm_target_type healable
+can_upgrade_to
+
+def torment_tower
+is_a dark_tower
+cost 9 7
+time_cost 120
+requirements crypt
+hp_max 50
+can_use a_raise_zombies
+mana_max 200
+mana_regen 0.66
+range 3
+damage 6
+cooldown 5
+splash 1
+damage_radius 3
+target_types ground air
+is_invisible 0
+can_upgrade_to terror_tower
+
+def terror_tower
+is_a torment_tower
+cost 15 11
+time_cost 160
+requirements labyrinth
+hp_max 66
+can_use a_raise_flesh_golems
+range 4
+damage 9
+damage_radius 4
+can_upgrade_to 
+
+def bone_trap
+class building
+provides_survival 0
+;cost 3 1
+;time_cost 30
+;requirements graveyard
+hp_max 15
+range 2
+cooldown 5
+damage 10
+is_invisible 1
+is_buildable_anywhere 1
+splash 1
+damage_radius 12
+
+
+; undead units
+
+def undead_unit
+class soldier
+food_cost 0
+corpse 0
+is_healable 0
+is_undead 1
+
+def undead_slave
+is_a undead_unit
+class worker
+cost 4 0
+time_cost 12
+hp_max 4
+speed 1.3
+;can_use a_improved_wood_gathering
+range 1
+cooldown 1
+damage 1.8
+can_build scavenger_farm vault crypt labyrinth graveyard dark_tower
+
+def ghoul
+is_a undead_unit
+cost 2 0
+time_cost 12
+hp_max 9
+speed 1.5
+damage 4.5
+cooldown 1.5
+range 1
+armor 1
+armor_bonus 1
+can_use a_set_bone_trap melee_armor
+mana_max 200
+mana_regen 0
+
+def skeleton
+is_a undead_unit
+cost 3 1
+time_cost 10
+hp_max 8
+speed 1.5
+can_use archer_weapon archer_armor archer_range
+cooldown 1.5
+target_types ground air
+range 4.5
+damage 2.5
+
+def darkness_tree
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 12
+speed 0
+can_use a_grow_carnivorous_plants
+armor 2
+cooldown 1.5
+target_types air
+range 4
+damage 3.5
+mana_max 500
+mana_regen 0.1
+is_healable 0
+corpse 0
+transport_volume 99
+
+def thestral
+class soldier
+cost 3 5
+time_cost 16
+hp_max 10
+speed 2
+damage 3
+cooldown 1.75
+range 0.5
+target_types ground air
+airground_type air
+is_invisible 1
+is_a_detector 1
+transport_volume 99
+is_healable 0
+
+def cursed_gargoyle
+class soldier
+cost 8 16
+time_cost 20
+food_cost 0
+hp_max 12
+armor 1.5
+speed 2
+airground_type air
+corpse 0
+transport_volume 99
+is_healable 0
+harm_level 1
+harm_target_type healable
+
+def necromancer
+class soldier
+cost 15 8
+food_cost 2
+time_cost 30
+hp_max 22
+mana_max 200
+mana_regen 1 ; mana / second
+speed 1
+can_use a_raise_dead a_corpse_explosion a_infect_corpses a_plant_darkness_tree a_necromancy_field
+range 4.5
+cooldown 2
+damage 5
+target_types ground air
+transport_volume 2
+
+def lich
+is_a undead_unit
+cost 20 10
+time_cost 25
+hp_max 22
+mana_max 200
+mana_regen 1
+speed 1
+can_use a_walk_through_walls a_deadly_fog a_summon_wisps
+range 4.5
+cooldown 4
+damage 8
+target_types ground air
+transport_volume 2
+is_a_detector 1
+
+def ectoplasm
+is_a undead_unit
+hp_max 6
+speed 2
+is_invisible 1
+is_a_detector 1
+can_use a_bewitch
+mana_max 100
+mana_regen 0.5
+
+def zombie
+is_a undead_unit
+hp_max 16
+speed 1
+can_use melee_weapon melee_armor
+armor 0.5
+armor_bonus 1
+range 1
+cooldown 3
+damage 5
+damage_bonus 2.5
+
+def armored_specter
+is_a undead_unit
+hp_max 13
+speed 1.25
+damage 4
+damage_bonus 2
+cooldown 1.66
+range 1.25
+armor 4
+armor_bonus 2
+can_use melee_weapon melee_armor
+is_a_detector 1
+
+def ghost
+is_a undead_unit
+hp_max 9
+speed 2
+damage 3
+cooldown 1.25
+range 3.5
+target_types ground air
+is_invisible 1
+is_a_detector 1
+
+def flesh_golem
+is_a undead_unit
+hp_max 40
+speed 1
+range 1
+cooldown 4
+damage 15
+transport_volume 3
+
+def skeletal_dragon
+is_a undead_unit
+hp_max 20
+speed 1.66
+damage 8
+cooldown 2.5
+range 5
+splash 1
+damage_radius 1.5
+target_types ground air
+airground_type air
+mana_max 200
+mana_regen 0.5
+transport_volume 99
+can_use a_breath_of_death dragon_vitality dragon_attack dragon_range dragon_armor dragon_speed
+sight_range 1
+is_a_detector 1
+transport_capacity 2
+
+def carnivorous_plant
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 4
+speed 0
+cooldown 1.3
+target_types ground
+range 1
+damage 2.33
+is_healable 0
+corpse 0
+transport_volume 99
+
+def wisp
+is_a undead_unit
+hp_max 5
+speed 0
+damage 1.25
+range 2
+cooldown 1
+target_types ground air
+airground_type air
+is_a_detector 1
+is_vulnerable 0
+is_teleportable 0
+
+
+; undead research
+
+
+
+
+; undead abilities
+
+def a_set_bone_trap
+class ability
+mana_cost 100
+requirements graveyard
+effect summon 0 bone_trap
+effect_target ask
+effect_range square
+
+def soul_absorption
+class effect
+harm_level 99999
+harm_target_type healable
+
+def a_soul_absorption
+class ability
+mana_cost 200
+effect summon 1 soul_absorption
+
+def evil_fog
+class effect
+harm_level 2
+harm_target_type healable
+is_a_cloaker 1
+is_cloakable 0
+
+def a_evil_fog
+class ability
+mana_cost 200
+effect summon 90 evil_fog
+effect_target ask
+effect_range nearby
+
+def a_summon_ectoplasm
+class ability
+mana_cost 150
+effect summon 150 1 ectoplasm
+
+def a_raise_ghosts
+class ability
+mana_cost 150
+effect raise_dead 600 ghost ghost ghost ghost ghost ghost ghost ghost ghost ghost
+
+def a_raise_zombies
+class ability
+mana_cost 150
+effect raise_dead 600 zombie zombie zombie zombie zombie zombie zombie zombie zombie zombie
+
+def a_raise_flesh_golems
+class ability
+mana_cost 150
+effect raise_dead 600 flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem flesh_golem
+
+def deadly_fog
+class effect
+harm_level 1
+harm_target_type healable
+
+def a_deadly_fog
+class ability
+mana_cost 150
+effect summon 60 deadly_fog
+effect_target ask
+effect_range nearby
+
+def a_raise_dead
+class ability
+mana_cost 75
+effect raise_dead 600 zombie zombie zombie armored_specter armored_specter armored_specter ghost ghost ghost flesh_golem flesh_golem skeletal_dragon
+
+def necromancy_field
+class soldier
+food_cost 0
+corpse 0
+is_vulnerable 0
+is_invisible 1
+is_a_detector 1
+mana_max 100
+mana_regen 1
+can_use a_raise_dead
+
+def a_necromancy_field
+class ability
+mana_cost 200
+effect summon 300 necromancy_field
+effect_target ask
+effect_range square
+
+def corpse_explosion
+class effect
+harm_level 10
+harm_target_type ground unit
+
+def a_corpse_explosion
+class ability
+mana_cost 50
+effect raise_dead 1 corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion corpse_explosion
+effect_target ask
+effect_range nearby
+
+def plague_corpse
+class soldier
+food_cost 0
+corpse 0
+is_vulnerable 0
+harm_level 1
+harm_target_type ground healable
+mana_max 200
+mana_regen 0
+can_use a_infect_corpses
+
+def a_infect_corpses
+class ability
+mana_cost 100
+effect raise_dead 90 plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse plague_corpse
+effect_target ask
+effect_range nearby
+
+def a_plant_darkness_tree
+class ability
+mana_cost 175
+effect summon 1000 darkness_tree
+effect_target ask
+effect_range square
+
+def a_grow_carnivorous_plants
+class ability
+mana_cost 125
+effect raise_dead 600 carnivorous_plant carnivorous_plant carnivorous_plant carnivorous_plant carnivorous_plant carnivorous_plant thorny_plant thorny_plant thorny_plant thorny_plant
+
+def a_summon_wisps
+class ability
+mana_cost 200
+effect summon 120 2 wisp
+effect_target ask
+effect_range square
+
+def a_walk_through_walls
+class ability
+mana_cost 200
+effect teleportation
+effect_target ask
+effect_range nearby
+
+def breath_of_death
+class effect
+harm_level 30
+harm_target_type healable
+
+def a_breath_of_death
+class ability
+mana_cost 200
+effect summon 3 breath_of_death
+effect_target ask
+effect_range nearby
+
+
+
+; elf branch
+
+def elf
+class race
+townhall clearing
+farm orchard
+peasant harvester
+easy elf_easy
+aggressive elf
+
+
+; elf buildings
+
+def clearing
+class building
+cost 12 18
+food_provided 2
+hp_max 200
+time_cost 135
+storable_resource_types 0 1
+can_train harvester
+can_upgrade_to tree_city
+
+def tree_city
+is_a clearing
+cost 26 40
+requirements lumbermill forest_arena
+food_provided 5
+hp_max 450
+time_cost 300
+can_upgrade_to domain
+
+def domain
+is_a tree_city
+cost 46 64
+requirements leafy_garden sunlit_library
+food_provided 12
+hp_max 900
+time_cost 500
+can_upgrade_to ; starting_point
+
+def orchard
+class building
+cost 7 7
+requirements clearing
+food_provided 15
+hp_max 175
+time_cost 90
+
+def forest_arena
+class building
+cost 6 11
+time_cost 100
+hp_max 133
+food_provided 1
+requirements clearing
+can_train nimble_archer
+
+def leafy_garden
+class building
+cost 6 15
+time_cost 100
+food_provided 2
+hp_max 100
+requirements tree_city
+can_train centaur
+can_research steel_leaf
+
+def sunlit_library
+class building
+cost 8 14
+time_cost 100
+food_provided 1
+hp_max 100
+requirements tree_city
+can_train scholar
+can_research magic_power
+
+def enchanted_forest
+class building
+cost 9 18
+time_cost 175
+food_provided 3
+hp_max 233
+requirements domain
+can_train druid
+can_research u_unstable_portal u_stable_portal
+can_use a_recall
+mana_max 200
+mana_regen 0.6
+
+def sentry_tower
+class building
+provides_survival 0
+cost 3 4
+time_cost 60
+hp_max 33
+sight_range 1
+is_buildable_anywhere 1
+is_a_detector 1
+can_upgrade_to guardtower leafy_tower mirror_tower
+
+def guardtower
+is_a sentry_tower
+food_cost 1
+cost 7 5
+requirements tree_city lumbermill
+time_cost 100
+hp_max 43
+range 8
+cooldown 0.75
+damage 2.5
+target_types ground air
+armor 1
+can_use archer_weapon archer_range
+is_ballistic 1
+can_upgrade_to great_guard_tower
+
+def great_guard_tower
+is_a guardtower
+food_cost 2
+cost 12 10
+requirements domain lumbermill
+time_cost 160
+hp_max 53
+range 12
+special_range 1
+cooldown 0.75
+can_upgrade_to 
+
+def leafy_tower
+is_a sentry_tower
+cost 5 6
+requirements leafy_garden
+time_cost 100
+hp_max 50
+is_invisible 1
+can_upgrade_to razor_leaf_tower
+
+def razor_leaf_tower
+is_a leafy_tower
+cost 7 8
+requirements enchanted_forest
+time_cost 160
+hp_max 60
+range 12
+cooldown 0.25
+damage 0.33
+damage_bonus 0.17
+target_types ground air
+can_use steel_leaf magic_power
+can_upgrade_to 
+
+def mirror_tower
+is_a sentry_tower
+cost 6 5
+requirements sunlit_library
+time_cost 120
+is_a_cloaker 1
+is_cloakable 0
+can_upgrade_to solar_tower
+
+def solar_tower
+is_a mirror_tower
+cost 10 6
+time_cost 220
+range  12
+cooldown 5
+damage 2
+can_use a_sunbeam
+mana_max 200
+mana_regen 1
+can_upgrade_to 
+
+def root_trap
+class building
+provides_survival 0
+;cost 1 3
+;time_cost 30
+hp_max 20
+range 3
+cooldown 3
+damage 6
+is_invisible 1
+is_buildable_anywhere 1
+splash 1
+damage_radius 12
+
+
+; elf units
+
+def harvester
+is_a peasant
+cost 3 1
+time_cost 10
+hp_max 4
+speed 1.7
+can_build orchard forest_arena lumbermill leafy_garden sunlit_library enchanted_forest clearing sentry_tower
+range 1
+cooldown 1
+damage 1.4
+
+def nimble_archer
+class soldier
+cost 4 2
+time_cost 12
+hp_max 9
+speed 1.75
+requirements lumbermill
+can_use a_clone archer_weapon archer_armor archer_range
+armor 0.15
+cooldown 2
+target_types ground air
+range 4.5
+damage 2.25
+can_upgrade_to forest_archer
+mana_max 200
+mana_regen 0
+
+def nimble_archer_clone
+is_a nimble_archer
+food_cost 0
+hp_max 4
+damage 1.1
+damage_bonus 1.1
+can_use archer_weapon archer_armor archer_range magic_power
+can_upgrade_to
+mana_max 0
+corpse 0
+is_teleportable 0
+
+def forest_archer
+is_a nimble_archer
+cost 6 6
+time_cost 25
+requirements lumbermill domain enchanted_forest
+hp_max 12
+armor 0.33
+range 6
+damage 3.25
+is_invisible 1
+is_a_detector 1
+can_use archer_weapon archer_armor archer_range
+mana_max 0
+can_upgrade_to
+sight_range 1
+is_ballistic 1
+
+def centaur
+class soldier
+cost 8 4
+time_cost 18
+hp_max 18
+armor 1
+speed 2.33
+requirements lumbermill
+can_use a_forest_illusion a_set_root_trap archer_weapon archer_armor archer_range horse_speed
+cooldown 2
+target_types ground air
+range 7.5
+damage 3.5
+is_a_detector 1
+mana_max 200
+mana_regen 0.4
+is_ballistic 1
+transport_volume 3
+transport_capacity 1
+
+def scholar
+class soldier
+cost 6 8
+food_cost 2
+time_cost 18
+hp_max 12
+mana_max 200
+mana_regen 1
+speed 1.5
+can_use a_generate_energy_ball a_meteors magic_power
+transport_volume 2
+range 12
+cooldown 5
+damage 10
+damage_bonus 4
+splash 1
+target_types ground air
+damage_radius 0.25
+
+def energy_ball
+class soldier
+food_cost 0
+hp_max 1
+speed 6
+is_healable 0
+corpse 0
+range 3
+cooldown 15
+damage 30
+damage_bonus 20
+target_types ground air
+transport_volume 99
+is_a_detector 1
+is_teleportable 0
+can_use magic_power
+
+def druid
+class soldier
+cost 14 14
+food_cost 3
+time_cost 20
+hp_max 15
+mana_max 200
+mana_regen 0.4
+speed 1.33
+can_use a_plant_serenity_tree a_unstable_portal a_stable_portal melee_weapon
+transport_volume 2
+is_a_detector 1
+range 1.25
+cooldown 2.5
+damage 7
+
+def serenity_tree
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 20
+speed 0
+can_use a_grow_medicinal_plants
+armor 4
+mana_max 500
+mana_regen 0.1
+heal_level 4
+is_healable 0
+corpse 0
+transport_volume 99
+
+def medicinal_plant
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 6
+speed 0
+is_healable 0
+corpse 0
+heal_level 1
+transport_volume 99
+
+
+
+; elf research
+
+def steel_leaf
+class upgrade
+cost 60 25
+time_cost 120
+effect bonus damage 1
+
+def magic_power
+class upgrade
+cost 75 0
+time_cost 100
+effect apply_bonus damage
+
+def u_unstable_portal
+class upgrade
+cost 100 0
+time_cost 120
+
+def u_stable_portal
+class upgrade
+cost 400 0
+time_cost 180
+requirements u_unstable_portal
+
+
+
+
+
+; elf abilities
+
+def sunbeam
+class soldier
+food_cost 0
+corpse 0
+is_vulnerable 0
+is_a_detector 1
+range  12
+cooldown 0.25
+damage 2
+target_types ground air
+transport_volume 99
+is_teleportable 0
+
+def a_sunbeam
+class ability
+mana_cost 200
+effect summon 8 sunbeam
+effect_target ask
+effect_range nearby
+
+def forest_illusion
+class effect
+is_a_cloaker 1
+
+def a_forest_illusion
+class ability
+mana_cost 200
+effect summon 60 forest_illusion
+
+def a_set_root_trap
+class ability
+mana_cost 100
+effect summon 0 root_trap
+effect_target ask
+effect_range square
+
+def a_plant_serenity_tree
+class ability
+mana_cost 175
+effect summon 1000 serenity_tree
+effect_target ask
+effect_range square
+
+def a_grow_medicinal_plants
+class ability
+mana_cost 125
+effect raise_dead 600 medicinal_plant medicinal_plant medicinal_plant medicinal_plant medicinal_plant medicinal_plant thorny_plant thorny_plant thorny_plant thorny_plant
+
+def a_recall
+class ability
+mana_cost 150
+effect recall
+effect_target ask
+effect_range anywhere
+universal_notification 1
+
+def a_unstable_portal
+class ability
+requirements u_unstable_portal
+mana_cost 175
+effect teleportation
+effect_target random
+effect_range anywhere
+universal_notification 1
+
+def a_stable_portal
+class ability
+requirements u_stable_portal
+mana_cost 200
+effect teleportation
+effect_target ask
+effect_range anywhere
+universal_notification 1
+
+def a_generate_energy_ball
+class ability
+mana_cost 200
+effect summon 60 energy_ball
+
+def a_clone
+class ability
+mana_cost 200
+requirements leafy_garden sunlit_library
+effect summon 10 2 nimble_archer_clone
+effect_target ask
+effect_range square
+
+def meteors
+class effect
+harm_level 6
+harm_target_type
+
+def a_meteors
+class ability
+mana_cost 200
+effect summon 5 meteors
+effect_target ask
+effect_range nearby
+
+
+
+
+; orc branch
+
+def orc
+class race
+townhall encampment
+farm pig_farm
+peasant peon
+easy orc_easy
+aggressive orc
+
+; orc buildings
+
+def encampment
+class building
+cost 11 15
+food_provided 1
+hp_max 300
+time_cost 135
+storable_resource_types 0 1
+can_train peon
+can_upgrade_to fortified_encampment
+
+def fortified_encampment
+is_a encampment
+cost 25 30
+hp_max 1000
+time_cost 320
+can_upgrade_to fortress
+requirements pit
+
+def fortress
+is_a fortified_encampment
+cost 40 50
+hp_max 1800
+time_cost 695
+can_upgrade_to ; starting_point
+requirements pit pen
+
+def pig_farm
+class building
+cost 3 7
+requirements encampment
+food_provided 10
+hp_max 133.3
+time_cost 60
+
+def pit
+class building
+cost 5 10
+time_cost 90
+hp_max 180
+requirements encampment
+can_train bruiser_troll rocketeer kamikaze
+
+def pen
+class building
+cost 10 15
+hp_max 200
+time_cost 100
+requirements fortified_encampment
+can_train ogre_rock_thrower
+
+def nest
+class building
+cost 10 15
+hp_max 150
+time_cost 150
+requirements fortified_encampment
+can_train winged_serpent hippogriff
+
+def tepee
+class building
+cost 14 14
+hp_max 233
+time_cost 180
+requirements fortress
+can_train voodoo_priest
+can_research aggression berserk
+is_a_detector 1
+
+def promontory
+class building
+provides_survival 0
+cost 2 4
+time_cost 60
+hp_max 50
+sight_range 1
+is_buildable_anywhere 1
+can_upgrade_to cannontower rockfall
+
+def rockfall
+is_a promontory
+cost 6 8
+requirements pen
+time_cost 120
+hp_max 100
+range 2
+cooldown 6
+damage 8
+splash 1
+damage_radius 0.5
+armor 3
+can_upgrade_to massive_tower
+
+def massive_tower
+is_a rockfall
+cost 8 14
+requirements fortress
+time_cost 200
+hp_max 250
+cooldown 5
+damage 14
+armor 5
+can_train transport_ball
+transport_capacity 45
+can_upgrade_to 
+
+def cannontower
+is_a promontory
+food_cost 1
+cost 10 10
+requirements fortified_encampment powder_magazine
+time_cost 150
+hp_max 60
+cooldown 4
+damage 8
+splash 1
+damage_radius 0.5
+armor 1
+special_range 1
+can_use high_quality_powder highest_quality_powder
+can_upgrade_to grapeshot_tower bombard_tower
+
+def grapeshot_tower
+is_a cannontower
+cost 15 13
+food_cost 2
+requirements fortress powder_magazine
+time_cost 200
+damage 4
+damage_radius 4
+can_upgrade_to 
+
+def bombard_tower
+is_a cannontower
+food_cost 2
+cost 15 13
+requirements fortress powder_magazine
+time_cost 200
+damage 16
+can_upgrade_to 
+
+
+
+; orc units
+
+def peon
+is_a peasant
+time_cost 12
+hp_max 5
+speed 1.4
+can_build pig_farm pit pen nest tepee encampment powder_magazine promontory
+range 0.9
+cooldown 1
+damage 2
+
+def bruiser_troll
+class soldier
+cost 8 0
+time_cost 15
+hp_max 20
+speed 1.4
+range 1
+cooldown 1.5
+damage 8.5
+can_use aggression
+transport_volume 2
+can_upgrade_to butcher_troll
+
+def butcher_troll
+is_a bruiser_troll
+cost 12 0
+food_cost 2
+requirements pen
+time_cost 30
+hp_max 35
+speed 1.25
+range 1.33
+damage 20
+transport_volume 3
+can_upgrade_to war_troll
+
+def war_troll
+is_a butcher_troll
+cost 17 0
+food_cost 3
+requirements pen tepee
+time_cost 45
+hp_max 45
+armor 2
+armor_bonus 1
+range 1.66
+damage 30
+damage_bonus 10
+can_use aggression melee_weapon melee_armor
+can_upgrade_to berserker_troll
+
+def berserker_troll
+is_a war_troll
+requirements berserk
+hp_max 55
+damage 60
+cooldown 1
+decay 15
+can_upgrade_to 
+
+def rocketeer
+class soldier
+cost 6 1
+requirements powder_magazine
+time_cost 12
+hp_max 8
+speed 1.5
+range 5
+cooldown 4
+damage 4
+splash 1
+damage_radius 0.25
+target_types air
+can_use high_quality_powder highest_quality_powder
+
+def ogre_rock_thrower
+class soldier
+cost 15 0
+food_cost 3
+time_cost 30
+hp_max 30
+speed 0.75
+range 12
+special_range 1
+cooldown 4
+damage 15
+damage_radius 0.5
+splash 1
+transport_volume 3
+can_use aggression
+
+def winged_serpent
+class soldier
+cost 4 1
+time_cost 10
+hp_max 5
+speed 2
+cooldown 1.5
+range 0.5
+damage 5
+is_a_detector 1
+airground_type air
+transport_volume 99
+target_types ground air
+sight_range 1
+
+def hippogriff
+class soldier
+cost 12 6
+time_cost 18
+food_cost 2
+requirements tepee
+hp_max 30
+speed 2.5
+cooldown 1.5
+range 0.5
+damage 15
+airground_type air
+transport_volume 99
+target_types ground air
+sight_range 1
+transport_capacity 1
+
+def voodoo_priest
+class soldier
+cost 30 15
+time_cost 30
+hp_max 15
+mana_max 200
+mana_regen 0.1
+speed 1
+can_use a_possession a_thunderbolt a_storm_clouds
+transport_volume 2
+is_a_detector 1
+
+def kamikaze
+class soldier
+cost 9 1
+time_cost 20
+requirements powder_magazine tepee
+hp_max 12
+speed 1.5
+range 0.8
+cooldown 1.5
+damage 1
+can_use a_explode_kamikaze aggression
+mana_max 200
+mana_regen 0
+
+def transport_ball
+class soldier
+cost 20 5
+food_cost 0
+time_cost 25
+hp_max 60
+armor 5
+speed 2
+is_repairable 1
+is_healable 0
+transport_capacity 15
+transport_volume 99
+corpse 0
+
+
+
+; orc research
+
+def aggression
+class upgrade
+cost 40 15
+time_cost 180
+effect bonus damage 3.5
+
+def berserk
+class upgrade
+cost 30 10
+time_cost 180
+
+
+; orc abilities
+
+def a_explode_kamikaze
+class ability
+mana_cost 200
+effect summon 2 small_explosion
+effect_target ask
+effect_range square
+universal_notification 1
+
+def a_possession
+class ability
+mana_cost 200
+effect conversion
+effect_target ask
+effect_range anywhere
+universal_notification 1
+
+def thunderbolt
+class effect
+harm_level 100
+harm_target_type unit
+
+def a_thunderbolt
+class ability
+mana_cost 100
+effect summon 1 thunderbolt
+effect_target ask
+effect_range nearby
+universal_notification 1
+
+def storm_clouds
+class effect
+harm_level 3
+harm_target_type air
+is_cloakable 0
+
+def a_storm_clouds
+class ability
+mana_cost 175
+effect summon 180 storm_clouds
+effect_target ask
+effect_range nearby
+
+
+
+
+; elemental branch
+
+def elemental
+class race
+townhall elemental_circle
+farm power_farm
+peasant fairy
+easy elemental_easy
+aggressive elemental
+
+
+; elemental buildings
+
+def elemental_circle
+class building
+cost 15 15
+hp_max 200
+time_cost 250
+storable_resource_types 0 1
+can_train fairy
+cooldown 4
+range 6
+damage 5
+is_a_detector 1
+can_upgrade_to ; starting_point
+target_types ground air
+
+def power_farm
+class building
+cost 20 20
+requirements elemental_circle
+food_provided 40
+hp_max 225
+time_cost 200
+
+def earth_tower
+class building
+cost 150 100
+hp_max 500
+armor 6
+time_cost 1000
+sight_range 1
+can_train earth_elemental
+is_a_detector 1
+damage 8
+range 4.5
+cooldown 6
+splash 1
+can_research super_armor
+damage_radius 0.25
+
+def fire_tower
+class building
+cost 75 175
+hp_max 300
+time_cost 1000
+sight_range 1
+can_train fire_elemental
+is_a_detector 1
+damage 5
+range 3
+cooldown 3
+target_types ground air
+splash 1
+can_research super_attack
+damage_radius 0.25
+
+def water_tower
+class building
+cost 175 75
+hp_max 1000
+time_cost 1000
+sight_range 1
+can_train water_elemental
+is_a_detector 1
+damage 2.5
+range 6
+cooldown 2
+target_types ground air
+splash 1
+can_research super_health
+damage_radius 0.25
+
+def air_tower
+class building
+cost 100 150
+hp_max 200
+time_cost 1000
+sight_range 1
+can_train air_elemental
+is_a_detector 1
+damage 5
+range 4.5
+cooldown 3
+target_types air
+splash 1
+can_research super_speed
+damage_radius 0.25
+
+def magestower
+class building
+cost 50 50
+hp_max 266.7
+time_cost 90
+; requirements castle
+can_train mage
+; can_research u_unstable_portal ; u_teleportation u_summon_dragon u_meteors
+range 4.5
+cooldown 1.5
+damage 8
+target_types ground air
+
+
+; elemental units
+
+def fairy
+class worker
+cost 2 2
+food_cost 0
+time_cost 7
+hp_max 3
+speed 1.9
+transport_volume 99
+airground_type air
+is_a_detector 1
+can_build power_farm earth_tower fire_tower water_tower air_tower magestower elemental_circle
+
+def earth_elemental
+class soldier
+cost 80 40
+time_cost 120
+food_cost 0
+hp_max 150
+hp_max_bonus 30
+armor 2
+speed 1
+speed_bonus 0.75
+cooldown 5
+range 2
+damage 45
+damage_bonus 20
+damage_radius 2
+splash 1
+transport_volume 5
+is_a_detector 1
+can_use super_armor
+
+def fire_elemental
+class soldier
+cost 30 90
+time_cost 120
+food_cost 0
+hp_max 100
+hp_max_bonus 25
+speed 1.5
+speed_bonus 0.5
+cooldown 2
+target_types ground air
+range 8
+damage 30
+damage_bonus 10
+splash 1
+damage_radius 0.25
+transport_volume 5
+is_a_detector 1
+can_use super_attack
+
+def water_elemental
+class soldier
+cost 90 30
+time_cost 140
+food_cost 0
+hp_max 300
+hp_max_bonus 60
+speed 1.5
+speed_bonus 0.5
+cooldown 6
+target_types ground
+range 12
+special_range 1
+damage 12
+damage_radius 6
+splash 1
+transport_volume 5
+is_a_detector 1
+can_use super_health
+
+def air_elemental
+class soldier
+cost 40 80
+time_cost 140
+food_cost 0
+hp_max 50
+hp_max_bonus 15
+speed 2.66
+speed_bonus 1
+cooldown 2.5
+target_types ground air
+range 4
+damage 8
+damage_bonus 4
+splash 1
+damage_radius 2
+is_invisible 1
+target_types ground air
+airground_type air
+sight_range 1
+transport_volume 99
+is_a_detector 1
+can_use super_speed
+
+def mage
+class soldier
+cost 25 25
+food_cost 3
+time_cost 30
+hp_max 30
+mana_max 200
+mana_regen 1
+speed 1
+can_use a_quake a_fire_blast a_healing a_gust_of_wind a_sea_of_lava a_mud_golem a_sandstorm a_vapor_cloud a_thunderstorm a_frozen_sky
+range 4
+cooldown 2.5
+damage 8
+target_types ground air
+transport_volume 2
+
+
+; elemental research
+
+def super_armor
+class upgrade
+cost 60 60
+time_cost 90
+effect bonus armor 2
+
+def super_attack
+class upgrade
+cost 60 60
+time_cost 90
+effect apply_bonus damage
+
+def super_health
+class upgrade
+cost 60 60
+time_cost 90
+effect apply_bonus hp_max
+
+def super_speed
+class upgrade
+cost 60 60
+time_cost 90
+effect apply_bonus speed
+
+
+; elemental abilities
+
+def quake
+class effect
+harm_level 50
+harm_target_type building
+
+def a_quake
+class ability
+requirements earth_tower
+mana_cost 200
+effect summon 9 quake
+effect_target ask
+effect_range square
+
+def fire_blast
+class effect
+harm_level 100
+harm_target_type ground unit
+
+def a_fire_blast
+class ability
+requirements fire_tower
+mana_cost 200
+effect summon 1 fire_blast
+effect_target ask
+effect_range square
+
+def healing
+class effect
+heal_level 100
+
+def a_healing
+class ability
+requirements water_tower
+mana_cost 200
+effect summon 1 healing
+effect_target ask
+effect_range square
+
+def a_gust_of_wind
+class ability
+mana_cost 200
+effect teleportation
+effect_target ask
+effect_range nearby
+
+def sea_of_lava
+class effect
+harm_level 100
+harm_target_type ground
+
+def a_sea_of_lava
+class ability
+requirements earth_tower fire_tower
+mana_cost 200
+effect summon 90 sea_of_lava
+effect_target ask
+effect_range square
+
+def mud_golem
+class soldier
+food_cost 0
+hp_max 60
+armor 1
+speed 1
+range 1
+cooldown 4
+damage 8
+splash 1
+damage_radius 1
+transport_volume 3
+corpse 0
+
+def a_mud_golem
+class ability
+requirements earth_tower water_tower
+mana_cost 200
+effect summon 90 mud_golem
+
+def sandstorm
+class effect
+harm_level 6
+harm_target_type unit
+
+def a_sandstorm
+class ability
+requirements earth_tower air_tower
+mana_cost 200
+effect summon 90 sandstorm
+effect_target ask
+effect_range square
+
+def vapor_cloud
+class effect
+is_a_cloaker 1
+is_cloakable 0
+
+def a_vapor_cloud
+class ability
+requirements fire_tower water_tower
+mana_cost 200
+effect summon 90 vapor_cloud
+effect_target ask
+effect_range square
+
+def thunderstorm
+class soldier
+food_cost 0
+corpse 0
+is_vulnerable 0
+is_invisible 0
+is_a_detector 1
+range 9
+cooldown 5
+damage 15
+damage_bonus 3
+target_types air ground
+splash 1
+damage_radius 1
+airground_type air
+speed 0
+transport_volume 99
+can_use high_quality_magnesite highest_quality_magnesite
+is_teleportable 0
+
+def a_thunderstorm
+class ability
+mana_cost 200
+requirements fire_tower air_tower
+effect summon 90 thunderstorm
+effect_target ask
+effect_range square
+
+def frozen_sky
+class effect
+harm_level 100
+harm_target_type air
+
+def a_frozen_sky
+class ability
+requirements water_tower air_tower
+mana_cost 200
+effect summon 90 frozen_sky
+effect_target ask
+effect_range square
+
+
+; wild branch
+
+def wild
+class race
+townhall hideout
+farm hunting_ground
+peasant rogue
+easy wild_easy
+aggressive wild
+
+
+; wild buildings
+
+def hideout
+class building
+cost 12 12
+time_cost 120
+hp_max 166
+storable_resource_types 0 1
+can_train rogue
+is_invisible 1
+can_upgrade_to brigand_grove
+
+def brigand_grove
+is_a hideout
+cost 26 28
+time_cost 300
+requirements training_camp
+hp_max 375
+is_invisible 0
+can_upgrade_to freebooter_woods
+
+def freebooter_woods
+is_a brigand_grove
+cost 42 48
+time_cost 550
+requirements burrow
+hp_max 750
+can_upgrade_to ; starting_point
+
+def hunting_ground
+class building
+cost 2 4
+requirements hideout
+food_provided 7
+hp_max 75
+time_cost 35
+
+def training_camp
+class building
+cost 7 9
+time_cost 90
+requirements hideout
+hp_max 133
+can_train huntress archer
+
+def burrow
+class building
+cost 14 10
+food_cost 6
+time_cost 140
+requirements brigand_grove
+hp_max 175
+
+def mahout_house
+class building
+cost 10 16
+food_cost 6
+time_cost 140
+requirements brigand_grove
+hp_max 175
+can_train mahout
+
+def beast_cage
+class building
+cost 16 12
+food_cost 12
+time_cost 140
+requirements freebooter_woods
+hp_max 275
+
+def spell_hut
+class building
+cost 18 15
+time_cost 160
+requirements freebooter_woods
+hp_max 175
+can_train witch
+
+def arrow_trap
+class building
+provides_survival 0
+;cost 1 4
+;requirements lumbermill
+;time_cost 30
+is_invisible 1
+is_buildable_anywhere 1
+hp_max 5
+range 5
+damage 3
+cooldown 3
+target_types ground air
+can_use archer_weapon archer_range
+
+
+
+
+; wild units
+
+def rogue
+class worker
+cost 3 1
+time_cost 12
+hp_max 6
+can_build hunting_ground training_camp lumbermill burrow mahout_house beast_cage spell_hut hideout
+speed 1.6
+range 5.5
+cooldown 2
+damage 2.5
+splash 1
+damage_radius 0.25
+
+def huntress
+class soldier
+cost 10 1
+time_cost 18
+hp_max 15
+speed 1.75
+can_use a_tame_snakes a_tame_wolves a_tame_lions a_tame_winged_horse melee_weapon
+armor 0.25
+range 1.75
+cooldown 1.5
+damage 4.5
+damage_bonus 2
+mana_max 200
+mana_regen 0.75
+is_a_detector 1
+
+def mahout
+class soldier
+cost 6 1
+time_cost 24
+hp_max 12
+speed 1.5
+can_use a_tame_elephant
+range 2
+cooldown 1.5
+damage 2.5
+mana_max 200
+mana_regen 0.75
+
+def archer
+class soldier
+cost 5 1
+time_cost 15
+hp_max 10
+speed 1.5
+requirements lumbermill
+can_use archer_weapon archer_armor archer_range a_set_arrow_trap
+cooldown 2.25
+target_types ground air
+range 4
+damage 2.5
+armor 0.5
+is_ballistic 1
+mana_max 200
+mana_regen 0
+
+def snake
+class soldier
+cost 3 1
+time_cost 25
+hp_max 3
+speed 1.65
+cooldown 1.5
+range 0.5
+damage 5
+is_invisible 1
+is_a_detector 1
+
+def wolf
+class soldier
+hp_max 8
+speed 2.3
+range 0.5
+cooldown 1.2
+damage 5
+
+def lion
+class soldier
+food_cost 2
+hp_max 12
+speed 1.65
+range 0.5
+cooldown 1.4
+damage 12
+
+def winged_horse
+class soldier
+food_cost 2
+hp_max 20
+speed 2.5
+damage 4
+cooldown 1.75
+range 0.5
+target_types ground air
+airground_type air
+transport_volume 99
+transport_capacity 2
+
+def elephant
+class soldier
+food_cost 3
+hp_max 40
+speed 1.33
+armor 0.25
+range 1.5
+cooldown 2
+damage 16
+transport_volume 4
+transport_capacity 2
+can_upgrade_to turret_elephant
+
+def turret_elephant
+is_a elephant
+cost 10 5
+requirements mahout_house lumbermill
+food_cost 5
+time_cost 30
+hp_max 55
+speed 1.25
+can_use archer_weapon archer_armor archer_range a_set_arrow_trap
+target_types ground air
+range 5
+damage 2.5
+cooldown 1.1
+armor 1
+is_ballistic 1
+mana_max 400
+mana_regen 0
+transport_volume 6
+transport_capacity 0
+can_upgrade_to 
+
+def witch
+class soldier
+cost 14 14
+food_cost 3
+time_cost 30
+hp_max 15
+mana_max 200
+mana_regen 0.6
+speed 1.33
+can_use a_green_storm a_swarm a_piercing_roots a_plant_sentinel_tree a_plant_peaceful_vine a_bewitch
+range 12
+cooldown 8
+damage 6
+damage_radius 10
+splash 1
+target_types ground air
+transport_volume 2
+
+def peaceful_vine
+class soldier
+is_teleportable 0
+food_cost 0
+food_provided 2
+hp_max 40
+speed 0
+is_healable 0
+corpse 0
+transport_volume 99
+can_upgrade_to invasive_vine
+
+def invasive_vine
+is_a peaceful_vine
+cost 2 3
+time_cost 30
+armor 1
+damage 4.5
+cooldown 2
+range 12
+mana_max 200
+mana_regen 0.5
+can_use a_plant_peaceful_vine
+can_upgrade_to 
+
+
+
+; wild research
+
+
+
+
+; wild abilities
+
+def a_tame_snakes
+class ability
+mana_cost 150
+requirements burrow
+effect summon 200 2 snake
+
+def a_tame_wolves
+class ability
+mana_cost 175
+requirements burrow
+effect summon 200 2 wolf
+
+def a_tame_lions
+class ability
+mana_cost 200
+requirements beast_cage
+effect summon 200 2 lion
+
+def a_tame_winged_horse
+class ability
+mana_cost 200
+requirements spell_hut
+effect summon 200 1 winged_horse
+
+def a_tame_elephant
+class ability
+mana_cost 200
+effect summon 0 1 elephant
+
+def a_set_arrow_trap
+class ability
+mana_cost 100
+requirements lumbermill
+effect summon 0 arrow_trap
+effect_target ask
+effect_range square
+
+def swarm
+class effect
+harm_level 3
+harm_target_type healable
+
+def a_swarm
+class ability
+mana_cost 200
+effect summon 360 swarm
+effect_target ask
+effect_range nearby
+
+def green_storm
+class effect
+harm_level 1
+harm_target_type unit
+
+def a_green_storm
+class ability
+mana_cost 200
+effect summon 360 green_storm
+effect_target ask
+effect_range nearby
+
+def piercing_roots
+class effect
+harm_level 3
+harm_target_type building
+
+def a_piercing_roots
+class ability
+mana_cost 200
+effect summon 360 piercing_roots
+effect_target ask
+effect_range nearby
+
+def sentinel_tree
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 15
+speed 0
+armor 2
+cooldown 1.5
+target_types air
+range 4
+damage 3
+is_healable 0
+corpse 0
+transport_volume 99
+sight_range 1
+is_invisible 1
+is_a_detector 1
+
+def a_plant_sentinel_tree
+class ability
+mana_cost 175
+effect summon 0 sentinel_tree
+effect_target ask
+effect_range square
+
+def a_plant_peaceful_vine
+class ability
+mana_cost 150
+effect summon 0 peaceful_vine
+effect_target ask
+effect_range nearby
+
+
+
+; vermin race
+
+def vermin
+class race
+townhall hatchery
+farm fruit_tree
+peasant walking_worker
+easy vermin_easy
+aggressive vermin
+
+
+; vermin buildings
+
+def vermin_building
+class building
+storable_resource_types 0 1
+is_buildable_anywhere 1
+mana_max 200
+mana_regen 1
+can_use a_grow_stump
+
+def stump
+class building
+cost 0 0
+time_cost 0
+is_buildable_anywhere 1
+hp_max 50
+can_upgrade_to hatchery termite_mound honey_tree mud_chamber mushroom_gallery sparkling_tree carnivorous_tree fruit_tree 
+
+def hatchery
+is_a vermin_building
+cost 0 18
+time_cost 60
+food_provided 1
+hp_max 80
+is_invisible 1
+can_use a_spawn_larvae_1 a_grow_stump
+can_upgrade_to nursery
+
+def nursery
+is_a hatchery
+cost 0 30
+time_cost 90
+hp_max 100
+heal_level 1
+can_use a_spawn_larvae_2 a_grow_stump
+can_upgrade_to larval_lab
+
+def larval_lab
+is_a nursery
+mana_regen 1.25
+cost 0 55
+time_cost 220
+hp_max 200
+heal_level 2
+can_use a_spawn_larvae_3 a_grow_stump
+storage_bonus 0 1
+can_upgrade_to transgenic_breeder
+
+def transgenic_breeder
+is_a larval_lab
+mana_regen 1.5
+cost 0 95
+time_cost 380
+hp_max 300
+heal_level 3
+can_use a_spawn_larvae_4 a_survival_pheromone a_grow_stump
+storage_bonus 0 2
+can_upgrade_to multiplying_incubator
+
+def multiplying_incubator
+is_a transgenic_breeder
+mana_regen 1.75
+cost 0 150
+time_cost 500
+hp_max 500
+heal_level 4
+can_use a_spawn_larvae_5 a_survival_pheromone a_grow_stump
+storage_bonus 0 3
+can_upgrade_to 
+
+def fruit_tree
+is_a vermin_building
+cost 0 8
+time_cost 60
+hp_max 50
+food_provided 10
+
+def termite_mound
+is_a vermin_building
+cost 0 20
+time_cost 60
+hp_max 75
+food_provided 5
+is_invisible 1
+mana_regen 0.2
+can_use a_grow_stump a_dig_supply_tunnel
+
+def honey_tree
+is_a vermin_building
+cost 0 16
+time_cost 90
+hp_max 50
+food_provided 8
+
+def mud_chamber
+is_a vermin_building
+cost 0 25
+time_cost 90
+hp_max 75
+is_invisible 1
+
+def mushroom_gallery
+is_a vermin_building
+cost 0 18
+time_cost 90
+hp_max 75
+food_provided 5
+is_invisible 1
+can_use a_toxic_spores a_hallucinogenic_spores a_healing_spores a_grow_stump
+
+def sparkling_tree
+is_a vermin_building
+cost 0 15
+time_cost 75
+hp_max 50
+can_use a_grow_stump
+
+def carnivorous_tree
+is_a vermin_building
+cost 0 8
+time_cost 75
+hp_max 50
+damage 5
+range 5
+cooldown 1
+target_types ground air
+can_upgrade_to voracious_tree
+
+def voracious_tree
+is_a carnivorous_tree
+cost 0 20
+requirements larval_lab
+time_cost 150
+hp_max 90
+damage 8
+range 8
+cooldown 0.8
+can_upgrade_to devourer_tree
+
+def devourer_tree
+is_a voracious_tree
+cost 0 35
+requirements transgenic_breeder
+time_cost 225
+hp_max 120
+damage 12
+range 12
+cooldown 0.4
+can_upgrade_to 
+
+def supply_tunnel
+is_a vermin_building
+provides_survival 0
+hp_max 20
+mana_max 0
+mana_regen 0
+can_use 
+
+
+
+
+; vermin units
+
+def larva
+class soldier
+cost 0 0
+time_cost 0
+hp_max 1
+food_cost 0
+speed 0
+corpse 0
+can_upgrade_to walking_worker guard_termite angry_wasp pincer_crab insatiable_mosquito brawler_mushroom scout_firefly
+
+def walking_worker
+class worker
+cost 0 1
+time_cost 3
+hp_max 3
+food_cost 0
+food_provided 1
+speed 1.75
+damage 1
+range 0.5
+cooldown 2.5
+can_upgrade_to winged_worker
+
+def winged_worker
+is_a walking_worker
+cost 0 2
+time_cost 20
+requirements larval_lab
+food_provided 2
+speed 2.25
+cooldown 2
+target_types ground air
+airground_type air
+transport_volume 99
+can_upgrade_to royal_worker
+
+def royal_worker
+is_a winged_worker
+cost 0 5
+time_cost 60
+requirements transgenic_breeder
+food_provided 4
+speed 2.75
+damage 1.5
+cooldown 1.75
+can_upgrade_to 
+
+def guard_termite
+class soldier
+cost 0 2
+time_cost 5
+requirements termite_mound
+hp_max 4
+speed 1.75
+damage 2.5
+range 0.5
+cooldown 1.5
+armor 0.5
+is_a_detector 1
+can_upgrade_to conqueror_termite
+
+def conqueror_termite
+is_a guard_termite
+cost 0 4
+time_cost 25
+requirements termite_mound larval_lab
+hp_max 6
+speed 2
+damage 7.5
+armor 1.25
+can_upgrade_to armored_termite
+
+def armored_termite
+is_a conqueror_termite
+cost 0 7
+time_cost 75
+requirements termite_mound transgenic_breeder
+food_cost 2
+hp_max 12
+damage 12
+armor 2.5
+transport_volume 2
+can_upgrade_to 
+
+def angry_wasp
+class soldier
+cost 0 2
+time_cost 5
+requirements honey_tree
+hp_max 5
+speed 2.25
+damage 2
+range 0.5
+cooldown 1.5
+target_types ground air
+armor 0.25
+airground_type air
+transport_volume 99
+can_upgrade_to stinger_wasp
+
+def stinger_wasp
+is_a angry_wasp
+cost 0 4
+time_cost 30
+requirements honey_tree larval_lab
+hp_max 8
+speed 2.33
+range 3
+armor 0.5
+can_upgrade_to thousand_sting_wasp
+
+def thousand_sting_wasp
+is_a stinger_wasp
+cost 0 7
+time_cost 60
+requirements honey_tree transgenic_breeder
+food_cost 2
+hp_max 12
+speed 2.5
+range 4
+cooldown 0.5
+armor 0.75
+can_upgrade_to 
+
+def insatiable_mosquito
+class soldier
+cost 0 2
+time_cost 5
+requirements mud_chamber
+hp_max 4
+speed 1.25
+damage 3
+range 0.5
+cooldown 2
+target_types ground air
+armor 0.25
+is_a_detector 1
+airground_type air
+transport_volume 99
+can_upgrade_to terrible_mosquito
+
+def terrible_mosquito
+is_a insatiable_mosquito
+cost 0 4
+time_cost 30
+requirements mud_chamber larval_lab
+hp_max 7
+speed 1.5
+damage 7
+cooldown 1.75
+can_upgrade_to bloodthirsty_mosquito
+
+def bloodthirsty_mosquito
+is_a terrible_mosquito
+cost 0 7
+time_cost 75
+requirements mud_chamber transgenic_breeder
+food_cost 2
+hp_max 10
+speed 1.75
+damage 14
+cooldown 1.66
+can_upgrade_to 
+
+def pincer_crab
+class soldier
+cost 0 2
+time_cost 4
+requirements mud_chamber
+hp_max 4
+speed 1.75
+damage 2.5
+range 0.5
+cooldown 1.5
+armor 1
+can_upgrade_to shell_thrower_crab
+
+def shell_thrower_crab
+is_a pincer_crab
+cost 0 4
+time_cost 35
+requirements mud_chamber larval_lab
+hp_max 6
+speed 1.5
+damage 4.5
+range 10
+cooldown 2
+armor 1.5
+special_range 1
+transport_volume 2
+can_upgrade_to siege_crab
+
+def siege_crab
+is_a shell_thrower_crab
+cost 0 7
+time_cost 90
+requirements mud_chamber transgenic_breeder
+food_cost 2
+hp_max 9
+speed 1.25
+damage 6.5
+range 16
+cooldown 2.5
+splash 1
+damage_radius 1
+armor 2
+transport_volume 3
+can_upgrade_to 
+
+def brawler_mushroom
+class soldier
+cost 0 2
+time_cost 6
+requirements mushroom_gallery
+food_cost 0
+hp_max 6
+speed 1.5
+damage 1.5
+range 0.5
+cooldown 1.5
+corpse 0
+is_healable 0
+can_upgrade_to toxic_mushroom
+
+def toxic_mushroom
+is_a brawler_mushroom
+cost 0 4
+time_cost 35
+requirements mushroom_gallery larval_lab
+hp_max 15
+damage 2.5
+harm_level 1
+harm_target_type ground healable
+can_upgrade_to devastating_mushroom
+
+def devastating_mushroom
+is_a toxic_mushroom
+cost 0 7
+time_cost 90
+requirements mushroom_gallery transgenic_breeder
+hp_max 28
+damage 5
+harm_level 5
+transport_volume 2
+can_upgrade_to 
+
+def scout_firefly
+class soldier
+cost 0 2
+time_cost 3
+requirements sparkling_tree
+hp_max 3
+speed 1.5
+is_a_detector 1
+sight_range 1
+airground_type air
+transport_volume 99
+can_upgrade_to dazzling_firefly
+
+def dazzling_firefly
+is_a scout_firefly
+cost 0 4
+time_cost 25
+requirements sparkling_tree larval_lab
+hp_max 5
+is_a_cloaker 1
+is_cloakable 0
+can_upgrade_to blazing_firefly
+
+def blazing_firefly
+is_a dazzling_firefly
+cost 0 7
+time_cost 100
+requirements sparkling_tree transgenic_breeder
+food_cost 2
+hp_max 7
+damage 3
+range 3
+cooldown 2
+target_types ground air
+splash 1
+damage_radius 0.25
+mana_max 200
+mana_regen 0.1
+can_use a_blaze
+can_upgrade_to 
+
+
+
+; vermin abilities
+
+def a_grow_stump
+class ability
+mana_cost 200
+effect summon 150 stump
+effect_target ask
+effect_range nearby
+
+def a_spawn_larvae_1
+class ability
+mana_cost 200
+effect summon 120 6 larva
+
+def a_spawn_larvae_2
+class ability
+mana_cost 200
+effect summon 120 9 larva
+
+def a_spawn_larvae_3
+class ability
+mana_cost 200
+effect summon 120 13 larva
+
+def a_spawn_larvae_4
+class ability
+mana_cost 200
+effect summon 120 18 larva
+
+def a_spawn_larvae_5
+class ability
+mana_cost 200
+effect summon 120 24 larva
+
+def a_dig_supply_tunnel
+class ability
+mana_cost 200
+effect summon 0 1 supply_tunnel 4 walking_worker 4 guard_termite
+effect_target random
+effect_range anywhere
+
+def a_survival_pheromone
+class ability
+mana_cost 200
+effect resurrection 100
+effect_target ask
+effect_range nearby
+
+def toxic_spores
+class effect
+harm_level 6
+harm_target_type healable
+is_invisible 1
+
+def a_toxic_spores
+class ability
+mana_cost 175
+effect summon 60 toxic_spores
+effect_target ask
+effect_range nearby
+
+def hallucinogenic_spores
+class effect
+is_a_cloaker 1
+
+def a_hallucinogenic_spores
+class ability
+mana_cost 175
+effect summon 60 hallucinogenic_spores
+effect_target ask
+effect_range nearby
+
+def healing_spores
+class effect
+heal_level 6
+is_invisible 1
+
+def a_healing_spores
+class ability
+mana_cost 175
+effect summon 60 healing_spores
+effect_target ask
+effect_range nearby
+
+def blaze
+class effect
+harm_level 6
+harm_target_type ground
+
+def a_blaze
+class ability
+mana_cost 200
+effect summon 30 blaze
+effect_target ask
+effect_range square
+
+
+
+
+
+; dark elf branch
+
+def dark_elf
+class race
+townhall shack
+farm aviary
+peasant thief
+easy dark_elf_easy
+aggressive dark_elf
+
+
+; dark elf buildings
+
+def shack
+class building
+cost 7 12
+time_cost 90
+hp_max 80
+storable_resource_types 0 1
+can_train thief
+can_upgrade_to villa
+
+def villa
+is_a shack
+requirements blade_workshop
+cost 15 26
+time_cost 250
+hp_max 200
+can_upgrade_to manor
+
+def manor
+is_a villa
+requirements blade_workshop playhouse
+cost 28 40
+time_cost 400
+hp_max 350
+can_upgrade_to 
+
+def aviary
+class building
+cost 6 6
+requirements shack
+food_provided 9
+hp_max 80
+time_cost 80
+
+def blade_workshop
+class building
+cost 6 10
+time_cost 75
+requirements shack
+hp_max 100
+can_train prowler
+
+def playhouse
+class building
+cost 8 14
+time_cost 120
+requirements villa
+hp_max 150
+can_train darkarcher illusionist
+can_research throwing_technique animation_speed
+
+def cenacle
+class building
+cost 12 20
+time_cost 180
+requirements manor
+hp_max 175
+can_train doctor
+
+def lookout_turret
+class building
+provides_survival 0
+cost 2 3
+time_cost 30
+hp_max 25
+sight_range 1
+is_buildable_anywhere 1
+is_invisible 1
+is_a_detector 1
+can_upgrade_to ambush_turret perch_tower
+
+def ambush_turret
+is_a lookout_turret
+food_cost 1
+cost 7 5
+time_cost 50
+requirements blade_workshop
+hp_max 33
+can_use melee_weapon throwing_technique
+range 4
+range_bonus 1
+cooldown 1
+damage 4.5
+damage_bonus 1
+can_upgrade_to high_ambush_tower
+
+def high_ambush_tower
+is_a ambush_turret
+cost 12 7
+time_cost 100
+requirements manor blade_workshop
+hp_max 50
+range 5
+range_bonus 1.5
+cooldown 0.66
+target_types ground air
+can_upgrade_to 
+
+def perch_tower
+is_a lookout_turret
+cost 5 5
+time_cost 60
+can_use a_tame_pigeons
+mana_max 200
+mana_regen 0.5
+is_invisible 0
+can_upgrade_to wind_tower
+
+def wind_tower
+is_a perch_tower
+cost 10 8
+requirements cenacle
+time_cost 100
+hp_max 50
+can_use a_tame_pigeons a_whirlwind
+mana_regen 0.6
+can_upgrade_to 
+
+def spike_trap
+class building
+provides_survival 0
+;cost 2 3
+;time_cost 30
+;requirements pen
+hp_max 15
+armor 2
+range 2
+cooldown 7
+damage 15
+is_invisible 1
+is_buildable_anywhere 1
+splash 1
+damage_radius 12
+
+
+
+
+; dark elf units
+
+def thief
+is_a peasant
+cost 4 1
+time_cost 7
+hp_max 4
+speed 1.8
+can_build aviary blade_workshop playhouse cenacle shack lookout_turret lumbermill blacksmith
+damage 0
+is_invisible 1
+is_a_detector 1
+
+def prowler
+class soldier
+cost 6 0
+time_cost 12
+hp_max 10
+speed 1.66
+can_use a_set_spike_trap melee_weapon melee_armor
+armor 0.5
+armor_bonus 1
+range 1
+cooldown 1.33
+damage 4.5
+damage_bonus 2.5
+is_a_detector 1
+mana_max 200
+mana_regen 0.2
+can_upgrade_to assassin
+
+def assassin
+is_a prowler
+cost 9 0
+time_cost 20
+requirements villa
+hp_max 12
+damage 8
+is_invisible 1
+can_upgrade_to master_assassin
+
+def master_assassin
+is_a assassin
+cost 15 0
+time_cost 50
+requirements cenacle
+hp_max 14
+damage 12
+can_use melee_weapon melee_armor a_fatal_blade a_set_spike_trap
+can_upgrade_to
+
+def darkarcher
+class soldier
+cost 5 1
+time_cost 15
+hp_max 9
+speed 1.75
+requirements lumbermill
+can_use archer_weapon archer_armor archer_range a_rain_of_arrows
+cooldown 2.1
+target_types ground air
+range 4.5
+damage 3.3
+armor 0.5
+is_invisible 1
+is_a_detector 1
+is_ballistic 1
+mana_max 200
+mana_regen 0.75
+
+def illusionist
+class soldier
+cost 8 3
+time_cost 18
+hp_max 10
+speed 1.66
+can_use melee_weapon throwing_technique a_summon_shadows a_animate_puppet a_smoke_screen
+range 4
+range_bonus 1
+cooldown 2.75
+damage 4.5
+damage_bonus 1
+mana_max 200
+mana_regen 0.5
+is_a_detector 1
+
+def doctor
+class soldier
+cost 12 6
+time_cost 30
+hp_max 15
+mana_max 200
+mana_regen 0.5
+speed 1.5
+can_use throwing_technique a_flying_shuriken a_root_network a_vortex a_bewitch
+range 5
+range_bonus 1.5
+cooldown 2.25
+damage 2.5
+target_types ground air
+transport_volume 2
+is_a_detector 1
+
+def shadow
+class soldier
+food_cost 0
+is_vulnerable 0
+is_teleportable 0
+corpse 0
+speed 2.5
+can_use melee_weapon
+range 1
+cooldown 1.1
+damage 2
+damage_bonus 1
+is_a_detector 1
+
+def puppet
+class soldier
+food_cost 0
+hp_max 8
+speed 1.66
+speed_bonus 0.1
+can_use melee_weapon archer_armor animation_speed
+armor 0.5
+range 1
+cooldown 1.33
+damage 3
+damage_bonus 1
+is_healable 0
+corpse 0
+
+
+def pigeon
+class soldier
+food_cost 0
+hp_max 3
+speed 2.25
+range 0.5
+cooldown 1
+damage 1
+target_types air
+transport_volume 99
+airground_type air
+
+def flying_shuriken
+class soldier
+food_cost 0
+hp_max 1
+speed 10
+is_healable 0
+corpse 0
+range 0.5
+cooldown 1
+damage 1.5
+damage_bonus 1
+target_types ground air
+transport_volume 99
+is_teleportable 0
+airground_type air
+
+def vortex
+class soldier
+food_cost 0
+is_healable 0
+corpse 0
+transport_volume 99
+is_teleportable 0
+is_vulnerable 0
+can_use a_recall
+mana_max 200
+mana_regen 0.75
+storable_resource_types 0 1
+
+def whirlwind
+class soldier
+food_cost 0
+is_healable 0
+corpse 0
+transport_volume 99
+is_teleportable 0
+is_vulnerable 0
+transport_capacity 12
+airground_type air
+speed 0.75
+harm_level 1
+harm_target_type air
+is_cloakable 0
+
+def root_network
+class soldier
+is_teleportable 0
+food_cost 0
+hp_max 15
+range 12
+special_range 1
+cooldown 3
+damage 6
+is_invisible 1
+sight_range 1
+is_healable 0
+corpse 0
+transport_volume 99
+
+
+; dark elf research
+
+def throwing_technique
+class upgrade
+cost 8 10
+time_cost 80
+effect apply_bonus range
+
+def animation_speed
+class upgrade
+cost 8 10
+time_cost 80
+effect apply_bonus speed
+
+
+
+; dark elf abilities
+
+def a_set_spike_trap
+class ability
+mana_cost 100
+requirements blacksmith
+effect summon 0 spike_trap
+effect_target ask
+effect_range square
+
+def a_tame_pigeons
+class ability
+mana_cost 200
+requirements aviary
+effect summon 0 2 pigeon
+
+def a_whirlwind
+class ability
+mana_cost 200
+effect summon 150 1 whirlwind
+
+def fatal_blade
+class soldier
+food_cost 0
+is_healable 0
+corpse 0
+transport_volume 99
+is_teleportable 0
+is_vulnerable 0
+damage 9999
+cooldown 2
+range 12
+target_types ground air
+
+def a_fatal_blade
+class ability
+mana_cost 200
+effect summon 1 fatal_blade
+effect_target ask
+effect_range square
+
+def rain_of_arrows
+class soldier
+food_cost 0
+is_healable 0
+corpse 0
+transport_volume 99
+is_teleportable 0
+is_vulnerable 0
+damage 3
+cooldown 0.12
+range 12
+target_types ground air
+can_use archer_weapon
+
+def a_rain_of_arrows
+class ability
+mana_cost 200
+effect summon 1 rain_of_arrows
+effect_target ask
+effect_range square
+
+def a_summon_shadows
+class ability
+mana_cost 200
+effect summon 5 2 shadow
+effect_target ask
+effect_range square
+
+def a_animate_puppet
+class ability
+mana_cost 175
+requirements lumbermill
+effect summon 0 puppet
+
+def smoke_screen
+class effect
+is_a_cloaker 1
+is_cloakable 0
+
+def a_smoke_screen 
+class ability
+mana_cost 175
+effect summon 300 smoke_screen
+effect_target ask
+effect_range square
+
+def a_flying_shuriken
+class ability
+mana_cost 200
+effect summon 60 4 flying_shuriken
+
+def a_root_network
+class ability
+mana_cost 175
+effect summon 300 1 root_network
+effect_target ask
+effect_range square
+
+def a_vortex 
+class ability
+mana_cost 200
+effect summon 300 vortex
+effect_target ask
+effect_range square
