@@ -42,7 +42,7 @@ You need Windows with the MSVC build tools, [rustup](https://rustup.rs), Git, an
 
 The game data stays outside this repository because the original does not state a license for it. `vendor/` is ignored by Git.
 
-To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
+To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the folder of the mods that come with the game, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
 
 ```powershell
 cargo run -p soundrts -- --root vendor/game-data --probe
@@ -98,7 +98,7 @@ In a campaign's menu, after the chapters, a choice for each other level sets the
 
 CrazyMod 9 beta 10, a mod that the SoundRTS community played, comes with the game. It replaces the game's rules with ten factions: traditional, technical, robotic, undead, elf, orc, elemental, wild, vermin and dark elf. To play it, choose Options, then Mods, then crazymod. The main menu opens again with the mod on, and the game keeps it on at the next start. To turn it off, choose "nothing!" in the same menu.
 
-In the players menu of a training game, an item for each faction sets a player's faction, for example "player technical". Each faction has a quiet and an aggressive computer. The map list starts with the maps that CrazyMod recommends: pra1 to pra11, can1 to can5, and jl5. On a server, every player has the mod, because it comes with the game, but each player must turn it on.
+In the players menu of a training game, an item for each faction sets a player's faction: the player's name, then the faction, for example "player technical" with the login "player". Each faction has a quiet and an aggressive computer. The map list starts with the maps that CrazyMod recommends: pra1 to pra11, can1 to can5, and jl5. On a server, every player has the mod, because it comes with the game, but each player must turn it on.
 
 The mod's own words are plain English names in place of the original's numbers and French names. Its German, Spanish, French and Italian words are the author's. `data/mods/crazymod/readme.txt` lists what the port changed in the mod, and why.
 
@@ -239,7 +239,7 @@ The game checks the names when it loads the files:
 
 Each package's names are its own. A mod that you install can give other words, or another recording, for a name of the game. A map that came from a server can only add names: see [Play with others](#play-with-others).
 
-The mods that come with the game are in the `data` folder next to the program. A mod of the same name in the `mods` folder of your settings folder takes the place of the one that comes with the game.
+The mods that come with the game are in the folder `data\mods` next to the program, which is not the data folder. A mod of the same name in the `mods` folder of your settings folder takes the place of the one that comes with the game.
 
 ### Import a mod or a map of the original
 

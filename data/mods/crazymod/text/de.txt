@@ -190,3 +190,4 @@ air_elemental = Luftelement
 earth_elemental = Erdelement
 elemental = Elemente
 magnetic_shooter = Magnetschießer
+orc = Ork

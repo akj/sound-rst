@@ -48,11 +48,13 @@ fn words(h: &Harness, name: &str) -> Option<String> {
     h.client.sounds.text(name).filter(|t| !t.trim().is_empty())
 }
 
-fn check(language: &str) {
-    let h = with_crazymod(language);
+/// The client's log has no complaint, and every type of the mod's rules has
+/// a title that resolves to words in `h`'s language.
+fn check(h: &Harness) {
+    let language = h.client.res.language.clone();
     // The style is refused each name that is no phrase and no sound, and the
     // language files each line that is not `name = words`.
-    assert_eq!(complaints(&h), Vec::<String>::new(), "{language}");
+    assert_eq!(complaints(h), Vec::<String>::new(), "{language}");
 
     let rules = Rules::load(&[h.client.res.rules_text()]);
     assert_eq!(rules.warnings, Vec::<String>::new());
@@ -66,7 +68,7 @@ fn check(language: &str) {
     {
         let title = style.get(&name).title_msg();
         let resolved = title.iter().all(|part| match part {
-            MsgPart::Name(n) => words(&h, n).is_some(),
+            MsgPart::Name(n) => words(h, n).is_some(),
             _ => true,
         });
         if title.is_empty() {
@@ -77,8 +79,17 @@ fn check(language: &str) {
     }
     assert_eq!(untitled, UNTITLED, "{language}");
     assert_eq!(unresolved, Vec::<String>::new(), "{language}");
+}
 
-    // Every recording of the mod decodes.
+#[test]
+fn crazymod_loads_in_english_with_every_title_and_sound() {
+    let h = with_crazymod("en");
+    assert_eq!(h.text("traditional"), "traditional");
+    assert_eq!(h.text("bomber_airship"), "bomber airship");
+    check(&h);
+
+    // Every recording of the mod decodes. The recordings are the same in
+    // every language, so one language checks them.
     let sounds =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/mods/crazymod/sounds");
     let mut names = Vec::new();
@@ -95,15 +106,7 @@ fn check(language: &str) {
         .filter(|n| h.client.sounds.get_sound(n).is_none())
         .collect();
     assert_eq!(missing, Vec::<&String>::new());
-    assert_eq!(complaints(&h), Vec::<String>::new(), "{language}");
-}
-
-#[test]
-fn crazymod_loads_in_english_with_every_title_and_sound() {
-    let h = with_crazymod("en");
-    assert_eq!(h.text("traditional"), "traditional");
-    assert_eq!(h.text("bomber_airship"), "bomber airship");
-    check("en");
+    assert_eq!(complaints(&h), Vec::<String>::new());
 }
 
 #[test]
@@ -112,7 +115,7 @@ fn crazymod_loads_in_french_with_the_authors_words() {
     assert_eq!(h.text("traditional"), "traditionnel");
     assert_eq!(h.text("bomber_airship"), "bombardier dirigeable");
     assert_eq!(h.text("powder_magazine"), "poudrière");
-    check("fr");
+    check(&h);
 }
 
 /// Spanish has a style of its own, which gives other shortcut keys.
@@ -120,8 +123,22 @@ fn crazymod_loads_in_french_with_the_authors_words() {
 fn crazymod_loads_in_spanish_with_its_own_style() {
     let h = with_crazymod("es");
     assert_eq!(h.text("bomber_airship"), "avión bombardero");
+    // The author's plural, where the game's own Spanish says "orco".
+    assert_eq!(h.text("orc"), "orcos");
     // The Spanish style gives the lumbermill the shortcut c, not the game's l.
     let shortcut = h.client.res.style().get("lumbermill").shortcut.clone();
     assert_eq!(shortcut, Some(vec!["c".to_owned()]));
-    check("es");
+    check(&h);
+}
+
+#[test]
+fn crazymod_loads_in_german_and_italian_with_the_authors_words() {
+    let h = with_crazymod("de");
+    // The author's capital, where the game's own German says "ork".
+    assert_eq!(h.text("orc"), "Ork");
+    assert_eq!(h.text("earth_elemental"), "Erdelement");
+    check(&h);
+    let h = with_crazymod("it");
+    assert_eq!(h.text("bomber_airship"), "dirigibile bombardiere");
+    check(&h);
 }

@@ -293,3 +293,4 @@ necromancy_field = champ de nécromancie
 corpse_explosion = explosion de cadavre
 plague_corpse = cadavre pestiféré
 infect_corpses = pestifération de cadavre
+orc = orcos

@@ -1825,9 +1825,9 @@ impl Door<'_> {
     }
 
     /// Of the makers of a type that the player lacks, the one to get first:
-    /// the first that the player can make now, else the first listed. The
-    /// original always took the first listed, so a type with two makers
-    /// waited on one it could not make while it could make the other.
+    /// the first for which the player owns a maker, else the first listed.
+    /// The original always took the first listed, so a type with two makers
+    /// waited on one it had no way to make while it could make the other.
     fn maker_to_get(&self, makers: &[TypeId]) -> Option<TypeId> {
         makers
             .iter()

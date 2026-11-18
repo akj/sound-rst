@@ -1,4 +1,4 @@
-CrazyMod 9 beta 10 adds ten races to SoundRTS: traditional, technical, robotic, undead, elf, orc, elemental, wild, vermin and dark elf.
+CrazyMod 9 beta 10 adds ten factions to SoundRTS: traditional, technical, robotic, undead, elf, orc, elemental, wild, vermin and dark elf.
 Its author's site is http://pragmapragma.free.fr/soundrts-crazymod/ and its files do not name the author.
 This copy comes from SoundRTS 1.2-c4 (2018). It uses English names in place of the original's numbers and French ids, and keeps the author's German, Spanish, French and Italian words.
 
@@ -9,7 +9,7 @@ What the port changed, and why:
 - The dark elf computer asks for its own workers on the branch that asked for ten wild workers, which it can never make.
 - The recommended maps leave out pra12 and can5b, which do not exist.
 - The style loses an unused earthquake entry that titled nothing, and the Spanish style loses three entries for types that CrazyMod 9 no longer has.
-- The orc race uses the game's own word "orc".
+- The orc faction uses the game's own name "orc", with the author's German "Ork" and Spanish "orcos".
 - Spells that hurt units or buildings now deal damage. In 1.2-c4 they missed those targets; the port's rules apply them as written.
 - The vermin have computer players, easy and aggressive. The author left both empty, so a vermin computer only gathered.
 
