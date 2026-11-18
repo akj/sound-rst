@@ -157,3 +157,28 @@ fn the_quiet_vermin_computer_builds_an_army() {
         "the quiet vermin computer has {n} fighters after 1,200 turns"
     );
 }
+
+/// On jl1 each player starts with one worker. A vermin worker comes from a
+/// larva, which the hatchery spawns, or from the termite mound's supply
+/// drop. The computer asks for the maker it can make now, larvae, and not
+/// the first one the rules list, the mound, whose stump would use the
+/// hatchery's mana and expire before the mana returns.
+#[test]
+fn the_vermin_computer_grows_its_workers_from_a_one_worker_start() {
+    let (mut w, players) = game(
+        "res/multi/jl1.txt",
+        1,
+        [("vermin", "aggressive"), ("orc", "aggressive")],
+    );
+    let workers = |w: &World| {
+        common::units(w, players[0])
+            .filter(|e| e.class() == EntityClass::Worker)
+            .count()
+    };
+    assert_eq!(workers(&w), 1);
+    for _ in 0..1000 {
+        w.update();
+    }
+    let n = workers(&w);
+    assert!(n >= 6, "vermin has {n} workers after 1,000 turns on jl1");
+}
