@@ -177,6 +177,7 @@ Play the training game on jl1 against an aggressive computer, with `nvda_direct 
 6. Let the computer attack you while you press arrow keys. Expected: "alert at …" soon after the horn, before production news. With `nvda_direct = true`: the alert is said again after the arrow's answer. If it is not, NVDA's cancel report probably arrives before the key does, and the alert's one more saying is spent at once.
 7. Play fast for five minutes, then stop pressing keys. Expected: within ten seconds the voice is quiet, or says only news of the last few seconds. If it says old news, phase 2 is needed.
 8. In the main menu, press and release Control. Expected: silence, not "press Tab to select".
+9. Start the first mission of the campaign. While its intro is told, press and release Control. Expected: the next line starts at once. Press F4 during a line. Expected: the answer, then the same line again.
 
 ## Decisions for the developer
 
