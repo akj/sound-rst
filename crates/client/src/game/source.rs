@@ -290,7 +290,7 @@ impl GameInterface {
         self.waits_for_the_player()
             && match self.mode {
                 Mode::Playing | Mode::OrderShortcut | Mode::Chat(_) | Mode::KeyHelp => false,
-                Mode::Story(_) | Mode::GameMenu(_) | Mode::Console(_) => true,
+                Mode::Story | Mode::GameMenu(_) | Mode::Console(_) => true,
             }
     }
 

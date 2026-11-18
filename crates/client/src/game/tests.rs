@@ -10,8 +10,9 @@ use super::{Mode, SrvEvent};
 use crate::clock::Clock;
 use crate::input::{Key, Mods};
 use crate::message::{Category, News};
-use crate::testkit::{FakeStream, Harness, Script, TestGame, slot};
-use crate::voice::Heard;
+use crate::testkit::{FakeStream, Harness, LiveKeys, Script, TestGame, render, slot};
+use crate::tts::{Progress, SpeechEnd};
+use crate::voice::{Heard, VoiceEvent};
 
 fn t(s: &str) -> Msg {
     vec![MsgPart::literal(s)]
@@ -40,6 +41,40 @@ fn turns_while_said(h: &mut Harness, g: &mut TestGame) -> i64 {
 
 fn story(texts: &[&str]) -> SrvEvent {
     SrvEvent::Sequence(texts.iter().map(|s| MsgPart::literal(*s)).collect())
+}
+
+const STORY: [&str; 3] = ["once upon a time", "there was", "the end"];
+
+/// A training game whose keys come as a player presses them, telling
+/// [`STORY`], its first line just started: when it started.
+fn telling(live: &LiveKeys) -> (Harness, TestGame, f64) {
+    let script = Script::new().keep_open().with_live(live.clone());
+    let mut h = Harness::new("en", script);
+    let mut g = h.start_training("jl1", &["quiet"], 1);
+    h.run_until_turn(&mut g, 3);
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game.srv_queue.push_front(story(&STORY));
+    run_until_said(&mut h, &mut g, from, 1);
+    let start = h.clock.now();
+    (h, g, start)
+}
+
+/// What the voice started from its `from`th event on, each utterance with
+/// its time in milliseconds after `start`.
+fn said_at(h: &Harness, from: usize, start: f64) -> Vec<String> {
+    h.utterance_log
+        .events_from(from)
+        .into_iter()
+        .filter_map(|e| match e {
+            VoiceEvent::Started { time, parts, .. } => Some(format!(
+                "{} {}",
+                ((time - start) * 1000.0).round(),
+                render(&parts)
+            )),
+            VoiceEvent::Cut { .. } => None,
+        })
+        .collect()
 }
 
 #[test]
@@ -87,7 +122,7 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
         .srv_queue
         .push_front(story(&["once upon a time", "the end"]));
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::Story));
     assert!(g.game.world_waits());
     let turn = g.game.view().turn();
     h.run_for(&mut g, 1.0);
@@ -98,7 +133,7 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
     assert!(matches!(g.game.mode, Mode::GameMenu(_)));
     h.press(Key::Escape, Mods::NONE);
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::Story));
     // The message cut off by the menu is said again.
     run_until_said(&mut h, &mut g, from, 4);
     assert_eq!(g.game.view().turn(), turn, "the world still waits");
@@ -126,23 +161,122 @@ fn a_cut_scene_stops_the_world_but_not_the_keys_and_once_skipped_the_world_goes_
 
 #[test]
 fn control_alone_skips_a_line_of_a_story_as_another_key_does() {
+    let live = LiveKeys::default();
+    let (mut h, mut g, start) = telling(&live);
+    let from = h.utterance_log.len();
+    // The first line takes 1.6 seconds.
+    live.down_at(start + 0.3, Key::LCtrl, Mods::CTRL);
+    live.up_at(start + 0.5, Key::LCtrl);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(said_at(&h, from, start), ["500 there was", "1400 the end"]);
+}
+
+#[test]
+fn with_nvda_control_alone_skips_exactly_one_line_of_a_story() {
+    let live = LiveKeys::default();
+    let (mut h, mut g, start) = telling(&live);
+    let from = h.utterance_log.len();
+    live.down_at(start + 0.3, Key::LCtrl, Mods::CTRL);
+    h.run_for(&mut g, 0.4);
+    // NVDA silences the line as Control goes down, and says so; nothing
+    // starts while Control is held.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    h.run_for(&mut g, 2.0);
+    assert_eq!(said_at(&h, from, start), Vec::<String>::new());
+    // Released, Control skips that line, and the next one starts.
+    live.up_at(h.clock.now(), Key::LCtrl);
+    h.run_until_voice_idle(&mut g);
+    let said = said_at(&h, from, start);
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert!(said[0].ends_with(" there was"), "{said:?}");
+    assert!(said[1].ends_with(" the end"), "{said:?}");
+}
+
+#[test]
+fn shift_alone_does_not_skip_a_line_of_a_story() {
+    let live = LiveKeys::default();
+    let (mut h, mut g, start) = telling(&live);
+    let from = h.utterance_log.len();
+    live.down_at(start + 0.3, Key::LShift, Mods::SHIFT);
+    live.up_at(start + 0.5, Key::LShift);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(said_at(&h, from, start), ["1599 there was", "2499 the end"]);
+}
+
+/// The game menu opened during the first line of [`STORY`], once the line
+/// has started again under it: what was said since the story began.
+fn story_under_the_game_menu() -> (Harness, TestGame, usize) {
     let (mut h, mut g) = training();
     h.run_until_voice_idle(&mut g);
     let from = h.utterances().len();
-    g.game
-        .srv_queue
-        .push_front(story(&["once upon a time", "there was", "the end"]));
-    h.step(&mut g);
+    g.game.srv_queue.push_front(story(&STORY));
     run_until_said(&mut h, &mut g, from, 1);
-    // Control alone, as the queue gives it once released.
-    h.press(Key::LCtrl, Mods::CTRL);
+    h.press(Key::F10, Mods::NONE);
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::GameMenu(_)));
+    run_until_said(&mut h, &mut g, from, 3);
+    assert_eq!(h.said_since(from)[1..], ["Menu", STORY[0]]);
+    (h, g, from)
+}
+
+#[test]
+fn a_line_that_the_game_menu_keys_cut_off_is_said_again_once_the_menu_closes() {
+    let (mut h, mut g, from) = story_under_the_game_menu();
+    h.press(Key::Down, Mods::NONE);
+    h.step(&mut g);
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    assert!(matches!(g.game.mode, Mode::Story));
     h.run_until_voice_idle(&mut g);
     assert_eq!(
-        h.said_since(from),
-        ["once upon a time", "there was", "the end"]
+        h.said_since(from)[3..],
+        [
+            "cancel game ,",
+            "continue game",
+            STORY[0],
+            STORY[1],
+            STORY[2]
+        ]
     );
+}
+
+#[test]
+fn control_alone_in_the_game_menu_does_not_give_up_the_story() {
+    let (mut h, mut g, from) = story_under_the_game_menu();
+    h.press(Key::LCtrl, Mods::CTRL);
+    h.step(&mut g);
+    h.press(Key::Escape, Mods::NONE);
+    h.step(&mut g);
+    h.run_until_voice_idle(&mut g);
+    // The line silenced waits: it starts again at once, and again once
+    // the menu closes.
+    assert_eq!(
+        h.said_since(from)[3..],
+        [STORY[0], "continue game", STORY[0], STORY[1], STORY[2]]
+    );
+}
+
+#[test]
+fn keys_said_in_key_help_during_a_story_leave_its_line_to_be_said() {
+    let (mut h, mut g) = training();
+    h.run_until_voice_idle(&mut g);
+    let from = h.utterances().len();
+    g.game.srv_queue.push_front(story(&STORY));
+    run_until_said(&mut h, &mut g, from, 1);
+    h.press(Key::F1, Mods::CTRL);
+    h.step(&mut g);
+    // Each key cuts the line off once it has started again.
+    for (key, n) in [(Key::Z, 3), (Key::X, 5)] {
+        run_until_said(&mut h, &mut g, from, n);
+        h.press(key, Mods::NONE);
+        h.step(&mut g);
+    }
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(said[4], said[2], "{said:?}");
+    assert_eq!(said[6..], [STORY[0], STORY[1], STORY[2]], "{said:?}");
+    assert!(said[3].starts_with("Z: "), "{said:?}");
+    assert!(said[5].starts_with("X: "), "{said:?}");
 }
 
 #[test]
@@ -208,7 +342,7 @@ fn control_shift_c_copies_during_a_story_without_skipping_a_line() {
         },
     );
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::Story));
     h.run_until_voice_idle(&mut g);
     // The line cut off by the answer is said again.
     assert_eq!(
@@ -387,7 +521,7 @@ fn cancelling_the_game_from_the_menu_during_a_cut_scene_ends_the_game() {
         .srv_queue
         .push_front(story(&["once upon a time there was a long story"]));
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::Story));
     for key in [Key::F10, Key::Down, Key::Return] {
         h.press(key, Mods::NONE);
         h.step(&mut g);
@@ -405,7 +539,7 @@ fn key_help_turns_on_during_a_story_and_the_story_is_still_said() {
         .srv_queue
         .push_front(story(&["once upon a time", "the end"]));
     h.step(&mut g);
-    assert!(matches!(g.game.mode, Mode::Story(_)));
+    assert!(matches!(g.game.mode, Mode::Story));
     let from = h.utterances().len();
     h.press(Key::F1, Mods::CTRL);
     h.step(&mut g);

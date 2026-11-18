@@ -53,7 +53,9 @@ A key's answer, a menu title, an important message or a message of the history c
 
 - An alert with `cut` not set stays waiting, with `cut` set. It is said again after the answer.
 - Every other message, and an alert cut a second time, becomes `Heard::No`. F4 counts it, and the review keys find it.
-- A line of a story that single-player waits for, cut off by a key that works during the story (the game menu, the history and news keys, copy, help, key help, the volume), waits again as before (`story_key` in `crates/client/src/game/mod.rs`). The world waits for the line, so no backlog builds. On a server nothing waits, an objective is ordinary story news, and the rule above applies.
+- A line of a story that single-player waits for waits again, as before, however it is cut off: by any answer (the game menu and its items, the history and news keys, copy, help, key help, the volume), by `silence` (Control or Alt alone in the game menu), or by a cancel that the screen reader reports. The voice knows these lines: `GameInterface::tell_story` gives their ids to `Voice::wait_for_story`, and the story mode asks `Voice::story_is_told` and `Voice::skip_story`. Only a skip gives a line up: Escape, or any other key in the story, which calls `say_next`. A line that the screen reader silenced is skipped the same way, so with `nvda_direct` Control alone still skips one line: Control down cancels the line, which waits, nothing starts while Control is held, and on release `say_next` skips that line. Shift alone does nothing in a story. The world waits for the line, so no backlog builds. On a server nothing waits, an objective is ordinary story news, and the rule above applies.
+- A cancel that the screen reader reports is a cut, with the same rule: an alert cancelled the first time is said once more.
+- F5, the history, cuts off the message being said as an answer does, before it walks back.
 
 Newer news about the same subject replaces the entry with `cut` not set, because a new event is new news. Example: a second attack on the same square after 10 quiet seconds.
 
@@ -92,6 +94,8 @@ Examine ("describe the target or the square") moves to Shift C. The original lea
 ### 5. A change of side gives up the waiting news
 
 A watcher who follows another player, and a seat that comes back after a lost connection, call `Voice::new_side`. Today that gives up only the held counts, so the old side's waiting news is still said (`docs/open-findings.md`, the watcher findings). `new_side` now also gives up the waiting news, as a jump in a recorded game does: it stays in the log, unheard.
+
+As built: a seat that comes back to the same seat calls `new_side` before "back in the game" is said (`back` in `crates/client/src/game/server.rs`); one moved to another player calls it again when it follows that player. News that belongs to no side, system news, the story and chat, the categories that `end_game` keeps, is still said. The message being said goes on; an old side's alert being said is marked cut, so it is not said again if it is cut off.
 
 ## Phase 2, only if a listener still hears old news
 

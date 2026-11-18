@@ -170,6 +170,25 @@ fn a_message_the_screen_reader_cancels_while_control_is_held_is_unheard_and_none
 }
 
 #[test]
+fn an_alert_the_screen_reader_cancels_during_a_chord_is_said_once_more() {
+    let (mut h, mut g, live) = game(0.5, 0.1);
+    let (from, start) = (h.utterance_log.len(), h.clock.now());
+    let alert = News::new(Category::Alert, vec![MsgPart::literal("alert at a 2")]);
+    h.client.voice.news(alert, Policy::Speak);
+    live.down_at(start + 0.3, Key::LCtrl, Mods::CTRL);
+    h.run_for(&mut g, 0.35);
+    // NVDA silences the alert as Control goes down.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    live.tap_at(start + 0.4, Key::Up, Mods::CTRL);
+    live.up_at(start + 0.5, Key::LCtrl);
+    run(&mut h, &mut g, 1.0);
+    assert_eq!(
+        said(&h, from, start),
+        ["0 alert at a 2", "400 b 2 , unknown", "1900 alert at a 2"]
+    );
+}
+
+#[test]
 fn control_held_with_tab_does_not_silence() {
     let (mut h, mut g, live) = game(0.5, 0.1);
     let (from, start) = (h.utterance_log.len(), h.clock.now());

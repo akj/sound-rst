@@ -594,6 +594,24 @@ fn news_cut_off_is_not_said_again_and_what_did_i_miss_counts_it() {
     );
 }
 
+#[test]
+fn news_cut_off_by_the_history_is_not_said_again() {
+    let mut h = Harness::new("en", Script::new());
+    info(&mut h.client.voice, "one");
+    run(&mut h, 1.0);
+    info(&mut h.client.voice, "news of thirty characters, 3 s");
+    run(&mut h, 0.5);
+    // F5, then an arrow key's answer ends the walk.
+    h.client.voice.previous();
+    h.client.voice.item(&t("x"));
+    run(&mut h, 10.0);
+    assert_eq!(
+        h.spoken(),
+        ["one", "news of thirty characters, 3 s", "one", "x"]
+    );
+    assert_eq!(said(&mut h, Voice::unheard), "production 1");
+}
+
 /// An attack on square 2, spoken.
 fn attack(s: &str) -> News {
     let place = Place::Square(SquareId(2));

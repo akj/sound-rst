@@ -248,8 +248,7 @@ impl Client {
     }
 
     /// Raises (1) or lowers (-1) the main volume by a tenth, saves it, and
-    /// says it. The level is an answer: it interrupts what is being said,
-    /// and news it cuts off is said again after it. No sound is stopped.
+    /// says it, as any key's answer is said. No sound is stopped.
     pub fn modify_volume(&mut self, incr: i32) {
         let percent = (i32::from(self.config.main_volume) + 10 * incr).clamp(0, 100);
         self.set_main_volume(percent as u8);

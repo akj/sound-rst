@@ -839,8 +839,9 @@ mod tests {
         assert_eq!(said.iter().filter(|s| s.contains("lost")).count(), 1);
     }
 
-    #[test]
-    fn a_watcher_moved_to_another_player_hears_none_of_the_news_that_waited() {
+    /// A watcher of two quiet computers on a fake server, which follows
+    /// the second once `queue` has queued news: what was said since.
+    fn moved_to_the_second_player(queue: impl FnOnce(&mut Harness)) -> (Harness, Vec<String>) {
         use crate::testkit::{FakeStream, slot};
         use soundrts_protocol::{Computer, Skill, SlotPlayer, Speed};
         let mut h = Harness::new("en", crate::testkit::Script::new().keep_open());
@@ -855,15 +856,33 @@ mod tests {
         h.run_until_voice_idle(&mut g);
         let b = stream.host().seats()[1];
         let from = h.utterances().len();
-        cx_news(&mut h, "a long message of news");
-        cx_news(&mut h, "news of the first player");
+        queue(&mut h);
         server.frame_at(h.clock.now(), stream.follow(1));
         while g.game.me != b {
             h.step(&mut g);
         }
         h.run_until_voice_idle(&mut g);
-        // The message being said goes on; the one waiting stays unheard.
         let said = h.said_since(from);
+        (h, said)
+    }
+
+    #[test]
+    fn a_watcher_moved_to_another_player_still_hears_the_chat_waiting() {
+        let (_, said) = moved_to_the_second_player(|h| {
+            cx_news(h, "a long message of news");
+            let line = vec![soundrts_world::msg::MsgPart::literal("bob says hi")];
+            h.client.news(News::new(Category::Chat, line));
+        });
+        assert!(said.iter().any(|s| s == "bob says hi"), "{said:?}");
+    }
+
+    #[test]
+    fn a_watcher_moved_to_another_player_hears_none_of_the_news_that_waited() {
+        let (h, said) = moved_to_the_second_player(|h| {
+            cx_news(h, "a long message of news");
+            cx_news(h, "news of the first player");
+        });
+        // The message being said goes on; the one waiting stays unheard.
         assert_eq!(
             said[..2],
             [

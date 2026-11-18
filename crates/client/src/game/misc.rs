@@ -18,7 +18,7 @@ use super::command::GameCommand;
 use super::entity::direction_to_msgpart;
 use super::replay::Pace;
 use super::source::Speeds;
-use super::{GameInterface, Mode, Story, TURN};
+use super::{GameInterface, Mode, TURN};
 
 /// What the game menu's items do.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -45,18 +45,22 @@ enum ListenChoice {
     Keep,
 }
 
-/// The game menu, the choice made in it, and the story it was opened
-/// during, which goes on once it closes.
+/// The game menu, the choice made in it, and whether it was opened during
+/// a story, which goes on once it closes.
 pub(crate) struct GameMenu {
     menu: Menu,
     choice: Rc<Cell<Option<GameMenuChoice>>>,
-    over: Option<Story>,
+    over_story: bool,
 }
 
 impl GameMenu {
     /// What the keys do once the menu is closed.
     fn closed(self) -> Mode {
-        self.over.map_or(Mode::Playing, Mode::Story)
+        if self.over_story {
+            Mode::Story
+        } else {
+            Mode::Playing
+        }
     }
 }
 
@@ -564,11 +568,12 @@ impl GameInterface {
         }
         menu.append(msg(Phrase::ContinueGame), Action::Nothing, None);
         menu.say_title(cx);
-        let over = match std::mem::replace(&mut self.mode, Mode::Playing) {
-            Mode::Story(s) => Some(s),
-            _ => None,
-        };
-        self.mode = Mode::GameMenu(GameMenu { menu, choice, over });
+        let over_story = matches!(self.mode, Mode::Story);
+        self.mode = Mode::GameMenu(GameMenu {
+            menu,
+            choice,
+            over_story,
+        });
     }
 
     /// A key pressed while the game menu is open: the keys bound to

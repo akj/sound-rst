@@ -126,7 +126,7 @@ This is the oldest unheard change: speech moved to its own thread in pull reques
 
 4.9. During a story, press F1, and while help is speaking press Escape. Expected: the help stops at once.
 
-4.10. During a story, press Control+Shift+C. Expected: "copied", then the next line: the story goes on.
+4.10. During a story, press Control+Shift+C. Expected: "copied", then the same line again, then the next.
 
 4.11. In a training game, let the computer beat you. Expected: "You have been defeated" is said while the battle sounds carry on.
 

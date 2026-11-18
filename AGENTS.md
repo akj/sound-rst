@@ -8,7 +8,7 @@ Players rely on the four things below. Do not trade one of them for a feature.
 
 ### 1. Speech and sound are the whole interface
 
-A blind player has no screen to fall back on. Treat a message that comes late, is cut off, or is lost as you would treat a broken screen. Nothing the game says stops the game. Single-player waits on purpose while a story is told, and the menu, history, and news keys still work. News is never lost: every message stays in the log, and the player can hear what was missed. Alerts are said first. A message that is cut off is not said again, except an alert, once. Each answer to a question is one sentence.
+A blind player has no screen to fall back on. Treat a message that comes late, is cut off, or is lost as you would treat a broken screen. Nothing the game says stops the game. Single-player waits on purpose while a story is told, and the menu, history, and news keys still work. News is never lost: every message stays in the log, and the player can hear what was missed. Alerts are said ahead of the other news of the game, after system news. A message that is cut off is not said again, except an alert, once, and a line of a story that single-player waits for. Each answer to a question is one sentence.
 
 ### 2. A player hears only what that player knows
 

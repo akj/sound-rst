@@ -142,8 +142,9 @@ pub(crate) enum Mode {
     Playing,
     /// The next key picks an order by its shortcut.
     OrderShortcut,
-    /// A story is told (see [`GameInterface::tell_story`]).
-    Story(Story),
+    /// A story is told (see [`GameInterface::tell_story`]); the voice
+    /// knows its lines.
+    Story,
     /// The game menu is open.
     GameMenu(misc::GameMenu),
     /// A chat line is being typed.
@@ -158,29 +159,10 @@ impl Mode {
     /// Where the keys of this mode are read.
     fn input_point(&self) -> InputPoint {
         match self {
-            Mode::Playing | Mode::OrderShortcut | Mode::Story(_) | Mode::KeyHelp => {
-                InputPoint::Game
-            }
+            Mode::Playing | Mode::OrderShortcut | Mode::Story | Mode::KeyHelp => InputPoint::Game,
             Mode::GameMenu(_) => InputPoint::Menu,
             Mode::Chat(_) | Mode::Console(_) => InputPoint::Text,
         }
-    }
-}
-
-/// A story being told: its messages in the voice's log.
-pub(crate) struct Story(Vec<EntryId>);
-
-impl Story {
-    /// Whether every message has been said or skipped.
-    fn is_told(&self, cx: &Client) -> bool {
-        !self.0.iter().any(|&id| cx.voice.is_waiting(id))
-    }
-
-    /// Skips the rest of the story, and the message being said: the
-    /// story's messages are kept in the log unheard, none of them is
-    /// heard, and the news waiting with them is said.
-    fn skip(&self, cx: &mut Client) {
-        cx.voice.skip_with(&self.0);
     }
 }
 
@@ -423,34 +405,35 @@ impl GameInterface {
     }
 
     /// Goes back to playing once the story being told is told.
-    fn end_story_if_told(&mut self, cx: &Client) {
-        if let Mode::Story(s) = &self.mode
-            && s.is_told(cx)
-        {
+    fn end_story_if_told(&mut self, cx: &mut Client) {
+        if matches!(self.mode, Mode::Story) && cx.voice.story_is_told() {
             self.mode = Mode::Playing;
         }
     }
 
-    /// Tells a story: each message as story news, said before the other
+    /// Tells a story: each message as story news, said before most other
     /// news waiting. In single-player the world waits until every message
-    /// has been said or skipped, and its sounds stop; in a game on a
-    /// server, a record listened to, or while key help is on, nothing
-    /// waits.
+    /// has been said or skipped, and its sounds stop; the voice keeps the
+    /// lines that the world waits for, and says again a line cut off. In a
+    /// game on a server, a record listened to, or while key help is on,
+    /// nothing waits.
     pub(crate) fn tell_story(&mut self, cx: &mut Client, messages: Vec<Msg>) {
         let policy = cx.config.news.of(Category::Story);
-        let story = Story(
-            messages
-                .into_iter()
-                .filter_map(|m| cx.voice.news(News::new(Category::Story, m), policy))
-                .collect(),
-        );
-        if !self.waits_for_the_player() || matches!(self.mode, Mode::KeyHelp) || story.is_told(cx) {
+        let lines: Vec<EntryId> = messages
+            .into_iter()
+            .filter_map(|m| cx.voice.news(News::new(Category::Story, m), policy))
+            .collect();
+        let waiting = lines.iter().any(|&id| cx.voice.is_waiting(id));
+        if !self.waits_for_the_player() || matches!(self.mode, Mode::KeyHelp) || !waiting {
             return;
         }
         cx.stop_sound(false);
-        match &mut self.mode {
-            Mode::Story(s) => s.0.extend(story.0),
-            Mode::Playing | Mode::OrderShortcut => self.mode = Mode::Story(story),
+        match &self.mode {
+            Mode::Story => cx.voice.wait_for_story(&lines),
+            Mode::Playing | Mode::OrderShortcut => {
+                cx.voice.wait_for_story(&lines);
+                self.mode = Mode::Story;
+            }
             // The world waits while these are open, and chat is only typed
             // on a server: no story comes meanwhile.
             Mode::GameMenu(_) | Mode::Chat(_) | Mode::Console(_) | Mode::KeyHelp => {}
@@ -511,8 +494,8 @@ impl GameInterface {
                 self.execute_order_shortcut(cx, &k);
                 Ok(())
             }
-            Mode::Story(s) => {
-                self.mode = Mode::Story(s);
+            Mode::Story => {
+                self.mode = Mode::Story;
                 self.story_key(cx, &k)
             }
             Mode::GameMenu(gm) => self.game_menu_key(cx, gm, k),
@@ -563,18 +546,18 @@ impl GameInterface {
 
     /// A key pressed while a story is told: the keys of the game menu,
     /// the history, the news, copying a message, help, key help and the
-    /// volume do as in the game, and a line they cut off is said again; the
-    /// escape key skips the rest of the story; any other key skips the
+    /// volume do as in the game, and a line they cut off is said again (see
+    /// [`crate::voice::Voice::wait_for_story`]); the escape key skips the
+    /// rest of the story; Shift alone does nothing; any other key skips the
     /// message being said.
     fn story_key(&mut self, cx: &mut Client, k: &KeyDown) -> Result<(), Exit> {
         use GameCommand as C;
         match self.bindings.command_for(k).cloned() {
             Some(C::Escape) => {
-                if let Mode::Story(s) = &self.mode {
-                    s.skip(cx);
-                }
+                cx.voice.skip_story();
                 Ok(())
             }
+            Some(C::Nothing) => Ok(()),
             Some(
                 c @ (C::GameMenu
                 | C::HistoryPrevious
@@ -587,17 +570,7 @@ impl GameInterface {
                 | C::Help(_)
                 | C::KeyHelp
                 | C::Volume(_)),
-            ) => {
-                // The world waits for the story: a line these cut off is
-                // said again.
-                let waiting = match &self.mode {
-                    Mode::Story(s) => cx.voice.waiting_among(&s.0),
-                    _ => Vec::new(),
-                };
-                let done = self.execute(cx, &c);
-                cx.voice.wait_again(&waiting);
-                done
-            }
+            ) => self.execute(cx, &c),
             _ => {
                 cx.voice.say_next(false);
                 Ok(())

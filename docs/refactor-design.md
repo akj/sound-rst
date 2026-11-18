@@ -335,7 +335,7 @@ An **utterance** has: its parts (text and recorded sounds), a **category**, a **
 **Four rules replace the seven message kinds:**
 
 1. **What you asked for speaks at once and interrupts.** Moving the cursor, asking a status key. This is today's `item`.
-2. **What the game volunteers never interrupts what you asked for, and is never lost by being interrupted.** A news message cut off part-way goes back to the front of the queue. It is not "counted as heard" (H3).
+2. **What the game volunteers never interrupts what you asked for, and is never lost by being interrupted.** A news message cut off part-way goes back to the front of the queue. It is not "counted as heard" (H3). Superseded by `docs/announcer-design.md`: a message cut off stays in the log, unheard, and is said again only if it is an alert, once, or a line of a story that single-player waits for.
 3. **News about the same subject replaces older news about it.** The subject key does this: three "peasant ready" messages queue as "3 peasants ready"; a newer resource count replaces an older one. This is how the queue stays short in a fight without dropping anything, and it replaces the expiry timers.
 4. **Everything is logged, spoken or not.** The log is browsable by category: all messages, or only alerts, or only chat. F5 and F6 keep working. A new key answers "what did I miss": it says how many unheard messages wait in each category and lets you step through them.
 

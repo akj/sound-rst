@@ -1461,6 +1461,37 @@ fn eventless(m: &soundrts_world::TurnMessage) -> soundrts_world::TurnMessage {
 }
 
 #[test]
+fn a_return_to_the_seat_gives_up_the_old_news_and_says_back_in_the_game() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g, room) = game_in_room(&mut h);
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    use soundrts::message::{Category, News};
+    let production = |s: &str| {
+        News::new(
+            Category::Production,
+            vec![soundrts_world::msg::MsgPart::literal(s)],
+        )
+    };
+    h.client
+        .news(production("a long message of news, for five seconds"));
+    h.client.news(production("old production news"));
+    turn_at(&server, &mut stream, t0);
+    server.close_at(t0 + 1.0);
+    stream.turn(Vec::new());
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(t0 + 1.5, frame);
+    }
+    turn_at(&back, &mut stream, t0 + 2.0);
+    h.run_for(&mut g, 3.0);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(times(&said, "back in the game"), 1, "{said:#?}");
+    assert_eq!(times(&said, "old production news"), 0, "{said:#?}");
+}
+
+#[test]
 fn a_lost_connection_returns_to_the_seat_and_the_game_plays_on() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let (server, mut stream, mut g, room) = game_in_room(&mut h);
