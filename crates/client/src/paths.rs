@@ -220,9 +220,9 @@ impl Paths {
     /// `packages` folder.
     pub fn additional_package_paths(&self, base: &str, additional: &[String]) -> Vec<PathBuf> {
         let base = self.root.join(base);
-        let mut result: Vec<PathBuf> = additional.iter().map(|p| self.root.join(p)).collect();
+        let mut result: Vec<PathBuf> = additional.iter().map(|p| self.package_dir(p)).collect();
         for rp in additional {
-            let pp = self.root.join(rp).join("packages");
+            let pp = self.package_dir(rp).join("packages");
             let Ok(entries) = std::fs::read_dir(&pp) else {
                 continue;
             };
@@ -236,6 +236,17 @@ impl Paths {
             }
         }
         result
+    }
+
+    /// Where an entry of `packages.additional` is: `user`, and a path
+    /// under it, in the player's folder, wherever that folder is; any
+    /// other entry under the game root.
+    fn package_dir(&self, entry: &str) -> PathBuf {
+        match Path::new(entry).strip_prefix("user") {
+            Ok(rest) if rest.as_os_str().is_empty() => self.user.clone(),
+            Ok(rest) => self.user.join(rest),
+            Err(_) => self.root.join(entry),
+        }
     }
 }
 
@@ -402,6 +413,65 @@ mod tests {
             PathBuf::from("P")
                 .join("data")
                 .join("f3bd98384fb991e17b55e2f40bf31bf9e1f14989")
+        );
+    }
+
+    #[test]
+    fn the_settings_folder_holds_packages_when_the_game_downloaded_its_data() {
+        let settings = tempfile::tempdir().unwrap();
+        let root = crate::upstream::data_dir(settings.path());
+        std::fs::create_dir_all(root.join("res/multi")).unwrap();
+        let paths = Paths {
+            root,
+            user: settings.path().to_path_buf(),
+        };
+        let user = &paths.user;
+        std::fs::create_dir_all(user.join("mods/mine")).unwrap();
+        std::fs::write(user.join("mods/mine/rules.txt"), "").unwrap();
+        let packaged = user.join("packages/extra/mods/packaged");
+        std::fs::create_dir_all(&packaged).unwrap();
+        std::fs::write(packaged.join("rules.txt"), "").unwrap();
+        std::fs::create_dir_all(user.join("single/journey")).unwrap();
+        std::fs::create_dir_all(user.join("multi")).unwrap();
+        std::fs::create_dir_all(paths.downloaded().join("multi")).unwrap();
+        let map = std::fs::read(crate::testkit::game_root().join("res/multi/b1.txt")).unwrap();
+        std::fs::write(user.join("multi/island.txt"), &map).unwrap();
+        std::fs::write(paths.downloaded().join("multi/given.txt"), &map).unwrap();
+
+        let params = std::sync::Arc::new(crate::parameters::Parameters::default());
+        let log = Log::silent();
+        let mut res = crate::client::open_resources(&paths, params, "", "", None, &log);
+        assert_eq!(res.available_mods(), ["mine", "packaged"]);
+        let campaigns: Vec<String> = res.campaigns().iter().map(|c| c.name.clone()).collect();
+        assert_eq!(campaigns, ["journey"]);
+        let maps = res.multiplayer_maps();
+        let found: Vec<(&str, bool)> = maps
+            .iter()
+            .map(|m| (m.name.as_str(), m.downloaded))
+            .collect();
+        assert_eq!(found, [("given", true), ("island", false)]);
+    }
+
+    #[test]
+    fn a_user_folder_in_the_root_is_where_the_user_packages_were() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("user/packages/extra")).unwrap();
+        let paths = Paths {
+            root: root.path().to_path_buf(),
+            user: find_user_dir(root.path(), Some("A".into()), None),
+        };
+        let additional: Vec<String> = ["", "user", "user/downloaded", "more"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            paths.additional_package_paths("res", &additional),
+            [
+                root.path().to_path_buf(),
+                root.path().join("user"),
+                root.path().join("user").join("downloaded"),
+                root.path().join("more"),
+                root.path().join("user").join("packages").join("extra"),
+            ]
         );
     }
 

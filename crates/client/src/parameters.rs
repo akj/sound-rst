@@ -58,7 +58,8 @@ impl Default for Parameters {
     }
 }
 
-/// Where the packages are, relative to the game root. A package is a folder
+/// Where the packages are, relative to the game root; `user`, and a path
+/// under it, is in the settings folder instead. A package is a folder
 /// or a zip file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
