@@ -12,5 +12,4 @@ What the port changed, and why:
 - The orc race uses the game's own word "orc".
 - Spells that hurt units or buildings now deal damage. In 1.2-c4 they missed those targets; the port's rules apply them as written.
 
-To activate this mod, in SoundRTS.ini:
-mods = crazymod
+To play it, choose Options, then Mods, then crazymod.
