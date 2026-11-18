@@ -42,7 +42,7 @@ You need Windows with the MSVC build tools, [rustup](https://rustup.rs), Git, an
 
 The game data stays outside this repository because the original does not state a license for it. `vendor/` is ignored by Git.
 
-To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the folder of the mods that come with the game, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
+To check what the game found on your machine without starting it, run the probe. The probe prints the data folder, the program's `data` folder, which holds the mods that come with the game, the settings folder, the language, the audio device, and the screen reader, and then exits. It does not speak or open a window.
 
 ```powershell
 cargo run -p soundrts -- --root vendor/game-data --probe

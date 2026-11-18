@@ -134,7 +134,7 @@ fn crazymod_loads_in_spanish_with_its_own_style() {
 }
 
 #[test]
-fn crazymod_loads_in_german_and_italian_with_the_authors_words() {
+fn crazymod_loads_in_german_and_italian() {
     let h = with_crazymod("de");
     // The author's capital, where the game's own German says "ork".
     assert_eq!(h.text("orc"), "Ork");
@@ -142,5 +142,7 @@ fn crazymod_loads_in_german_and_italian_with_the_authors_words() {
     check(&h);
     let h = with_crazymod("it");
     assert_eq!(h.text("bomber_airship"), "dirigibile bombardiere");
+    // The later Italian translation, where the 2018 zip said "canti di guerra".
+    assert_eq!(h.text("war_troll"), "troll di guerra");
     check(&h);
 }
