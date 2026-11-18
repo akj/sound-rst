@@ -11,5 +11,6 @@ What the port changed, and why:
 - The style loses an unused earthquake entry that titled nothing, and the Spanish style loses three entries for types that CrazyMod 9 no longer has.
 - The orc race uses the game's own word "orc".
 - Spells that hurt units or buildings now deal damage. In 1.2-c4 they missed those targets; the port's rules apply them as written.
+- The vermin have computer players, easy and aggressive. The author left both empty, so a vermin computer only gathered.
 
 To play it, choose Options, then Mods, then crazymod.

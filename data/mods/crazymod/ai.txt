@@ -364,8 +364,52 @@ goto wild_easy1
 
 
 
+; vermin, written for the port: the author left both empty.
+; A hatchery spawns 6 larvae that live two minutes (a nursery 9, a larval lab
+; 13, a transgenic breeder 18), and the same power grows the stump that each
+; building comes from. The computer grows larvae and stumps only when it has
+; all it asks for at once, so a line asks for one more building at most, and
+; for no more of a unit than one spawn makes.
+
 def vermin_easy
 
+watchdog 600
+constant_attacks 0
+research 1
+
+label vermin_easy0
+get 6 walking_worker
+get 1 mud_chamber 1 nursery
+get 9 pincer_crab
+get 1 carnivorous_tree
+get 1 larval_lab
+get 13 insatiable_mosquito 13 terrible_mosquito
+get 1 voracious_tree
+get 5 fruit_tree
+get 1 honey_tree 13 angry_wasp 13 stinger_wasp
+get 6 fruit_tree
+get 2 voracious_tree
+get 1 termite_mound 4 guard_termite
+get 13 pincer_crab
+get 3 voracious_tree
+get 1 transgenic_breeder
+
+label vermin_easy1
+get 1 devourer_tree
+get 7 fruit_tree
+get 18 insatiable_mosquito
+get 4 voracious_tree
+get 18 angry_wasp
+get 8 fruit_tree
+get 2 devourer_tree
+get 18 pincer_crab
+get 1 mushroom_gallery 18 brawler_mushroom 18 toxic_mushroom 13 devastating_mushroom
+get 9 fruit_tree
+get 4 voracious_tree
+get 3 devourer_tree
+get 10 fruit_tree
+get 18 terrible_mosquito 13 bloodthirsty_mosquito
+goto vermin_easy1
 
 
 
@@ -1322,6 +1366,100 @@ goto_random wild0 wild1
 
 
 def vermin
+
+watchdog 600
+constant_attacks 0
+research 1
+
+label vermin0
+get 6 walking_worker
+goto_random vermin0a vermin0b vermin0c vermin0d
+
+label vermin0a
+get 1 mud_chamber 1 nursery
+get 9 pincer_crab
+goto vermin1
+
+label vermin0b
+get 1 honey_tree 1 nursery
+get 9 angry_wasp
+goto vermin1
+
+label vermin0c
+get 1 mud_chamber 1 nursery
+get 9 insatiable_mosquito
+goto vermin1
+
+label vermin0d
+get 1 mushroom_gallery 1 nursery
+get 9 brawler_mushroom
+goto vermin1
+
+label vermin1
+get 1 larval_lab
+goto_random vermin1a vermin1b vermin1c vermin1d
+
+label vermin1a
+get 1 mud_chamber 13 insatiable_mosquito
+goto vermin_attack
+
+label vermin1b
+get 1 mud_chamber 13 pincer_crab 13 shell_thrower_crab
+goto vermin_attack
+
+label vermin1c
+get 1 honey_tree 13 angry_wasp 13 stinger_wasp
+goto vermin_attack
+
+label vermin1d
+get 1 mushroom_gallery 13 brawler_mushroom 13 toxic_mushroom
+goto vermin_attack
+
+label vermin2
+get 5 fruit_tree
+goto_random vermin2a vermin2b vermin2c vermin2d vermin3
+
+label vermin2a
+get 1 mud_chamber 13 pincer_crab 13 shell_thrower_crab
+get 6 fruit_tree
+get 13 insatiable_mosquito 13 terrible_mosquito
+goto_random vermin3 vermin_attack
+
+label vermin2b
+get 1 honey_tree 13 angry_wasp 13 stinger_wasp
+get 1 termite_mound
+get 1 mushroom_gallery 13 brawler_mushroom 13 toxic_mushroom
+goto_random vermin3 vermin_attack
+
+label vermin2c
+get 1 mushroom_gallery 13 brawler_mushroom 13 toxic_mushroom
+get 6 fruit_tree
+get 1 mud_chamber 13 pincer_crab 13 shell_thrower_crab
+goto_random vermin3 vermin_attack
+
+label vermin2d
+get 1 termite_mound
+get 1 mud_chamber 13 insatiable_mosquito 13 terrible_mosquito
+get 6 fruit_tree
+goto_random vermin3 vermin_attack
+
+label vermin3
+get 1 transgenic_breeder
+get 6 fruit_tree
+get 1 mushroom_gallery 18 brawler_mushroom 18 toxic_mushroom 13 devastating_mushroom
+get 7 fruit_tree
+get 1 mud_chamber 18 pincer_crab 18 shell_thrower_crab 13 siege_crab
+get 8 fruit_tree
+get 1 honey_tree 18 angry_wasp 18 stinger_wasp 13 thousand_sting_wasp
+get 9 fruit_tree
+get 10 fruit_tree
+get 18 insatiable_mosquito 18 terrible_mosquito 13 bloodthirsty_mosquito
+goto vermin_attack
+
+label vermin_attack
+attack
+get 5 fruit_tree
+goto_random vermin1a vermin1b vermin1c vermin1d vermin2
 
 
 

@@ -2,9 +2,13 @@
 //! original.
 #![allow(dead_code)]
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use soundrts_world::{AiScripts, Controller, EntityId, PlayerId, Rules, World};
+use soundrts_world::entity::{Action, ActionKind, Entity};
+use soundrts_world::orders::Keyword;
+use soundrts_world::rules::EntityClass;
+use soundrts_world::{AiScripts, Controller, EntityId, PlayerId, Rules, SquareId, Target, World};
 
 /// The pinned original game, fetched and imported by
 /// `scripts/fetch-upstream.ps1`.
@@ -73,4 +77,48 @@ pub fn computer(ai_type: &str, alliance: &str) -> Controller {
 
 pub fn words(s: &str) -> Vec<String> {
     s.split_whitespace().map(str::to_owned).collect()
+}
+
+/// Whether `e` belongs to an enemy of `p` that is a true player, not a
+/// neutral one.
+pub fn is_true_enemy(w: &World, p: PlayerId, e: &Entity) -> bool {
+    e.player()
+        .is_some_and(|q| !w.player(p).allied.contains(&q) && !w.player(q).neutral)
+}
+
+/// The units and buildings of `p`.
+pub fn units(w: &World, p: PlayerId) -> impl Iterator<Item = &Entity> {
+    w.player(p).units.iter().filter_map(|&u| w.entity(u))
+}
+
+/// The squares where `p` has a building, a building site or a worker: its
+/// idle soldiers gather where its workers are.
+pub fn home(w: &World, p: PlayerId) -> BTreeSet<SquareId> {
+    units(w, p)
+        .filter(|e| e.class().is_building_class() || e.class() == EntityClass::Worker)
+        .filter_map(Entity::square)
+        .collect()
+}
+
+/// Whether a soldier of `p` is attacking a unit or building of an enemy
+/// true player that stands outside its home (see [`home`]), and the
+/// soldier is not its explorer (its first order is not `auto_explore`).
+/// This leaves out defending its base, its workers' fights and its
+/// explorer's fights on the way.
+pub fn attacks(w: &World, p: PlayerId) -> bool {
+    let home = home(w, p);
+    units(w, p).any(|e| {
+        let Some(Action {
+            kind: ActionKind::Attack,
+            target: Some(Target::Entity(t)),
+        }) = e.creature().and_then(|c| c.action.as_ref())
+        else {
+            return false;
+        };
+        e.class() == EntityClass::Soldier
+            && e.orders().first().map(|o| o.keyword()) != Some(Keyword::AutoExplore)
+            && w.entity(*t).is_some_and(|t| {
+                is_true_enemy(w, p, t) && t.square().is_some_and(|s| !home.contains(&s))
+            })
+    })
 }

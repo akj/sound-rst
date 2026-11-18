@@ -6,7 +6,10 @@ mod common;
 
 use std::path::PathBuf;
 
-use soundrts_world::{AiScripts, Controller, Rules, Skill, World, multiplayer_default_triggers};
+use soundrts_world::rules::EntityClass;
+use soundrts_world::{
+    AiScripts, Controller, PlayerId, Rules, Skill, World, multiplayer_default_triggers,
+};
 
 /// The races, in the order the author defines them.
 const RACES: [&str; 10] = [
@@ -22,12 +25,10 @@ const RACES: [&str; 10] = [
     "dark_elf",
 ];
 
-/// The turns each game plays: 12.5 minutes of game time. Every computer
-/// builds by then, and the first armies meet (undead against elf, elf
-/// against orc), but no seat is beaten yet: undead loses to elf near turn
-/// 3,500. The vermin computers' scripts are empty, as the author left them;
-/// vermin keeps its opening units through these turns.
-const TURNS: usize = 2500;
+/// The turns each game plays: 9 minutes of game time, short of the first
+/// defeat: vermin falls to dark elf near turn 2,100, and wild to vermin
+/// near turn 2,500.
+const TURNS: usize = 1800;
 
 /// A file of the mod, from the checkout.
 fn read(file: &str) -> String {
@@ -54,29 +55,47 @@ fn the_rules_and_the_computers_load_without_a_warning() {
     assert_eq!(ai.warnings, Vec::<String>::new());
 }
 
+/// A game of the mod on a map of the game, between two computers, each
+/// alone: `seats` gives the faction and the computer type of each.
+fn game(map: &str, seed: i64, seats: [(&str, &str); 2]) -> (World, Vec<PlayerId>) {
+    let mut w = World::new(
+        Rules::load(&rules_text()),
+        AiScripts::load(&ai_text()),
+        multiplayer_default_triggers(),
+        seed,
+    );
+    w.load_and_build_map(&common::read(map)).unwrap();
+    let seats: Vec<Controller> = seats
+        .into_iter()
+        .enumerate()
+        .map(|(k, (faction, ai))| {
+            let mut c = Controller::computer_at(ai, Skill::NORMAL);
+            c.alliance = Some((k + 1).to_string());
+            c.faction = faction.to_owned();
+            c
+        })
+        .collect();
+    let players = w.populate_map(&seats, true, true).unwrap();
+    (w, players)
+}
+
+/// How many fighters `p` has: soldiers that do damage. A larva is a
+/// soldier that does none.
+fn fighters(w: &World, p: PlayerId) -> usize {
+    common::units(w, p)
+        .filter(|e| e.class() == EntityClass::Soldier && e.stats.damage > 0)
+        .count()
+}
+
 #[test]
 fn each_race_plays_a_computer_game_against_the_next() {
     for (i, &race) in RACES.iter().enumerate() {
         let next = RACES[(i + 1) % RACES.len()];
-        let mut w = World::new(
-            Rules::load(&rules_text()),
-            AiScripts::load(&ai_text()),
-            multiplayer_default_triggers(),
+        let (mut w, players) = game(
+            "res/multi/pra1.txt",
             i as i64 + 1,
+            [(race, "aggressive"), (next, "aggressive")],
         );
-        w.load_and_build_map(&common::read("res/multi/pra1.txt"))
-            .unwrap();
-        let seats: Vec<Controller> = [race, next]
-            .into_iter()
-            .enumerate()
-            .map(|(k, faction)| {
-                let mut c = Controller::computer_at("aggressive", Skill::NORMAL);
-                c.alliance = Some((k + 1).to_string());
-                c.faction = faction.to_owned();
-                c
-            })
-            .collect();
-        let players = w.populate_map(&seats, true, true).unwrap();
         for _ in 0..TURNS {
             w.update();
         }
@@ -93,4 +112,48 @@ fn each_race_plays_a_computer_game_against_the_next() {
             );
         }
     }
+}
+
+/// The author left the vermin computers without a script, and a vermin
+/// computer only gathered. The port's scripts raise larvae in batches that
+/// the hatchery spawns at once, and grow them into fighters. Here vermin
+/// attacks at turn 1,177 with 13 fighters.
+#[test]
+fn the_aggressive_vermin_computer_trains_an_army_and_attacks() {
+    let (mut w, players) = game(
+        "res/multi/pra1.txt",
+        4,
+        [("vermin", "aggressive"), ("robotic", "aggressive")],
+    );
+    let vermin = players[0];
+    let mut most = 0;
+    let attack = (1..=1500).find(|_| {
+        w.update();
+        most = most.max(fighters(&w, vermin));
+        common::attacks(&w, vermin)
+    });
+    assert!(
+        attack.is_some(),
+        "vermin did not attack in 1,500 turns; it had {most} fighters at most"
+    );
+    assert!(most >= 9, "vermin attacked with {most} fighters at most");
+}
+
+/// The quiet computer gets no scripted attack. Here it has 9 fighters at
+/// turn 1,200.
+#[test]
+fn the_quiet_vermin_computer_builds_an_army() {
+    let (mut w, players) = game(
+        "res/multi/pra1.txt",
+        1,
+        [("vermin", "easy"), ("orc", "easy")],
+    );
+    for _ in 0..1200 {
+        w.update();
+    }
+    let n = fighters(&w, players[0]);
+    assert!(
+        n >= 9,
+        "the quiet vermin computer has {n} fighters after 1,200 turns"
+    );
 }
