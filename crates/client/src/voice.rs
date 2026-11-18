@@ -827,6 +827,10 @@ impl Voice {
                 let e = &mut self.log[i];
                 e.content = Content::News(news);
                 e.heard = heard;
+                // Newer news is not what the screen reader silenced.
+                if self.cancelled == Some(e.id) {
+                    self.cancelled = None;
+                }
                 e.id
             }
             None => {
@@ -1151,6 +1155,7 @@ impl Voice {
         if self.active {
             self.cut_current();
         }
+        self.cancelled = None;
         self.channel.stop();
         self.active = false;
         self.history = false;

@@ -5,7 +5,7 @@
 
 use soundrts::clock::Clock;
 use soundrts::input::{Key, Mods};
-use soundrts::message::{Category, News, Policy};
+use soundrts::message::{Category, News, Policy, Subject};
 use soundrts::testkit::{Harness, LiveKeys, Script, TestGame, render};
 use soundrts::tts::{Progress, SpeechEnd};
 use soundrts::voice::{Heard, VoiceEvent};
@@ -185,6 +185,36 @@ fn an_alert_the_screen_reader_cancels_during_a_chord_is_said_once_more() {
     assert_eq!(
         said(&h, from, start),
         ["0 alert at a 2", "400 b 2 , unknown", "1900 alert at a 2"]
+    );
+}
+
+#[test]
+fn newer_news_that_replaces_a_message_the_screen_reader_cancelled_is_not_skipped_with_it() {
+    let (mut h, mut g, live) = game(0.5, 0.1);
+    let (from, start) = (h.utterance_log.len(), h.clock.now());
+    let gold = |s: &str| {
+        News::new(Category::Economy, vec![MsgPart::literal(s)]).about(Subject::Resource(0))
+    };
+    h.client.voice.news(gold("10 gold"), Policy::Speak);
+    live.down_at(start + 0.3, Key::LCtrl, Mods::CTRL);
+    h.run_for(&mut g, 0.35);
+    // NVDA silences the count as Control goes down, and a newer count
+    // takes its place while Control is held.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    h.run_for(&mut g, 0.05);
+    h.client.voice.news(gold("20 gold"), Policy::Speak);
+    // A skip, as a binding of `history_stop` gives, skips what was
+    // silenced, not the newer count.
+    h.client.voice.say_next(false);
+    // A chord, so that Control's release does not silence.
+    live.tap_at(start + 0.5, Key::Up, Mods::CTRL);
+    live.up_at(start + 0.6, Key::LCtrl);
+    run(&mut h, &mut g, 2.0);
+    let said = said(&h, from, start);
+    assert_eq!(said[0], "0 10 gold", "{said:?}");
+    assert!(
+        said.last().is_some_and(|s| s.ends_with(" 20 gold")),
+        "{said:?}"
     );
 }
 
