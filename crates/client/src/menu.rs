@@ -313,7 +313,7 @@ impl Menu {
             Key::F5 if ctrl => crate::net::chat_previous(cx),
             Key::F6 if ctrl => crate::net::chat_next(cx),
             Key::F5 => cx.voice.previous(),
-            Key::LAlt | Key::RAlt => cx.voice.say_next(false),
+            Key::LCtrl | Key::RCtrl | Key::LAlt | Key::RAlt => cx.voice.silence(),
             Key::F6 => cx.voice.say_next(true),
             Key::Home | Key::KpPlus => cx.modify_volume(1),
             Key::End | Key::KpMinus => cx.modify_volume(-1),

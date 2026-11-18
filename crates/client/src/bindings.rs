@@ -54,12 +54,20 @@ pub const MAX_DEFINITIONS: usize = 32;
 /// all over the map with Control Shift; key help on Control F1, beside
 /// help on F1; for a watcher, the next player to follow on Control
 /// F12 and the previous one with Shift, beside the other players on F12;
-/// and, for someone listening to a recorded game, slower and faster on
+/// for someone listening to a recorded game, slower and faster on
 /// Minus and Equals, pause and resume on Shift Space, and a minute back
-/// and forward on the left and right brackets, five with Shift.
+/// and forward on the left and right brackets, five with Shift; and
+/// examining the target or the square on Shift C, beside the food on C.
 /// Each key is one the original leaves free and that neither Windows nor a
 /// screen reader takes. Shift Z is left to maps, which bind it to a third
 /// resource.
+///
+/// The one exception, by the developer's choice: Control and Alt pressed
+/// alone stop speech and give up the news waiting, and Shift alone does
+/// nothing, so that it is the screen reader's. The original binds Control
+/// alone to examine, and Alt or Shift alone to skip the message being
+/// said. These bindings come after the original's and replace them; the
+/// player's own `bindings.txt` comes last and can bind them again.
 pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nSHIFT F7: say_allies\nCTRL F7: flare\n\
     F4: unheard\nCOMMA: review_previous\nPERIOD: review_next\nSLASH: review_category\n\
     CTRL SHIFT c: copy_message\n\
@@ -78,7 +86,10 @@ pub const CLIENT_BINDINGS: &str = "CTRL F5: chat_previous\nCTRL F6: chat_next\nS
     CTRL SHIFT f: select_units idle soldier1\nCTRL SHIFT g: select_units idle soldier2\n\
     CTRL SHIFT h: select_units idle soldier3\nCTRL SHIFT j: select_units idle soldier4\n\
     CTRL SHIFT k: select_units idle soldier5\nCTRL SHIFT l: select_units idle soldier6\n\
-    CTRL SHIFT SEMICOLON: select_units idle soldier7\n";
+    CTRL SHIFT SEMICOLON: select_units idle soldier7\n\
+    SHIFT c: examine\n\
+    LCTRL: silence\nRCTRL: silence\nLALT: silence\nRALT: silence\n\
+    LSHIFT: nothing\nRSHIFT: nothing\n";
 
 /// The files of the game's bindings, in the order they are read, the
 /// player's own file at `custom` last (see [`crate::layers::Layers::bindings`]).
@@ -514,8 +525,17 @@ mod tests {
             &log,
         );
         assert_eq!(client.len(), CLIENT_BINDINGS.lines().count());
-        for (c, _) in client.iter() {
+        // The one exception: the modifiers pressed alone.
+        let alone = ["LCTRL", "RCTRL", "LALT", "RALT", "LSHIFT", "RSHIFT"].map(chord);
+        for (c, _) in client.iter().filter(|(c, _)| !alone.contains(c)) {
             assert_eq!(upstream.get(c), None, "{c:?} is the original's");
+        }
+        for c in &alone {
+            assert!(
+                upstream.get(c).is_some(),
+                "{c:?} replaces none of the original's"
+            );
+            assert!(client.get(c).is_some(), "{c:?} is not the client's");
         }
         // Maps bind Shift Z to a third resource.
         assert_eq!(client.get(&chord("SHIFT z")), None);

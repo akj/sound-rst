@@ -42,10 +42,18 @@ impl Category {
         Category::Story,
     ];
 
-    /// The categories whose news is said before the other news waiting,
-    /// in this order: what players say, news of the game or the connection
-    /// itself, then the story.
-    pub const AHEAD: [Category; 3] = [Category::Chat, Category::System, Category::Story];
+    /// The order in which the voice says the news waiting, a category's
+    /// oldest first: news of the game or the connection itself, alerts,
+    /// the story, what players say, then the rest.
+    pub const ORDER: [Category; 7] = [
+        Category::System,
+        Category::Alert,
+        Category::Story,
+        Category::Chat,
+        Category::Production,
+        Category::Economy,
+        Category::Scouting,
+    ];
 
     /// The category after this one, the first after the last.
     pub fn next(self) -> Category {
@@ -397,6 +405,14 @@ mod tests {
 
     fn t(n: u64) -> Msg {
         vec![MsgPart::Count(n)]
+    }
+
+    #[test]
+    fn the_order_of_the_news_holds_every_category_once() {
+        for c in Category::ALL {
+            let n = Category::ORDER.iter().filter(|&&o| o == c).count();
+            assert_eq!(n, 1, "{c:?}");
+        }
     }
 
     #[test]

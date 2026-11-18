@@ -125,8 +125,8 @@ length 9999 208980
 @103652 voice info ", 1 gold mine at j 2"
 @106052 voice info ", 1 gold mine and 2 wood at j 5"
 @109752 voice info ", 1 gold mine and 2 wood at j 8"
-@113452 voice info "3 peasant enemy at c 1"
-@116052 voice info "22 wood"
+@113452 voice info "20 wood"
+@114552 voice info "3 peasant enemy at c 1"
 @117153 sounds 820 3a041c10870fe3a1
 @117153 step 18 key CTRL RIGHT
 @117153 voice item "b 3 , meadows , plateau"
@@ -199,8 +199,8 @@ length 9999 208980
 @173657 sounds 200 c9d6b0f995148c15
 @173657 step 45 key a
 @173657 voice item "patrol to , , press tab to select the target and then press enter to confirm"
-@181257 voice info "1 peasant enemy at c 1"
-@183857 voice info "30 wood"
+@181257 voice info "30 wood"
+@182357 voice info "1 peasant enemy at c 1"
 @184957 voice info "1 barracks at building enemy at d 1"
 @188858 sounds 403 15b1a8638fbf11c7
 @188858 step 46 key a
@@ -223,8 +223,8 @@ length 9999 208980
 @219458 step 52 key a
 @219458 voice item "go to , , press tab to select the target and then press enter to confirm"
 @226658 voice info "20 gold"
-@227758 voice info "1 footman enemy at d 1"
-@230358 voice info "40 wood"
+@227758 voice info "40 wood"
+@228858 voice info "1 footman enemy at d 1"
 @231459 sounds 292 df10b6deae39853c
 @231459 step 53 key a
 @231459 voice item "patrol to , , press tab to select the target and then press enter to confirm"

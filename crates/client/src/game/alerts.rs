@@ -839,6 +839,67 @@ mod tests {
         assert_eq!(said.iter().filter(|s| s.contains("lost")).count(), 1);
     }
 
+    /// A watcher of two quiet computers on a fake server, which follows
+    /// the second once `queue` has queued news: what was said since.
+    fn moved_to_the_second_player(queue: impl FnOnce(&mut Harness)) -> (Harness, Vec<String>) {
+        use crate::testkit::{FakeStream, slot};
+        use soundrts_protocol::{Computer, Skill, SlotPlayer, Speed};
+        let mut h = Harness::new("en", crate::testkit::Script::new().keep_open());
+        let server = h.join_fake_server("carol", &[]);
+        let quiet = || SlotPlayer::Computer(Computer::Quiet(Skill::NORMAL));
+        let slots = [slot(quiet(), 1), slot(quiet(), 2)];
+        let mut stream = FakeStream::new(&mut h, "jl1", &slots, 0, 1).watching();
+        let mut g = h.join_fake_game(&server, &stream, "jl1", Speed::Normal);
+        for _ in 0..3 {
+            watched_turn(&mut h, &mut g, &server, &mut stream);
+        }
+        h.run_until_voice_idle(&mut g);
+        let b = stream.host().seats()[1];
+        let from = h.utterances().len();
+        queue(&mut h);
+        server.frame_at(h.clock.now(), stream.follow(1));
+        while g.game.me != b {
+            h.step(&mut g);
+        }
+        h.run_until_voice_idle(&mut g);
+        let said = h.said_since(from);
+        (h, said)
+    }
+
+    #[test]
+    fn a_watcher_moved_to_another_player_still_hears_the_chat_waiting() {
+        let (_, said) = moved_to_the_second_player(|h| {
+            cx_news(h, "a long message of news");
+            let line = vec![soundrts_world::msg::MsgPart::literal("bob says hi")];
+            h.client.news(News::new(Category::Chat, line));
+        });
+        assert!(said.iter().any(|s| s == "bob says hi"), "{said:?}");
+    }
+
+    #[test]
+    fn a_watcher_moved_to_another_player_hears_none_of_the_news_that_waited() {
+        let (h, said) = moved_to_the_second_player(|h| {
+            cx_news(h, "a long message of news");
+            cx_news(h, "news of the first player");
+        });
+        // The message being said goes on; the one waiting stays unheard.
+        assert_eq!(
+            said[..2],
+            [
+                "a long message of news",
+                "watching quiet computer , level 3"
+            ]
+        );
+        assert!(!said.iter().any(|s| s.contains("first player")), "{said:?}");
+        let waited = h
+            .client
+            .voice
+            .log()
+            .find(|e| e.parts() == &[MsgPart::literal("news of the first player")])
+            .map(|e| e.heard());
+        assert_eq!(waited, Some(Heard::No));
+    }
+
     /// Queues news that keeps the voice busy for a while.
     fn cx_news(h: &mut Harness, s: &str) {
         let m = vec![soundrts_world::msg::MsgPart::literal(s)];

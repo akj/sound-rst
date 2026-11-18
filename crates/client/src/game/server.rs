@@ -796,6 +796,8 @@ impl GameInterface {
             }
         }
         cx.log.info("back in the game");
+        // The news of the time before the connection was lost is old.
+        cx.voice.new_side();
         cx.news(News::new(Category::System, msg(Phrase::BackInTheGame)));
         let m = Arc::new(message);
         // A watcher moved on to another player meanwhile follows that one.

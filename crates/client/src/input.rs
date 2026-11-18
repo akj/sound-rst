@@ -91,6 +91,11 @@ impl Key {
         )
     }
 
+    /// Ctrl or Alt, left or right: pressed alone, they stop speech.
+    pub fn is_control_or_alt(self) -> bool {
+        matches!(self, Key::LCtrl | Key::RCtrl | Key::LAlt | Key::RAlt)
+    }
+
     /// The key that types `c` on a US layout, or [`Key::Char`].
     pub fn from_char(c: char) -> Key {
         let c = c.to_ascii_lowercase();
@@ -286,6 +291,8 @@ pub struct EventQueue {
     pending: VecDeque<Event>,
     /// The modifier pressed with no other key since.
     alone: Option<KeyDown>,
+    /// The Control and Alt keys held down.
+    held: Vec<Key>,
     game: Option<GameProgress>,
 }
 
@@ -296,6 +303,7 @@ impl EventQueue {
             clock,
             pending: VecDeque::new(),
             alone: None,
+            held: Vec::new(),
             game: None,
         }
     }
@@ -306,6 +314,9 @@ impl EventQueue {
             match raw {
                 // A second modifier makes a chord of both.
                 RawInput::KeyDown(e) if e.key.is_modifier() => {
+                    if e.physical.is_control_or_alt() && !self.held.contains(&e.physical) {
+                        self.held.push(e.physical);
+                    }
                     self.alone = match self.alone {
                         Some(_) => None,
                         None => Some(e),
@@ -317,13 +328,17 @@ impl EventQueue {
                     self.pending.push_back(Event::KeyDown(e));
                 }
                 RawInput::KeyUp(e) => {
+                    self.held.retain(|&k| k != e.physical);
                     if let Some(press) = self.alone.take_if(|m| m.physical == e.physical) {
                         self.pending.push_back(Event::KeyDown(press));
                     }
                     self.pending.push_back(Event::KeyUp(e));
                 }
                 RawInput::Quit => self.pending.push_back(Event::Quit),
-                RawInput::FocusLost => self.alone = None,
+                RawInput::FocusLost => {
+                    self.alone = None;
+                    self.held.clear();
+                }
             }
         }
     }
@@ -377,6 +392,12 @@ impl Input {
         let mut q = self.0.borrow_mut();
         q.pump();
         q.pending.clear();
+    }
+
+    /// Whether Control or Alt is held down, as of the last read of the
+    /// queue.
+    pub fn control_or_alt_held(&self) -> bool {
+        !self.0.borrow().held.is_empty()
     }
 
     /// Drops the waiting key presses.
@@ -478,6 +499,29 @@ mod tests {
         let input = Input::new(Box::new(script.source()), clock.clone());
         clock.advance(2.0);
         assert_eq!(input.get_keydowns(), vec![press(Key::Tab, Mods::CTRL)]);
+    }
+
+    #[test]
+    fn control_and_alt_are_held_from_their_press_to_their_release() {
+        let clock = Rc::new(ManualClock::new());
+        let script = Script::new()
+            .key_down(Key::LShift)
+            .at(1.0)
+            .key_down(Key::LCtrl)
+            .key_down(Key::RAlt)
+            .at(2.0)
+            .key_up(Key::LCtrl)
+            .at(3.0)
+            .key_up(Key::RAlt);
+        let input = Input::new(Box::new(script.source()), clock.clone());
+        input.clear();
+        assert!(!input.control_or_alt_held());
+        // Each second, the next keys.
+        for held in [true, true, false] {
+            clock.advance(1.0);
+            input.clear();
+            assert_eq!(input.control_or_alt_held(), held);
+        }
     }
 
     #[test]

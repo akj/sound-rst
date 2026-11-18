@@ -280,7 +280,7 @@ fn what_changes_in_the_room_is_said() {
 }
 
 #[test]
-fn chat_is_said_while_a_submenu_is_open_before_the_queued_messages() {
+fn news_is_said_while_a_submenu_is_open_system_news_before_chat() {
     let script = Script::new()
         .at(8.0)
         .tap(Key::Down)
@@ -298,9 +298,9 @@ fn chat_is_said_while_a_submenu_is_open_before_the_queued_messages() {
         from(&said(&h), "carol has just logged in"),
         [
             "carol has just logged in",
-            "<magic/conversion> bob says hi",
-            "<magic/conversion> bob says hi",
             "dave has just logged in",
+            "<magic/conversion> bob says hi",
+            "<magic/conversion> bob says hi",
             "cancel",
         ]
     );
@@ -1461,6 +1461,37 @@ fn eventless(m: &soundrts_world::TurnMessage) -> soundrts_world::TurnMessage {
 }
 
 #[test]
+fn a_return_to_the_seat_gives_up_the_old_news_and_says_back_in_the_game() {
+    let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
+    let (server, mut stream, mut g, room) = game_in_room(&mut h);
+    let from = h.utterances().len();
+    let t0 = h.clock.now();
+    use soundrts::message::{Category, News};
+    let production = |s: &str| {
+        News::new(
+            Category::Production,
+            vec![soundrts_world::msg::MsgPart::literal(s)],
+        )
+    };
+    h.client
+        .news(production("a long message of news, for five seconds"));
+    h.client.news(production("old production news"));
+    turn_at(&server, &mut stream, t0);
+    server.close_at(t0 + 1.0);
+    stream.turn(Vec::new());
+    let back = server.dial_to(soundrts::testkit::welcome_back("andrew", &room, &[]));
+    for frame in stream.opening(jl1(&mut h), Speed::Normal) {
+        back.frame_at(t0 + 1.5, frame);
+    }
+    turn_at(&back, &mut stream, t0 + 2.0);
+    h.run_for(&mut g, 3.0);
+    h.run_until_voice_idle(&mut g);
+    let said = h.said_since(from);
+    assert_eq!(times(&said, "back in the game"), 1, "{said:#?}");
+    assert_eq!(times(&said, "old production news"), 0, "{said:#?}");
+}
+
+#[test]
 fn a_lost_connection_returns_to_the_seat_and_the_game_plays_on() {
     let mut h = Harness::with_config("en", Script::new().keep_open(), config("andrew"));
     let (server, mut stream, mut g, room) = game_in_room(&mut h);
@@ -2013,11 +2044,17 @@ fn a_flare_on_a_server_takes_an_ally_to_its_square() {
         andrew.press(Key::F7, Mods::CTRL);
         andrew.step(&mut a);
     }
+    // Each flare that went is an alert in Bob's log at its square. An
+    // alert cut off is said once more, so what Bob hears does not count
+    // them.
     let flared = |h: &Harness| {
-        h.said_since(b_from)
-            .iter()
-            .filter(|s| s.starts_with("andrew : flare at "))
-            .count()
+        let mut n = 0;
+        let mut before = None;
+        while let Some((id, at)) = h.client.voice.alert_before(before) {
+            n += usize::from(at == square);
+            before = Some(id);
+        }
+        n
     };
     let too_fast = |h: &Harness| {
         h.said_since(a_from)
@@ -2047,6 +2084,13 @@ fn a_flare_on_a_server_takes_an_ally_to_its_square() {
     assert_eq!(too_fast(&andrew), 1, "{said:#?}");
     assert!(!said.iter().any(|s| s.contains("flare at")), "{said:#?}");
     assert_eq!(flared(&bob), 3, "{:#?}", bob.said_since(b_from));
+    assert!(
+        bob.said_since(b_from)
+            .iter()
+            .any(|s| s.starts_with("andrew : flare at ")),
+        "{:#?}",
+        bob.said_since(b_from)
+    );
     bob.key(&mut b, Key::Delete, Mods::NONE);
     assert_eq!(b.game.place, Some(square));
     server.shutdown();

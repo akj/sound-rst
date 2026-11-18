@@ -94,6 +94,33 @@ fn a_key_cuts_the_title_short_and_escape_confirms_quit() {
 }
 
 #[test]
+fn in_a_menu_control_or_alt_alone_silences_and_shift_alone_does_nothing() {
+    use soundrts::message::{Category, News};
+    for key in [Key::LCtrl, Key::RCtrl, Key::LAlt, Key::RAlt, Key::LShift] {
+        let script = Script::new()
+            .wait_for("bbbbbbbbbb")
+            .at(0.3)
+            .tap(key)
+            .at(5.0)
+            .tap(Key::Escape);
+        let mut h = Harness::new("en", script);
+        // The first starts at once, and the menu's title cuts it off.
+        for m in ["aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc"] {
+            h.client
+                .news(News::new(Category::Production, vec![MsgPart::literal(m)]));
+        }
+        assert_eq!(main_menu(&mut h.client), Ok(()));
+        let silenced = ["aaaaaaaaaa", TITLE, "bbbbbbbbbb", "quit,"];
+        let shift = ["aaaaaaaaaa", TITLE, "bbbbbbbbbb", "cccccccccc", "quit,"];
+        if key == Key::LShift {
+            assert_eq!(h.spoken(), shift);
+        } else {
+            assert_eq!(h.spoken(), silenced, "{key:?}");
+        }
+    }
+}
+
+#[test]
 fn closing_the_window_ends_the_menus() {
     let mut h = Harness::new("en", Script::new());
     assert_eq!(main_menu(&mut h.client), Err(Exit));

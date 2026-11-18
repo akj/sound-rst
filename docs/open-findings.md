@@ -104,9 +104,9 @@ Checked today. Size: medium. Changes the transcripts. Needs your ears.
 
 ### H3. News is dropped while you are busy
 
-**Fixed** in pull requests 11 and 24, in the recorded speech tests; not yet heard through NVDA. Point by point:
+**Fixed** in pull requests 11 and 24, in the recorded speech tests; not yet heard through NVDA. Changed again by phase 1 of `docs/announcer-design.md`. The game of 17 November 2026 was the report by ear that H3 asked for: a message cut off came back about 20 times, and the news behind it waited for minutes. Point by point:
 
-- A message cut off comes back, however long it played: `news_cut_off_after_more_than_a_second_is_said_again` in `crates/client/tests/voice.rs`.
+- A message cut off is not said again, except an alert, once. It stays in the log, unheard, for F4: `news_cut_off_is_not_said_again_and_what_did_i_miss_counts_it` and `news_cut_off_by_a_key_every_two_seconds_never_starts_a_third_time` in `crates/client/tests/voice.rs`. Alerts are said right after system news. Control or Alt alone stops speech and gives up the news waiting.
 - The 3 second rule (`EVENT_LIMIT` in `crates/client/src/game/mod.rs`) now drops only the sound: `news_handled_late_is_said_without_its_sound` in `crates/client/src/game/alerts.rs`.
 - The resource expiry and the attack throttle are deleted. Newer news about the same subject replaces unheard older news instead: `newer_news_about_a_subject_replaces_the_unheard_news_about_it_and_not_another` in `voice.rs`.
 - An attack on a square is one alert until that square has been quiet for 10 seconds (`ATTACK_QUIET` in `alerts.rs`). This is new, chosen in pull request 24. Whether a long siege should remind you more often is for your ears.
@@ -129,7 +129,7 @@ Checked today, except the two throttles marked below. Size: medium. Changes the 
 
 ### H4. Modifier keys act the moment they go down
 
-**Fixed** in pull request 26, in the recorded speech tests; not yet heard through NVDA. A modifier pressed alone acts when it is released, and only if no other key went down meanwhile. A held modifier never repeats, and other keys repeat as Windows repeats them (`EventQueue` in `crates/client/src/input.rs`). Tests in `crates/client/tests/keys.rs`: `control_alone_examines_when_it_is_released`, `control_held_with_tab_does_not_examine`, `a_held_modifier_does_not_repeat`, `shift_and_an_arrow_do_not_skip_the_news_being_said`. One rare case remains, which pull request 26 declined to fix: with two other keys already held, such as Control and Shift, pressing and releasing Alt runs Alt's command and skips the news. A chord pressed the usual way, modifiers first and then the other key, no longer does. NVDA itself silences speech when Control goes down, which no test can show.
+**Fixed** in pull request 26, in the recorded speech tests; not yet heard through NVDA. A modifier pressed alone acts when it is released, and only if no other key went down meanwhile. A held modifier never repeats, and other keys repeat as Windows repeats them (`EventQueue` in `crates/client/src/input.rs`). Tests in `crates/client/tests/keys.rs`: `control_held_with_tab_does_not_silence`, `a_held_modifier_does_not_repeat`. Since phase 1 of `docs/announcer-design.md`, Control or Alt alone stops speech, Shift alone does nothing, and examine is on Shift C (`shift_c_examines_and_control_alone_no_longer_does`, `control_or_alt_alone_silences_and_what_did_i_miss_counts_what_it_silenced`). One rare case remains, which pull request 26 declined to fix: with two other keys already held, such as Control and Shift, pressing and releasing Alt runs Alt's command and silences the news. A chord pressed the usual way, modifiers first and then the other key, no longer does. NVDA itself silences speech when Control goes down, which no test can show.
 
 Checked today; the key repeat is suspected. Size: small. Changes the transcripts. Needs your ears.
 
@@ -850,7 +850,7 @@ Each is from the pull request named, as its agent reported it. Open. None was re
 
 **Watching and listening (80).**
 
-- After a change of the player followed, news that was waiting for the first player is still said. A watcher on a server and a listener to a record both do this.
+- **Fixed** by phase 1 of `docs/announcer-design.md`, section 5, in the recorded speech tests: after a change of the player followed, news that was waiting for the first player is not said, and stays in the log unheard (`a_watcher_moved_to_another_player_hears_none_of_the_news_that_waited` in `crates/client/src/game/alerts.rs`).
 - A computer's side has no events, because the simulation tells a computer none: a watcher on a server cannot follow a computer, and a listener to a record hears only its units and resources.
 - The game menu does not pause a recording; Shift Space does.
 

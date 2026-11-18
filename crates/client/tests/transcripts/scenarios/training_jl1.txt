@@ -29,6 +29,8 @@ key z
 key x
 key c
 key v
+key SHIFT c
+# Control alone stops speech
 key LCTRL
 release LCTRL
 key RCTRL
@@ -192,15 +194,13 @@ key ALT PAGEDOWN
 key ALT PAGEUP
 key SHIFT PAGEDOWN
 key SHIFT PAGEUP
-key LCTRL
-release LCTRL
+key SHIFT c
 
 # zoom
 key F8
 key RIGHT
 key UP
-key LCTRL
-release LCTRL
+key SHIFT c
 key TAB
 key ESCAPE
 key F8
