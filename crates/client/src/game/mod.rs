@@ -514,10 +514,13 @@ impl GameInterface {
         }
     }
 
-    /// Turns key help on.
+    /// Turns key help on. The world no longer waits for a story being
+    /// told: the line that this cuts off is said once more, and the rest
+    /// of the story is news like any other.
     pub(crate) fn start_key_help(&mut self, cx: &mut Client) {
         self.mode = Mode::KeyHelp;
         cx.voice.item(&msg(Phrase::KeyHelpOn));
+        cx.voice.stop_waiting_for_story();
     }
 
     /// A key pressed while key help is on: Escape, or the key that turns

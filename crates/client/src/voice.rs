@@ -629,6 +629,12 @@ impl Voice {
         self.story.extend(lines);
     }
 
+    /// The world no longer waits for the story: its lines left are story
+    /// news like any other.
+    pub fn stop_waiting_for_story(&mut self) {
+        self.story.clear();
+    }
+
     /// Whether no line of a story that the world waits for waits to be said.
     pub fn story_is_told(&mut self) -> bool {
         let log = &self.log;

@@ -257,7 +257,7 @@ fn control_alone_in_the_game_menu_does_not_give_up_the_story() {
 }
 
 #[test]
-fn keys_said_in_key_help_during_a_story_leave_its_line_to_be_said() {
+fn once_key_help_is_on_a_story_line_cut_off_again_is_not_said_again() {
     let (mut h, mut g) = training();
     h.run_until_voice_idle(&mut g);
     let from = h.utterances().len();
@@ -265,18 +265,17 @@ fn keys_said_in_key_help_during_a_story_leave_its_line_to_be_said() {
     run_until_said(&mut h, &mut g, from, 1);
     h.press(Key::F1, Mods::CTRL);
     h.step(&mut g);
-    // Each key cuts the line off once it has started again.
-    for (key, n) in [(Key::Z, 3), (Key::X, 5)] {
-        run_until_said(&mut h, &mut g, from, n);
-        h.press(key, Mods::NONE);
-        h.step(&mut g);
-    }
+    // The line that key help cut off starts again; the world no longer
+    // waits for it, so the next key's answer gives it up.
+    run_until_said(&mut h, &mut g, from, 3);
+    h.press(Key::Z, Mods::NONE);
+    h.step(&mut g);
     h.run_until_voice_idle(&mut g);
     let said = h.said_since(from);
-    assert_eq!(said[4], said[2], "{said:?}");
-    assert_eq!(said[6..], [STORY[0], STORY[1], STORY[2]], "{said:?}");
+    assert_eq!([&said[0], &said[2]], [STORY[0], STORY[0]], "{said:?}");
+    assert!(said[1].starts_with("key help on"), "{said:?}");
     assert!(said[3].starts_with("Z: "), "{said:?}");
-    assert!(said[5].starts_with("X: "), "{said:?}");
+    assert_eq!(said[4..], [STORY[1], STORY[2]], "{said:?}");
 }
 
 #[test]
