@@ -331,6 +331,20 @@ fn the_end_of_a_game_gives_up_its_news_but_what_it_is_about() {
 }
 
 #[test]
+fn an_alert_being_said_when_the_game_ends_is_said_once() {
+    let mut h = Harness::new("en", Script::new());
+    let v = &mut h.client.voice;
+    tell(v, Category::Alert, "alert at a 2");
+    chat(v, "good game");
+    run(&mut h, 0.3);
+    h.client.voice.end_game();
+    // The screen reader silences the alert: it is not said again.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    run(&mut h, 5.0);
+    assert_eq!(h.spoken(), ["alert at a 2", "good game"]);
+}
+
+#[test]
 fn the_end_of_a_game_ends_a_walk_through_the_history() {
     let mut h = Harness::new("en", Script::new());
     for m in ["one", "two", "three"] {

@@ -78,7 +78,7 @@ To get a written record of everything the game says, set `debug_mode = true` in 
 
 To play in another language, write its code in `settings.toml`, for example `language = "fr"`. Without it, the game uses the language of Windows.
 
-Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. A message that the level cuts off is not said again, except an alert and a line of a story that the game waits for. In a game, F4 then finds it; in a menu, F5 walks back through what was said. The sounds go on playing.
+Home and End, or the keypad's plus and minus, raise and lower the volume of the game's sounds by a tenth, in the menus and in a game. The game says the new level at once and remembers it for the next start. News that the level cuts off is not said again, except an alert and a line of a story that the game waits for. In a game, F4 then finds it; in a menu, F5 walks back through what was said. The sounds go on playing.
 
 In a text field, such as your login, a server's address, a chat message or the console, Control V pastes the text of the clipboard. The field keeps only the characters it allows, drops line breaks, and holds at most 400 characters. It says what it pasted, then the whole line if the line already had text. Enter still sends the line.
 

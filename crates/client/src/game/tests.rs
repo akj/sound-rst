@@ -193,6 +193,47 @@ fn with_nvda_control_alone_skips_exactly_one_line_of_a_story() {
 }
 
 #[test]
+fn a_key_that_skips_while_help_cuts_off_a_line_of_a_story_skips_nothing() {
+    let live = LiveKeys::default();
+    let (mut h, mut g, start) = telling(&live);
+    let from = h.utterance_log.len();
+    live.tap_at(start + 0.3, Key::F1, Mods::NONE);
+    live.tap_at(start + 0.6, Key::Down, Mods::NONE);
+    h.run_until_voice_idle(&mut g);
+    let said = said_at(&h, from, start);
+    assert_eq!(said.len(), 4, "{said:?}");
+    assert!(said[0].starts_with("300 "), "{said:?}");
+    assert!(said[1].ends_with(" once upon a time"), "{said:?}");
+    assert!(said[2].ends_with(" there was"), "{said:?}");
+    assert!(said[3].ends_with(" the end"), "{said:?}");
+}
+
+#[test]
+fn with_nvda_control_alone_skips_the_line_the_history_reads_back_and_the_walk_goes_on() {
+    let live = LiveKeys::default();
+    let (mut h, mut g, start) = telling(&live);
+    let from = h.utterance_log.len();
+    // F5 during the second line reads back the first; the walk goes on to
+    // the second, which still waits.
+    live.tap_at(start + 1.8, Key::F5, Mods::NONE);
+    live.down_at(start + 3.6, Key::LCtrl, Mods::CTRL);
+    h.run_for(&mut g, 3.65);
+    // NVDA silences the second line as Control goes down.
+    h.speech.report(Progress::Ended(SpeechEnd::Cancelled));
+    live.up_at(start + 3.9, Key::LCtrl);
+    h.run_until_voice_idle(&mut g);
+    assert_eq!(
+        said_at(&h, from, start),
+        [
+            "1599 there was",
+            "1800 once upon a time",
+            "3400 there was",
+            "3900 the end"
+        ]
+    );
+}
+
+#[test]
 fn shift_alone_does_not_skip_a_line_of_a_story() {
     let live = LiveKeys::default();
     let (mut h, mut g, start) = telling(&live);
